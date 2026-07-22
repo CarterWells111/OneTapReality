@@ -52,10 +52,10 @@ export async function persistCityCollectionOrder(
   memoryIds: readonly string[],
   updatedAt: string
 ) {
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async (transaction) => {
     const [memories, existingArrangements] = await Promise.all([
-      listMemories(db),
-      fetchCityCollectionArrangements(db, city),
+      listMemories(transaction),
+      fetchCityCollectionArrangements(transaction, city),
     ]);
     const savedCityMemoryIds = new Set(
       memories
@@ -72,12 +72,12 @@ export async function persistCityCollectionOrder(
         orderedMemoryIds.includes(arrangement.memoryId)
     )?.memoryId;
 
-    await db.runAsync(
+    await transaction.runAsync(
       "DELETE FROM city_collection_arrangements WHERE city = ?",
       city
     );
     for (const [position, memoryId] of orderedMemoryIds.entries()) {
-      await db.runAsync(
+      await transaction.runAsync(
         "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) VALUES (?, ?, ?, ?, ?)",
         memoryId,
         city,
@@ -95,15 +95,15 @@ export async function setFeaturedCityMemory(
   memoryId: string,
   updatedAt: string
 ) {
-  await db.withTransactionAsync(async () => {
-    await db.runAsync(
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    await transaction.runAsync(
       "UPDATE city_collection_arrangements SET is_featured = 0 WHERE city = ? AND EXISTS (SELECT 1 FROM memories WHERE id = ? AND city = ? AND status = ?)",
       city,
       memoryId,
       city,
       "saved"
     );
-    await db.runAsync(
+    await transaction.runAsync(
       "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) SELECT memories.id, memories.city, COALESCE((SELECT MAX(position) + 1 FROM city_collection_arrangements WHERE city = ?), 0), 1, ? FROM memories WHERE id = ? AND city = ? AND status = ? ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, is_featured = excluded.is_featured, updated_at = excluded.updated_at",
       city,
       updatedAt,

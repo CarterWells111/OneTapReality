@@ -25,14 +25,18 @@ type ArrangementRow = {
   updated_at: string;
 };
 
-function createDatabase(options: { memories: MemoryRow[]; arrangements?: ArrangementRow[] }) {
+function createDatabase(options: {
+  memories: MemoryRow[];
+  arrangements?: ArrangementRow[];
+  failOnMemoryId?: string;
+}) {
   const memories = [...options.memories];
   const arrangements = [...(options.arrangements ?? [])];
   const runCalls: Array<{ statement: string; parameters: unknown[] }> = [];
   let transactions = 0;
+  let exclusiveTransactions = 0;
 
-  const database = {
-    async getAllAsync<T>(statement: string, ...parameters: unknown[]) {
+  const getAllAsync = async <T>(statement: string, ...parameters: unknown[]) => {
       if (statement.includes("FROM city_collection_arrangements")) {
         return arrangements
           .filter((row) => row.city === parameters[0])
@@ -42,11 +46,12 @@ function createDatabase(options: { memories: MemoryRow[]; arrangements?: Arrange
         return memories.filter((row) => row.status === parameters[0]) as T[];
       }
       return [] as T[];
-    },
-    async runAsync(statement: string, ...parameters: unknown[]) {
+    };
+  const runAsync = async (statement: string, ...parameters: unknown[]) => {
       runCalls.push({ statement, parameters });
       if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("VALUES")) {
         const [memoryId, city, position, isFeatured, updatedAt] = parameters;
+        if (memoryId === options.failOnMemoryId) throw new Error("arrangement write failed");
         const existing = arrangements.find((row) => row.memory_id === memoryId);
         if (existing) {
           existing.city = city as ArrangementRow["city"];
@@ -79,14 +84,43 @@ function createDatabase(options: { memories: MemoryRow[]; arrangements?: Arrange
         }
       }
       return { changes: 1 };
+    };
+  let isInsideExclusiveTransaction = false;
+  const database = {
+    async getAllAsync<T>(statement: string, ...parameters: unknown[]) {
+      if (isInsideExclusiveTransaction) throw new Error("exclusive transaction queries must use its handle");
+      return getAllAsync<T>(statement, ...parameters);
+    },
+    async runAsync(statement: string, ...parameters: unknown[]) {
+      if (isInsideExclusiveTransaction) throw new Error("exclusive transaction queries must use its handle");
+      return runAsync(statement, ...parameters);
     },
     async withTransactionAsync(callback: () => Promise<void>) {
       transactions += 1;
       await callback();
     },
+    async withExclusiveTransactionAsync(callback: (transaction: SQLiteDatabase) => Promise<void>) {
+      exclusiveTransactions += 1;
+      const arrangementsBeforeTransaction = arrangements.map((arrangement) => ({ ...arrangement }));
+      isInsideExclusiveTransaction = true;
+      try {
+        await callback({ getAllAsync, runAsync } as unknown as SQLiteDatabase);
+      } catch (error) {
+        arrangements.splice(0, arrangements.length, ...arrangementsBeforeTransaction);
+        throw error;
+      } finally {
+        isInsideExclusiveTransaction = false;
+      }
+    },
   } as unknown as SQLiteDatabase;
 
-  return { database, arrangements, runCalls, get transactions() { return transactions; } };
+  return {
+    database,
+    arrangements,
+    runCalls,
+    get transactions() { return transactions; },
+    get exclusiveTransactions() { return exclusiveTransactions; },
+  };
 }
 
 const baseMemory = {
@@ -142,7 +176,7 @@ describe("city collection repository", () => {
     await persistCityCollectionOrder(fixture.database, "shenzhen", ["second", "first"], "2026-07-22T10:00:00.000Z");
     await setFeaturedCityMemory(fixture.database, "shenzhen", "first", "2026-07-22T10:01:00.000Z");
 
-    expect(fixture.transactions).toBe(2);
+    expect(fixture.exclusiveTransactions).toBe(2);
     expect(fixture.runCalls.every((call) => !call.statement.includes("'shenzhen'") && !call.statement.includes("'first'"))).toBe(true);
     await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([
       { memoryId: "second", city: "shenzhen", position: 0, isFeatured: false, updatedAt: "2026-07-22T10:00:00.000Z" },
@@ -185,5 +219,34 @@ describe("city collection repository", () => {
     await expect(resolveCityCollection(fixture.database, "hangzhou")).resolves.toMatchObject({
       memories: [{ id: "hangzhou-saved" }, { id: "hangzhou-old" }],
     });
+  });
+
+  it("rolls back a failed full order replacement without leaving partial arrangements", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "replacement-first", city: "hangzhou", status: "saved", updatedAt: "2026-07-21T10:00:00.000Z" },
+        { ...baseMemory, id: "replacement-second", city: "hangzhou", status: "saved", updatedAt: "2026-07-22T10:00:00.000Z" },
+      ],
+      arrangements: [
+        { memory_id: "original-first", city: "hangzhou", position: 0, is_featured: 1, updated_at: "2026-07-19T10:00:00.000Z" },
+        { memory_id: "original-second", city: "hangzhou", position: 1, is_featured: 0, updated_at: "2026-07-19T10:00:00.000Z" },
+      ],
+      failOnMemoryId: "replacement-second",
+    });
+
+    await expect(
+      persistCityCollectionOrder(
+        fixture.database,
+        "hangzhou",
+        ["replacement-first", "replacement-second"],
+        "2026-07-24T10:00:00.000Z"
+      )
+    ).rejects.toThrow("arrangement write failed");
+
+    expect(fixture.exclusiveTransactions).toBe(1);
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+      { memoryId: "original-first", city: "hangzhou", position: 0, isFeatured: true, updatedAt: "2026-07-19T10:00:00.000Z" },
+      { memoryId: "original-second", city: "hangzhou", position: 1, isFeatured: false, updatedAt: "2026-07-19T10:00:00.000Z" },
+    ]);
   });
 });

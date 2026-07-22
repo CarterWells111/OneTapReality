@@ -23,7 +23,7 @@ export function getCityStats(memories: readonly CityMemory[]): CityStats[] {
   const visitCounts = new Map<City, number>(cities.map((city) => [city, 0]));
 
   for (const memory of memories) {
-    if (memory.status === "saved") {
+    if (memory.status !== "draft" && memory.status !== "discarded") {
       visitCounts.set(memory.city, (visitCounts.get(memory.city) ?? 0) + 1);
     }
   }

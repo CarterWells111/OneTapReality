@@ -2,6 +2,7 @@ import {
   OfflineChinaMapAdapter,
   getCityStats,
 } from "../src/features/cities";
+import { createMemory } from "../src/features/memories/memory-factory";
 
 describe("city map domain data", () => {
   it("returns zeroed statistics for every city when no saved memories exist", () => {
@@ -33,6 +34,26 @@ describe("city map domain data", () => {
     ]);
   });
 
+  it("treats legacy memories without a status as saved", () => {
+    const legacyMemory = createMemory({
+      id: "legacy-hangzhou",
+      now: "2026-07-22T10:00:00.000Z",
+      input: {
+        title: "Legacy trip",
+        city: "hangzhou",
+        travelDate: "2026-07-20",
+        photoUris: [],
+      },
+      pages: [],
+    });
+
+    expect(getCityStats([legacyMemory, { city: "hangzhou", status: "draft" }])[0]).toMatchObject({
+      city: "hangzhou",
+      visitCount: 1,
+      intensity: "light",
+    });
+  });
+
   it("exposes a local China outline, fixed city markers, and initial focus without remote URLs", () => {
     const adapter = new OfflineChinaMapAdapter();
     const serialized = JSON.stringify(adapter);
@@ -46,5 +67,22 @@ describe("city map domain data", () => {
     ]);
     expect(adapter.initialFocus).toEqual({ center: { x: 0.62, y: 0.53 }, zoom: 1 });
     expect(serialized).not.toMatch(/https?:|www\./i);
+  });
+
+  it("does not let consumer mutation alter map data exposed by another adapter", () => {
+    const firstAdapter = new OfflineChinaMapAdapter();
+    const mutableMarker = firstAdapter.markers[0].coordinate as { x: number; y: number };
+    const mutableOutlinePoint = firstAdapter.outline.points[0] as { x: number; y: number };
+
+    try {
+      mutableMarker.x = 0;
+      mutableOutlinePoint.y = 0;
+    } catch {
+      // Frozen local data may reject a consumer mutation; either outcome must leave adapters unchanged.
+    }
+
+    const secondAdapter = new OfflineChinaMapAdapter();
+    expect(secondAdapter.markers[0].coordinate).toEqual({ x: 0.73, y: 0.47 });
+    expect(secondAdapter.outline.points[0]).toEqual({ x: 0.14, y: 0.25 });
   });
 });
