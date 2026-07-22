@@ -30,6 +30,7 @@ export function CanvasPage({
         <CanvasElement
           canvasSize={canvasSize}
           element={element}
+          interactive={interactive}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
           onSelect={onSelectElement}
