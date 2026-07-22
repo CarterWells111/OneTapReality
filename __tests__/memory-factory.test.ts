@@ -30,4 +30,23 @@ describe("createMemory", () => {
     });
     expect(memory.pages).toHaveLength(1);
   });
+
+  it("namespaces generated page IDs by memory so separate albums can be saved", () => {
+    const input = {
+      title: "Two albums",
+      city: "shanghai" as const,
+      travelDate: "2026-07-22",
+      photoUris: ["file://photo.jpg"],
+    };
+    const generatedPages = [
+      { id: "cover", position: 0, kind: "cover" as const, headline: "Cover", body: "Body" },
+      { id: "photo-1", position: 1, kind: "photo" as const, headline: "Photo", body: "Body" },
+    ];
+
+    const first = createMemory({ id: "memory-a", now: "2026-07-22T10:00:00.000Z", input, pages: generatedPages });
+    const second = createMemory({ id: "memory-b", now: "2026-07-22T10:00:00.000Z", input, pages: generatedPages });
+
+    expect(first.pages.map((page) => page.id)).toEqual(["memory-a:cover", "memory-a:photo-1"]);
+    expect(second.pages.map((page) => page.id)).toEqual(["memory-b:cover", "memory-b:photo-1"]);
+  });
 });

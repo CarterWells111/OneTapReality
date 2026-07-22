@@ -16,7 +16,7 @@ export function createMemory({
   return {
     id,
     ...input,
-    pages,
+    pages: pages.map((page) => ({ ...page, id: `${id}:${page.id}` })),
     createdAt: now,
     updatedAt: now,
   };
