@@ -59,7 +59,7 @@ function createDatabase(options: { memories: MemoryRow[]; arrangements?: Arrange
       if (statement.startsWith("DELETE FROM city_collection_arrangements")) {
         const [city, cutoff] = parameters;
         for (let index = arrangements.length - 1; index >= 0; index -= 1) {
-          if (arrangements[index].city === city && arrangements[index].position >= Number(cutoff)) arrangements.splice(index, 1);
+          if (arrangements[index].city === city && (cutoff === undefined || arrangements[index].position >= Number(cutoff))) arrangements.splice(index, 1);
         }
       }
       if (statement.startsWith("UPDATE city_collection_arrangements SET is_featured = 0")) {
@@ -151,6 +151,39 @@ describe("city collection repository", () => {
     await expect(resolveCityCollection(fixture.database, "shenzhen")).resolves.toMatchObject({
       memories: [{ id: "second" }, { id: "first" }],
       featuredMemory: { id: "first" },
+    });
+  });
+
+  it("silently filters foreign, draft, and discarded IDs while preserving a full valid city order", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "hangzhou-saved", city: "hangzhou", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "hangzhou-old", city: "hangzhou", status: "saved", updatedAt: "2026-07-19T10:00:00.000Z" },
+        { ...baseMemory, id: "shanghai-saved", city: "shanghai", status: "saved", updatedAt: "2026-07-21T10:00:00.000Z" },
+        { ...baseMemory, id: "hangzhou-draft", city: "hangzhou", status: "draft", updatedAt: "2026-07-22T10:00:00.000Z" },
+        { ...baseMemory, id: "hangzhou-discarded", city: "hangzhou", status: "discarded", updatedAt: "2026-07-23T10:00:00.000Z" },
+      ],
+      arrangements: [
+        { memory_id: "hangzhou-old", city: "hangzhou", position: 0, is_featured: 0, updated_at: "2026-07-19T10:00:00.000Z" },
+        { memory_id: "shanghai-saved", city: "shanghai", position: 0, is_featured: 0, updated_at: "2026-07-21T10:00:00.000Z" },
+      ],
+    });
+
+    await persistCityCollectionOrder(
+      fixture.database,
+      "hangzhou",
+      ["hangzhou-saved", "shanghai-saved", "hangzhou-draft", "hangzhou-discarded"],
+      "2026-07-24T10:00:00.000Z"
+    );
+
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+      { memoryId: "hangzhou-saved", city: "hangzhou", position: 0, isFeatured: false, updatedAt: "2026-07-24T10:00:00.000Z" },
+    ]);
+    await expect(fetchCityCollectionArrangements(fixture.database, "shanghai")).resolves.toEqual([
+      { memoryId: "shanghai-saved", city: "shanghai", position: 0, isFeatured: false, updatedAt: "2026-07-21T10:00:00.000Z" },
+    ]);
+    await expect(resolveCityCollection(fixture.database, "hangzhou")).resolves.toMatchObject({
+      memories: [{ id: "hangzhou-saved" }, { id: "hangzhou-old" }],
     });
   });
 });

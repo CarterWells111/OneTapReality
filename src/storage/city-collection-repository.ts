@@ -52,24 +52,40 @@ export async function persistCityCollectionOrder(
   memoryIds: readonly string[],
   updatedAt: string
 ) {
-  const orderedMemoryIds = Array.from(new Set(memoryIds));
-
   await db.withTransactionAsync(async () => {
+    const [memories, existingArrangements] = await Promise.all([
+      listMemories(db),
+      fetchCityCollectionArrangements(db, city),
+    ]);
+    const savedCityMemoryIds = new Set(
+      memories
+        .filter((memory) => memory.city === city && memory.status === "saved")
+        .map((memory) => memory.id)
+    );
+    const orderedMemoryIds = Array.from(new Set(memoryIds)).filter((memoryId) =>
+      savedCityMemoryIds.has(memoryId)
+    );
+    const featuredMemoryId = existingArrangements.find(
+      (arrangement) =>
+        arrangement.isFeatured &&
+        savedCityMemoryIds.has(arrangement.memoryId) &&
+        orderedMemoryIds.includes(arrangement.memoryId)
+    )?.memoryId;
+
+    await db.runAsync(
+      "DELETE FROM city_collection_arrangements WHERE city = ?",
+      city
+    );
     for (const [position, memoryId] of orderedMemoryIds.entries()) {
       await db.runAsync(
-        "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, position = excluded.position, updated_at = excluded.updated_at",
+        "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) VALUES (?, ?, ?, ?, ?)",
         memoryId,
         city,
         position,
-        0,
+        memoryId === featuredMemoryId ? 1 : 0,
         updatedAt
       );
     }
-    await db.runAsync(
-      "DELETE FROM city_collection_arrangements WHERE city = ? AND position >= ?",
-      city,
-      orderedMemoryIds.length
-    );
   });
 }
 
