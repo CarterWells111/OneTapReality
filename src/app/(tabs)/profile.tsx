@@ -8,7 +8,7 @@ import { useMemories } from "../../features/memories/memories-provider";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { memories, clearAllMemories } = useMemories();
+  const { memories, isReady, clearAllMemories } = useMemories();
   const summary = getProfileSummary(memories);
 
   const openMemory = (id: string) => {
@@ -21,6 +21,14 @@ export default function ProfileScreen() {
       { text: "删除", style: "destructive", onPress: () => void clearAllMemories() },
     ]);
   };
+
+  if (!isReady) {
+    return (
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
+        <Text selectable style={styles.subtitle}>正在读取本地记忆…</Text>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
@@ -96,6 +104,7 @@ function Statistic({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  loading: { padding: 20 },
   content: { gap: 22, padding: 20 },
   hero: { backgroundColor: colors.accentSoft, borderRadius: 22, gap: 8, padding: 20 },
   eyebrow: { color: colors.accent, fontSize: 13, fontWeight: "800" },

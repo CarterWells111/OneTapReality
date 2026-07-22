@@ -3,12 +3,13 @@ import { Alert } from "react-native";
 
 const mockPush = jest.fn();
 const mockClearAllMemories = jest.fn();
+const mockIsReady = jest.fn();
 const mockMemories = jest.fn();
 const mockAlert = jest.spyOn(Alert, "alert");
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
-  useMemories: () => ({ memories: mockMemories(), clearAllMemories: mockClearAllMemories }),
+  useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady(), clearAllMemories: mockClearAllMemories }),
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
@@ -27,6 +28,7 @@ const savedMemory = {
 describe("ProfileScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsReady.mockReturnValue(true);
   });
 
   it("shows archive statistics and routes the recent memory and next actions", async () => {
@@ -69,5 +71,19 @@ describe("ProfileScreen", () => {
       expect.arrayContaining([expect.objectContaining({ style: "destructive" })]),
     );
     expect(mockClearAllMemories).not.toHaveBeenCalled();
+    const buttons = mockAlert.mock.calls[0][2] ?? [];
+    const destructiveButton = buttons.find((button) => button.style === "destructive");
+    destructiveButton?.onPress?.();
+    expect(mockClearAllMemories).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a local loading state before SQLite memories are ready", async () => {
+    mockIsReady.mockReturnValue(false);
+    mockMemories.mockReturnValue([]);
+
+    const screen = await render(<ProfileScreen />);
+
+    expect(screen.getByText("正在读取本地记忆…")).toBeTruthy();
+    expect(screen.queryByText("从第一段旅程开始")).toBeNull();
   });
 });
