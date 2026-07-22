@@ -20,6 +20,59 @@ export type StoryPage = {
   headline: string;
   body: string;
   photoUri?: string;
+  layout?: CanvasLayout;
+};
+
+export type CanvasFontStyle = "system" | "avenir" | "georgia";
+export type CanvasStickerId =
+  | "heart"
+  | "sparkles"
+  | "camera"
+  | "suitcase"
+  | "map"
+  | "pin"
+  | "coffee"
+  | "flower"
+  | "ticket"
+  | "sun"
+  | "moon"
+  | "love-letter";
+
+type CanvasElementBase = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  zIndex: number;
+};
+
+export type CanvasImageElement = CanvasElementBase & {
+  type: "image";
+  uri: string;
+};
+
+export type CanvasTextElement = CanvasElementBase & {
+  type: "text";
+  text: string;
+  fontStyle: CanvasFontStyle;
+  color: string;
+};
+
+export type CanvasStickerElement = CanvasElementBase & {
+  type: "sticker";
+  stickerId: CanvasStickerId;
+};
+
+export type CanvasElement =
+  | CanvasImageElement
+  | CanvasTextElement
+  | CanvasStickerElement;
+
+export type CanvasLayout = {
+  aspectRatio: 1;
+  elements: CanvasElement[];
 };
 
 export type Memory = MemoryDraftInput & {

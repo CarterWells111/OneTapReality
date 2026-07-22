@@ -1,12 +1,13 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
-import type { Memory, MemoryStatus, StoryPage } from "../types/memory";
+import { createLegacyLayout, normalizeLayout } from "../features/canvas/canvas-layout";
+import type { CanvasLayout, Memory, MemoryStatus, StoryPage } from "../types/memory";
 
 type MemoryRow = Omit<Memory, "photoUris" | "pages" | "status"> & {
   status: MemoryStatus;
 };
 type PhotoRow = { uri: string };
-type StoryPageRow = Omit<StoryPage, "photoUri"> & { photo_uri: string | null };
+type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string | null; layout_json: string | null };
 type ColumnRow = { name: string };
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -37,6 +38,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       headline TEXT NOT NULL,
       body TEXT NOT NULL,
       photo_uri TEXT,
+      layout_json TEXT,
       FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
     );
   `);
@@ -47,10 +49,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
   }
+  const pageColumns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(story_pages)");
+  if (!pageColumns.some((column) => column.name === "layout_json")) {
+    await db.execAsync("ALTER TABLE story_pages ADD COLUMN layout_json TEXT");
+  }
 }
 
 function toStoryPage(row: StoryPageRow): StoryPage {
-  return {
+  const page = {
     id: row.id,
     position: row.position,
     kind: row.kind as StoryPage["kind"],
@@ -58,6 +64,15 @@ function toStoryPage(row: StoryPageRow): StoryPage {
     body: row.body,
     ...(row.photo_uri ? { photoUri: row.photo_uri } : {}),
   };
+  let layout: CanvasLayout | undefined;
+  if (row.layout_json) {
+    try {
+      layout = normalizeLayout(JSON.parse(row.layout_json) as CanvasLayout);
+    } catch {
+      layout = undefined;
+    }
+  }
+  return { ...page, layout: layout ?? createLegacyLayout(page) };
 }
 
 async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory> {
@@ -66,7 +81,7 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
     row.id
   );
   const pages = await db.getAllAsync<StoryPageRow>(
-    "SELECT id, position, kind, headline, body, photo_uri FROM story_pages WHERE memory_id = ? ORDER BY position ASC",
+    "SELECT id, position, kind, headline, body, photo_uri, layout_json FROM story_pages WHERE memory_id = ? ORDER BY position ASC",
     row.id
   );
 
@@ -182,14 +197,15 @@ async function writeStoryPages(
 ) {
   for (const page of pages) {
     await db.runAsync(
-      "INSERT INTO story_pages (id, memory_id, position, kind, headline, body, photo_uri) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO story_pages (id, memory_id, position, kind, headline, body, photo_uri, layout_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       page.id,
       memoryId,
       page.position,
       page.kind,
       page.headline,
       page.body,
-      page.photoUri ?? null
+      page.photoUri ?? null,
+      JSON.stringify(page.layout ?? createLegacyLayout(page))
     );
   }
 }
