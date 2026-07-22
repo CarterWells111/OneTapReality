@@ -59,12 +59,15 @@ const memory: Memory = {
 
 describe("canvas page editing model", () => {
   it("adds a square photo page, deletes one page, and keeps positions contiguous when reordering", () => {
-    const withNewPage = addCanvasPage(legacyPages, ["file://coffee.jpg"], "page-3");
+    const withNewPage = addCanvasPage(legacyPages, ["file://coffee.jpg", "file://bridge.jpg"], "page-3");
     const reordered = moveCanvasPage(withNewPage, "page-3", "backward");
     const remaining = deleteCanvasPage(reordered, "closing-1");
 
-    expect(withNewPage[2].layout?.elements).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "image", uri: "file://coffee.jpg" })]),
+    expect(withNewPage[2].layout?.elements.filter((element) => element.type === "image")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uri: "file://coffee.jpg" }),
+        expect.objectContaining({ uri: "file://bridge.jpg" }),
+      ]),
     );
     expect(reordered.map((page) => page.id)).toEqual(["cover-1", "page-3", "closing-1"]);
     expect(remaining.map((page) => page.position)).toEqual([0, 1]);
@@ -101,6 +104,8 @@ describe("EditMemoryScreen", () => {
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
+    await fireEvent.press(screen.getByTestId("canvas-photo-choice-0"));
+    await fireEvent.press(screen.getByTestId("canvas-photo-choice-1"));
     await fireEvent.press(screen.getByText("添加页面"));
     expect(screen.getAllByTestId("canvas-page-thumbnail")).toHaveLength(3);
     expect(mockUpdatePages).not.toHaveBeenCalled();
@@ -109,7 +114,16 @@ describe("EditMemoryScreen", () => {
 
     expect(mockUpdatePages).toHaveBeenCalledWith(
       memory,
-      expect.arrayContaining([expect.objectContaining({ layout: expect.objectContaining({ aspectRatio: 1 }) })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          layout: expect.objectContaining({
+            elements: expect.arrayContaining([
+              expect.objectContaining({ type: "image", uri: "file://west-lake.jpg" }),
+              expect.objectContaining({ type: "image", uri: "file://coffee.jpg" }),
+            ]),
+          }),
+        }),
+      ]),
     );
     expect(mockBack).toHaveBeenCalledTimes(1);
   });

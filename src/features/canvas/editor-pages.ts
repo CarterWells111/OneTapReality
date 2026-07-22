@@ -33,6 +33,12 @@ export function canvasPages(pages: StoryPage[]) {
   return normalizePositions(pages.map(withLayout));
 }
 
+export function pageImageUris(page: StoryPage) {
+  return (page.layout ?? createLegacyLayout(page)).elements
+    .filter((element) => element.type === "image")
+    .map((element) => element.uri);
+}
+
 export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: string) {
   const photoUri = photoUris[0];
   const page: StoryPage = {
@@ -44,7 +50,7 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
     ...(photoUri ? { photoUri } : {}),
   };
   const legacy = createLegacyLayout(page);
-  const photoLayout = photoUri ? createPhotoLayout([photoUri]) : { aspectRatio: 1 as const, elements: [] };
+  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 1 as const, elements: [] };
   return normalizePositions([
     ...pages.map(withLayout),
     { ...page, layout: { aspectRatio: 1, elements: [...photoLayout.elements, ...legacy.elements.filter((element) => element.type === "text")] } },

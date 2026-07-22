@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import * as React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -16,6 +17,7 @@ import {
   deleteCanvasPage,
   duplicateCanvasElement,
   moveCanvasPage,
+  pageImageUris,
   updateCanvasElement,
 } from "../../../features/canvas/editor-pages";
 import { useMemories } from "../../../features/memories/memories-provider";
@@ -33,6 +35,7 @@ export default function EditMemoryScreen() {
   const [pages, setPages] = React.useState<StoryPage[]>([]);
   const [selectedPageId, setSelectedPageId] = React.useState<string>();
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [selectedPhotoUris, setSelectedPhotoUris] = React.useState<string[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -43,6 +46,7 @@ export default function EditMemoryScreen() {
     setPages(nextPages);
     setSelectedPageId(nextPages[0]?.id);
     setSelectedElementId(undefined);
+    setSelectedPhotoUris([]);
   }, [memory]);
 
   if (!memory || pages.length === 0) {
@@ -63,11 +67,19 @@ export default function EditMemoryScreen() {
   };
 
   const addPage = () => {
-    const usedPhotoUris = new Set(pages.flatMap((page) => (page.photoUri ? [page.photoUri] : [])));
+    const usedPhotoUris = new Set(pages.flatMap(pageImageUris));
     const nextPhoto = memory.photoUris.find((uri) => !usedPhotoUris.has(uri)) ?? memory.photoUris[0];
-    const nextPages = addCanvasPage(pages, nextPhoto ? [nextPhoto] : [], buildCanvasId("page"));
+    const photoUris = selectedPhotoUris.length > 0 ? selectedPhotoUris : nextPhoto ? [nextPhoto] : [];
+    const nextPages = addCanvasPage(pages, photoUris, buildCanvasId("page"));
     setPages(nextPages);
+    setSelectedPhotoUris([]);
     selectPage(nextPages.at(-1)!.id);
+  };
+
+  const togglePhoto = (uri: string) => {
+    setSelectedPhotoUris((current) => current.includes(uri)
+      ? current.filter((candidate) => candidate !== uri)
+      : [...current, uri]);
   };
 
   const removePage = () => {
@@ -106,6 +118,26 @@ export default function EditMemoryScreen() {
       <Text selectable style={styles.muted}>
         本页只在设备本地编辑。先选中元素，再用手指拖动、双指缩放或旋转；保存前不会写入旅行册。
       </Text>
+
+      <View style={styles.photoSource}>
+        <Text style={styles.fieldLabel}>选择照片（可多选）</Text>
+        <ScrollView contentContainerStyle={styles.photoChoices} horizontal showsHorizontalScrollIndicator={false}>
+          {memory.photoUris.map((uri, index) => {
+            const isSelected = selectedPhotoUris.includes(uri);
+            return (
+              <Pressable
+                accessibilityLabel={`选择第 ${index + 1} 张照片`}
+                key={uri}
+                onPress={() => togglePhoto(uri)}
+                style={[styles.photoChoice, isSelected && styles.photoChoiceSelected]}
+                testID={`canvas-photo-choice-${index}`}>
+                <Image contentFit="cover" source={uri} style={styles.photoPreview} />
+                {isSelected ? <Text style={styles.photoCheck}>已选</Text> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <ScrollView contentContainerStyle={styles.thumbnailRow} horizontal showsHorizontalScrollIndicator={false}>
         {pages.map((page, index) => (
@@ -219,4 +251,10 @@ const styles = StyleSheet.create({
   stickerChoices: { gap: 8, paddingRight: 20 },
   stickerChoice: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 12, borderWidth: 1, height: 48, justifyContent: "center", width: 48 },
   stickerGlyph: { fontSize: 24 },
+  photoSource: { gap: 8 },
+  photoChoices: { gap: 10, paddingRight: 20 },
+  photoChoice: { borderColor: colors.line, borderRadius: 12, borderWidth: 2, height: 72, overflow: "hidden", width: 72 },
+  photoChoiceSelected: { borderColor: colors.accent },
+  photoPreview: { height: "100%", width: "100%" },
+  photoCheck: { backgroundColor: colors.accent, bottom: 0, color: "#FFFFFF", fontSize: 11, fontWeight: "800", left: 0, paddingHorizontal: 5, paddingVertical: 2, position: "absolute" },
 });
