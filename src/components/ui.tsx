@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 
 export const colors = {
-  background: "#F7F3EE",
+  background: "#F7F2EA",
   surface: "#FFFFFF",
-  ink: "#24312B",
-  muted: "#69756E",
-  line: "#E8E1D8",
-  accent: "#2F6F5E",
-  accentSoft: "#E4F0EA",
+  ink: "#26313E",
+  muted: "#64707D",
+  line: "#DED7CC",
+  accent: "#56708A",
+  warmAccent: "#B56B52",
+  accentSoft: "#FFF2CF",
   danger: "#A33A33",
 } as const;
 

@@ -1,6 +1,7 @@
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 
 import { CanvasElement } from "./canvas-element";
+import { colors } from "../../components/ui";
 import type { CanvasElement as CanvasElementModel, CanvasLayout } from "../../types/memory";
 
 type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
@@ -44,8 +45,8 @@ export function CanvasPage({
 const styles = StyleSheet.create({
   canvas: {
     alignSelf: "center",
-    backgroundColor: "#FFFDF8",
-    borderColor: "#D9DED7",
+    backgroundColor: colors.background,
+    borderColor: colors.line,
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
