@@ -5,11 +5,16 @@ const mockPush = jest.fn();
 const mockClearAllMemories = jest.fn();
 const mockIsReady = jest.fn();
 const mockMemories = jest.fn();
+const mockIsProfileReady = jest.fn();
+const mockProfile = jest.fn();
 const mockAlert = jest.spyOn(Alert, "alert");
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady(), clearAllMemories: mockClearAllMemories }),
+}));
+jest.mock("../src/features/profile/profile-provider", () => ({
+  useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
@@ -29,6 +34,8 @@ describe("ProfileScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsReady.mockReturnValue(true);
+    mockIsProfileReady.mockReturnValue(true);
+    mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null });
   });
 
   it("shows archive statistics and routes the recent memory and next actions", async () => {

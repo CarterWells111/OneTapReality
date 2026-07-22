@@ -2,13 +2,16 @@ import { useRouter } from "expo-router";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { MemoryCard } from "../../components/memory-card";
+import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, colors, Section } from "../../components/ui";
 import { getProfileSummary } from "../../features/profile/profile-summary";
+import { useProfile } from "../../features/profile/profile-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { memories, isReady, clearAllMemories } = useMemories();
+  const { profile, isProfileReady } = useProfile();
   const summary = getProfileSummary(memories);
 
   const openMemory = (id: string) => {
@@ -22,7 +25,7 @@ export default function ProfileScreen() {
     ]);
   };
 
-  if (!isReady) {
+  if (!isReady || !isProfileReady) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
         <Text selectable style={styles.subtitle}>正在读取本地记忆…</Text>
@@ -33,6 +36,20 @@ export default function ProfileScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.hero}>
+        <View style={styles.profileHeader}>
+          <ProfileAvatar avatarUri={profile.avatarUri} nickname={profile.nickname} />
+          <View style={styles.profileCopy}>
+            <Text selectable style={styles.nickname}>{profile.nickname}</Text>
+            <Pressable
+              accessibilityLabel="打开设置"
+              accessibilityRole="button"
+              onPress={() => router.push("/settings")}
+              style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+            >
+              <Text selectable style={styles.settingsButtonText}>设置</Text>
+            </Pressable>
+          </View>
+        </View>
         <Text selectable style={styles.eyebrow}>旅忆 · 共同档案</Text>
         <Text selectable style={styles.title}>我们的旅行档案</Text>
         <Text selectable style={styles.subtitle}>每一册和每一张照片都只保存在这台设备上。</Text>
@@ -107,6 +124,11 @@ const styles = StyleSheet.create({
   loading: { padding: 20 },
   content: { gap: 22, padding: 20 },
   hero: { backgroundColor: colors.accentSoft, borderRadius: 22, gap: 8, padding: 20 },
+  profileHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
+  profileCopy: { flex: 1, gap: 4 },
+  nickname: { color: colors.ink, fontSize: 18, fontWeight: "800" },
+  settingsButton: { alignSelf: "flex-start", justifyContent: "center", minHeight: 44, minWidth: 44, paddingHorizontal: 8 },
+  settingsButtonText: { color: colors.accent, fontSize: 15, fontWeight: "800" },
   eyebrow: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   title: { color: colors.ink, fontSize: 28, fontWeight: "800" },
   subtitle: { color: colors.muted, lineHeight: 21 },
