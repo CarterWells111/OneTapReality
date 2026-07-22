@@ -7,6 +7,7 @@ import {
   deleteCanvasPage,
   duplicateCanvasElement,
   moveCanvasPage,
+  toggleCanvasPhotoSelection,
   updateCanvasElement,
 } from "../src/features/canvas/editor-pages";
 import type { Memory, StoryPage } from "../src/types/memory";
@@ -69,6 +70,13 @@ describe("canvas page editing model", () => {
         expect.objectContaining({ uri: "file://bridge.jpg" }),
       ]),
     );
+    const imageLayers = withNewPage[2].layout!.elements
+      .filter((element) => element.type === "image")
+      .map((element) => element.zIndex);
+    const textLayers = withNewPage[2].layout!.elements
+      .filter((element) => element.type === "text")
+      .map((element) => element.zIndex);
+    expect(Math.min(...textLayers)).toBeGreaterThan(Math.max(...imageLayers));
     expect(reordered.map((page) => page.id)).toEqual(["cover-1", "page-3", "closing-1"]);
     expect(remaining.map((page) => page.position)).toEqual([0, 1]);
   });
@@ -88,6 +96,12 @@ describe("canvas page editing model", () => {
     expect(duplicated[0].layout?.elements.find((element) => element.id === "text-2")).toEqual(
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
     );
+  });
+
+  it("does not allow more than twelve source photos on one canvas page", () => {
+    const selected = Array.from({ length: 12 }, (_, index) => `file://photo-${index}.jpg`);
+
+    expect(toggleCanvasPhotoSelection(selected, "file://photo-12.jpg")).toEqual(selected);
   });
 });
 

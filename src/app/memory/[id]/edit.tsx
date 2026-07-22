@@ -7,6 +7,7 @@ import { AppButton, colors } from "../../../components/ui";
 import { canvasStickers } from "../../../features/canvas/canvas-assets";
 import { CanvasPage } from "../../../features/canvas/canvas-page";
 import { CanvasToolbar } from "../../../features/canvas/canvas-toolbar";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "../../../features/canvas/auto-layout";
 import {
   addCanvasPage,
   addStickerToPage,
@@ -18,6 +19,7 @@ import {
   duplicateCanvasElement,
   moveCanvasPage,
   pageImageUris,
+  toggleCanvasPhotoSelection,
   updateCanvasElement,
 } from "../../../features/canvas/editor-pages";
 import { useMemories } from "../../../features/memories/memories-provider";
@@ -77,9 +79,11 @@ export default function EditMemoryScreen() {
   };
 
   const togglePhoto = (uri: string) => {
-    setSelectedPhotoUris((current) => current.includes(uri)
-      ? current.filter((candidate) => candidate !== uri)
-      : [...current, uri]);
+    if (!selectedPhotoUris.includes(uri) && selectedPhotoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+      Alert.alert("单页最多 12 张", "请先取消一张已选照片，或把其他照片放到下一页。");
+      return;
+    }
+    setSelectedPhotoUris((current) => toggleCanvasPhotoSelection(current, uri));
   };
 
   const removePage = () => {

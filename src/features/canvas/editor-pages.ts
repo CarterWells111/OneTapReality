@@ -1,4 +1,4 @@
-import { createPhotoLayout } from "./auto-layout";
+import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout } from "./canvas-layout";
 import type { CanvasElement, CanvasStickerId, StoryPage } from "../../types/memory";
 
@@ -39,6 +39,15 @@ export function pageImageUris(page: StoryPage) {
     .map((element) => element.uri);
 }
 
+export function toggleCanvasPhotoSelection(selectedPhotoUris: string[], uri: string) {
+  if (selectedPhotoUris.includes(uri)) {
+    return selectedPhotoUris.filter((candidate) => candidate !== uri);
+  }
+  return selectedPhotoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE
+    ? selectedPhotoUris
+    : [...selectedPhotoUris, uri];
+}
+
 export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: string) {
   const photoUri = photoUris[0];
   const page: StoryPage = {
@@ -51,9 +60,12 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
   };
   const legacy = createLegacyLayout(page);
   const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 1 as const, elements: [] };
+  const textElements = legacy.elements
+    .filter((element) => element.type === "text")
+    .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
   return normalizePositions([
     ...pages.map(withLayout),
-    { ...page, layout: { aspectRatio: 1, elements: [...photoLayout.elements, ...legacy.elements.filter((element) => element.type === "text")] } },
+    { ...page, layout: { aspectRatio: 1, elements: [...photoLayout.elements, ...textElements] } },
   ]);
 }
 
