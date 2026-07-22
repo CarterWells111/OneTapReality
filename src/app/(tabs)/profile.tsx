@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { MemoryCard } from "../../components/memory-card";
 import { ProfileAvatar } from "../../components/profile-avatar";
@@ -10,19 +10,12 @@ import { useMemories } from "../../features/memories/memories-provider";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { memories, isReady, clearAllMemories } = useMemories();
+  const { memories, isReady } = useMemories();
   const { profile, isProfileReady } = useProfile();
   const summary = getProfileSummary(memories);
 
   const openMemory = (id: string) => {
     router.push({ pathname: "/memory/[id]", params: { id } });
-  };
-
-  const confirmClear = () => {
-    Alert.alert("删除所有本地记忆？", "这会删除这台设备上的旅行册、照片引用和草稿，操作不可恢复。", [
-      { text: "取消", style: "cancel" },
-      { text: "删除", style: "destructive", onPress: () => void clearAllMemories() },
-    ]);
   };
 
   if (!isReady || !isProfileReady) {
@@ -95,19 +88,14 @@ export default function ProfileScreen() {
         ) : null}
       </Section>
 
-      <Section title="本机数据与隐私">
-        <View style={styles.infoCard}>
-          <Text selectable style={styles.infoTitle}>本版不上传任何照片</Text>
-          <Text selectable style={styles.subtitle}>
-            旅行信息、照片 URI 和旅行册内容仅保存在本机 SQLite 中。AI 为固定本地演示草稿，不识别人物或地点。
-          </Text>
-        </View>
-        <View style={styles.infoCard}>
-          <Text selectable style={styles.infoTitle}>NFC 体验状态</Text>
-          <Text selectable style={styles.subtitle}>Expo Go 仅展示模拟碰一碰；真实 NFC 会在 Development Build 阶段接入。</Text>
-        </View>
-        <AppButton label="删除所有本地数据" onPress={confirmClear} tone="danger" />
-      </Section>
+      <Pressable
+        accessibilityLabel="打开本机数据与隐私声明"
+        accessibilityRole="button"
+        onPress={() => router.push("/privacy")}
+        style={({ pressed }) => [styles.privacyEntry, pressed && styles.pressed]}
+      >
+        <Text selectable style={styles.privacyEntryText}>本机数据与隐私声明 ›</Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -144,7 +132,7 @@ const styles = StyleSheet.create({
   giftCopy: { flex: 1, gap: 5 },
   giftTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
   giftArrow: { color: colors.warmAccent, fontSize: 24, fontWeight: "800" },
-  infoCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 },
-  infoTitle: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  privacyEntry: { alignItems: "center", justifyContent: "center", minHeight: 44 },
+  privacyEntryText: { color: colors.muted, fontSize: 14, fontWeight: "700" },
   pressed: { opacity: 0.82 },
 });

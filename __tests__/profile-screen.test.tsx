@@ -1,17 +1,14 @@
 import { fireEvent, render } from "@testing-library/react-native";
-import { Alert } from "react-native";
 
 const mockPush = jest.fn();
-const mockClearAllMemories = jest.fn();
 const mockIsReady = jest.fn();
 const mockMemories = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockProfile = jest.fn();
-const mockAlert = jest.spyOn(Alert, "alert");
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
-  useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady(), clearAllMemories: mockClearAllMemories }),
+  useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady() }),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
@@ -73,27 +70,21 @@ describe("ProfileScreen", () => {
     );
   });
 
-  it("shows the first-trip action and preserves confirmation before clearing local data", async () => {
+  it("shows the first-trip action and routes to the privacy declaration", async () => {
     mockMemories.mockReturnValue([]);
     const screen = await render(<ProfileScreen />);
 
     expect(screen.getByText("从第一段旅程开始")).toBeTruthy();
     expect(screen.queryByText("把这册回忆做成礼物")).toBeNull();
+    expect(screen.getByText("本机数据与隐私声明 ›")).toBeTruthy();
+    expect(screen.queryByText("本机数据与隐私")).toBeNull();
+    expect(screen.queryByText("删除所有本地数据")).toBeNull();
 
     await fireEvent.press(screen.getByText("从第一段旅程开始"));
-    await fireEvent.press(screen.getByText("删除所有本地数据"));
+    await fireEvent.press(screen.getByText("本机数据与隐私声明 ›"));
 
     expect(mockPush).toHaveBeenCalledWith("/memory/new");
-    expect(mockAlert).toHaveBeenCalledWith(
-      "删除所有本地记忆？",
-      expect.any(String),
-      expect.arrayContaining([expect.objectContaining({ style: "destructive" })]),
-    );
-    expect(mockClearAllMemories).not.toHaveBeenCalled();
-    const buttons = mockAlert.mock.calls[0][2] ?? [];
-    const destructiveButton = buttons.find((button) => button.style === "destructive");
-    destructiveButton?.onPress?.();
-    expect(mockClearAllMemories).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith("/privacy");
   });
 
   it("shows a local loading state before SQLite memories are ready", async () => {
