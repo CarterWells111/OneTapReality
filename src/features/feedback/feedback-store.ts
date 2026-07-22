@@ -33,5 +33,5 @@ export async function saveFeedback(storage: FeedbackStorage, feedback: PurchaseF
 export async function exportFeedback(storage: FeedbackStorage) {
   const feedback = await readFeedback(storage);
   const lines = feedback.map((item, index) => `${index + 1}. 价格：${item.priceRange}；材料：${item.materialPreference}；购买：${item.wouldBuy}；推荐：${item.wouldRecommend}；备注：${item.note || "无"}`);
-  return ["旅忆现场购买意向反馈", "仅供现场反馈展示，不构成订单或支付", ...lines].join("\n");
+  return ["一触如初现场购买意向反馈", "仅供现场反馈展示，不构成订单或支付", ...lines].join("\n");
 }

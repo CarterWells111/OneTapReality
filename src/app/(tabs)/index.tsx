@@ -20,7 +20,7 @@ export default function MemoriesHomeScreen() {
           让每一次触碰，都回到故事最初的地方。
         </Text>
         <Text selectable style={{ color: colors.muted, fontSize: 15, lineHeight: 22 }}>
-          选择照片，旅忆会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。
+          选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。
         </Text>
         <AppButton label="创建纪念册" onPress={() => router.push("/memory/new")} />
       </View>
