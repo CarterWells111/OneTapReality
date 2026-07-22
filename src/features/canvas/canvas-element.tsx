@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFonts, canvasStickers } from "./canvas-assets";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
@@ -11,6 +11,7 @@ type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "r
 type CanvasElementProps = {
   canvasSize: number;
   element: CanvasElementModel;
+  interactive: boolean;
   isSelected: boolean;
   onSelect: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
@@ -19,9 +20,22 @@ type CanvasElementProps = {
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
 
+export function calculateCanvasTransform(
+  element: Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">,
+  transform: { rotation: number; scale: number; translationX: number; translationY: number },
+  canvasSize: number,
+): ElementPatch {
+  const width = clamp(element.width * transform.scale, 0.05, 1);
+  const height = clamp(element.height * transform.scale, 0.05, 1);
+  const x = clamp(element.x + transform.translationX / canvasSize + (element.width - width) / 2, 0, 1 - width);
+  const y = clamp(element.y + transform.translationY / canvasSize + (element.height - height) / 2, 0, 1 - height);
+  return { x, y, width, height, rotation: element.rotation + transform.rotation };
+}
+
 export function CanvasElement({
   canvasSize,
   element,
+  interactive,
   isSelected,
   onSelect,
   onTransformEnd,
@@ -30,40 +44,61 @@ export function CanvasElement({
   const offsetY = useSharedValue(0);
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
+  const activeGestureCount = useSharedValue(0);
 
-  const finishTransform = () => {
-    const scaledWidth = clamp(element.width * scale.value, 0.05, 1);
-    const scaledHeight = clamp(element.height * scale.value, 0.05, 1);
-    const x = clamp(element.x + offsetX.value / canvasSize, 0, 1 - scaledWidth);
-    const y = clamp(element.y + offsetY.value / canvasSize, 0, 1 - scaledHeight);
-    const finalRotation = element.rotation + rotation.value;
+  const commitTransform = (translationX: number, translationY: number, nextScale: number, nextRotation: number) => {
+    onTransformEnd?.(element.id, calculateCanvasTransform(
+      element,
+      { translationX, translationY, scale: nextScale, rotation: nextRotation },
+      canvasSize,
+    ));
+  };
 
+  const beginGesture = () => {
+    "worklet";
+    activeGestureCount.value += 1;
+    runOnJS(onSelect)(element.id);
+  };
+
+  const finalizeGesture = () => {
+    "worklet";
+    activeGestureCount.value = Math.max(0, activeGestureCount.value - 1);
+    if (activeGestureCount.value > 0) {
+      return;
+    }
+    const translationX = offsetX.value;
+    const translationY = offsetY.value;
+    const nextScale = scale.value;
+    const nextRotation = rotation.value;
     offsetX.value = 0;
     offsetY.value = 0;
     scale.value = 1;
     rotation.value = 0;
-    onTransformEnd?.(element.id, { x, y, width: scaledWidth, height: scaledHeight, rotation: finalRotation });
+    runOnJS(commitTransform)(translationX, translationY, nextScale, nextRotation);
   };
 
   const pan = Gesture.Pan()
-    .onBegin(() => runOnJS(onSelect)(element.id))
+    .enabled(interactive)
+    .onBegin(beginGesture)
     .onUpdate((event) => {
       offsetX.value = event.translationX;
       offsetY.value = event.translationY;
     })
-    .onEnd(() => runOnJS(finishTransform)());
+    .onFinalize(finalizeGesture);
   const pinch = Gesture.Pinch()
-    .onBegin(() => runOnJS(onSelect)(element.id))
+    .enabled(interactive)
+    .onBegin(beginGesture)
     .onUpdate((event) => {
       scale.value = event.scale;
     })
-    .onEnd(() => runOnJS(finishTransform)());
+    .onFinalize(finalizeGesture);
   const rotate = Gesture.Rotation()
-    .onBegin(() => runOnJS(onSelect)(element.id))
+    .enabled(interactive)
+    .onBegin(beginGesture)
     .onUpdate((event) => {
       rotation.value = event.rotation;
     })
-    .onEnd(() => runOnJS(finishTransform)());
+    .onFinalize(finalizeGesture);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -81,6 +116,11 @@ export function CanvasElement({
     zIndex: element.zIndex,
   };
 
+  const content = <ElementContent element={element} />;
+  if (!interactive) {
+    return <View style={[styles.positioned, frameStyle]} testID={`canvas-element-${element.id}`}>{content}</View>;
+  }
+
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, rotate)}>
       <Animated.View style={[styles.positioned, frameStyle, animatedStyle]}>
@@ -89,7 +129,7 @@ export function CanvasElement({
           onPress={() => onSelect(element.id)}
           style={[styles.element, isSelected && styles.selected]}
           testID={`canvas-element-${element.id}`}>
-          <ElementContent element={element} />
+          {content}
         </Pressable>
       </Animated.View>
     </GestureDetector>

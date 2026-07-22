@@ -65,6 +65,15 @@ describe("CanvasPage", () => {
 
     expect(onSelect).toHaveBeenCalledWith("sticker-1");
   });
+
+  it("does not select elements when used as a read-only saved-page preview", async () => {
+    const onSelect = jest.fn();
+    const screen = await render(<CanvasPage interactive={false} layout={layout} onSelectElement={onSelect} />);
+
+    await fireEvent.press(screen.getByTestId("canvas-element-sticker-1"));
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
 
 describe("CanvasToolbar", () => {
