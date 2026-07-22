@@ -1,67 +1,222 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors } from "../../../components/ui";
+import { canvasStickers } from "../../../features/canvas/canvas-assets";
+import { CanvasPage } from "../../../features/canvas/canvas-page";
+import { CanvasToolbar } from "../../../features/canvas/canvas-toolbar";
+import {
+  addCanvasPage,
+  addStickerToPage,
+  addTextToPage,
+  canvasPages,
+  changeCanvasElementLayer,
+  deleteCanvasElement,
+  deleteCanvasPage,
+  duplicateCanvasElement,
+  moveCanvasPage,
+  updateCanvasElement,
+} from "../../../features/canvas/editor-pages";
 import { useMemories } from "../../../features/memories/memories-provider";
 import type { StoryPage } from "../../../types/memory";
+
+function buildCanvasId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
 export default function EditMemoryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getMemoryById, updatePages } = useMemories();
   const memory = getMemoryById(id);
-  const [edits, setEdits] = React.useState<Record<string, Partial<StoryPage>>>({});
+  const [pages, setPages] = React.useState<StoryPage[]>([]);
+  const [selectedPageId, setSelectedPageId] = React.useState<string>();
+  const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [isSaving, setIsSaving] = React.useState(false);
 
-  if (!memory) {
+  React.useEffect(() => {
+    if (!memory) {
+      return;
+    }
+    const nextPages = canvasPages(memory.pages);
+    setPages(nextPages);
+    setSelectedPageId(nextPages[0]?.id);
+    setSelectedElementId(undefined);
+  }, [memory]);
+
+  if (!memory || pages.length === 0) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 20 }}>
-        <Text selectable style={{ color: colors.muted }}>正在读取可编辑的旅行册…</Text>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
+        <Text selectable style={styles.muted}>正在读取可编辑的旅行册…</Text>
       </ScrollView>
     );
   }
 
-  const pages = memory.pages.map((page) => ({ ...page, ...edits[page.id] }));
+  const selectedPage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
+  const selectedElement = selectedPage.layout?.elements.find((element) => element.id === selectedElementId);
+  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
 
-  const updatePage = (idToUpdate: string, field: "headline" | "body", value: string) => {
-    setEdits((current) => ({
-      ...current,
-      [idToUpdate]: { ...current[idToUpdate], [field]: value },
-    }));
+  const selectPage = (pageId: string) => {
+    setSelectedPageId(pageId);
+    setSelectedElementId(undefined);
+  };
+
+  const addPage = () => {
+    const usedPhotoUris = new Set(pages.flatMap((page) => (page.photoUri ? [page.photoUri] : [])));
+    const nextPhoto = memory.photoUris.find((uri) => !usedPhotoUris.has(uri)) ?? memory.photoUris[0];
+    const nextPages = addCanvasPage(pages, nextPhoto ? [nextPhoto] : [], buildCanvasId("page"));
+    setPages(nextPages);
+    selectPage(nextPages.at(-1)!.id);
+  };
+
+  const removePage = () => {
+    if (pages.length <= 1) {
+      Alert.alert("至少保留一页", "旅行册需要保留至少一页画布。");
+      return;
+    }
+    Alert.alert("删除这一页？", "删除后可在保存前继续调整其他页面。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除", style: "destructive", onPress: () => {
+          const nextPages = deleteCanvasPage(pages, selectedPage.id);
+          setPages(nextPages);
+          selectPage(nextPages[Math.min(selectedPage.position, nextPages.length - 1)].id);
+        },
+      },
+    ]);
+  };
+
+  const updateSelectedElement = (elementId: string, patch: Parameters<typeof updateCanvasElement>[3]) => {
+    setPages((current) => updateCanvasElement(current, selectedPage.id, elementId, patch));
   };
 
   const save = async () => {
     setIsSaving(true);
-    await updatePages(memory, pages);
-    setIsSaving(false);
-    router.back();
+    try {
+      await updatePages(memory, canvasPages(pages));
+      router.back();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 18, padding: 20 }}>
-      <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-        本版草稿完全由本地模板生成。你可以把每一页改成真正属于你们的文字。
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+      <Text selectable style={styles.muted}>
+        本页只在设备本地编辑。先选中元素，再用手指拖动、双指缩放或旋转；保存前不会写入旅行册。
       </Text>
-      {pages.map((page, index) => (
-        <View key={page.id} style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 10, padding: 16 }}>
-          <Text selectable style={{ color: colors.muted, fontWeight: "700" }}>第 {index + 1} 页</Text>
+
+      <ScrollView contentContainerStyle={styles.thumbnailRow} horizontal showsHorizontalScrollIndicator={false}>
+        {pages.map((page, index) => (
+          <Pressable
+            accessibilityLabel={`第 ${index + 1} 页`}
+            key={page.id}
+            onPress={() => selectPage(page.id)}
+            style={[styles.thumbnail, page.id === selectedPage.id && styles.thumbnailActive]}
+            testID="canvas-page-thumbnail">
+            <Text style={[styles.thumbnailNumber, page.id === selectedPage.id && styles.thumbnailNumberActive]}>{index + 1}</Text>
+            <Text numberOfLines={1} style={styles.thumbnailTitle}>{page.headline}</Text>
+          </Pressable>
+        ))}
+        <Pressable accessibilityRole="button" onPress={addPage} style={styles.addThumbnail}>
+          <Text style={styles.addThumbnailText}>添加页面</Text>
+        </Pressable>
+      </ScrollView>
+
+      <View style={styles.pageActions}>
+        <AppButton label="上一页" onPress={() => setPages((current) => moveCanvasPage(current, selectedPage.id, "backward"))} tone="secondary" />
+        <AppButton label="下一页" onPress={() => setPages((current) => moveCanvasPage(current, selectedPage.id, "forward"))} tone="secondary" />
+        <AppButton label="删除页面" onPress={removePage} tone="danger" />
+      </View>
+
+      <CanvasPage
+        layout={selectedPage.layout!}
+        onSelectElement={setSelectedElementId}
+        onTransformEnd={updateSelectedElement}
+        selectedElementId={selectedElementId}
+      />
+
+      {selectedText ? (
+        <View style={styles.textEditor}>
+          <Text style={styles.fieldLabel}>编辑选中文字</Text>
           <TextInput
-            accessibilityLabel={`第 ${index + 1} 页标题`}
-            onChangeText={(value) => updatePage(page.id, "headline", value)}
-            style={{ borderBottomColor: colors.line, borderBottomWidth: 1, color: colors.ink, fontSize: 18, fontWeight: "700", minHeight: 42 }}
-            value={page.headline}
-          />
-          <TextInput
-            accessibilityLabel={`第 ${index + 1} 页正文`}
+            accessibilityLabel="编辑选中文字"
             multiline
-            onChangeText={(value) => updatePage(page.id, "body", value)}
-            style={{ color: colors.ink, lineHeight: 22, minHeight: 88, textAlignVertical: "top" }}
-            value={page.body}
+            onChangeText={(text) => updateSelectedElement(selectedText.id, { text })}
+            style={styles.textInput}
+            value={selectedText.text}
           />
         </View>
-      ))}
-      <AppButton label={isSaving ? "正在保存…" : "保存修改"} disabled={isSaving} onPress={() => void save()} />
+      ) : null}
+
+      <CanvasToolbar
+        onAddSticker={(stickerId = canvasStickers[0].id) => {
+          const nextId = buildCanvasId("sticker");
+          setPages((current) => addStickerToPage(current, selectedPage.id, nextId, stickerId));
+          setSelectedElementId(nextId);
+        }}
+        onAddText={() => {
+          const nextId = buildCanvasId("text");
+          setPages((current) => addTextToPage(current, selectedPage.id, nextId));
+          setSelectedElementId(nextId);
+        }}
+        onChangeLayer={(elementId, direction) => setPages((current) => changeCanvasElementLayer(current, selectedPage.id, elementId, direction))}
+        onDelete={(elementId) => {
+          setPages((current) => deleteCanvasElement(current, selectedPage.id, elementId));
+          setSelectedElementId(undefined);
+        }}
+        onDuplicate={(elementId) => {
+          const nextId = buildCanvasId("copy");
+          setPages((current) => duplicateCanvasElement(current, selectedPage.id, elementId, nextId));
+          setSelectedElementId(nextId);
+        }}
+        onUpdateElement={updateSelectedElement}
+        selectedElement={selectedElement}
+      />
+
+      <View style={styles.stickerRow}>
+        <Text style={styles.fieldLabel}>选择贴纸</Text>
+        <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
+          {canvasStickers.map((sticker) => (
+            <Pressable
+              accessibilityLabel={`添加${sticker.label}`}
+              key={sticker.id}
+              onPress={() => {
+                const nextId = buildCanvasId("sticker");
+                setPages((current) => addStickerToPage(current, selectedPage.id, nextId, sticker.id));
+                setSelectedElementId(nextId);
+              }}
+              style={styles.stickerChoice}>
+              <Text style={styles.stickerGlyph}>{sticker.glyph}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+
+      <AppButton disabled={isSaving} label={isSaving ? "正在保存…" : "保存画布"} onPress={() => void save()} />
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: { padding: 20 },
+  content: { gap: 18, padding: 20 },
+  muted: { color: colors.muted, lineHeight: 22 },
+  thumbnailRow: { gap: 10, paddingRight: 20 },
+  thumbnail: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 12, borderWidth: 1, gap: 4, minWidth: 104, padding: 10 },
+  thumbnailActive: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  thumbnailNumber: { color: colors.muted, fontSize: 12, fontWeight: "800" },
+  thumbnailNumberActive: { color: colors.accent },
+  thumbnailTitle: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  addThumbnail: { alignItems: "center", borderColor: colors.accent, borderRadius: 12, borderStyle: "dashed", borderWidth: 1, justifyContent: "center", minWidth: 104, padding: 10 },
+  addThumbnailText: { color: colors.accent, fontSize: 13, fontWeight: "800" },
+  pageActions: { flexDirection: "row", gap: 8 },
+  textEditor: { gap: 8 },
+  fieldLabel: { color: colors.ink, fontSize: 14, fontWeight: "800" },
+  textInput: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 12, borderWidth: 1, color: colors.ink, minHeight: 82, padding: 12, textAlignVertical: "top" },
+  stickerRow: { gap: 8 },
+  stickerChoices: { gap: 8, paddingRight: 20 },
+  stickerChoice: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 12, borderWidth: 1, height: 48, justifyContent: "center", width: 48 },
+  stickerGlyph: { fontSize: 24 },
+});

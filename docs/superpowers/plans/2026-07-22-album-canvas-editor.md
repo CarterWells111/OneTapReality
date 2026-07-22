@@ -58,11 +58,11 @@
 - Modify: `src/features/memories/memories-provider.tsx`
 - Test: `__tests__/memory-canvas-editor.test.tsx`
 
-- [ ] Write failing tests showing the edit screen converts legacy pages, adds/deletes/reorders pages, and sends layouts to `updatePages` only after Save.
-- [ ] Run `npm.cmd run test:ci -- memory-canvas-editor.test.tsx`; expect failure because the existing screen only has text inputs.
-- [ ] Replace the screen with page thumbnail selection, central canvas, bottom toolbar, add-page action, delete-page confirmation, and a single Save action. New pages receive the deterministic auto layout from selected local photo URIs.
-- [ ] Render saved layouts in the detail page with `CanvasPage` while retaining existing fallback rendering for legacy pages.
-- [ ] Run focused tests; expect PASS.
+- [x] Write failing tests showing the edit screen converts legacy pages, adds/deletes/reorders pages, and sends layouts to `updatePages` only after Save.
+- [x] Run `npm.cmd run test:ci -- memory-canvas-editor.test.tsx`; confirmed the expected missing editor-model failure.
+- [x] Replace the screen with page thumbnail selection, central canvas, bottom toolbar, add-page action, delete-page confirmation, and a single Save action. New pages receive the deterministic auto layout from selected local photo URIs.
+- [x] Render saved layouts in the detail page with `CanvasPage` while retaining existing fallback rendering for legacy pages.
+- [x] Run focused tests; PASS.
 
 ### Task 5: Verify Expo Go readiness and commit in reviewed stages
 
@@ -70,7 +70,7 @@
 - Modify: `docs/superpowers/plans/2026-07-22-album-canvas-editor.md`
 - Modify: `docs/DECISIONS.md`
 
-- [ ] After each task run `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test:ci`, and `git diff --check`; stop if a change touches networking, AI SDKs, payment, NFC, WebView, or unrelated routes.
-- [ ] After Tasks 1–4 run `npx.cmd expo-doctor` and `npx.cmd expo export --platform ios --output-dir .expo-export`; delete the exact temporary export directory after inspecting success.
+- [x] After each task run `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test:ci`, and `git diff --check`; no changes touch networking, AI SDKs, payment, NFC, WebView, or unrelated routes.
+- [x] After Tasks 1–4 run `npx.cmd expo-doctor` and `npx.cmd expo export --platform ios --output-dir .expo-export`; both passed and the exact temporary export directory was removed.
 - [ ] On an iPhone Expo Go device verify: open a legacy memory, select/add photo/text/sticker, drag, pinch, rotate, save, restart, and reopen with the same layout.
 - [ ] Commit each green task separately and push the existing Draft PR branch without force push.

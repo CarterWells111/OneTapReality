@@ -1,0 +1,116 @@
+import { fireEvent, render } from "@testing-library/react-native";
+
+import {
+  addCanvasPage,
+  addStickerToPage,
+  addTextToPage,
+  deleteCanvasPage,
+  duplicateCanvasElement,
+  moveCanvasPage,
+  updateCanvasElement,
+} from "../src/features/canvas/editor-pages";
+import type { Memory, StoryPage } from "../src/types/memory";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const mockBack = jest.fn();
+const mockUpdatePages = jest.fn();
+const mockGetMemoryById = jest.fn();
+
+jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => ({ id: "memory-1" }),
+  useRouter: () => ({ back: mockBack }),
+}));
+
+jest.mock("../src/features/memories/memories-provider", () => ({
+  useMemories: () => ({ getMemoryById: mockGetMemoryById, updatePages: mockUpdatePages }),
+}));
+
+import EditMemoryScreen from "../src/app/memory/[id]/edit";
+
+const legacyPages: StoryPage[] = [
+  {
+    id: "cover-1",
+    position: 0,
+    kind: "cover",
+    headline: "杭州周末",
+    body: "西湖边的一个下午。",
+    photoUri: "file://west-lake.jpg",
+  },
+  {
+    id: "closing-1",
+    position: 1,
+    kind: "closing",
+    headline: "下次再见",
+    body: "把这一页留给下一段旅程。",
+  },
+];
+
+const memory: Memory = {
+  id: "memory-1",
+  title: "杭州周末",
+  city: "hangzhou",
+  travelDate: "2026-07-22",
+  photoUris: ["file://west-lake.jpg", "file://coffee.jpg"],
+  pages: legacyPages,
+  createdAt: "2026-07-22T10:00:00.000Z",
+  updatedAt: "2026-07-22T10:00:00.000Z",
+};
+
+describe("canvas page editing model", () => {
+  it("adds a square photo page, deletes one page, and keeps positions contiguous when reordering", () => {
+    const withNewPage = addCanvasPage(legacyPages, ["file://coffee.jpg"], "page-3");
+    const reordered = moveCanvasPage(withNewPage, "page-3", "backward");
+    const remaining = deleteCanvasPage(reordered, "closing-1");
+
+    expect(withNewPage[2].layout?.elements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "image", uri: "file://coffee.jpg" })]),
+    );
+    expect(reordered.map((page) => page.id)).toEqual(["cover-1", "page-3", "closing-1"]);
+    expect(remaining.map((page) => page.position)).toEqual([0, 1]);
+  });
+
+  it("keeps text and sticker edits in the selected page layout", () => {
+    const withText = addTextToPage(legacyPages, "cover-1", "text-1");
+    const withSticker = addStickerToPage(withText, "cover-1", "sticker-1", "heart");
+    const updated = updateCanvasElement(withSticker, "cover-1", "text-1", { color: "#A44736" });
+    const duplicated = duplicateCanvasElement(updated, "cover-1", "text-1", "text-2");
+
+    expect(updated[0].layout?.elements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "text-1", color: "#A44736" })]),
+    );
+    expect(duplicated[0].layout?.elements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "sticker-1", stickerId: "heart" })]),
+    );
+    expect(duplicated[0].layout?.elements.find((element) => element.id === "text-2")).toEqual(
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
+  });
+});
+
+describe("EditMemoryScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetMemoryById.mockReturnValue(memory);
+    mockUpdatePages.mockResolvedValue(undefined);
+  });
+
+  it("converts legacy pages for the canvas and saves changed layouts only after Save", async () => {
+    const screen = await render(<EditMemoryScreen />);
+
+    expect(screen.getByTestId("album-canvas")).toBeTruthy();
+    expect(mockUpdatePages).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText("添加页面"));
+    expect(screen.getAllByTestId("canvas-page-thumbnail")).toHaveLength(3);
+    expect(mockUpdatePages).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText("保存画布"));
+
+    expect(mockUpdatePages).toHaveBeenCalledWith(
+      memory,
+      expect.arrayContaining([expect.objectContaining({ layout: expect.objectContaining({ aspectRatio: 1 }) })]),
+    );
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+});

@@ -3,6 +3,7 @@ import { Alert, ScrollView, Text, View } from "react-native";
 
 import { AppButton, colors } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
+import { CanvasPage } from "../../features/canvas/canvas-page";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 
@@ -47,15 +48,21 @@ export default function MemoryDetailScreen() {
           <Text selectable style={{ color: colors.muted, fontSize: 13, fontWeight: "700" }}>
             {page.position + 1} / {memory.pages.length}
           </Text>
-          <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>{page.headline}</Text>
-          <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{page.body}</Text>
+          {page.layout ? (
+            <CanvasPage interactive={false} layout={page.layout} />
+          ) : (
+            <>
+              <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>{page.headline}</Text>
+              <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{page.body}</Text>
+            </>
+          )}
         </View>
       ))}
       {isSample ? (
         <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
       ) : (
         <>
-          <AppButton label="编辑旅行册文案" onPress={() => router.push({ pathname: "/memory/[id]/edit", params: { id: memory.id } })} />
+          <AppButton label="编辑旅行册" onPress={() => router.push({ pathname: "/memory/[id]/edit", params: { id: memory.id } })} />
           <AppButton label="删除这册旅行记忆" tone="danger" onPress={confirmDelete} />
         </>
       )}
