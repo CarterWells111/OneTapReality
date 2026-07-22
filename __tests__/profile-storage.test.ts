@@ -21,19 +21,19 @@ describe("profile storage", () => {
   it("returns defaults when no local profile is stored", async () => {
     mockStorage.getItemAsync.mockResolvedValue(null);
 
-    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "旅忆用户", avatarUri: null });
+    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "一触如初用户", avatarUri: null });
   });
 
   it("returns defaults when reading the stored profile fails", async () => {
     mockStorage.getItemAsync.mockRejectedValueOnce(new Error("read failed"));
 
-    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "旅忆用户", avatarUri: null });
+    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "一触如初用户", avatarUri: null });
   });
 
   it("returns defaults when the stored profile is malformed", async () => {
     mockStorage.getItemAsync.mockResolvedValue("{malformed json");
 
-    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "旅忆用户", avatarUri: null });
+    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "一触如初用户", avatarUri: null });
   });
 
   it("writes the normalized profile using the local profile key", async () => {

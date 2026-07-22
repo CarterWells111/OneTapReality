@@ -50,8 +50,9 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
         </View>
-        <Text selectable style={styles.eyebrow}>旅忆 · 共同档案</Text>
+        <Text selectable style={styles.eyebrow}>一触如初 · 共同档案</Text>
         <Text selectable style={styles.title}>我们的旅行档案</Text>
+        <Text selectable style={styles.subtitle}>让每一次触碰，都回到故事最初的地方。</Text>
         <Text selectable style={styles.subtitle}>每一册和每一张照片都只保存在这台设备上。</Text>
       </View>
 
@@ -139,10 +140,10 @@ const styles = StyleSheet.create({
   emptyCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 12, padding: 18 },
   emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
   actionGroup: { gap: 10 },
-  giftCard: { alignItems: "center", backgroundColor: "#FFFDF8", borderColor: colors.line, borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", marginTop: 12, minHeight: 88, padding: 16 },
+  giftCard: { alignItems: "center", backgroundColor: colors.accentSoft, borderColor: colors.warmAccent, borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", marginTop: 12, minHeight: 88, padding: 16 },
   giftCopy: { flex: 1, gap: 5 },
   giftTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
-  giftArrow: { color: colors.accent, fontSize: 24, fontWeight: "800" },
+  giftArrow: { color: colors.warmAccent, fontSize: 24, fontWeight: "800" },
   infoCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 },
   infoTitle: { color: colors.ink, fontSize: 16, fontWeight: "800" },
   pressed: { opacity: 0.82 },

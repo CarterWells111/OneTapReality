@@ -6,6 +6,12 @@ function createStorage(): FeedbackStorage {
 }
 
 describe("local purchase feedback", () => {
+  it("starts exported feedback with the OneTapReality header", async () => {
+    const exported = await exportFeedback(createStorage());
+
+    expect(exported.startsWith("一触如初现场购买意向反馈")).toBe(true);
+  });
+
   it("persists purchase intent locally and exports a display-only summary", async () => {
     const storage = createStorage();
     await saveFeedback(storage, { priceRange: "¥199–299", materialPreference: "环保纸", wouldBuy: "yes", wouldRecommend: "maybe", note: "希望有杭州限定版", createdAt: "2026-07-22T10:00:00.000Z" });

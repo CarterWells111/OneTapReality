@@ -18,6 +18,7 @@ jest.mock("../src/features/profile/profile-provider", () => ({
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
+import { colors } from "../src/components/ui";
 
 const savedMemory = {
   id: "memory-1",
@@ -59,6 +60,17 @@ describe("ProfileScreen", () => {
     expect(mockPush).toHaveBeenNthCalledWith(2, "/memory/new");
     expect(mockPush).toHaveBeenNthCalledWith(3, "/cities");
     expect(mockPush).toHaveBeenNthCalledWith(4, { pathname: "/memory/[id]", params: { id: "memory-1" } });
+  });
+
+  it("emphasizes the gift card with a terracotta border", async () => {
+    mockMemories.mockReturnValue([savedMemory]);
+    const screen = await render(<ProfileScreen />);
+
+    const giftCard = screen.getByText("→").parent;
+
+    expect(giftCard?.props.style).toEqual(
+      expect.arrayContaining([expect.objectContaining({ borderColor: colors.warmAccent })]),
+    );
   });
 
   it("shows the first-trip action and preserves confirmation before clearing local data", async () => {

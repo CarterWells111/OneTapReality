@@ -19,7 +19,7 @@ describe("ProfileAvatar", () => {
   it("uses the default nickname when the editing value is empty", async () => {
     const screen = await render(<ProfileAvatar nickname="" avatarUri={null} />);
 
-    expect(screen.getByLabelText("旅忆用户的头像")).toBeTruthy();
-    expect(screen.getByText("旅")).toBeTruthy();
+    expect(screen.getByLabelText("一触如初用户的头像")).toBeTruthy();
+    expect(screen.getByText("一")).toBeTruthy();
   });
 });

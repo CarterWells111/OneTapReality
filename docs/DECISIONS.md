@@ -1,5 +1,9 @@
 # 决策记录
 
+## 2026-07-22：OneTapReality｜一触如初视觉更名
+
+本次仅更新面向用户的品牌视觉与文案；为保证已安装演示的兼容性，保留 Expo slug `travel-memory-demo`、scheme `lvyidemo`、SQLite 数据库 `luyi.db` 与既有存储键不变。本次不新增账号、网络、AI、真实 NFC、支付或数据迁移行为。
+
 ## 2026-07-22：首版本地优先
 
 选择 Expo Go、SQLite 和本地演示生成器，以保证三天内可离线展示。真实 AI、NFC、商城和账号不进入首版。
