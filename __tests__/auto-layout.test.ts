@@ -13,4 +13,14 @@ describe("photo auto layout", () => {
       expect(image.height).toBeGreaterThan(0);
     }
   });
+
+  it("caps one canvas page at twelve photos so its grid remains safe", () => {
+    const layout = createPhotoLayout(Array.from({ length: 45 }, (_, index) => `file://photo-${index}.jpg`));
+
+    expect(layout.elements).toHaveLength(12);
+    for (const element of layout.elements) {
+      expect(element.height).toBeGreaterThanOrEqual(0.05);
+      expect(element.y + element.height).toBeLessThanOrEqual(1);
+    }
+  });
 });
