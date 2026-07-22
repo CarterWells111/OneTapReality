@@ -5,17 +5,20 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, colors, Section } from "../../components/ui";
-import { normalizeNickname } from "../../features/profile/local-profile";
+import { normalizeNickname, type LocalProfile } from "../../features/profile/local-profile";
 import { useProfile } from "../../features/profile/profile-provider";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { profile, updateProfile } = useProfile();
-  const [nickname, setNickname] = React.useState(profile.nickname);
-  const [avatarUri, setAvatarUri] = React.useState<string | null>(profile.avatarUri);
+  const { profile, isProfileReady, updateProfile } = useProfile();
+  const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
   const isSavePending = React.useRef(false);
+
+  React.useEffect(() => {
+    setDraft(isProfileReady ? profile : null);
+  }, [isProfileReady, profile]);
 
   const selectAvatar = async () => {
     setError("");
@@ -34,7 +37,7 @@ export default function SettingsScreen() {
         quality: 0.8,
       });
       if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
+        setDraft((current) => (current ? { ...current, avatarUri: result.assets[0].uri } : current));
       }
     } catch {
       setError("无法选择头像，请重试。");
@@ -49,18 +52,28 @@ export default function SettingsScreen() {
     isSavePending.current = true;
     setIsSaving(true);
     try {
-      await updateProfile({ nickname: normalizeNickname(nickname), avatarUri });
+      await updateProfile({ nickname: normalizeNickname(draft!.nickname), avatarUri: draft!.avatarUri });
       router.back();
+    } catch {
+      setError("保存资料失败，请重试。");
     } finally {
       isSavePending.current = false;
       setIsSaving(false);
     }
   };
 
+  if (!isProfileReady || !draft) {
+    return (
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
+        <Text selectable style={styles.helper}>正在读取本机资料…</Text>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.avatarSection}>
-        <ProfileAvatar avatarUri={avatarUri} nickname={nickname} size={96} />
+        <ProfileAvatar avatarUri={draft.avatarUri} nickname={draft.nickname} size={96} />
         <Text selectable style={styles.helper}>头像与昵称只保存在这台设备上。</Text>
       </View>
 
@@ -68,14 +81,14 @@ export default function SettingsScreen() {
         <Text selectable style={styles.label}>昵称</Text>
         <TextInput
           accessibilityLabel="昵称"
-          onChangeText={setNickname}
+          onChangeText={(nickname) => setDraft((current) => (current ? { ...current, nickname } : current))}
           placeholder="昵称"
           style={styles.input}
-          value={nickname}
+          value={draft.nickname}
         />
         <View style={styles.actions}>
           <AppButton label="选择头像" onPress={() => void selectAvatar()} tone="secondary" />
-          <AppButton label="移除头像" onPress={() => setAvatarUri(null)} tone="secondary" />
+          <AppButton label="移除头像" onPress={() => setDraft((current) => (current ? { ...current, avatarUri: null } : current))} tone="secondary" />
         </View>
       </Section>
 
@@ -95,6 +108,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: 22, padding: 20 },
+  loading: { padding: 20 },
   avatarSection: { alignItems: "center", gap: 10 },
   helper: { color: colors.muted, lineHeight: 21, textAlign: "center" },
   label: { color: colors.ink, fontSize: 15, fontWeight: "700" },

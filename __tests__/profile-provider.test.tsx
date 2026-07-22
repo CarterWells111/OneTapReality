@@ -4,6 +4,7 @@ import { Text } from "react-native";
 
 const mockLoadLocalProfile = jest.fn();
 const mockSaveLocalProfile = jest.fn();
+let capturedUpdateProfile: ((profile: { nickname: string; avatarUri: string | null }) => Promise<void>) | undefined;
 
 jest.mock("../src/features/profile/profile-storage", () => ({
   loadLocalProfile: (...args: unknown[]) => mockLoadLocalProfile(...args),
@@ -27,6 +28,11 @@ function ProfileConsumer() {
   );
 }
 
+function ProfileUpdateCapture() {
+  capturedUpdateProfile = useProfile().updateProfile;
+  return null;
+}
+
 class ProfileErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
@@ -42,6 +48,7 @@ class ProfileErrorBoundary extends React.Component<{ children: React.ReactNode }
 describe("ProfileProvider", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    capturedUpdateProfile = undefined;
   });
 
   it("loads the local profile once before marking the profile ready", async () => {
@@ -82,6 +89,19 @@ describe("ProfileProvider", () => {
     expect(mockSaveLocalProfile).toHaveBeenCalledWith({ nickname: "  小林  ", avatarUri: "file://avatar.jpg" });
     expect(screen.getByText("小林")).toBeTruthy();
     expect(mockLoadLocalProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an update when writing the local profile fails", async () => {
+    mockLoadLocalProfile.mockResolvedValue({ nickname: "旅忆用户", avatarUri: null });
+    mockSaveLocalProfile.mockRejectedValue(new Error("write failed"));
+    await render(
+      <ProfileProvider>
+        <ProfileUpdateCapture />
+      </ProfileProvider>,
+    );
+
+    await waitFor(() => expect(capturedUpdateProfile).toBeDefined());
+    await expect(capturedUpdateProfile!({ nickname: "小林", avatarUri: null })).rejects.toThrow("write failed");
   });
 
   it("throws when a consumer is rendered outside the provider", async () => {

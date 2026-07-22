@@ -15,4 +15,11 @@ describe("ProfileAvatar", () => {
 
     expect(screen.getByLabelText("小林的头像").props.source).toEqual({ uri: "file://avatar.jpg" });
   });
+
+  it("uses the default nickname when the editing value is empty", async () => {
+    const screen = await render(<ProfileAvatar nickname="" avatarUri={null} />);
+
+    expect(screen.getByLabelText("旅忆用户的头像")).toBeTruthy();
+    expect(screen.getByText("旅")).toBeTruthy();
+  });
 });

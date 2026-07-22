@@ -5,6 +5,7 @@ const mockRequestPermission = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockProfile = jest.fn();
+const mockIsProfileReady = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack }) }));
 jest.mock("expo-image-picker", () => ({
@@ -12,7 +13,11 @@ jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
-  useProfile: () => ({ profile: mockProfile(), updateProfile: mockUpdateProfile }),
+  useProfile: () => ({
+    profile: mockProfile(),
+    isProfileReady: mockIsProfileReady(),
+    updateProfile: mockUpdateProfile,
+  }),
 }));
 
 import SettingsScreen from "../src/app/settings";
@@ -21,6 +26,7 @@ describe("SettingsScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProfile.mockReturnValue({ nickname: "旅忆用户", avatarUri: null });
+    mockIsProfileReady.mockReturnValue(true);
     mockUpdateProfile.mockResolvedValue(undefined);
     mockRequestPermission.mockResolvedValue({ granted: true });
     mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: null });
@@ -45,6 +51,24 @@ describe("SettingsScreen", () => {
         quality: 0.8,
       });
     });
+  });
+
+  it("waits for the hydrated profile before mounting editable controls", async () => {
+    mockIsProfileReady.mockReturnValue(false);
+    mockProfile.mockReturnValue({ nickname: "已保存昵称", avatarUri: "file://saved-avatar.jpg" });
+    const screen = await render(<SettingsScreen />);
+
+    expect(screen.queryByLabelText("昵称")).toBeNull();
+    expect(screen.queryByText("保存资料")).toBeNull();
+
+    await act(async () => {
+      mockIsProfileReady.mockReturnValue(true);
+      screen.rerender(<SettingsScreen />);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("昵称").props.value).toBe("已保存昵称"));
+    expect(screen.getByLabelText("已保存昵称的头像").props.source).toEqual({ uri: "file://saved-avatar.jpg" });
   });
 
   it("shows the exact permission guidance when photo access is denied", async () => {
@@ -98,6 +122,19 @@ describe("SettingsScreen", () => {
     expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
     await act(async () => finishSave());
     consoleError.mockRestore();
+  });
+
+  it("stays on settings and reports a local save failure", async () => {
+    mockUpdateProfile.mockRejectedValue(new Error("write failed"));
+    const screen = await render(<SettingsScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("保存资料"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByText("保存资料失败，请重试。")).toBeTruthy());
+    expect(mockBack).not.toHaveBeenCalled();
   });
 
   it("removes a selected avatar from the editing state", async () => {

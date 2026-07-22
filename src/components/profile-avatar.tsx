@@ -1,5 +1,6 @@
 import { Image, StyleSheet, Text, View } from "react-native";
 
+import { normalizeNickname } from "../features/profile/local-profile";
 import { colors } from "./ui";
 
 type ProfileAvatarProps = {
@@ -9,7 +10,8 @@ type ProfileAvatarProps = {
 };
 
 export function ProfileAvatar({ nickname, avatarUri, size = 64 }: ProfileAvatarProps) {
-  const label = `${nickname}的头像`;
+  const displayNickname = normalizeNickname(nickname);
+  const label = `${displayNickname}的头像`;
   const avatarStyle = { borderRadius: size / 2, height: size, width: size };
 
   if (avatarUri) {
@@ -18,7 +20,7 @@ export function ProfileAvatar({ nickname, avatarUri, size = 64 }: ProfileAvatarP
 
   return (
     <View accessibilityLabel={label} accessible style={[styles.fallback, avatarStyle]}>
-      <Text selectable style={styles.initial}>{nickname.slice(0, 1)}</Text>
+      <Text selectable style={styles.initial}>{displayNickname.slice(0, 1)}</Text>
     </View>
   );
 }

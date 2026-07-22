@@ -37,13 +37,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = React.useCallback(async (next: LocalProfile) => {
-    try {
-      await saveLocalProfile(next);
-      const persistedProfile = await loadLocalProfile();
-      setProfile(persistedProfile);
-    } catch {
-      // Local profile storage failures leave the currently displayed profile intact.
-    }
+    await saveLocalProfile(next);
+    const persistedProfile = await loadLocalProfile();
+    setProfile(persistedProfile);
   }, []);
 
   const value = React.useMemo<ProfileContextValue>(
