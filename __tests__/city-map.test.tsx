@@ -1,6 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 
-import { CityMap, type CityStats } from "../src/features/cities";
+import { CityMap, OfflineChinaMapAdapter, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
 
 type MarkerFrame = {
   x: number;
@@ -73,5 +73,29 @@ describe("CityMap", () => {
     expect(shanghaiStyle.minWidth).toBeGreaterThanOrEqual(44);
     expect(shanghaiStyle.minHeight).toBeGreaterThanOrEqual(44);
     expect(framesOverlap(getMarkerFrame(hangzhouStyle), getMarkerFrame(shanghaiStyle))).toBe(false);
+  });
+
+  it("resolves every adapter marker into bounded, non-overlapping overview geometry", () => {
+    const mapWidth = 300;
+    const mapHeight = 210;
+    const adapter = new OfflineChinaMapAdapter();
+    const layouts = adapter.markers.map((marker) => ({ layout: resolveCityMarkerLayout(marker), marker }));
+
+    for (const { layout, marker } of layouts) {
+      expect(layout.pressFrame.width).toBe(44);
+      expect(layout.pressFrame.height).toBe(44);
+      expect(layout.labelFrame.x).toBeGreaterThanOrEqual(0);
+      expect(layout.labelFrame.y).toBeGreaterThanOrEqual(0);
+      expect(layout.labelFrame.x + layout.labelFrame.width).toBeLessThanOrEqual(mapWidth);
+      expect(layout.labelFrame.y + layout.labelFrame.height).toBeLessThanOrEqual(mapHeight);
+      expect(layout.markerFrame.x + layout.markerFrame.width / 2).toBeCloseTo(marker.coordinate.x * mapWidth);
+      expect(layout.markerFrame.y + layout.markerFrame.height / 2).toBeCloseTo(marker.coordinate.y * mapHeight);
+    }
+
+    for (let firstIndex = 0; firstIndex < layouts.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < layouts.length; secondIndex += 1) {
+        expect(framesOverlap(layouts[firstIndex].layout.pressFrame, layouts[secondIndex].layout.pressFrame)).toBe(false);
+      }
+    }
   });
 });
