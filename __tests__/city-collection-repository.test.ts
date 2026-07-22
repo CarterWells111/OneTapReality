@@ -1,0 +1,156 @@
+import type { SQLiteDatabase } from "expo-sqlite";
+
+import {
+  fetchCityCollectionArrangements,
+  persistCityCollectionOrder,
+  resolveCityCollection,
+  setFeaturedCityMemory,
+} from "../src/storage/city-collection-repository";
+
+type MemoryRow = {
+  id: string;
+  title: string;
+  city: "hangzhou" | "shanghai" | "shenzhen";
+  travelDate: string;
+  status: "draft" | "saved" | "discarded";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ArrangementRow = {
+  memory_id: string;
+  city: MemoryRow["city"];
+  position: number;
+  is_featured: number;
+  updated_at: string;
+};
+
+function createDatabase(options: { memories: MemoryRow[]; arrangements?: ArrangementRow[] }) {
+  const memories = [...options.memories];
+  const arrangements = [...(options.arrangements ?? [])];
+  const runCalls: Array<{ statement: string; parameters: unknown[] }> = [];
+  let transactions = 0;
+
+  const database = {
+    async getAllAsync<T>(statement: string, ...parameters: unknown[]) {
+      if (statement.includes("FROM city_collection_arrangements")) {
+        return arrangements
+          .filter((row) => row.city === parameters[0])
+          .sort((left, right) => left.position - right.position) as T[];
+      }
+      if (statement.includes("FROM memories")) {
+        return memories.filter((row) => row.status === parameters[0]) as T[];
+      }
+      return [] as T[];
+    },
+    async runAsync(statement: string, ...parameters: unknown[]) {
+      runCalls.push({ statement, parameters });
+      if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("VALUES")) {
+        const [memoryId, city, position, isFeatured, updatedAt] = parameters;
+        const existing = arrangements.find((row) => row.memory_id === memoryId);
+        if (existing) {
+          existing.city = city as ArrangementRow["city"];
+          existing.position = Number(position);
+          existing.updated_at = String(updatedAt);
+        } else {
+          arrangements.push({ memory_id: String(memoryId), city: city as ArrangementRow["city"], position: Number(position), is_featured: Number(isFeatured), updated_at: String(updatedAt) });
+        }
+      }
+      if (statement.startsWith("DELETE FROM city_collection_arrangements")) {
+        const [city, cutoff] = parameters;
+        for (let index = arrangements.length - 1; index >= 0; index -= 1) {
+          if (arrangements[index].city === city && arrangements[index].position >= Number(cutoff)) arrangements.splice(index, 1);
+        }
+      }
+      if (statement.startsWith("UPDATE city_collection_arrangements SET is_featured = 0")) {
+        for (const arrangement of arrangements) if (arrangement.city === parameters[0]) arrangement.is_featured = 0;
+      }
+      if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("SELECT memories.id")) {
+        const [, updatedAt, memoryId, city, status] = parameters;
+        const memory = memories.find((row) => row.id === memoryId && row.city === city && row.status === status);
+        if (memory) {
+          const existing = arrangements.find((row) => row.memory_id === memory.id);
+          if (existing) {
+            existing.is_featured = 1;
+            existing.updated_at = String(updatedAt);
+          } else {
+            arrangements.push({ memory_id: memory.id, city: memory.city, position: arrangements.filter((row) => row.city === city).length, is_featured: 1, updated_at: String(updatedAt) });
+          }
+        }
+      }
+      return { changes: 1 };
+    },
+    async withTransactionAsync(callback: () => Promise<void>) {
+      transactions += 1;
+      await callback();
+    },
+  } as unknown as SQLiteDatabase;
+
+  return { database, arrangements, runCalls, get transactions() { return transactions; } };
+}
+
+const baseMemory = {
+  title: "Trip",
+  travelDate: "2026-07-20",
+  createdAt: "2026-07-20T10:00:00.000Z",
+};
+
+describe("city collection repository", () => {
+  it("uses most recently updated saved memories as the default order without arrangements", async () => {
+    const { database } = createDatabase({
+      memories: [
+        { ...baseMemory, id: "older", city: "shanghai", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "newer", city: "shanghai", status: "saved", updatedAt: "2026-07-22T10:00:00.000Z" },
+      ],
+    });
+
+    await expect(resolveCityCollection(database, "shanghai")).resolves.toMatchObject({
+      memories: [{ id: "newer" }, { id: "older" }],
+      featuredMemory: { id: "newer" },
+    });
+  });
+
+  it("resolves saved memories by manual arrangement, appends new memories, and falls back from stale features", async () => {
+    const { database } = createDatabase({
+      memories: [
+        { ...baseMemory, id: "hangzhou-arranged", city: "hangzhou", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "hangzhou-new", city: "hangzhou", status: "saved", updatedAt: "2026-07-22T10:00:00.000Z" },
+        { ...baseMemory, id: "hangzhou-draft", city: "hangzhou", status: "draft", updatedAt: "2026-07-23T10:00:00.000Z" },
+        { ...baseMemory, id: "shanghai", city: "shanghai", status: "saved", updatedAt: "2026-07-24T10:00:00.000Z" },
+      ],
+      arrangements: [
+        { memory_id: "hangzhou-arranged", city: "hangzhou", position: 0, is_featured: 0, updated_at: "2026-07-20T10:00:00.000Z" },
+        { memory_id: "deleted-memory", city: "hangzhou", position: 1, is_featured: 1, updated_at: "2026-07-20T10:00:00.000Z" },
+      ],
+    });
+
+    await expect(resolveCityCollection(database, "hangzhou")).resolves.toMatchObject({
+      city: "hangzhou",
+      memories: [{ id: "hangzhou-arranged" }, { id: "hangzhou-new" }],
+      featuredMemory: { id: "hangzhou-arranged" },
+    });
+  });
+
+  it("writes a full local order transactionally and keeps one valid featured memory", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "first", city: "shenzhen", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "second", city: "shenzhen", status: "saved", updatedAt: "2026-07-21T10:00:00.000Z" },
+      ],
+    });
+
+    await persistCityCollectionOrder(fixture.database, "shenzhen", ["second", "first"], "2026-07-22T10:00:00.000Z");
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "first", "2026-07-22T10:01:00.000Z");
+
+    expect(fixture.transactions).toBe(2);
+    expect(fixture.runCalls.every((call) => !call.statement.includes("'shenzhen'") && !call.statement.includes("'first'"))).toBe(true);
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([
+      { memoryId: "second", city: "shenzhen", position: 0, isFeatured: false, updatedAt: "2026-07-22T10:00:00.000Z" },
+      { memoryId: "first", city: "shenzhen", position: 1, isFeatured: true, updatedAt: "2026-07-22T10:01:00.000Z" },
+    ]);
+    await expect(resolveCityCollection(fixture.database, "shenzhen")).resolves.toMatchObject({
+      memories: [{ id: "second" }, { id: "first" }],
+      featuredMemory: { id: "first" },
+    });
+  });
+});

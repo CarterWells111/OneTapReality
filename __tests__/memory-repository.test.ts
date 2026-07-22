@@ -185,6 +185,15 @@ describe("memory draft lifecycle repository", () => {
     expect(runCalls).toEqual([]);
   });
 
+  it("creates the local city collection arrangements table with cascading memory cleanup", async () => {
+    const { database, execStatements } = createMemoryDatabase();
+
+    await migrateDbIfNeeded(database);
+
+    expect(execStatements.join(" ")).toContain("CREATE TABLE IF NOT EXISTS city_collection_arrangements");
+    expect(execStatements.join(" ")).toContain("FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE");
+  });
+
   it("serializes a page canvas layout when saving a memory", async () => {
     const { database, runCalls } = createMemoryDatabase();
     await saveMemory(database, {
