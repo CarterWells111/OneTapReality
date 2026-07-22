@@ -32,6 +32,15 @@ export function calculateCanvasTransform(
   return { x, y, width, height, rotation: element.rotation + transform.rotation };
 }
 
+export function finalizeCanvasGesture(started: boolean, activeGestureCount: number) {
+  "worklet";
+  if (!started) {
+    return { activeGestureCount, shouldCommit: false };
+  }
+  const nextCount = Math.max(0, activeGestureCount - 1);
+  return { activeGestureCount: nextCount, shouldCommit: nextCount === 0 };
+}
+
 export function CanvasElement({
   canvasSize,
   element,
@@ -45,6 +54,9 @@ export function CanvasElement({
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
   const activeGestureCount = useSharedValue(0);
+  const panStarted = useSharedValue(false);
+  const pinchStarted = useSharedValue(false);
+  const rotationStarted = useSharedValue(false);
 
   const commitTransform = (translationX: number, translationY: number, nextScale: number, nextRotation: number) => {
     onTransformEnd?.(element.id, calculateCanvasTransform(
@@ -54,16 +66,22 @@ export function CanvasElement({
     ));
   };
 
-  const beginGesture = () => {
+  const beginGesture = (started: typeof panStarted) => {
     "worklet";
+    started.value = true;
     activeGestureCount.value += 1;
     runOnJS(onSelect)(element.id);
   };
 
-  const finalizeGesture = () => {
+  const finalizeGesture = (started: typeof panStarted) => {
     "worklet";
-    activeGestureCount.value = Math.max(0, activeGestureCount.value - 1);
-    if (activeGestureCount.value > 0) {
+    const completion = finalizeCanvasGesture(started.value, activeGestureCount.value);
+    if (!started.value) {
+      return;
+    }
+    started.value = false;
+    activeGestureCount.value = completion.activeGestureCount;
+    if (!completion.shouldCommit) {
       return;
     }
     const translationX = offsetX.value;
@@ -79,26 +97,26 @@ export function CanvasElement({
 
   const pan = Gesture.Pan()
     .enabled(interactive)
-    .onBegin(beginGesture)
+    .onBegin(() => beginGesture(panStarted))
     .onUpdate((event) => {
       offsetX.value = event.translationX;
       offsetY.value = event.translationY;
     })
-    .onFinalize(finalizeGesture);
+    .onFinalize(() => finalizeGesture(panStarted));
   const pinch = Gesture.Pinch()
     .enabled(interactive)
-    .onBegin(beginGesture)
+    .onBegin(() => beginGesture(pinchStarted))
     .onUpdate((event) => {
       scale.value = event.scale;
     })
-    .onFinalize(finalizeGesture);
+    .onFinalize(() => finalizeGesture(pinchStarted));
   const rotate = Gesture.Rotation()
     .enabled(interactive)
-    .onBegin(beginGesture)
+    .onBegin(() => beginGesture(rotationStarted))
     .onUpdate((event) => {
       rotation.value = event.rotation;
     })
-    .onFinalize(finalizeGesture);
+    .onFinalize(() => finalizeGesture(rotationStarted));
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
