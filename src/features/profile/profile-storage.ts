@@ -9,13 +9,13 @@ function defaultLocalProfile(): LocalProfile {
 }
 
 export async function loadLocalProfile(): Promise<LocalProfile> {
-  const value = await Storage.getItemAsync(LOCAL_PROFILE_KEY);
-
-  if (!value) {
-    return defaultLocalProfile();
-  }
-
   try {
+    const value = await Storage.getItemAsync(LOCAL_PROFILE_KEY);
+
+    if (!value) {
+      return defaultLocalProfile();
+    }
+
     const profile: unknown = JSON.parse(value);
 
     if (!profile || typeof profile !== "object") {

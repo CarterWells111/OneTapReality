@@ -24,6 +24,12 @@ describe("profile storage", () => {
     await expect(loadLocalProfile()).resolves.toEqual({ nickname: "旅忆用户", avatarUri: null });
   });
 
+  it("returns defaults when reading the stored profile fails", async () => {
+    mockStorage.getItemAsync.mockRejectedValueOnce(new Error("read failed"));
+
+    await expect(loadLocalProfile()).resolves.toEqual({ nickname: "旅忆用户", avatarUri: null });
+  });
+
   it("returns defaults when the stored profile is malformed", async () => {
     mockStorage.getItemAsync.mockResolvedValue("{malformed json");
 
