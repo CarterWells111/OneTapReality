@@ -2,6 +2,10 @@ export const cities = ["hangzhou", "shanghai", "shenzhen"] as const;
 
 export type City = (typeof cities)[number];
 
+export const memoryStatuses = ["draft", "saved", "discarded"] as const;
+
+export type MemoryStatus = (typeof memoryStatuses)[number];
+
 export type MemoryDraftInput = {
   title: string;
   city: City;
@@ -20,6 +24,7 @@ export type StoryPage = {
 
 export type Memory = MemoryDraftInput & {
   id: string;
+  status?: MemoryStatus;
   pages: StoryPage[];
   createdAt: string;
   updatedAt: string;

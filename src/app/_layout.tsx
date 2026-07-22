@@ -13,6 +13,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerBackButtonDisplayMode: "minimal" }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
+          <Stack.Screen name="memory/review/[id]" options={{ title: "确认草稿" }} />
           <Stack.Screen name="memory/[id]" options={{ title: "旅行册" }} />
           <Stack.Screen name="memory/[id]/edit" options={{ title: "编辑旅行册" }} />
           <Stack.Screen name="city/[city]" options={{ title: "城市收藏" }} />

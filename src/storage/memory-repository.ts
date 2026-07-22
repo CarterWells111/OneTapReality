@@ -1,10 +1,13 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
-import type { Memory, StoryPage } from "../types/memory";
+import type { Memory, MemoryStatus, StoryPage } from "../types/memory";
 
-type MemoryRow = Omit<Memory, "photoUris" | "pages">;
+type MemoryRow = Omit<Memory, "photoUris" | "pages" | "status"> & {
+  status: MemoryStatus;
+};
 type PhotoRow = { uri: string };
 type StoryPageRow = Omit<StoryPage, "photoUri"> & { photo_uri: string | null };
+type ColumnRow = { name: string };
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   await db.execAsync(`
@@ -15,6 +18,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       title TEXT NOT NULL,
       city TEXT NOT NULL,
       travelDate TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'saved',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -36,6 +40,13 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
     );
   `);
+
+  const columns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(memories)");
+  if (!columns.some((column) => column.name === "status")) {
+    await db.execAsync(
+      "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
+    );
+  }
 }
 
 function toStoryPage(row: StoryPageRow): StoryPage {
@@ -68,7 +79,8 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
 
 export async function listMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, createdAt, updatedAt FROM memories ORDER BY updatedAt DESC"
+    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
+    "saved"
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
@@ -78,20 +90,46 @@ export async function getMemory(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, createdAt, updatedAt FROM memories WHERE id = ?",
-    id
+    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    id,
+    "saved"
+  );
+  return row ? hydrateMemory(db, row) : null;
+}
+
+export async function getDraft(
+  db: SQLiteDatabase,
+  id: string
+): Promise<Memory | null> {
+  const row = await db.getFirstAsync<MemoryRow>(
+    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    id,
+    "draft"
   );
   return row ? hydrateMemory(db, row) : null;
 }
 
 export async function saveMemory(db: SQLiteDatabase, memory: Memory) {
+  await insertMemory(db, memory, "saved");
+}
+
+export async function createDraft(db: SQLiteDatabase, memory: Memory) {
+  await insertMemory(db, memory, "draft");
+}
+
+async function insertMemory(
+  db: SQLiteDatabase,
+  memory: Memory,
+  status: MemoryStatus
+) {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO memories (id, title, city, travelDate, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
       memory.id,
       memory.title,
       memory.city,
       memory.travelDate,
+      status,
       memory.createdAt,
       memory.updatedAt
     );
@@ -107,6 +145,34 @@ export async function saveMemory(db: SQLiteDatabase, memory: Memory) {
 
     await writeStoryPages(db, memory.id, memory.pages);
   });
+}
+
+export async function saveDraft(
+  db: SQLiteDatabase,
+  id: string,
+  updatedAt: string
+) {
+  await db.runAsync(
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "saved",
+    updatedAt,
+    id,
+    "draft"
+  );
+}
+
+export async function discardDraft(
+  db: SQLiteDatabase,
+  id: string,
+  updatedAt: string
+) {
+  await db.runAsync(
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "discarded",
+    updatedAt,
+    id,
+    "draft"
+  );
 }
 
 async function writeStoryPages(
