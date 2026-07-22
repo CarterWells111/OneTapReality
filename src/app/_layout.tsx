@@ -23,6 +23,7 @@ export default function RootLayout() {
               <Stack.Screen name="city/[city]" options={{ title: "城市收藏" }} />
               <Stack.Screen name="nfc-demo/[city]" options={{ title: "模拟碰一碰" }} />
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
+              <Stack.Screen name="privacy/index" options={{ title: "本机数据与隐私声明" }} />
             </Stack>
           </MemoriesProvider>
         </ProfileProvider>
