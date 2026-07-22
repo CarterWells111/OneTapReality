@@ -15,7 +15,7 @@ function today() {
 
 export default function NewMemoryScreen() {
   const router = useRouter();
-  const { createMemory } = useMemories();
+  const { createDraft } = useMemories();
   const [title, setTitle] = React.useState("我们的旅行");
   const [city, setCity] = React.useState<City>("hangzhou");
   const [travelDate, setTravelDate] = React.useState(today);
@@ -46,9 +46,9 @@ export default function NewMemoryScreen() {
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createMemory({ title, city, travelDate, photoUris });
+      const memory = await createDraft({ title, city, travelDate, photoUris });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace({ pathname: "/memory/[id]", params: { id: memory.id } });
+      router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "无法创建旅行册，请重试。");
     } finally {

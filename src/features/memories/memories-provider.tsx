@@ -4,8 +4,12 @@ import { useSQLiteContext } from "expo-sqlite";
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import {
   clearMemories,
+  createDraft as createDraftInDb,
   deleteMemory as deleteMemoryFromDb,
+  discardDraft as discardDraftInDb,
+  getDraft,
   listMemories,
+  saveDraft as saveDraftInDb,
   saveMemory,
   updateMemoryPages,
 } from "../../storage/memory-repository";
@@ -17,6 +21,11 @@ type MemoriesContextValue = {
   memories: Memory[];
   isReady: boolean;
   createMemory: (input: MemoryDraftInput) => Promise<Memory>;
+  createDraft: (input: MemoryDraftInput) => Promise<Memory>;
+  getDraftById: (id: string) => Promise<Memory | null>;
+  saveDraft: (id: string) => Promise<void>;
+  retryDraft: (id: string) => Promise<Memory>;
+  discardDraft: (id: string) => Promise<void>;
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
@@ -71,6 +80,58 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const createDraft = React.useCallback(
+    async (input: MemoryDraftInput) => {
+      const validation = validateMemoryDraft(input);
+      if (validation.issues.length > 0) {
+        throw new Error(validation.issues[0]);
+      }
+
+      const pages = await generator.generate(input);
+      const now = new Date().toISOString();
+      const memory = createMemoryRecord({ id: buildId(), now, input, pages });
+      await createDraftInDb(db, memory);
+      return { ...memory, status: "draft" as const };
+    },
+    [db]
+  );
+
+  const getDraftById = React.useCallback(
+    async (id: string) => getDraft(db, id),
+    [db]
+  );
+
+  const saveDraft = React.useCallback(
+    async (id: string) => {
+      await saveDraftInDb(db, id, new Date().toISOString());
+      await refresh();
+    },
+    [db, refresh]
+  );
+
+  const retryDraft = React.useCallback(
+    async (id: string) => {
+      const draft = await getDraft(db, id);
+      if (!draft) {
+        throw new Error("未找到可重试的草稿");
+      }
+
+      const pages = await generator.generate(draft);
+      const nextDraft = { ...draft, pages, updatedAt: new Date().toISOString() };
+      await updateMemoryPages(db, nextDraft);
+      return nextDraft;
+    },
+    [db]
+  );
+
+  const discardDraft = React.useCallback(
+    async (id: string) => {
+      await discardDraftInDb(db, id, new Date().toISOString());
+      await refresh();
+    },
+    [db, refresh]
+  );
+
   const updatePages = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
       await updateMemoryPages(db, {
@@ -101,12 +162,29 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       memories,
       isReady,
       createMemory,
+      createDraft,
+      getDraftById,
+      saveDraft,
+      retryDraft,
+      discardDraft,
       updatePages,
       deleteMemory,
       clearAllMemories,
       getMemoryById: (id) => memories.find((memory) => memory.id === id),
     }),
-    [clearAllMemories, createMemory, deleteMemory, isReady, memories, updatePages]
+    [
+      clearAllMemories,
+      createDraft,
+      createMemory,
+      deleteMemory,
+      discardDraft,
+      getDraftById,
+      isReady,
+      memories,
+      retryDraft,
+      saveDraft,
+      updatePages,
+    ]
   );
 
   return <MemoriesContext.Provider value={value}>{children}</MemoriesContext.Provider>;
