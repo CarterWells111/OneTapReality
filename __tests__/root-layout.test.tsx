@@ -2,7 +2,9 @@ import { render } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = ({ children }: { children: React.ReactNode }) => <View testID="stack">{children}</View>;
-  Stack.Screen = () => null;
+  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string } }) => (
+    <View testID={`screen-${name}`} title={options?.title} />
+  );
   return { Stack };
 });
 jest.mock("expo-sqlite", () => {
@@ -31,5 +33,11 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("memories-provider").parent?.props.testID).toBe("profile-provider");
+  });
+
+  it("registers the native privacy declaration route", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-privacy/index").props.title).toBe("本机数据与隐私声明");
   });
 });
