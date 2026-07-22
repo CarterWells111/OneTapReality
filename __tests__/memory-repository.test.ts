@@ -6,6 +6,7 @@ import {
   getDraft,
   listMemories,
   migrateDbIfNeeded,
+  saveMemory,
   saveDraft,
 } from "../src/storage/memory-repository";
 
@@ -182,5 +183,24 @@ describe("memory draft lifecycle repository", () => {
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
     expect(runCalls).toEqual([]);
+  });
+
+  it("serializes a page canvas layout when saving a memory", async () => {
+    const { database, runCalls } = createMemoryDatabase();
+    await saveMemory(database, {
+      ...draftMemory,
+      id: "canvas-memory",
+      pages: [{
+        id: "canvas-page",
+        position: 0,
+        kind: "cover",
+        headline: "Cover",
+        body: "Body",
+        layout: { aspectRatio: 1, elements: [] },
+      }],
+    });
+
+    const pageInsert = runCalls.find((call) => call.statement.startsWith("INSERT INTO story_pages"));
+    expect(pageInsert?.parameters).toContain('{"aspectRatio":1,"elements":[]}');
   });
 });
