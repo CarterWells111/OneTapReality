@@ -2,7 +2,7 @@ import { DEFAULT_LOCAL_PROFILE, normalizeNickname } from "../src/features/profil
 
 describe("local profile", () => {
   it("provides the default local profile", () => {
-    expect(DEFAULT_LOCAL_PROFILE).toEqual({ nickname: "旅忆用户", avatarUri: null });
+    expect(DEFAULT_LOCAL_PROFILE).toEqual({ nickname: "一触如初用户", avatarUri: null });
   });
 
   it("normalizes a nickname by trimming surrounding spaces", () => {
@@ -10,6 +10,6 @@ describe("local profile", () => {
   });
 
   it("uses the default nickname for an empty value", () => {
-    expect(normalizeNickname(" ")).toBe("旅忆用户");
+    expect(normalizeNickname(" ")).toBe("一触如初用户");
   });
 });

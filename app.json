@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "旅忆",
+    "name": "OneTapReality｜一触如初",
     "slug": "travel-memory-demo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F7F3EE",
+        "backgroundColor": "#F7F2EA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -28,14 +28,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "\u5141\u8bb8\u65c5\u5fc6\u8bbf\u95ee\u4f60\u9009\u62e9\u7684\u7167\u7247\uff0c\u4ee5\u4fbf\u5236\u4f5c\u65c5\u884c\u7eaa\u5ff5\u518c\u3002"
+          "photosPermission": "允许一触如初访问你选择的照片，以便制作旅行纪念册。"
         }
       ],
       "expo-sqlite",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F7F3EE",
+          "backgroundColor": "#F7F2EA",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }

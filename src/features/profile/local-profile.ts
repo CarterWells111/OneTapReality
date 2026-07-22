@@ -4,7 +4,7 @@ export type LocalProfile = {
 };
 
 export const DEFAULT_LOCAL_PROFILE: LocalProfile = {
-  nickname: "旅忆用户",
+  nickname: "一触如初用户",
   avatarUri: null,
 };
 
