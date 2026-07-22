@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   emptyCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 12, padding: 18 },
   emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
   actionGroup: { gap: 10 },
-  giftCard: { alignItems: "center", backgroundColor: colors.accentSoft, borderColor: colors.line, borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", marginTop: 12, minHeight: 88, padding: 16 },
+  giftCard: { alignItems: "center", backgroundColor: colors.accentSoft, borderColor: colors.warmAccent, borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", marginTop: 12, minHeight: 88, padding: 16 },
   giftCopy: { flex: 1, gap: 5 },
   giftTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
   giftArrow: { color: colors.warmAccent, fontSize: 24, fontWeight: "800" },
