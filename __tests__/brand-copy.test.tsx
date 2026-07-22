@@ -46,6 +46,8 @@ describe("OneTapReality brand copy", () => {
     expect(expo.slug).toBe("travel-memory-demo");
     expect(expo.scheme).toBe("lvyidemo");
     expect(expo.android.adaptiveIcon.backgroundColor).toBe("#F7F2EA");
+    const imagePickerPlugin = expo.plugins.find((plugin: unknown) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
+    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("允许一触如初访问你选择的照片，以便制作旅行纪念册。");
     expect(expo.plugins).toContainEqual(
       expect.arrayContaining([
         "expo-splash-screen",
