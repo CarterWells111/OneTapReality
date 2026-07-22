@@ -44,11 +44,11 @@
 - Create: `src/features/canvas/canvas-toolbar.tsx`
 - Test: `__tests__/canvas-page.test.tsx`
 
-- [ ] Write failing render tests for image, text, and sticker elements, selection outline, and tool actions that update element style/layer/delete through callbacks.
-- [ ] Run `npm.cmd run test:ci -- canvas-page.test.tsx`; expect a module-not-found failure.
-- [ ] Implement a responsive 1:1 canvas using `useWindowDimensions`; layer elements with relative positions. Use Gesture Detector pan/pinch/rotation simultaneously and emit the final normalized transform on gesture end.
-- [ ] Implement the practical toolbar: add text, add sticker, font, color, bring forward, send backward, duplicate, and delete. Do not persist during gestures.
-- [ ] Run focused tests and typecheck; expect PASS.
+- [x] Write failing render tests for image, text, and sticker elements, selection outline, and tool actions that update element style/layer/delete through callbacks.
+- [x] Run `npm.cmd run test:ci -- canvas-page.test.tsx`; confirmed the expected module-not-found failure.
+- [x] Implement a responsive 1:1 canvas using `useWindowDimensions`; layer elements with relative positions. Use Gesture Detector pan/pinch/rotation simultaneously and emit the final normalized transform on gesture end.
+- [x] Implement the practical toolbar: add text, add sticker, font, color, bring forward, send backward, duplicate, and delete. Do not persist during gestures.
+- [x] Run focused tests and typecheck; PASS.
 
 ### Task 4: Replace text-only editing with the canvas workflow
 
