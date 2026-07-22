@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "sticker-heart",
+      "category": "sticker",
+      "name": "手绘爱心贴纸",
+      "preview": "assets/design/previews/sticker-heart.png",
+      "source": {
+        "origin": "first-party",
+        "author": "旅忆团队",
+        "note": "团队自绘矢量素材"
+      },
+      "license": {
+        "type": "proprietary",
+        "commercialUseConfirmed": true,
+        "note": "自有版权，可随实体商品售卖"
+      },
+      "sellable": true
+    },
+    {
+      "id": "sticker-map-pin",
+      "category": "sticker",
+      "name": "旅程图钉贴纸",
+      "preview": "assets/design/previews/sticker-map-pin.png",
+      "source": {
+        "origin": "first-party",
+        "author": "旅忆团队",
+        "note": "团队自绘矢量素材"
+      },
+      "license": {
+        "type": "proprietary",
+        "commercialUseConfirmed": true,
+        "note": "自有版权，可随实体商品售卖"
+      },
+      "sellable": true
+    },
+    {
+      "id": "font-system",
+      "category": "font",
+      "name": "iOS 系统字体",
+      "preview": "assets/design/previews/font-system.png",
+      "source": {
+        "origin": "system",
+        "note": "随 iOS 系统分发，不打包字体文件"
+      },
+      "license": {
+        "type": "os-bundled",
+        "commercialUseConfirmed": false,
+        "note": "系统字体不作为独立商品出售"
+      },
+      "sellable": false
+    },
+    {
+      "id": "palette-classic",
+      "category": "palette",
+      "name": "经典米白配色",
+      "preview": "assets/design/previews/palette-classic.png",
+      "source": {
+        "origin": "first-party",
+        "author": "旅忆团队",
+        "note": "团队自定配色 token"
+      },
+      "license": {
+        "type": "proprietary",
+        "commercialUseConfirmed": false,
+        "note": "商业授权确认中，确认前不可标为可售"
+      },
+      "sellable": false
+    }
+  ]
+}
