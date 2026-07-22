@@ -12,6 +12,8 @@
 
 ## 本地启动
 
+本项目固定使用 **Expo SDK 54**，请使用与你安装版本相匹配的 Expo Go。
+
 ```bash
 npm install
 npm run start
