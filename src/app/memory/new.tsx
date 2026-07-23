@@ -2,7 +2,7 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, Section } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
@@ -111,6 +111,7 @@ export default function NewMemoryScreen() {
   };
 
   return (
+    <View style={styles.root}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <Text selectable style={styles.helper}>
         你选择的照片只在这台设备上使用。本版会生成固定的本地旅行册草稿，之后可随时修改。
@@ -173,14 +174,10 @@ export default function NewMemoryScreen() {
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}
+      </ScrollView>
 
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setActiveSheet(null)}
-        transparent
-        visible={activeSheet === "date"}
-      >
-        <View style={styles.sheetBackdrop}>
+      {activeSheet === "date" ? (
+        <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text selectable style={styles.sheetTitle}>选择旅行日期</Text>
             <Text selectable style={styles.sheetGroupLabel}>年份</Text>
@@ -205,15 +202,10 @@ export default function NewMemoryScreen() {
             <AppButton label="取消" tone="secondary" onPress={() => setActiveSheet(null)} />
           </View>
         </View>
-      </Modal>
+      ) : null}
 
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setActiveSheet(null)}
-        transparent
-        visible={activeSheet === "city"}
-      >
-        <View style={styles.sheetBackdrop}>
+      {activeSheet === "city" ? (
+        <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text selectable style={styles.sheetTitle}>选择地点</Text>
             <TextInput
@@ -251,8 +243,8 @@ export default function NewMemoryScreen() {
             <AppButton label="取消" tone="secondary" onPress={() => setActiveSheet(null)} />
           </View>
         </View>
-      </Modal>
-    </ScrollView>
+      ) : null}
+    </View>
   );
 }
 
@@ -278,6 +270,7 @@ function SheetChip({
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   content: { gap: 22, padding: 20, paddingBottom: 40 },
   helper: { color: colors.muted, lineHeight: 22 },
   formCard: {
@@ -302,7 +295,7 @@ const styles = StyleSheet.create({
   photoPreview: { borderRadius: 12, height: 92, width: 92 },
   errorText: { color: colors.danger, lineHeight: 21 },
   footNote: { color: colors.muted, fontSize: 13, textAlign: "center" },
-  sheetBackdrop: { backgroundColor: "rgba(38, 49, 62, 0.35)", flex: 1, justifyContent: "flex-end" },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 22,

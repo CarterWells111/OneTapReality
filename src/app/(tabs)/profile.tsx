@@ -18,8 +18,8 @@ const listEntries: ListEntry[] = [
   { key: "orders", title: "我的订单", href: "/shop/orders" },
   { key: "favorites", title: "我的收藏", href: "/shop/favorites" },
   { key: "cities", title: "去过的城市", href: "/cities" },
-  { key: "recycle-bin", title: "回收站", href: "/recycle-bin/index" },
-  { key: "feedback", title: "意见反馈", href: "/feedback/index" },
+  { key: "recycle-bin", title: "回收站", href: "/recycle-bin" },
+  { key: "feedback", title: "意见反馈", href: "/feedback" },
   { key: "privacy", title: "本机数据与隐私声明", href: "/privacy" },
 ];
 
