@@ -4,9 +4,9 @@
 
 **Goal:** Repair the broken npm lockfile and prevent dependency or production-build regressions from being merged into `main`.
 
-**Architecture:** npm remains the authoritative dependency graph validator through clean `npm ci` runs. A GitHub Actions workflow validates the minimum Node 20.19 line and runs the complete Railway-equivalent quality gate on Node 24; repository guidance makes the same checks mandatory for dependency changes.
+**Architecture:** npm remains the authoritative dependency graph validator through clean `npm ci` runs. A GitHub Actions workflow validates the minimum Node 20.19.4 line and runs the complete Railway-equivalent quality gate on Node 24; repository guidance makes the same checks mandatory for dependency changes.
 
-**Tech Stack:** npm lockfile v3, Node.js 20.19 and 24, GitHub Actions, Expo 54 web export, Jest.
+**Tech Stack:** npm lockfile v3, Node.js 20.19.4 and 24, GitHub Actions, Expo 54 web export, Jest.
 
 ---
 
@@ -86,7 +86,7 @@ describe("GitHub quality gate", () => {
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain("push:");
     expect(workflow).toContain("branches: [main]");
-    expect(workflow).toContain("node-version: 20.19.0");
+    expect(workflow).toContain("node-version: 20.19.4");
     expect(workflow).toContain("node-version: 24.x");
     expect(workflow).toContain("npm ci --ignore-scripts");
     expect(workflow).toContain("npm ci");
@@ -131,14 +131,14 @@ concurrency:
 
 jobs:
   lockfile-minimum:
-    name: Lockfile minimum (Node 20.19)
+    name: Lockfile minimum (Node 20.19.4)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 20.19.4
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
 
@@ -198,8 +198,8 @@ Append:
 Append to `docs/EXECUTION-CHECKLIST.md`:
 
 ```md
-- [x] GitHub Quality Gate 在 Node 20.19 验证 lockfile 干净安装，并在 Node 24 运行 lint、typecheck、全量测试和 Railway 同款生产构建。
-- [ ] `main` 分支保护已要求 `Lockfile minimum (Node 20.19)` 与 `Quality (Node 24)` 两项检查通过后才能合并。
+- [x] GitHub Quality Gate 在 Node 20.19.4 验证 lockfile 干净安装，并在 Node 24 运行 lint、typecheck、全量测试和 Railway 同款生产构建。
+- [ ] `main` 分支保护已要求 `Lockfile minimum (Node 20.19.4)` 与 `Quality (Node 24)` 两项检查通过后才能合并。
 ```
 
 - [ ] **Step 3: Document the lockfile failure mode for Railway**
@@ -254,7 +254,7 @@ Run:
 gh pr checks --watch
 ```
 
-Expected: `Lockfile minimum (Node 20.19)` and `Quality (Node 24)` both complete successfully.
+Expected: `Lockfile minimum (Node 20.19.4)` and `Quality (Node 24)` both complete successfully.
 
 - [ ] **Step 4: Preserve and extend main branch protection**
 
@@ -272,7 +272,7 @@ and PATCH only that subresource, preserving every unrelated branch protection se
 $checksJson = gh api repos/CarterWells111/OneTapReality/branches/main/protection/required_status_checks
 if ($LASTEXITCODE -ne 0) { throw "Required status checks are unavailable; stop without changing protection." }
 $checks = $checksJson | ConvertFrom-Json
-$contexts = @($checks.contexts) + @("Lockfile minimum (Node 20.19)", "Quality (Node 24)") | Sort-Object -Unique
+$contexts = @($checks.contexts) + @("Lockfile minimum (Node 20.19.4)", "Quality (Node 24)") | Sort-Object -Unique
 $payload = @{
   strict = [bool]$checks.strict
   contexts = @($contexts)

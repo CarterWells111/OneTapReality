@@ -13,7 +13,7 @@ Railway 部署在 Build image 阶段失败。本地使用最新 `main` 和 npm 1
 
 - 修复当前损坏的 lockfile，使干净安装和 Railway 同款生产构建通过。
 - 在 Pull Request 合并前自动执行干净安装，阻止相同问题再次进入 `main`。
-- 同时验证项目声明支持的最低 Node 20.19 与当前 Node 24 运行线。
+- 同时验证项目声明支持的最低 Node 20.19.4 与当前 Node 24 运行线。
 - 保持 `engines` / `devEngines` 为最低版本及以上，不改回封闭版本范围。
 
 ## GitHub Actions
@@ -25,7 +25,7 @@ Railway 部署在 Build image 阶段失败。本地使用最新 `main` 和 npm 1
 
 工作流包含两个检查：
 
-1. `lockfile-minimum`：Node 20.19，执行 `npm ci --ignore-scripts`，验证最低支持
+1. `lockfile-minimum`：Node 20.19.4，执行 `npm ci --ignore-scripts`，验证最低支持
    Node/npm 组合能够从 lockfile 完成干净安装。
 2. `quality`：Node 24，依次执行 `npm ci`、`npm run lint`、
    `npm run typecheck`、`npm run test:ci` 和 `npm run build:server`。
