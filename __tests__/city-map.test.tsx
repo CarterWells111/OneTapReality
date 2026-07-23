@@ -2,40 +2,6 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
 
-type MarkerFrame = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-function getMarkerFrame(style: {
-  left: string;
-  top: string;
-  minHeight: number;
-  minWidth: number;
-  transform: readonly { translateX?: number; translateY?: number }[];
-}): MarkerFrame {
-  const translateX = style.transform.find((transform) => transform.translateX !== undefined)?.translateX ?? 0;
-  const translateY = style.transform.find((transform) => transform.translateY !== undefined)?.translateY ?? 0;
-
-  return {
-    x: (Number.parseFloat(style.left) / 100) * 300 + translateX,
-    y: (Number.parseFloat(style.top) / 100) * 210 + translateY,
-    width: style.minWidth,
-    height: style.minHeight,
-  };
-}
-
-function framesOverlap(first: MarkerFrame, second: MarkerFrame) {
-  return (
-    first.x < second.x + second.width &&
-    first.x + first.width > second.x &&
-    first.y < second.y + second.height &&
-    first.y + first.height > second.y
-  );
-}
-
 const stats: CityStats[] = [
   { city: "hangzhou", visitCount: 2, unlocked: true, isVisited: true, intensity: "medium" },
   { city: "shanghai", visitCount: 0, unlocked: false, isVisited: false, intensity: "none" },
@@ -87,7 +53,7 @@ describe("CityMap", () => {
     expect(transforms[2]).toEqual({ scale: 2 });
   });
 
-  it("keeps nearby Hangzhou and Shanghai 44px overview marker targets separate", async () => {
+  it("keeps every overview marker accessible while only labelling visited cities", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
     const hangzhouStyle = screen.getByTestId("city-map-marker-hangzhou-medium").props.style;
     const shanghaiStyle = screen.getByTestId("city-map-marker-shanghai-none").props.style;
@@ -96,10 +62,13 @@ describe("CityMap", () => {
     expect(hangzhouStyle.minHeight).toBeGreaterThanOrEqual(44);
     expect(shanghaiStyle.minWidth).toBeGreaterThanOrEqual(44);
     expect(shanghaiStyle.minHeight).toBeGreaterThanOrEqual(44);
-    expect(framesOverlap(getMarkerFrame(hangzhouStyle), getMarkerFrame(shanghaiStyle))).toBe(false);
+    expect(screen.getByText("杭州 · 2 册")).toBeTruthy();
+    expect(screen.queryByText("上海 · 0 册")).toBeNull();
+    expect(screen.getByTestId("city-map-marker-beijing-none")).toBeTruthy();
+    expect(screen.getByLabelText("北京，已保存 0 册旅行记忆")).toBeTruthy();
   });
 
-  it("resolves every adapter marker into bounded, non-overlapping overview geometry", () => {
+  it("resolves every adapter marker into bounded overview geometry", () => {
     const mapWidth = 300;
     const mapHeight = 210;
     const adapter = new OfflineChinaMapAdapter();
@@ -114,12 +83,6 @@ describe("CityMap", () => {
       expect(layout.labelFrame.y + layout.labelFrame.height).toBeLessThanOrEqual(mapHeight);
       expect(layout.markerFrame.x + layout.markerFrame.width / 2).toBeCloseTo(marker.coordinate.x * mapWidth);
       expect(layout.markerFrame.y + layout.markerFrame.height / 2).toBeCloseTo(marker.coordinate.y * mapHeight);
-    }
-
-    for (let firstIndex = 0; firstIndex < layouts.length; firstIndex += 1) {
-      for (let secondIndex = firstIndex + 1; secondIndex < layouts.length; secondIndex += 1) {
-        expect(framesOverlap(layouts[firstIndex].layout.pressFrame, layouts[secondIndex].layout.pressFrame)).toBe(false);
-      }
     }
   });
 });

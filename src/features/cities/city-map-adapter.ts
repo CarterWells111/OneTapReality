@@ -1,9 +1,6 @@
-import type { City } from "../../types/memory";
+import { cityRegistry, type City, type CityMapFocus, type RelativeMapCoordinate } from "../../types/city";
 
-export type RelativeMapCoordinate = {
-  readonly x: number;
-  readonly y: number;
-};
+export type { CityMapFocus, RelativeMapCoordinate } from "../../types/city";
 
 export type LocalMapOutline = {
   id: "china-simplified";
@@ -14,11 +11,6 @@ export type LocalMapOutline = {
 export type CityMapMarker = {
   readonly city: City;
   readonly coordinate: RelativeMapCoordinate;
-};
-
-export type CityMapFocus = {
-  readonly center: RelativeMapCoordinate;
-  readonly zoom: number;
 };
 
 export interface CityMapAdapter {
@@ -52,11 +44,8 @@ const chinaOutline: LocalMapOutline = Object.freeze({
   ]),
 });
 
-const cityMarkers: readonly CityMapMarker[] = Object.freeze([
-  Object.freeze({ city: "hangzhou" as const, coordinate: freezeCoordinate({ x: 0.77, y: 0.69 }) }),
-  Object.freeze({ city: "shanghai" as const, coordinate: freezeCoordinate({ x: 0.86, y: 0.64 }) }),
-  Object.freeze({ city: "shenzhen" as const, coordinate: freezeCoordinate({ x: 0.71, y: 0.84 }) }),
-]);
+const cityMarkers: readonly CityMapMarker[] = Object.freeze(cityRegistry.map((city) => Object.freeze({ city: city.id, coordinate: city.coordinate })));
+const cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze(Object.fromEntries(cityRegistry.map((city) => [city.id, city.focus])) as Record<City, CityMapFocus>);
 
 export class OfflineChinaMapAdapter implements CityMapAdapter {
   readonly outline = chinaOutline;
@@ -65,9 +54,5 @@ export class OfflineChinaMapAdapter implements CityMapAdapter {
     center: freezeCoordinate({ x: 0.62, y: 0.53 }),
     zoom: 1,
   });
-  readonly cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze({
-    hangzhou: Object.freeze({ center: freezeCoordinate({ x: 0.77, y: 0.69 }), zoom: 2 }),
-    shanghai: Object.freeze({ center: freezeCoordinate({ x: 0.86, y: 0.64 }), zoom: 2 }),
-    shenzhen: Object.freeze({ center: freezeCoordinate({ x: 0.71, y: 0.84 }), zoom: 2 }),
-  });
+  readonly cityFocus = cityFocus;
 }

@@ -20,4 +20,15 @@ describe("DemoDraftGenerator", () => {
     expect(pages[1].photoUri).toBe("file://first.jpg");
     expect(pages[0].headline).toBe("我们的西湖周末");
   });
+
+  it("creates local fixed copy for an expanded registry city", async () => {
+    const pages = await new DemoDraftGenerator().generate({
+      title: "北京周末",
+      city: "beijing",
+      travelDate: "2026-07-23",
+      photoUris: [],
+    });
+
+    expect(pages[0].body).toContain("北京");
+  });
 });

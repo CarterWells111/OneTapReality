@@ -38,21 +38,14 @@ const chinaProvinces = chinaMap.locations as readonly ChinaProvince[];
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
-type MarkerPlacement = { readonly label: Omit<MarkerFrame, "x" | "y"> & { readonly offsetX: number; readonly offsetY: number }; readonly pressOffsetX: number; readonly pressOffsetY: number };
-
-const markerPlacements: Record<City, MarkerPlacement> = {
-  hangzhou: { label: { height: 20, offsetX: -76, offsetY: 28, width: 80 }, pressOffsetX: -37, pressOffsetY: -22 },
-  shanghai: { label: { height: 20, offsetX: -76, offsetY: -48, width: 72 }, pressOffsetX: -7, pressOffsetY: -22 },
-  shenzhen: { label: { height: 20, offsetX: -37, offsetY: -48, width: 74 }, pressOffsetX: -22, pressOffsetY: 0 },
-};
-
 export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout {
   const anchor = { x: marker.coordinate.x * overviewMapDimensions.width, y: marker.coordinate.y * overviewMapDimensions.height };
-  const placement = markerPlacements[marker.city];
-  const pressFrame = { height: markerTargetSize, width: markerTargetSize, x: anchor.x + placement.pressOffsetX, y: anchor.y + placement.pressOffsetY };
+  const labelWidth = 88;
+  const labelHeight = 20;
+  const pressFrame = { height: markerTargetSize, width: markerTargetSize, x: anchor.x - markerTargetSize / 2, y: anchor.y - markerTargetSize / 2 };
   return {
     anchor,
-    labelFrame: { height: placement.label.height, width: placement.label.width, x: anchor.x + placement.label.offsetX, y: anchor.y + placement.label.offsetY },
+    labelFrame: { height: labelHeight, width: labelWidth, x: Math.min(Math.max(0, anchor.x - labelWidth / 2), overviewMapDimensions.width - labelWidth), y: Math.max(0, anchor.y - 30) },
     markerFrame: { height: markerVisualSize, width: markerVisualSize, x: anchor.x - markerVisualSize / 2, y: anchor.y - markerVisualSize / 2 },
     pressFrame,
   };
@@ -170,10 +163,11 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
           const pressOffsetY = layout.pressFrame.y - layout.anchor.y;
           const markerOffsetX = layout.markerFrame.x - layout.pressFrame.x;
           const markerOffsetY = layout.markerFrame.y - layout.pressFrame.y;
+          const shouldShowMarkerLabel = stat.isVisited || (variant === "workspace" && initialCity === city);
           return (
             <Pressable key={city} accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" disabled={!interactive} onPress={() => onCityPress?.(city)} style={({ pressed }) => ({ height: markerTargetSize, left: `${coordinate.x * 100}%`, minHeight: markerTargetSize, minWidth: markerTargetSize, opacity: pressed ? 0.82 : 1, position: "absolute", top: `${coordinate.y * 100}%`, transform: [{ translateX: pressOffsetX }, { translateY: pressOffsetY }], width: markerTargetSize })} testID={`city-map-marker-${city}-${stat.intensity}`}>
               <View style={{ backgroundColor: token.fill, borderColor: token.border, borderRadius: markerVisualSize / 2, borderWidth: 3, height: markerVisualSize, left: markerOffsetX, position: "absolute", top: markerOffsetY, width: markerVisualSize }} />
-              <Text selectable style={{ color: colors.ink, fontSize: 12, fontWeight: "800", left: layout.labelFrame.x - layout.pressFrame.x, position: "absolute", top: layout.labelFrame.y - layout.pressFrame.y, width: layout.labelFrame.width }}>{cityContent[city].name} · {stat.visitCount} 册</Text>
+              {shouldShowMarkerLabel ? <Text selectable style={{ color: colors.ink, fontSize: 12, fontWeight: "800", left: layout.labelFrame.x - layout.pressFrame.x, position: "absolute", top: layout.labelFrame.y - layout.pressFrame.y, width: layout.labelFrame.width }}>{cityContent[city].name} · {stat.visitCount} 册</Text> : null}
             </Pressable>
           );
         })}

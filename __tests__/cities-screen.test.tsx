@@ -44,6 +44,6 @@ describe("CitiesScreen", () => {
 
     fireEvent.press(screen.getByLabelText("全屏查看中国地图"));
 
-    expect(mockPush).toHaveBeenCalledWith("/city-map/index");
+    expect(mockPush).toHaveBeenCalledWith("/city-map");
   });
 });

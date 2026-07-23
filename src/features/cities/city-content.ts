@@ -1,9 +1,8 @@
-import type { City } from "../../types/memory";
+import { cityRegistry, cities, type City } from "../../types/city";
 
-export const cityContent: Record<
-  City,
-  { name: string; subtitle: string; souvenir: string; color: string }
-> = {
+type CityContent = { name: string; subtitle: string; souvenir: string; color: string };
+
+const existingContent: Partial<Record<City, CityContent>> = {
   hangzhou: {
     name: "杭州",
     subtitle: "把西湖边的慢时光收进册页",
@@ -23,4 +22,21 @@ export const cityContent: Record<
     color: "#DDEBF4",
   },
 };
+
+const colorsByKind = {
+  "autonomous-region-capital": "#E7E4F5",
+  "legacy-city": "#DDEBF4",
+  municipality: "#F3E1D8",
+  "province-capital": "#DDEBDD",
+} as const;
+
+export const cityContent: Record<City, CityContent> = Object.fromEntries(cities.map((city) => {
+  const entry = cityRegistry.find((candidate) => candidate.id === city)!;
+  return [city, existingContent[city] ?? {
+    name: entry.name,
+    subtitle: `把${entry.name}的旅行时光收进册页`,
+    souvenir: `${entry.name}城市旅行纪念`,
+    color: colorsByKind[entry.kind],
+  }];
+})) as Record<City, CityContent>;
 
