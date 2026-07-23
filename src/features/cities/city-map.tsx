@@ -1,7 +1,7 @@
 import * as React from "react";
 import { type LayoutChangeEvent, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedProps, useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
 import Svg, { Circle, G, Path, Rect, Text as SvgText } from "react-native-svg";
 import chinaMap from "@svg-maps/china";
 
@@ -48,6 +48,8 @@ const markerSvgRadius = markerVisualSize * markerSvgScale / 2;
 const markerTargetSvgSize = markerTargetSize * markerSvgScale;
 const markerLabelSvgFontSize = markerLabelFontSize * markerSvgScale;
 const markerLabelSvgOffsetY = (markerVisualSize / 2 + markerLabelFontSize) * markerSvgScale;
+const markerLabelSvgWidth = markerLabelWidth * markerSvgScale;
+const markerLabelCollisionPadding = 8;
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
@@ -86,25 +88,60 @@ type WorkspaceMarkerModel = {
   readonly pressSize: number;
   readonly showLabel: boolean;
 };
-export function resolveWorkspaceMarkerModel(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel {
+
+type WorkspaceMarkerCandidate = {
+  readonly labelFrame: MarkerFrame;
+  readonly model: WorkspaceMarkerModel;
+};
+
+function labelFramesIntersect(first: MarkerFrame, second: MarkerFrame) {
+  "worklet";
+  return first.x < second.x + second.width + markerLabelCollisionPadding
+    && first.x + first.width + markerLabelCollisionPadding > second.x
+    && first.y < second.y + second.height + markerLabelCollisionPadding
+    && first.y + first.height + markerLabelCollisionPadding > second.y;
+}
+
+function resolveWorkspaceMarkerCandidate(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerCandidate {
   "worklet";
   const contentFrame = resolveChinaMapContentFrame(size);
-  const dotSize = markerSvgRadius * 2 * contentFrame.scale * viewport.scale;
-  const pressSize = markerTargetSvgSize * contentFrame.scale * viewport.scale;
-  const fontSize = markerLabelSvgFontSize * contentFrame.scale * viewport.scale;
+  const renderScale = contentFrame.scale * viewport.scale;
+  const dotSize = markerSvgRadius * 2 * renderScale;
+  const pressSize = markerTargetSvgSize * renderScale;
+  const fontSize = markerLabelSvgFontSize * renderScale;
   const coordinate = resolveChinaMapCoordinate(marker);
   const contentX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
   const contentY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
   const anchorX = (contentX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX;
   const anchorY = (contentY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY;
   const onScreen = anchorX + dotSize / 2 >= 0 && anchorX - dotSize / 2 <= size.width && anchorY + dotSize / 2 >= 0 && anchorY - dotSize / 2 <= size.height;
-  const showLabel = viewport.scale >= workspaceLabelZoomThreshold && dotSize >= minimumReadableMarkerSize && onScreen;
-  return { dotSize, fontSize, onScreen, pressSize, showLabel };
+  const labelFrame = {
+    height: fontSize * 1.25,
+    width: markerLabelSvgWidth * renderScale,
+    x: anchorX - markerLabelSvgWidth * renderScale / 2,
+    y: anchorY - markerLabelSvgOffsetY * renderScale - fontSize,
+  };
+  const labelOnScreen = labelFrame.x + labelFrame.width >= 0 && labelFrame.x <= size.width && labelFrame.y + labelFrame.height >= 0 && labelFrame.y <= size.height;
+  const showLabel = viewport.scale >= workspaceLabelZoomThreshold && dotSize >= minimumReadableMarkerSize && onScreen && labelOnScreen;
+  return { labelFrame, model: { dotSize, fontSize, onScreen, pressSize, showLabel } };
+}
+
+export function resolveWorkspaceMarkerModel(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel {
+  "worklet";
+  return resolveWorkspaceMarkerCandidate(marker, viewport, size).model;
 }
 
 export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel[] {
   "worklet";
-  return markers.map((marker) => resolveWorkspaceMarkerModel(marker, viewport, size));
+  const visibleLabelFrames: MarkerFrame[] = [];
+  return markers.map((marker) => {
+    const candidate = resolveWorkspaceMarkerCandidate(marker, viewport, size);
+    if (!candidate.model.showLabel || visibleLabelFrames.some((frame) => labelFramesIntersect(frame, candidate.labelFrame))) {
+      return { ...candidate.model, showLabel: false };
+    }
+    visibleLabelFrames.push(candidate.labelFrame);
+    return candidate.model;
+  });
 }
 
 function savedMemoryLabel(city: City, visitCount: number) {
@@ -133,6 +170,7 @@ export function getCityMapTransform(viewport: WorkspaceViewport) {
 }
 
 type AnimatedWorkspaceValues = {
+  readonly labelVisibility: { readonly value: readonly boolean[] };
   readonly mapHeight: { readonly value: number };
   readonly mapWidth: { readonly value: number };
   readonly scale: { readonly value: number };
@@ -140,11 +178,12 @@ type AnimatedWorkspaceValues = {
   readonly translateY: { readonly value: number };
 };
 
-function CityMapMarkerView({ animatedValues, city, interactive, marker, onCityPress, stat, variant }: {
+function CityMapMarkerView({ animatedValues, city, interactive, marker, markerIndex, onCityPress, stat, variant }: {
   readonly animatedValues: AnimatedWorkspaceValues;
   readonly city: City;
   readonly interactive: boolean;
   readonly marker: CityMapMarker;
+  readonly markerIndex: number;
   readonly onCityPress?: (city: City) => void;
   readonly stat: CityStats;
   readonly variant: CityMapVariant;
@@ -153,12 +192,7 @@ function CityMapMarkerView({ animatedValues, city, interactive, marker, onCityPr
   const coordinate = resolveChinaMapCoordinate(marker);
   const animatedLabelProps = useAnimatedProps(() => {
     if (variant !== "workspace") return { opacity: 0 };
-    const model = resolveWorkspaceMarkerModel(marker, {
-      scale: animatedValues.scale.value,
-      translateX: animatedValues.translateX.value,
-      translateY: animatedValues.translateY.value,
-    }, { height: animatedValues.mapHeight.value, width: animatedValues.mapWidth.value });
-    return { opacity: model.showLabel ? 1 : 0 };
+    return { opacity: animatedValues.labelVisibility.value[markerIndex] ? 1 : 0 };
   });
 
   return (
@@ -184,6 +218,11 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
   const pinchStartScale = useSharedValue(initialViewport.scale);
   const mapWidth = useSharedValue(workspaceSize.width);
   const mapHeight = useSharedValue(workspaceSize.height);
+  const labelVisibility = useDerivedValue(() => resolveWorkspaceMarkerModels(adapter.markers, {
+    scale: scale.value,
+    translateX: translateX.value,
+    translateY: translateY.value,
+  }, { height: mapHeight.value, width: mapWidth.value }).map((model) => model.showLabel));
 
   React.useEffect(() => {
     const nextViewport = variant === "workspace"
@@ -248,11 +287,11 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
             />
           ))}
           <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
-          {adapter.markers.map((marker) => {
+          {adapter.markers.map((marker, markerIndex) => {
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
           return (
-            <CityMapMarkerView animatedValues={{ mapHeight, mapWidth, scale, translateX, translateY }} city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} variant={variant} />
+            <CityMapMarkerView animatedValues={{ labelVisibility, mapHeight, mapWidth, scale, translateX, translateY }} city={city} interactive={interactive} key={city} marker={marker} markerIndex={markerIndex} onCityPress={onCityPress} stat={stat} variant={variant} />
           );
           })}
         </Svg>

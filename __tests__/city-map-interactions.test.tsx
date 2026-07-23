@@ -13,6 +13,11 @@ jest.mock("react-native-reanimated", () => {
     runOnJS: (...args: unknown[]) => mockRunOnJS(...args),
     useAnimatedProps: (worklet: () => unknown) => worklet(),
     useAnimatedStyle: (worklet: () => unknown) => worklet(),
+    useDerivedValue: (worklet: () => unknown) => {
+      const shared = React.useRef(null) as { current: { value: unknown } | null };
+      if (shared.current === null) shared.current = { value: worklet() };
+      return shared.current;
+    },
     useSharedValue: (value: number) => {
       const shared = React.useRef(null) as { current: { value: number } | null };
       if (shared.current === null) {

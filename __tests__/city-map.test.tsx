@@ -141,11 +141,11 @@ describe("CityMap", () => {
     expect(visibleModels[0]?.showLabel).toBe(true);
   });
 
-  it("resolves each workspace label independently to keep pinch updates linear", () => {
+  it("shows only one of two colliding workspace labels", () => {
     const markers = new OfflineChinaMapAdapter().markers;
     const overlappingMarkers = [markers[0], { ...markers[1], coordinate: markers[0].coordinate }];
     const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
 
-    expect(models.map((model) => model.showLabel)).toEqual([true, true]);
+    expect(models.map((model) => model.showLabel)).toEqual([true, false]);
   });
 });
