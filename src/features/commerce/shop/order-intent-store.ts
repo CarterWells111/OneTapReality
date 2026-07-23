@@ -18,9 +18,13 @@ export type OrderIntent = {
   quantity: number;
   unitPriceCny: number;
   totalPriceCny: number;
-  priceFeel: PriceFeel;
+  /** 价格反馈为选填；null 表示未填写。 */
+  priceFeel: PriceFeel | null;
+  /** 空字符串表示未填写。 */
   intendedPriceRange: string;
   note: string;
+  /** 该 SKU 的制作周期（天），用于推导演示物流状态；旧记录可能缺失。 */
+  leadTimeDays?: number;
   createdAt: string;
 };
 
@@ -56,9 +60,11 @@ export function formatIntentTime(createdAt: string): string {
 
 export function exportOrderIntents(intents: OrderIntent[]): string {
   const lines = intents.map((intent, index) => {
+    const priceFeel = intent.priceFeel ? priceFeelLabels[intent.priceFeel] : "未填写";
+    const intendedRange = intent.intendedPriceRange || "未填写";
     const engraving = intent.engraving ? `；刻字：「${intent.engraving}」` : "";
     const note = intent.note ? `；备注：${intent.note}` : "";
-    return `${index + 1}. ${intent.skuName}（${intent.styleName}）× ${intent.quantity}，演示价 ¥${intent.totalPriceCny}；价格感受：${priceFeelLabels[intent.priceFeel]}；愿付价位：${intent.intendedPriceRange}${engraving}${note}（${formatIntentTime(intent.createdAt)}）`;
+    return `${index + 1}. ${intent.skuName}（${intent.styleName}）× ${intent.quantity}，演示价 ¥${intent.totalPriceCny}；价格感受：${priceFeel}；愿付价位：${intendedRange}${engraving}${note}（${formatIntentTime(intent.createdAt)}）`;
   });
   return [
     "一触如初 · 纪念品订购意向记录",

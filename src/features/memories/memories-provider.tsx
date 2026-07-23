@@ -8,7 +8,9 @@ import {
   deleteMemory as deleteMemoryFromDb,
   discardDraft as discardDraftInDb,
   getDraft,
+  listDiscardedMemories,
   listMemories,
+  restoreDiscardedMemory,
   saveDraft as saveDraftInDb,
   saveMemory,
   updateMemoryPages,
@@ -30,6 +32,8 @@ type MemoriesContextValue = {
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
   getMemoryById: (id: string) => Memory | undefined;
+  listDiscarded: () => Promise<Memory[]>;
+  restoreMemory: (id: string) => Promise<void>;
 };
 
 const MemoriesContext = React.createContext<MemoriesContextValue | undefined>(undefined);
@@ -157,6 +161,19 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [db, refresh]);
 
+  const listDiscarded = React.useCallback(
+    async () => listDiscardedMemories(db),
+    [db]
+  );
+
+  const restoreMemory = React.useCallback(
+    async (id: string) => {
+      await restoreDiscardedMemory(db, id, new Date().toISOString());
+      await refresh();
+    },
+    [db, refresh]
+  );
+
   const value = React.useMemo<MemoriesContextValue>(
     () => ({
       memories,
@@ -171,6 +188,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       deleteMemory,
       clearAllMemories,
       getMemoryById: (id) => memories.find((memory) => memory.id === id),
+      listDiscarded,
+      restoreMemory,
     }),
     [
       clearAllMemories,
@@ -180,7 +199,9 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardDraft,
       getDraftById,
       isReady,
+      listDiscarded,
       memories,
+      restoreMemory,
       retryDraft,
       saveDraft,
       updatePages,
