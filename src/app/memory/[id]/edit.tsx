@@ -67,7 +67,6 @@ export default function EditMemoryScreen() {
       <BookCanvasEditor
         onPagesChange={(nextPages) => setPages(nextPages)}
         pages={pages}
-        photoUris={memory.photoUris}
       />
       <AppButton
         disabled={isSaving}

@@ -11,6 +11,8 @@ export type MemoryDraftInput = {
   city: City;
   travelDate: string;
   photoUris: string[];
+  /** 封面颜色（十六进制）。为空时回退到城市默认色。 */
+  coverColor?: string;
 };
 
 export type StoryPage = {

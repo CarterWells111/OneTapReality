@@ -19,6 +19,7 @@
     }
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "8.4.4",
     "@svg-maps/china": "^2.0.0",
     "compression": "^1.8.1",
     "drizzle-orm": "^0.45.2",

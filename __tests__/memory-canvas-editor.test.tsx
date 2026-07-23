@@ -116,36 +116,24 @@ describe("EditMemoryScreen", () => {
     mockUpdatePages.mockResolvedValue(undefined);
   });
 
-  it("converts legacy pages for the canvas and saves changed layouts only after Save", async () => {
+  it("adds a page through the manager and saves changed layouts only after Save", async () => {
     const screen = render(<EditMemoryScreen />);
 
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
-    await fireEvent.press(screen.getByTestId("canvas-photo-choice-0"));
-    await fireEvent.press(screen.getByTestId("canvas-photo-choice-1"));
-    await fireEvent.press(screen.getByText("添加页面"));
-    expect(screen.getAllByTestId("book-page-indicator")).toHaveLength(3);
+    fireEvent.press(screen.getByText("添加页面"));
+    expect(screen.getByTestId("page-cell-2")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("完成页面管理"));
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.press(screen.getByText("保存画布"));
     });
 
-    expect(mockUpdatePages).toHaveBeenCalledWith(
-      memory,
-      expect.arrayContaining([
-        expect.objectContaining({
-          layout: expect.objectContaining({
-            elements: expect.arrayContaining([
-              expect.objectContaining({ type: "image", uri: "file://west-lake.jpg" }),
-              expect.objectContaining({ type: "image", uri: "file://coffee.jpg" }),
-            ]),
-          }),
-        }),
-      ]),
-    );
+    expect(mockUpdatePages).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePages.mock.calls[0][1]).toHaveLength(3);
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import {
   createDraft,
   discardDraft,
+  discardMemory,
   getDraft,
   listDiscardedMemories,
   listMemories,
@@ -212,6 +213,23 @@ describe("memory draft lifecycle repository", () => {
     await expect(listDiscardedMemories(database)).resolves.toEqual([]);
     await expect(listMemories(database)).resolves.toMatchObject([
       { id: draftMemory.id, status: "saved", updatedAt: "2026-07-22T10:03:00.000Z" },
+    ]);
+  });
+
+  it("moves a saved memory into the recycle bin instead of deleting it", async () => {
+    const { database } = createMemoryDatabase();
+
+    await saveMemory(database, { ...draftMemory, id: "saved-1" });
+    await discardMemory(database, "saved-1", "2026-07-22T10:05:00.000Z");
+
+    await expect(listMemories(database)).resolves.toEqual([]);
+    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+      { id: "saved-1", status: "discarded", updatedAt: "2026-07-22T10:05:00.000Z" },
+    ]);
+
+    await restoreDiscardedMemory(database, "saved-1", "2026-07-22T10:06:00.000Z");
+    await expect(listMemories(database)).resolves.toMatchObject([
+      { id: "saved-1", status: "saved" },
     ]);
   });
 

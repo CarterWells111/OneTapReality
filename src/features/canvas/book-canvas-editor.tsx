@@ -1,4 +1,3 @@
-import { Image } from "expo-image";
 import * as React from "react";
 import {
   Pressable,
@@ -11,12 +10,10 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  Extrapolation,
-  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from "react-native-reanimated";
 
 import {
@@ -28,17 +25,14 @@ import {
 import { CanvasPage } from "./canvas-page";
 import { CanvasToolbar } from "./canvas-toolbar";
 import {
-  addCanvasPage,
   addStickerToPage,
   addTextToPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
-  deleteCanvasPage,
   duplicateCanvasElement,
-  moveCanvasPage,
-  toggleCanvasPhotoSelection,
   updateCanvasElement,
 } from "./editor-pages";
+import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { colors } from "../../components/ui";
 import type { StoryPage } from "../../types/memory";
@@ -48,7 +42,6 @@ export type BookEditorChangeReason = "structure" | "text" | "transform";
 type BookCanvasEditorProps = {
   onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
   pages: StoryPage[];
-  photoUris?: string[];
 };
 
 function buildCanvasId(prefix: string) {
@@ -58,18 +51,18 @@ function buildCanvasId(prefix: string) {
 export function BookCanvasEditor({
   onPagesChange,
   pages,
-  photoUris = [],
 }: BookCanvasEditorProps) {
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
   const pageHeight = pageWidth * 4 / 3;
   const translateX = useSharedValue(0);
+  const turnDir = useSharedValue(0);
   const pagePanBlocked = useSharedValue(false);
   const [currentIndex, setCurrentIndex] = React.useState(0);
+  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
-  const [selectedPhotoUris, setSelectedPhotoUris] = React.useState<string[]>([]);
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
-  const [isPageMenuOpen, setIsPageMenuOpen] = React.useState(false);
+  const [managerOpen, setManagerOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (currentIndex >= pages.length) {
@@ -88,15 +81,16 @@ export function BookCanvasEditor({
     onPagesChange(nextPages, reason);
   }, [onPagesChange]);
 
-  const goToPage = React.useCallback((nextIndex: number) => {
-    if (nextIndex < 0 || nextIndex >= pages.length) {
-      return;
-    }
+  const commitTurn = React.useCallback((targetIndex: number) => {
     setSelectedElementId(undefined);
-    setCurrentIndex(nextIndex);
-  }, [pages.length]);
+    setCurrentIndex(targetIndex);
+    setPendingTurn(null);
+    translateX.value = 0;
+    turnDir.value = 0;
+  }, [translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
+    .enabled(pendingTurn === null)
     .activeOffsetX([-12, 12])
     .failOffsetY([-18, 18])
     .onBegin((event) => {
@@ -119,7 +113,7 @@ export function BookCanvasEditor({
     .onFinalize((event) => {
       if (pagePanBlocked.value) {
         pagePanBlocked.value = false;
-        translateX.value = withSpring(0, { damping: 18, stiffness: 190 });
+        translateX.value = withTiming(0, { duration: 160 });
         return;
       }
       const decision = resolvePageTurn({
@@ -129,43 +123,41 @@ export function BookCanvasEditor({
         translationX: event.translationX,
         velocityX: event.velocityX,
       });
-      translateX.value = withSpring(0, { damping: 18, stiffness: 190 });
-      if (decision.shouldTurn) {
-        runOnJS(goToPage)(decision.targetIndex);
+      if (decision.shouldTurn && decision.direction !== 0) {
+        turnDir.value = decision.direction;
+        runOnJS(setPendingTurn)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        translateX.value = withTiming(
+          -decision.direction * pageWidth,
+          { duration: 260 },
+          (finished) => {
+            if (finished) {
+              runOnJS(commitTurn)(decision.targetIndex);
+            }
+          },
+        );
+      } else {
+        translateX.value = withTiming(0, { duration: 160 });
       }
     }), [
+      commitTurn,
       currentIndex,
-      goToPage,
       pageHeight,
       pagePanBlocked,
       pageWidth,
       pages.length,
+      pendingTurn,
       selectedElement,
       translateX,
+      turnDir,
     ]);
 
-  const animatedPageStyle = useAnimatedStyle(() => {
-    const rotation = interpolate(
-      translateX.value,
-      [-pageWidth, 0, pageWidth],
-      [7, 0, -7],
-      Extrapolation.CLAMP,
-    );
-    const shadowOpacity = interpolate(
-      Math.abs(translateX.value),
-      [0, pageWidth],
-      [0.16, 0.3],
-      Extrapolation.CLAMP,
-    );
-    return {
-      shadowOpacity,
-      transform: [
-        { perspective: 900 },
-        { translateX: translateX.value },
-        { rotateY: `${rotation}deg` },
-      ],
-    };
-  });
+  const currentPageStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const incomingPageStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value + turnDir.value * pageWidth }],
+  }));
 
   if (!currentPage?.layout) {
     return null;
@@ -191,32 +183,9 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
   };
 
-  const addPage = () => {
-    const nextPages = addCanvasPage(pages, selectedPhotoUris, buildCanvasId("page"));
-    changePages(nextPages, "structure");
-    setSelectedPhotoUris([]);
-    setSelectedElementId(undefined);
-    setCurrentIndex(nextPages.length - 1);
-  };
-
-  const removePage = () => {
-    if (pages.length <= 1) {
-      return;
-    }
-    const nextPages = deleteCanvasPage(pages, currentPage.id);
-    changePages(nextPages, "structure");
-    setSelectedElementId(undefined);
-    setCurrentIndex(Math.min(currentIndex, nextPages.length - 1));
-  };
-
-  const movePage = (direction: "forward" | "backward") => {
-    const targetIndex = direction === "forward" ? currentIndex + 1 : currentIndex - 1;
-    const nextPages = moveCanvasPage(pages, currentPage.id, direction);
-    changePages(nextPages, "structure");
-    setCurrentIndex(Math.max(0, Math.min(targetIndex, nextPages.length - 1)));
-  };
-
   const isRightPage = currentIndex % 2 === 0;
+  const incomingPage = pendingTurn ? pages[pendingTurn.targetIndex] : undefined;
+  const incomingIsRight = pendingTurn ? pendingTurn.targetIndex % 2 === 0 : false;
 
   return (
     <View style={styles.editor}>
@@ -225,101 +194,80 @@ export function BookCanvasEditor({
         <Pressable
           accessibilityLabel="打开页面管理"
           accessibilityRole="button"
-          onPress={() => setIsPageMenuOpen((open) => !open)}
+          onPress={() => setManagerOpen(true)}
           style={styles.pageMenuButton}>
           <Text style={styles.pageMenuButtonText}>页面管理</Text>
         </Pressable>
       </View>
 
-      {isPageMenuOpen ? (
-        <View style={styles.pageMenu}>
-          {photoUris.length > 0 ? (
-            <>
-              <Text style={styles.sectionLabel}>本地照片</Text>
-              <ScrollView contentContainerStyle={styles.photoChoices} horizontal showsHorizontalScrollIndicator={false}>
-                {photoUris.map((uri, index) => {
-                  const isSelected = selectedPhotoUris.includes(uri);
-                  return (
-                    <Pressable
-                      accessibilityLabel={`选择第 ${index + 1} 张照片`}
-                      key={uri}
-                      onPress={() => setSelectedPhotoUris((current) => toggleCanvasPhotoSelection(current, uri))}
-                      style={[styles.photoChoice, isSelected && styles.photoChoiceSelected]}
-                      testID={`canvas-photo-choice-${index}`}>
-                      <Image contentFit="cover" source={uri} style={styles.photoPreview} />
-                      {isSelected ? <Text style={styles.photoCheck}>已选</Text> : null}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </>
-          ) : null}
-          <View style={styles.menuActions}>
-            <SmallButton label="添加页面" onPress={addPage} />
-            <SmallButton
-              disabled={currentIndex === 0}
-              label="前移页面"
-              onPress={() => movePage("backward")}
-            />
-            <SmallButton
-              disabled={currentIndex === pages.length - 1}
-              label="后移页面"
-              onPress={() => movePage("forward")}
-            />
-            <SmallButton
-              destructive
-              disabled={pages.length <= 1}
-              label="删除页面"
-              onPress={removePage}
-            />
-          </View>
-        </View>
+      {managerOpen ? (
+        <PageManagerSheet
+          onChange={(nextPages) => changePages(nextPages, "structure")}
+          onClose={() => setManagerOpen(false)}
+          onJumpToPage={(index) => {
+            setSelectedElementId(undefined);
+            setCurrentIndex(index);
+          }}
+          pages={pages}
+        />
       ) : null}
 
       <View style={styles.bookStage}>
         <GestureDetector gesture={pagePan}>
-          <Animated.View
-            style={[
-              styles.pageShadow,
-              isRightPage ? styles.rightPageShadow : styles.leftPageShadow,
-              animatedPageStyle,
-            ]}
-            testID="book-page">
-            <CanvasPage
-              height={pageHeight}
-              layout={currentPage.layout}
-              onPressBlank={() => setSelectedElementId(undefined)}
-              onSelectElement={setSelectedElementId}
-              onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
-              pageSide={isRightPage ? "right" : "left"}
-              selectedElementId={selectedElementId}
-              width={pageWidth}
-            />
-            <View
-              pointerEvents="none"
+          <View style={{ height: pageHeight, width: pageWidth }}>
+            <Animated.View
               style={[
-                styles.spine,
-                isRightPage ? styles.spineLeft : styles.spineRight,
+                styles.pageShadow,
+                styles.pageLayer,
+                isRightPage ? styles.rightPageShadow : styles.leftPageShadow,
+                currentPageStyle,
               ]}
-            />
-          </Animated.View>
-        </GestureDetector>
-      </View>
+              testID="book-page">
+              <CanvasPage
+                height={pageHeight}
+                layout={currentPage.layout}
+                onSelectElement={setSelectedElementId}
+                onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
+                pageSide={isRightPage ? "right" : "left"}
+                selectedElementId={selectedElementId}
+                width={pageWidth}
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.spine,
+                  isRightPage ? styles.spineLeft : styles.spineRight,
+                ]}
+              />
+            </Animated.View>
 
-      <View style={styles.indicators}>
-        {pages.map((page, index) => (
-          <Pressable
-            accessibilityLabel={`前往第 ${index + 1} 页`}
-            accessibilityRole="button"
-            key={page.id}
-            onPress={() => goToPage(index)}
-            style={[styles.indicator, index === currentIndex && styles.indicatorActive]}
-            testID="book-page-indicator">
-            <Text style={[styles.indicatorText, index === currentIndex && styles.indicatorTextActive]}>
-              {index + 1}
-            </Text>
-          </Pressable>
-        ))}
+            {incomingPage?.layout ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.pageShadow,
+                  styles.pageLayer,
+                  incomingIsRight ? styles.rightPageShadow : styles.leftPageShadow,
+                  incomingPageStyle,
+                ]}>
+                <CanvasPage
+                  height={pageHeight}
+                  interactive={false}
+                  layout={incomingPage.layout}
+                  pageSide={incomingIsRight ? "right" : "left"}
+                  width={pageWidth}
+                />
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.spine,
+                    incomingIsRight ? styles.spineLeft : styles.spineRight,
+                  ]}
+                />
+              </Animated.View>
+            ) : null}
+          </View>
+        </GestureDetector>
       </View>
 
       {selectedText ? (
@@ -434,6 +382,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     shadowColor: "#17221F",
     shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.18,
     shadowRadius: 16,
   },
   rightPageShadow: { borderBottomRightRadius: 18, borderTopRightRadius: 18 },
@@ -452,62 +401,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(45, 45, 35, 0.08)",
     right: 0,
   },
-  indicators: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  indicator: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 28,
-    justifyContent: "center",
-    minWidth: 28,
-  },
-  indicatorActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  indicatorText: { color: colors.muted, fontSize: 12, fontWeight: "800" },
-  indicatorTextActive: { color: "#FFFFFF" },
+  pageLayer: { left: 0, position: "absolute", top: 0 },
   pageMenuButton: { paddingHorizontal: 8, paddingVertical: 6 },
   pageMenuButtonText: { color: colors.accent, fontSize: 13, fontWeight: "800" },
-  pageMenu: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-    marginHorizontal: 20,
-    padding: 12,
-  },
   sectionLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
-  photoChoices: { gap: 8, paddingRight: 8 },
-  photoChoice: {
-    borderColor: colors.line,
-    borderRadius: 10,
-    borderWidth: 2,
-    height: 64,
-    overflow: "hidden",
-    width: 64,
-  },
-  photoChoiceSelected: { borderColor: colors.accent },
-  photoPreview: { height: "100%", width: "100%" },
-  photoCheck: {
-    backgroundColor: colors.accent,
-    bottom: 0,
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "800",
-    left: 0,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    position: "absolute",
-  },
-  menuActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   smallButton: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
