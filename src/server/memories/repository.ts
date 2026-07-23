@@ -18,7 +18,8 @@ export async function createDevice(
 }
 
 export async function getDeviceByInstallationId(db: BackendDatabase, installationId: string) {
-  return db.query.devices.findFirst({ where: eq(devices.installationId, installationId) });
+  const [device] = await db.select().from(devices).where(eq(devices.installationId, installationId)).limit(1);
+  return device;
 }
 
 export async function rotateDeviceToken(
@@ -27,15 +28,6 @@ export async function rotateDeviceToken(
   tokenHash: string,
 ) {
   await db.update(devices).set({ tokenHash, revokedAt: null }).where(eq(devices.id, deviceId));
-}
-
-function parseLayout(layoutJson: string | null) {
-  if (!layoutJson) return undefined;
-  try {
-    return JSON.parse(layoutJson) as CloudMemoryPayload["pages"][number]["layout"];
-  } catch {
-    return undefined;
-  }
 }
 
 async function hydrateMemory(db: BackendDatabase, row: typeof memories.$inferSelect): Promise<CloudMemory> {
@@ -53,7 +45,7 @@ async function hydrateMemory(db: BackendDatabase, row: typeof memories.$inferSel
       headline: page.headline,
       body: page.body,
       ...(page.photoSlot === null ? {} : { photoSlot: page.photoSlot }),
-      ...(parseLayout(page.layoutJson) ? { layout: parseLayout(page.layoutJson) } : {}),
+      ...(page.layoutJson ? { layout: page.layoutJson } : {}),
     })),
   });
   return { ...payload, id: row.id, createdAt: row.createdAt, updatedAt: row.updatedAt };
@@ -69,7 +61,7 @@ async function insertPages(db: Pick<BackendDatabase, "insert">, memoryId: string
     headline: page.headline,
     body: page.body,
     photoSlot: page.photoSlot ?? null,
-    layoutJson: page.layout ? JSON.stringify(page.layout) : null,
+    layoutJson: page.layout ?? null,
   })));
 }
 
@@ -104,7 +96,9 @@ export async function listMemories(db: BackendDatabase, deviceId: string): Promi
 }
 
 export async function getMemory(db: BackendDatabase, deviceId: string, memoryId: string): Promise<CloudMemory | null> {
-  const row = await db.query.memories.findFirst({ where: and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)) });
+  const [row] = await db.select().from(memories)
+    .where(and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)))
+    .limit(1);
   return row ? hydrateMemory(db, row) : null;
 }
 
@@ -114,7 +108,9 @@ export async function updateMemory(
   memoryId: string,
   input: CloudMemoryPayload,
 ): Promise<CloudMemory | null> {
-  const existing = await db.query.memories.findFirst({ where: and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)) });
+  const [existing] = await db.select().from(memories)
+    .where(and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)))
+    .limit(1);
   if (!existing) return null;
   const payload = parseCloudMemoryPayload(input);
   const updatedAt = new Date().toISOString();
@@ -134,11 +130,8 @@ export async function updateMemory(
 }
 
 export async function deleteMemory(db: BackendDatabase, deviceId: string, memoryId: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const result = await tx.delete(memories).where(and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)));
-    if (result.rowsAffected > 0) {
-      await tx.delete(memoryPages).where(eq(memoryPages.memoryId, memoryId));
-    }
-    return result.rowsAffected > 0;
-  });
+  const deleted = await db.delete(memories)
+    .where(and(eq(memories.id, memoryId), eq(memories.deviceId, deviceId)))
+    .returning({ id: memories.id });
+  return deleted.length > 0;
 }

@@ -18,10 +18,16 @@ export function createBackendTestDatabase(): BackendTestDatabase {
 
   // Drizzle provides pg type parsers for parameterized queries. pg-mem intentionally
   // rejects that optional pg feature, so remove it only at the in-memory adapter boundary.
-  pool.query = ((config: unknown, values?: unknown[]) => {
-    if (typeof config === "object" && config !== null && "types" in config) {
-      const { types: _types, ...supportedConfig } = config;
-      return queryForTest(supportedConfig, values);
+  pool.query = (async (config: unknown, values?: unknown[]) => {
+    if (typeof config === "object" && config !== null) {
+      const { types: _types, rowMode, ...supportedConfig } = config as Record<string, unknown>;
+      const result = await queryForTest(supportedConfig, values) as {
+        rows?: Record<string, unknown>[];
+      };
+      if (rowMode === "array" && result.rows) {
+        return { ...result, rows: result.rows.map((row) => Object.values(row)) };
+      }
+      return result;
     }
     return queryForTest(config, values);
   }) as Pool["query"];

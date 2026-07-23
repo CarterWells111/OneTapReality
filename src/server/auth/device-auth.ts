@@ -41,9 +41,9 @@ export async function authenticateRequest(
   }
 
   const tokenHash = await hashAccessToken(token, pepper);
-  const device = await db.query.devices.findFirst({
-    where: and(eq(devices.tokenHash, tokenHash), isNull(devices.revokedAt)),
-  });
+  const [device] = await db.select().from(devices)
+    .where(and(eq(devices.tokenHash, tokenHash), isNull(devices.revokedAt)))
+    .limit(1);
   if (!device) {
     return null;
   }
