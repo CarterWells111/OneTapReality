@@ -15,10 +15,13 @@ export default function MemoriesHomeScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <Text selectable style={styles.eyebrow}>OneTapReality · 一触如初</Text>
-        <Text selectable style={styles.title}>把旅程留成一册</Text>
+        <Text selectable style={styles.title}>OneTapReality｜一触如初</Text>
+        <Text selectable style={styles.heroHeadline}>把旅程留成一册</Text>
         <Text selectable style={styles.subtitle}>
-          让每一次触碰，都回到故事最初的地方。选照片、写几句，本地草稿即刻成册。
+          让每一次触碰，都回到故事最初的地方。
+        </Text>
+        <Text selectable style={styles.subtitle}>
+          选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。
         </Text>
         <AppButton label="创建纪念册" onPress={() => router.push("/memory/new")} />
         <Pressable
@@ -94,8 +97,8 @@ function Statistic({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   content: { gap: 20, padding: 20, paddingBottom: 36 },
   hero: { backgroundColor: colors.accentSoft, borderRadius: 22, gap: 10, padding: 20 },
-  eyebrow: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   title: { color: colors.ink, fontSize: 28, fontWeight: "800" },
+  heroHeadline: { color: colors.accent, fontSize: 18, fontWeight: "800" },
   subtitle: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
   heroLinkText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
