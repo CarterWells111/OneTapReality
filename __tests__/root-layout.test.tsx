@@ -50,7 +50,7 @@ describe("RootLayout", () => {
   it("registers the native fullscreen city map as a full-screen modal", async () => {
     const screen = await render(<RootLayout />);
 
-    expect(screen.getByTestId("screen-city-map/index").props.options).toMatchObject({
+    expect(screen.getByTestId("screen-city-map").props.options).toMatchObject({
       presentation: "fullScreenModal",
     });
   });
