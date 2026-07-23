@@ -99,19 +99,26 @@ npm run verify:backend -- http://127.0.0.1:3000
 
 Railway 部署成功后，不需要每天手动启动线上前后端：PostgreSQL 与 OneTapServer 会持续运行；连接 GitHub 的 Service 会在 `main` 更新后自动构建并重新部署。
 
-Railway 生成域名后，把 native 构建环境中的公开地址设为：
+Railway 生产 API 已部署在：
 
 ```env
-EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
+EXPO_PUBLIC_API_ORIGIN=https://onetapserver-production.up.railway.app
 ```
 
-随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；`DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway 后端服务。
+`eas.json` 的 `production` profile 已固定使用该公开地址。创建 iOS 或 Android 生产构建：
+
+```bash
+npx eas-cli@latest build -p ios --profile production
+npx eas-cli@latest build -p android --profile production
+```
+
+动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。本地 `npm run start` 不使用 `production` profile，继续通过相对 `/api/*` 连接同一个 Expo dev server。Railway 域名是公开地址，不是秘密；`DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway 后端服务。
 
 ## 验证后端接入
 
 ### 方式一：检查 App 页面
 
-1. 启动 `npm run start` 或 `npm run web`。
+1. 本地验证时启动 `npm run start`；生产验证时安装由 `production` profile 创建的构建。
 2. 打开 App 的“设置”→“后端实验”。
 3. 点击“检查后端连接”。
 4. 页面显示“后端连接正常”即表示 `/api/health` 和 `/api/capabilities` 都已成功调用。
