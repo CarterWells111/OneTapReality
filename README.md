@@ -23,7 +23,7 @@ npm run start
 
 ## 本地启动后端
 
-开发期不需要分别启动前后端。Expo dev server 同时提供 App bundle 和 `/api/*`，Expo Go 会自动把相对 API 请求指向当前 dev server。
+开发期不需要分别启动前端和 API。Expo dev server 同时提供 App bundle 和 `/api/*`，Expo Go 会自动把相对 API 请求指向当前 dev server。PostgreSQL 是独立基础设施，必须先在本机或 Docker 中运行。
 
 首次启动：
 
@@ -34,7 +34,13 @@ npm run db:migrate
 npm run dev
 ```
 
-编辑 `.env`，至少将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。默认 `TURSO_DATABASE_URL=file:./.data/backend.db` 使用被 Git 忽略的本地 libSQL 文件；本地开发无需 Turso 账号。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。
+如果本机没有 PostgreSQL，可先用 Docker 创建开发数据库：
+
+```powershell
+docker run --name adventurex-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=adventurex -p 5432:5432 -d postgres:17
+```
+
+以后只需执行 `docker start adventurex-postgres`。编辑 `.env`，确认 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex`，并将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。若使用已安装的 PostgreSQL，创建 `adventurex` 数据库并按实际用户名、密码和端口修改 URL。
 
 直接验证开发后端：
 
@@ -56,7 +62,7 @@ npx expo config --type public
 npm run start -- --clear
 ```
 
-`npx expo config --type public` 的输出中应包含 `web: { output: 'server' }`。如果没有，说明启动命令不是从本项目目录执行，或当前分支不是 `codex/backend-api-routes-skeleton`。
+`npx expo config --type public` 的输出中应包含 `web: { output: 'server' }`。如果没有，说明启动命令不是从本项目目录执行，或当前代码还未包含 API Routes 配置。
 
 ## 模拟 Railway 生产启动
 
@@ -67,7 +73,7 @@ npm run build:server
 npm run start:server
 ```
 
-默认读取 `.env` 并监听 `PORT=3000`。另开终端验证：
+该命令仍需要 `.env` 中的 `DATABASE_URL`，默认监听 `PORT=3000`。另开终端验证：
 
 ```bash
 npm run verify:backend -- http://127.0.0.1:3000
@@ -81,7 +87,7 @@ Railway 生成域名后，把 native 构建环境中的公开地址设为：
 EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 ```
 
-随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；Turso token 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway。
+随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；`DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway 后端服务。
 
 ## 验证后端接入
 
@@ -100,7 +106,7 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 npm run verify:backend -- http://localhost:8081
 ```
 
-脚本自动验证 health、匿名设备注册、旅行册创建、列表可见性和删除清理，不打印 access token。若返回 `database_unavailable` 或 `no such table`，停止服务并执行 `npm run db:migrate`；若返回 `network_unavailable`，确认 origin 与当前服务端口一致。
+脚本自动验证 health、匿名设备注册、旅行册创建、列表可见性和删除清理，不打印 access token。若返回 `database_unavailable`，检查 PostgreSQL 是否运行及 `DATABASE_URL` 是否正确；若提示表不存在，执行 `npm run db:migrate`；若返回 `network_unavailable`，确认 origin 与当前服务端口一致。
 
 ## 检查命令
 
