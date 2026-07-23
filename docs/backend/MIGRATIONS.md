@@ -2,7 +2,7 @@
 
 ## 技术边界
 
-服务端使用 Turso/libSQL 与 Drizzle ORM。`src/server/db/schema.ts` 是 schema 的代码源，`drizzle/` 保存生成后的 SQL 与 Drizzle meta/journal 文件。
+服务端使用 PostgreSQL 与 Drizzle ORM。`src/server/db/schema.ts` 是 schema 的代码源，`drizzle/` 保存生成后的 SQL 与 Drizzle meta/journal 文件。
 
 ## 命名与执行
 
@@ -11,7 +11,7 @@
 - 只提交由 `drizzle-kit generate` 生成的 migration；禁止手写绕过 schema 的生产变更。
 - 使用 `drizzle-kit migrate` 按顺序应用 migration；API 请求不执行 migration。
 - 已应用 migration 不允许修改，不提供 down migration；需要修复时新增 forward migration。
-- 所有变更必须通过空 libSQL 数据库从头应用的测试。
+- 所有变更必须通过 pg-compatible 空数据库从头应用的 migration 测试。
 
 ## Schema 规则
 
@@ -26,8 +26,7 @@
 
 服务端只读取：
 
-- `TURSO_DATABASE_URL`
-- `TURSO_AUTH_TOKEN`
+- `DATABASE_URL`
 - `DEVICE_TOKEN_PEPPER`
 
 这些变量不得以 `EXPO_PUBLIC_` 开头，也不得进入客户端可导入模块。

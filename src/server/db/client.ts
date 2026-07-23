@@ -1,41 +1,31 @@
-import type { Client, Config } from "@libsql/client";
-import { createClient as createHttpClient } from "@libsql/client/http";
-import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import { drizzle } from "drizzle-orm/libsql/http";
-import { createRequire } from "node:module";
-import path from "node:path";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 
 import * as schema from "./schema";
 
-export type BackendDatabase = LibSQLDatabase<typeof schema>;
+export type BackendDatabase = NodePgDatabase<typeof schema>;
 
 type DatabaseEnvironment = {
-  TURSO_DATABASE_URL?: string;
-  TURSO_AUTH_TOKEN?: string;
+  DATABASE_URL?: string;
 };
 
-function createNodeClient(config: Config): Client {
-  const requireFromProject = createRequire(path.join(process.cwd(), "package.json"));
-  const nodeClient = requireFromProject("@libsql/client") as typeof import("@libsql/client");
-  return nodeClient.createClient(config);
-}
-
-export function createClientFromEnvironment(
+export function getDatabaseUrl(
   environment: DatabaseEnvironment = process.env as DatabaseEnvironment,
-): Client {
-  const url = environment.TURSO_DATABASE_URL ?? "file:./.data/backend.db";
-  const authToken = environment.TURSO_AUTH_TOKEN;
-  const config = authToken ? { url, authToken } : { url };
-  return url.startsWith("file:") ? createNodeClient(config) : createHttpClient(config);
+): string {
+  const url = environment.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error("DATABASE_URL is required");
+  }
+  return url;
 }
 
-export function createBackendDatabase(client: Client): BackendDatabase {
-  return drizzle(client, { schema });
+export function createBackendDatabase(client: Pool): BackendDatabase {
+  return drizzle({ client, schema });
 }
 
 let cachedDatabase: BackendDatabase | undefined;
 
 export function getServerDatabase(): BackendDatabase {
-  cachedDatabase ??= createBackendDatabase(createClientFromEnvironment());
+  cachedDatabase ??= createBackendDatabase(new Pool({ connectionString: getDatabaseUrl() }));
   return cachedDatabase;
 }

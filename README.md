@@ -10,31 +10,53 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 - 本地演示草稿生成器；不接入真实 AI；设置中提供不上传数据的手动后端接口检查
 - Expo Go 可直接运行的 NFC“模拟碰一碰”体验
 
-## 本地启动
+## 本地开发：一次启动 App 与 API
 
 本项目固定使用 **Expo SDK 54**，请使用与你安装版本相匹配的 Expo Go。
 
-```bash
-npm install
-npm run start
-```
+开发期不需要分别启动前端和 API。一个 Expo dev server 会同时提供 App bundle 和 `/api/*`；PostgreSQL 是独立基础设施，需要保持运行。
 
-用 iPhone 上的 Expo Go 扫描终端二维码。若局域网发现失败，使用 `npm run start -- --tunnel`。
-
-## 本地启动后端
-
-开发期不需要分别启动前后端。Expo dev server 同时提供 App bundle 和 `/api/*`，Expo Go 会自动把相对 API 请求指向当前 dev server。
-
-首次启动：
+### 首次准备
 
 ```powershell
 Copy-Item .env.example .env
 npm install
+```
+
+如果本机没有 PostgreSQL，可先用 Docker 创建开发数据库：
+
+```powershell
+docker run --name adventurex-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=adventurex -p 5432:5432 -d postgres:17
+```
+
+编辑 `.env`，确认 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex`，并将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。若使用已安装的 PostgreSQL，创建 `adventurex` 数据库并按实际用户名、密码和端口修改 URL。
+
+首次创建数据库后应用 migration：
+
+```powershell
 npm run db:migrate
+```
+
+### 日常启动
+
+如果 PostgreSQL 已经运行，只需一条命令同时启动 App 与 API：
+
+```powershell
 npm run dev
 ```
 
-编辑 `.env`，至少将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。默认 `TURSO_DATABASE_URL=file:./.data/backend.db` 使用被 Git 忽略的本地 libSQL 文件；本地开发无需 Turso 账号。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。
+如果使用 Docker 且容器没有运行，先启动数据库，再启动 App 与 API：
+
+```powershell
+docker start adventurex-postgres
+npm run dev
+```
+
+`npm run db:migrate` 只在首次创建数据库或仓库新增 migration 后执行，不需要每天运行。用 iPhone 上的 Expo Go 扫描终端二维码；若局域网发现失败，使用：
+
+```powershell
+npm run dev -- --tunnel
+```
 
 直接验证开发后端：
 
@@ -56,7 +78,7 @@ npx expo config --type public
 npm run start -- --clear
 ```
 
-`npx expo config --type public` 的输出中应包含 `web: { output: 'server' }`。如果没有，说明启动命令不是从本项目目录执行，或当前分支不是 `codex/backend-api-routes-skeleton`。
+`npx expo config --type public` 的输出中应包含 `web: { output: 'server' }`。如果没有，说明启动命令不是从本项目目录执行，或当前代码还未包含 API Routes 配置。
 
 ## 模拟 Railway 生产启动
 
@@ -67,7 +89,7 @@ npm run build:server
 npm run start:server
 ```
 
-默认读取 `.env` 并监听 `PORT=3000`。另开终端验证：
+该命令仍需要 `.env` 中的 `DATABASE_URL`，默认监听 `PORT=3000`。另开终端验证：
 
 ```bash
 npm run verify:backend -- http://127.0.0.1:3000
@@ -75,13 +97,15 @@ npm run verify:backend -- http://127.0.0.1:3000
 
 `build:server` 使用 API-only export，不构建依赖本地 `expo-sqlite` 的 Web App。Railway 部署配置、变量清单和上线后操作见 [docs/backend/RAILWAY.md](./docs/backend/RAILWAY.md)。
 
+Railway 部署成功后，不需要每天手动启动线上前后端：PostgreSQL 与 OneTapServer 会持续运行；连接 GitHub 的 Service 会在 `main` 更新后自动构建并重新部署。
+
 Railway 生成域名后，把 native 构建环境中的公开地址设为：
 
 ```env
 EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 ```
 
-随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；Turso token 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway。
+随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；`DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway 后端服务。
 
 ## 验证后端接入
 
@@ -100,7 +124,7 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 npm run verify:backend -- http://localhost:8081
 ```
 
-脚本自动验证 health、匿名设备注册、旅行册创建、列表可见性和删除清理，不打印 access token。若返回 `database_unavailable` 或 `no such table`，停止服务并执行 `npm run db:migrate`；若返回 `network_unavailable`，确认 origin 与当前服务端口一致。
+脚本自动验证 health、匿名设备注册、旅行册创建、列表可见性和删除清理，不打印 access token。若返回 `database_unavailable`，检查 PostgreSQL 是否运行及 `DATABASE_URL` 是否正确；若提示表不存在，执行 `npm run db:migrate`；若返回 `network_unavailable`，确认 origin 与当前服务端口一致。
 
 ## 检查命令
 
