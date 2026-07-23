@@ -1,4 +1,4 @@
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 
 import { CanvasElement } from "./canvas-element";
 import { colors } from "../../components/ui";
@@ -11,6 +11,7 @@ type CanvasPageProps = {
   height?: number;
   layout: CanvasLayout;
   selectedElementId?: string;
+  onPressBlank?: () => void;
   onSelectElement?: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
   interactive?: boolean;
@@ -23,6 +24,7 @@ export function CanvasPage({
   height,
   layout,
   selectedElementId,
+  onPressBlank,
   onSelectElement = () => undefined,
   onTransformEnd,
   interactive = true,
@@ -35,7 +37,8 @@ export function CanvasPage({
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
 
   return (
-    <View
+    <Pressable
+      onPress={interactive ? onPressBlank : undefined}
       style={[
         styles.canvas,
         pageSide === "right" && styles.rightPage,
@@ -55,7 +58,7 @@ export function CanvasPage({
           onTransformEnd={interactive ? onTransformEnd : undefined}
         />
       ))}
-    </View>
+    </Pressable>
   );
 }
 

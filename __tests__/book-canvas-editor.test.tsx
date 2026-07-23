@@ -62,6 +62,27 @@ describe("BookCanvasEditor", () => {
     expect(screen.getByText("第二页")).toBeTruthy();
   });
 
+  it("deselects on a blank page press without changing pages, but keeps selection on an element press", () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const firstText = screen.getByText("第一页");
+
+    fireEvent.press(firstText);
+    fireEvent.press(firstText);
+    expect(screen.getByText("完成")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("album-canvas"));
+    expect(screen.queryByText("完成")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.press(firstText);
+    fireEvent.press(firstText);
+    fireEvent.press(firstText);
+
+    expect(screen.getByText("完成")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("adds a categorized sticker and automatically selects it", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
