@@ -1,24 +1,25 @@
 import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { MemoryCard } from "../../components/memory-card";
+import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, colors, Section } from "../../components/ui";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
-import { getProfileSummary } from "../../features/profile/profile-summary";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
   const { memories, isReady } = useMemories();
-  const summary = getProfileSummary(memories);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <Text selectable style={styles.eyebrow}>OneTapReality · 一触如初</Text>
-        <Text selectable style={styles.title}>把旅程留成一册</Text>
+        <Text selectable style={styles.title}>OneTapReality｜一触如初</Text>
+        <Text selectable style={styles.heroHeadline}>把旅程留成一册</Text>
         <Text selectable style={styles.subtitle}>
-          让每一次触碰，都回到故事最初的地方。选照片、写几句，本地草稿即刻成册。
+          让每一次触碰，都回到故事最初的地方。
+        </Text>
+        <Text selectable style={styles.subtitle}>
+          选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。
         </Text>
         <AppButton label="创建纪念册" onPress={() => router.push("/memory/new")} />
         <Pressable
@@ -30,21 +31,13 @@ export default function MemoriesHomeScreen() {
         </Pressable>
       </View>
 
-      {isReady && memories.length > 0 ? (
-        <View style={styles.stats}>
-          <Statistic label="旅行记忆" value={`${summary.memoryCount} 册`} />
-          <Statistic label="城市足迹" value={`${summary.cityCount} 座`} />
-          <Statistic label="已收录照片" value={`${summary.photoCount} 张`} />
-        </View>
-      ) : null}
-
       <Section title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}>
         {!isReady ? (
           <Text selectable style={styles.mutedText}>正在读取本地记忆…</Text>
         ) : memories.length > 0 ? (
-          <View style={styles.list}>
+          <View style={styles.bookGrid}>
             {memories.map((memory) => (
-              <MemoryCard
+              <MemoryBookCover
                 key={memory.id}
                 memory={memory}
                 onPress={() => router.push({ pathname: "/memory/[id]", params: { id: memory.id } })}
@@ -82,37 +75,15 @@ export default function MemoriesHomeScreen() {
   );
 }
 
-function Statistic({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.statCard}>
-      <Text selectable style={styles.statValue}>{value}</Text>
-      <Text selectable style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   content: { gap: 20, padding: 20, paddingBottom: 36 },
   hero: { backgroundColor: colors.accentSoft, borderRadius: 22, gap: 10, padding: 20 },
-  eyebrow: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   title: { color: colors.ink, fontSize: 28, fontWeight: "800" },
+  heroHeadline: { color: colors.accent, fontSize: 18, fontWeight: "800" },
   subtitle: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
   heroLinkText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
-  stats: { flexDirection: "row", gap: 8 },
-  statCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 14,
-    borderWidth: 1,
-    flex: 1,
-    gap: 4,
-    minHeight: 84,
-    padding: 12,
-  },
-  statValue: { color: colors.ink, fontSize: 19, fontWeight: "800" },
-  statLabel: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  list: { gap: 12 },
+  bookGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 14 },
   emptyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,

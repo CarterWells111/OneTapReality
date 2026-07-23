@@ -1,6 +1,8 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const devices = sqliteTable(
+import type { CloudCanvasLayout } from "../../services/backend/contracts";
+
+export const devices = pgTable(
   "devices",
   {
     id: text("id").primaryKey(),
@@ -13,7 +15,7 @@ export const devices = sqliteTable(
   (table) => [uniqueIndex("devices_installation_id_unique").on(table.installationId), index("devices_token_hash_idx").on(table.tokenHash)],
 );
 
-export const memories = sqliteTable(
+export const memories = pgTable(
   "memories",
   {
     id: text("id").primaryKey(),
@@ -29,7 +31,7 @@ export const memories = sqliteTable(
   (table) => [index("memories_device_updated_idx").on(table.deviceId, table.updatedAt)],
 );
 
-export const memoryPages = sqliteTable(
+export const memoryPages = pgTable(
   "memory_pages",
   {
     id: text("id").primaryKey(),
@@ -39,7 +41,7 @@ export const memoryPages = sqliteTable(
     headline: text("headline").notNull(),
     body: text("body").notNull(),
     photoSlot: integer("photo_slot"),
-    layoutJson: text("layout_json"),
+    layoutJson: jsonb("layout_json").$type<CloudCanvasLayout>(),
   },
   (table) => [index("memory_pages_memory_position_idx").on(table.memoryId, table.position)],
 );

@@ -2,11 +2,24 @@
   "name": "travel-memory-demo",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20.16.0"
+    "node": ">=20.19.0 <21"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=20.19.0 <21",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "10.8.2",
+      "onFail": "error"
+    }
   },
   "dependencies": {
-    "@libsql/client": "^0.17.4",
+    "@svg-maps/china": "^2.0.0",
     "compression": "^1.8.1",
     "drizzle-orm": "^0.45.2",
     "eslint": "^9.39.5",
@@ -28,6 +41,7 @@
     "expo-web-browser": "~15.0.11",
     "express": "^5.2.1",
     "morgan": "^1.11.0",
+    "pg": "^8.22.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -41,12 +55,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@testing-library/react-native": "^14.0.1",
+    "@testing-library/react-native": "13.3.3",
     "@types/jest": "^29.5.14",
+    "@types/pg": "^8.20.0",
     "@types/react": "~19.1.10",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "jest-expo": "~54.0.17",
+    "pg-mem": "^3.0.14",
+    "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
   "scripts": {
@@ -63,7 +80,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --watch",
     "test:ci": "jest --runInBand",
-    "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/backend-screen.test.tsx __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
+    "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-migrations.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/backend-screen.test.tsx __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check"
@@ -80,7 +97,10 @@
     ],
     "modulePathIgnorePatterns": [
       "<rootDir>/.worktrees/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@svg-maps/china$": "<rootDir>/__mocks__/svg-maps-china.ts"
+    }
   },
   "private": true
 }

@@ -136,6 +136,30 @@ export async function getDraft(
   return row ? hydrateMemory(db, row) : null;
 }
 
+/** 回收站：列出已丢弃的本机记忆，最近更新在前。 */
+export async function listDiscardedMemories(db: SQLiteDatabase): Promise<Memory[]> {
+  const rows = await db.getAllAsync<MemoryRow>(
+    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
+    "discarded"
+  );
+  return Promise.all(rows.map((row) => hydrateMemory(db, row)));
+}
+
+/** 回收站：把已丢弃的记忆恢复为已保存。 */
+export async function restoreDiscardedMemory(
+  db: SQLiteDatabase,
+  id: string,
+  updatedAt: string
+) {
+  await db.runAsync(
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "saved",
+    updatedAt,
+    id,
+    "discarded"
+  );
+}
+
 export async function saveMemory(db: SQLiteDatabase, memory: Memory) {
   await insertMemory(db, memory, "saved");
 }

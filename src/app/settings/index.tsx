@@ -5,7 +5,12 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, colors, Section } from "../../components/ui";
-import { normalizeNickname, type LocalProfile } from "../../features/profile/local-profile";
+import {
+  maxBioLength,
+  normalizeBio,
+  normalizeNickname,
+  type LocalProfile,
+} from "../../features/profile/local-profile";
 import { useProfile } from "../../features/profile/profile-provider";
 
 export default function SettingsScreen() {
@@ -52,7 +57,11 @@ export default function SettingsScreen() {
     isSavePending.current = true;
     setIsSaving(true);
     try {
-      await updateProfile({ nickname: normalizeNickname(draft!.nickname), avatarUri: draft!.avatarUri });
+      await updateProfile({
+        nickname: normalizeNickname(draft!.nickname),
+        avatarUri: draft!.avatarUri,
+        bio: normalizeBio(draft!.bio ?? ""),
+      });
       router.back();
     } catch {
       setError("保存资料失败，请重试。");
@@ -85,6 +94,15 @@ export default function SettingsScreen() {
           placeholder="昵称"
           style={styles.input}
           value={draft.nickname}
+        />
+        <Text selectable style={styles.label}>签名</Text>
+        <TextInput
+          accessibilityLabel="签名"
+          maxLength={maxBioLength}
+          onChangeText={(bio) => setDraft((current) => (current ? { ...current, bio } : current))}
+          placeholder="一句属于你们的旅行签名"
+          style={styles.input}
+          value={draft.bio ?? ""}
         />
         <View style={styles.actions}>
           <AppButton label="选择头像" onPress={() => void selectAvatar()} tone="secondary" />

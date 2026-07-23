@@ -1,4 +1,10 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  renderAsync,
+  waitFor,
+} from "@testing-library/react-native";
 import * as React from "react";
 import { Text } from "react-native";
 
@@ -58,7 +64,7 @@ describe("ProfileProvider", () => {
         resolveProfile = resolve;
       }),
     );
-    const screen = await render(
+    const screen = await renderAsync(
       <ProfileProvider>
         <ProfileConsumer />
       </ProfileProvider>,
@@ -77,7 +83,7 @@ describe("ProfileProvider", () => {
       .mockResolvedValueOnce({ nickname: "旅忆用户", avatarUri: null })
       .mockResolvedValueOnce({ nickname: "小林", avatarUri: "file://avatar.jpg" });
     mockSaveLocalProfile.mockResolvedValue(undefined);
-    const screen = await render(
+    const screen = await renderAsync(
       <ProfileProvider>
         <ProfileConsumer />
       </ProfileProvider>,
@@ -94,7 +100,7 @@ describe("ProfileProvider", () => {
   it("rejects an update when writing the local profile fails", async () => {
     mockLoadLocalProfile.mockResolvedValue({ nickname: "旅忆用户", avatarUri: null });
     mockSaveLocalProfile.mockRejectedValue(new Error("write failed"));
-    await render(
+    await renderAsync(
       <ProfileProvider>
         <ProfileUpdateCapture />
       </ProfileProvider>,

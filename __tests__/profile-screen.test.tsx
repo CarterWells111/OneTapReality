@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, renderAsync } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
 const mockIsReady = jest.fn();
@@ -15,7 +15,7 @@ jest.mock("../src/features/profile/profile-provider", () => ({
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
-import { colors } from "../src/components/ui";
+import { DEFAULT_BIO } from "../src/features/profile/local-profile";
 
 const savedMemory = {
   id: "memory-1",
@@ -36,64 +36,60 @@ describe("ProfileScreen", () => {
     mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null });
   });
 
-  it("shows archive statistics and routes the recent memory and next actions", async () => {
+  it("shows the simplified profile card with the brand slogan as the default bio", async () => {
     mockMemories.mockReturnValue([savedMemory]);
-    const screen = await render(<ProfileScreen />);
+    const screen = await renderAsync(<ProfileScreen />);
 
-    expect(screen.getByText("我们的旅行档案")).toBeTruthy();
-    expect(screen.getByText("1 册")).toBeTruthy();
-    expect(screen.getByText("旅行记忆")).toBeTruthy();
-    expect(screen.getByText("1 座")).toBeTruthy();
-    expect(screen.getByText("城市足迹")).toBeTruthy();
-    expect(screen.getByText("2 张")).toBeTruthy();
-    expect(screen.getByText("已收录照片")).toBeTruthy();
-
-    await fireEvent.press(screen.getByText("我们的西湖周末"));
-    await fireEvent.press(screen.getByText("继续创建旅行册"));
-    await fireEvent.press(screen.getByText("查看城市收藏"));
-    await fireEvent.press(screen.getByText("把这册回忆做成礼物"));
-
-    expect(mockPush).toHaveBeenNthCalledWith(1, { pathname: "/memory/[id]", params: { id: "memory-1" } });
-    expect(mockPush).toHaveBeenNthCalledWith(2, "/memory/new");
-    expect(mockPush).toHaveBeenNthCalledWith(3, "/cities");
-    expect(mockPush).toHaveBeenNthCalledWith(4, { pathname: "/memory/[id]", params: { id: "memory-1" } });
+    expect(screen.getByText("小林")).toBeTruthy();
+    expect(screen.getByText(DEFAULT_BIO)).toBeTruthy();
   });
 
-  it("emphasizes the gift card with a terracotta border", async () => {
-    mockMemories.mockReturnValue([savedMemory]);
-    const screen = await render(<ProfileScreen />);
-
-    const giftCard = screen.getByText("→").parent;
-
-    expect(giftCard?.props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ borderColor: colors.warmAccent })]),
-    );
-  });
-
-  it("shows the first-trip action and routes to the privacy declaration", async () => {
+  it("shows a custom bio when the profile has one", async () => {
+    mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null, bio: "记录每一次出发" });
     mockMemories.mockReturnValue([]);
-    const screen = await render(<ProfileScreen />);
+    const screen = await renderAsync(<ProfileScreen />);
 
-    expect(screen.getByText("从第一段旅程开始")).toBeTruthy();
-    expect(screen.queryByText("把这册回忆做成礼物")).toBeNull();
-    expect(screen.getByText("本机数据与隐私声明 ›")).toBeTruthy();
-    expect(screen.queryByText("本机数据与隐私")).toBeNull();
-    expect(screen.queryByText("删除所有本地数据")).toBeNull();
+    expect(screen.getByText("记录每一次出发")).toBeTruthy();
+  });
 
-    await fireEvent.press(screen.getByText("从第一段旅程开始"));
-    await fireEvent.press(screen.getByText("本机数据与隐私声明 ›"));
+  it("shows the same archive statistics as the home tab", async () => {
+    mockMemories.mockReturnValue([savedMemory]);
+    const screen = await renderAsync(<ProfileScreen />);
 
-    expect(mockPush).toHaveBeenCalledWith("/memory/new");
-    expect(mockPush).toHaveBeenCalledWith("/privacy");
+    expect(screen.getByText("旅行记忆")).toBeTruthy();
+    expect(screen.getByText("1 册")).toBeTruthy();
+    expect(screen.getByText("城市足迹")).toBeTruthy();
+    expect(screen.getByText("1 座")).toBeTruthy();
+    expect(screen.getByText("已收录照片")).toBeTruthy();
+    expect(screen.getByText("2 张")).toBeTruthy();
+  });
+
+  it("routes each plain list entry to its destination", async () => {
+    mockMemories.mockReturnValue([]);
+    const screen = await renderAsync(<ProfileScreen />);
+
+    await fireEvent.press(screen.getByText("我的订单"));
+    await fireEvent.press(screen.getByText("我的收藏"));
+    await fireEvent.press(screen.getByText("去过的城市"));
+    await fireEvent.press(screen.getByText("回收站"));
+    await fireEvent.press(screen.getByText("意见反馈"));
+    await fireEvent.press(screen.getByText("本机数据与隐私声明"));
+
+    expect(mockPush).toHaveBeenNthCalledWith(1, "/shop/orders");
+    expect(mockPush).toHaveBeenNthCalledWith(2, "/shop/favorites");
+    expect(mockPush).toHaveBeenNthCalledWith(3, "/cities");
+    expect(mockPush).toHaveBeenNthCalledWith(4, "/recycle-bin");
+    expect(mockPush).toHaveBeenNthCalledWith(5, "/feedback");
+    expect(mockPush).toHaveBeenNthCalledWith(6, "/privacy");
   });
 
   it("shows a local loading state before SQLite memories are ready", async () => {
     mockIsReady.mockReturnValue(false);
     mockMemories.mockReturnValue([]);
 
-    const screen = await render(<ProfileScreen />);
+    const screen = await renderAsync(<ProfileScreen />);
 
     expect(screen.getByText("正在读取本地记忆…")).toBeTruthy();
-    expect(screen.queryByText("从第一段旅程开始")).toBeNull();
+    expect(screen.queryByText("我的订单")).toBeNull();
   });
 });

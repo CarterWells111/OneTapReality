@@ -1,12 +1,27 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { MemoryCard } from "../../components/memory-card";
 import { ProfileAvatar } from "../../components/profile-avatar";
-import { AppButton, colors, Section } from "../../components/ui";
-import { getProfileSummary } from "../../features/profile/profile-summary";
-import { useProfile } from "../../features/profile/profile-provider";
+import { colors } from "../../components/ui";
 import { useMemories } from "../../features/memories/memories-provider";
+import { DEFAULT_BIO } from "../../features/profile/local-profile";
+import { useProfile } from "../../features/profile/profile-provider";
+import { getProfileSummary } from "../../features/profile/profile-summary";
+
+type ListEntry = {
+  key: string;
+  title: string;
+  href: Href;
+};
+
+const listEntries: ListEntry[] = [
+  { key: "orders", title: "我的订单", href: "/shop/orders" },
+  { key: "favorites", title: "我的收藏", href: "/shop/favorites" },
+  { key: "cities", title: "去过的城市", href: "/cities" },
+  { key: "recycle-bin", title: "回收站", href: "/recycle-bin" },
+  { key: "feedback", title: "意见反馈", href: "/feedback" },
+  { key: "privacy", title: "本机数据与隐私声明", href: "/privacy" },
+];
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -14,88 +29,55 @@ export default function ProfileScreen() {
   const { profile, isProfileReady } = useProfile();
   const summary = getProfileSummary(memories);
 
-  const openMemory = (id: string) => {
-    router.push({ pathname: "/memory/[id]", params: { id } });
-  };
-
   if (!isReady || !isProfileReady) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
-        <Text selectable style={styles.subtitle}>正在读取本地记忆…</Text>
+        <Text selectable style={styles.bio}>正在读取本地记忆…</Text>
       </ScrollView>
     );
   }
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      <View style={styles.hero}>
-        <View style={styles.profileHeader}>
-          <ProfileAvatar avatarUri={profile.avatarUri} nickname={profile.nickname} />
-          <View style={styles.profileCopy}>
-            <Text selectable style={styles.nickname}>{profile.nickname}</Text>
-            <Pressable
-              accessibilityLabel="打开设置"
-              accessibilityRole="button"
-              onPress={() => router.push("/settings")}
-              style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-            >
-              <Text selectable style={styles.settingsButtonText}>设置</Text>
-            </Pressable>
-          </View>
+      <Pressable
+        accessibilityLabel="打开设置"
+        accessibilityRole="button"
+        onPress={() => router.push("/settings")}
+        style={({ pressed }) => [styles.hero, pressed && styles.pressed]}
+      >
+        <ProfileAvatar avatarUri={profile.avatarUri} nickname={profile.nickname} size={72} />
+        <View style={styles.heroCopy}>
+          <Text selectable style={styles.nickname}>{profile.nickname}</Text>
+          <Text numberOfLines={2} selectable style={styles.bio}>
+            {profile.bio ?? DEFAULT_BIO}
+          </Text>
         </View>
-        <Text selectable style={styles.eyebrow}>一触如初 · 共同档案</Text>
-        <Text selectable style={styles.title}>我们的旅行档案</Text>
-        <Text selectable style={styles.subtitle}>让每一次触碰，都回到故事最初的地方。</Text>
-        <Text selectable style={styles.subtitle}>每一册和每一张照片都只保存在这台设备上。</Text>
+        <Text selectable style={styles.heroChevron}>›</Text>
+      </Pressable>
+
+      <View style={styles.stats}>
+        <Statistic label="旅行记忆" value={`${summary.memoryCount} 册`} />
+        <Statistic label="城市足迹" value={`${summary.cityCount} 座`} />
+        <Statistic label="已收录照片" value={`${summary.photoCount} 张`} />
       </View>
 
-      <Section title="回忆概览">
-        <View style={styles.stats}>
-          <Statistic label="旅行记忆" value={`${summary.memoryCount} 册`} />
-          <Statistic label="城市足迹" value={`${summary.cityCount} 座`} />
-          <Statistic label="已收录照片" value={`${summary.photoCount} 张`} />
-        </View>
-      </Section>
-
-      <Section title="最近回忆">
-        {summary.recentMemory ? (
-          <MemoryCard memory={summary.recentMemory} onPress={() => openMemory(summary.recentMemory!.id)} />
-        ) : (
-          <View style={styles.emptyCard}>
-            <Text selectable style={styles.emptyTitle}>还没有保存的旅行记忆</Text>
-            <Text selectable style={styles.subtitle}>从一组照片开始，留住你们下一段一起出发的日子。</Text>
-            <AppButton label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
-          </View>
-        )}
-      </Section>
-
-      <Section title="下一步">
-        <View style={styles.actionGroup}>
-          <AppButton label="继续创建旅行册" onPress={() => router.push("/memory/new")} />
-          <AppButton label="查看城市收藏" onPress={() => router.push("/cities")} tone="secondary" />
-        </View>
-        {summary.recentMemory ? (
+      <View style={styles.listCard}>
+        {listEntries.map((entry, index) => (
           <Pressable
             accessibilityRole="button"
-            onPress={() => openMemory(summary.recentMemory!.id)}
-            style={({ pressed }) => [styles.giftCard, pressed && styles.pressed]}>
-            <View style={styles.giftCopy}>
-              <Text selectable style={styles.giftTitle}>把这册回忆做成礼物</Text>
-              <Text selectable style={styles.subtitle}>进入旅行册，继续设计值得收藏的一份纪念。</Text>
-            </View>
-            <Text selectable style={styles.giftArrow}>→</Text>
+            key={entry.key}
+            onPress={() => router.push(entry.href)}
+            style={({ pressed }) => [
+              styles.listRow,
+              index < listEntries.length - 1 && styles.listRowDivider,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text selectable style={styles.listTitle}>{entry.title}</Text>
+            <Text selectable style={styles.listChevron}>›</Text>
           </Pressable>
-        ) : null}
-      </Section>
-
-      <Pressable
-        accessibilityLabel="打开本机数据与隐私声明"
-        accessibilityRole="button"
-        onPress={() => router.push("/privacy")}
-        style={({ pressed }) => [styles.privacyEntry, pressed && styles.pressed]}
-      >
-        <Text selectable style={styles.privacyEntryText}>本机数据与隐私声明 ›</Text>
-      </Pressable>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -111,28 +93,48 @@ function Statistic({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   loading: { padding: 20 },
-  content: { gap: 22, padding: 20 },
-  hero: { backgroundColor: colors.accentSoft, borderRadius: 22, gap: 8, padding: 20 },
-  profileHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
-  profileCopy: { flex: 1, gap: 4 },
-  nickname: { color: colors.ink, fontSize: 18, fontWeight: "800" },
-  settingsButton: { alignSelf: "flex-start", justifyContent: "center", minHeight: 44, minWidth: 44, paddingHorizontal: 8 },
-  settingsButtonText: { color: colors.accent, fontSize: 15, fontWeight: "800" },
-  eyebrow: { color: colors.accent, fontSize: 13, fontWeight: "800" },
-  title: { color: colors.ink, fontSize: 28, fontWeight: "800" },
-  subtitle: { color: colors.muted, lineHeight: 21 },
+  content: { gap: 18, padding: 20 },
+  hero: {
+    alignItems: "center",
+    backgroundColor: colors.accentSoft,
+    borderRadius: 22,
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 104,
+    padding: 20,
+  },
+  heroCopy: { flex: 1, gap: 5 },
+  nickname: { color: colors.ink, fontSize: 21, fontWeight: "800" },
+  bio: { color: colors.muted, fontSize: 13.5, lineHeight: 19 },
+  heroChevron: { color: colors.muted, fontSize: 22, fontWeight: "600" },
   stats: { flexDirection: "row", gap: 8 },
-  statCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 14, borderWidth: 1, flex: 1, gap: 4, minHeight: 88, padding: 12 },
+  statCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    gap: 4,
+    minHeight: 84,
+    padding: 12,
+  },
   statValue: { color: colors.ink, fontSize: 20, fontWeight: "800" },
   statLabel: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  emptyCard: { backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 12, padding: 18 },
-  emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
-  actionGroup: { gap: 10 },
-  giftCard: { alignItems: "center", backgroundColor: colors.accentSoft, borderColor: colors.warmAccent, borderRadius: 16, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", marginTop: 12, minHeight: 88, padding: 16 },
-  giftCopy: { flex: 1, gap: 5 },
-  giftTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
-  giftArrow: { color: colors.warmAccent, fontSize: 24, fontWeight: "800" },
-  privacyEntry: { alignItems: "center", justifyContent: "center", minHeight: 44 },
-  privacyEntryText: { color: colors.muted, fontSize: 14, fontWeight: "700" },
+  listCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  listRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 52,
+    paddingHorizontal: 16,
+  },
+  listRowDivider: { borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  listTitle: { color: colors.ink, fontSize: 15.5, fontWeight: "600" },
+  listChevron: { color: colors.muted, fontSize: 18 },
   pressed: { opacity: 0.82 },
 });

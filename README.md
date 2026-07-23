@@ -10,53 +10,148 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 - 本地演示草稿生成器；不接入真实 AI；设置中提供不上传数据的手动后端接口检查
 - Expo Go 可直接运行的 NFC“模拟碰一碰”体验
 
-## 本地启动
+## 本地开发总览
 
-本项目固定使用 **Expo SDK 54**，请使用与你安装版本相匹配的 Expo Go。
+本项目固定使用 **Expo SDK 54**，请使用匹配版本的 Expo Go。开发环境由三部分组成：
 
-```bash
-npm install
-npm run start
-```
+- PostgreSQL：独立进程，保存匿名设备与脱敏的后端实验数据。
+- Expo dev server：一个进程同时提供 App bundle 和 `/api/*`，不需要分别启动前端与 Node API。
+- App SQLite：仍是旅行册的唯一业务数据源，不会自动同步到 PostgreSQL。
 
-用 iPhone 上的 Expo Go 扫描终端二维码。若局域网发现失败，使用 `npm run start -- --tunnel`。
+### 新开发者首次搭建
 
-## 本地启动后端
+1. 在项目根目录安装依赖并创建本地环境文件：
 
-开发期不需要分别启动前后端。Expo dev server 同时提供 App bundle 和 `/api/*`，Expo Go 会自动把相对 API 请求指向当前 dev server。
+   ```powershell
+   Copy-Item .env.example .env
+   node --version
+   npm --version
+   npm ci
+   ```
 
-首次启动：
+   项目要求 Node `>=20.19.0 <21`，并固定使用 `npm@10.8.2`，与 Expo SDK 54 和当前 Railway 构建环境一致。请先使用自己的 Node 版本管理器切换到 Node 20；随后如果 npm 版本不同，可执行 `npx --yes npm@10.8.2 ci` 完成严格的锁文件安装。`package.json` 中的 `engines`、`packageManager` 与 `devEngines` 分别供 Railway 和 npm 执行这些约束。
+
+2. 编辑 `.env`。本地开发保持公开 origin 为空，并为 pepper 设置仅供本机使用的随机长字符串：
+
+   ```env
+   EXPO_PUBLIC_API_ORIGIN=
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex
+   DEVICE_TOKEN_PEPPER=replace-with-your-random-local-secret
+   PORT=3000
+   ```
+
+   若使用已安装的 PostgreSQL 而不是 Docker，请先创建 `adventurex` 数据库，并按实际用户名、密码和端口修改 `DATABASE_URL`。
+
+3. 启动 Docker Desktop，检查数据库容器是否已经存在：
+
+   ```powershell
+   docker ps -a --filter "name=adventurex-postgres"
+   ```
+
+   如果没有任何容器，首次创建 PostgreSQL：
+
+   ```powershell
+   docker run --name adventurex-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=adventurex -p 5432:5432 -d postgres:17
+   ```
+
+   如果容器已经存在但处于停止状态：
+
+   ```powershell
+   docker start adventurex-postgres
+   ```
+
+4. 等待 PostgreSQL 接受连接：
+
+   ```powershell
+   docker exec adventurex-postgres pg_isready -U postgres -d adventurex
+   ```
+
+   预期包含 `accepting connections`。
+
+5. 应用 migration，并确认初始框架：
+
+   ```powershell
+   npm run db:migrate
+   docker exec adventurex-postgres psql -U postgres -d adventurex -c "\dt"
+   ```
+
+   预期包含 `devices`、`memories`、`memory_pages`；Drizzle 还会在 `drizzle` schema 中维护 migration 记录。这些业务表首次创建后可以是空表。
+
+6. 启动 App 与 API：
+
+   ```powershell
+   npm run dev
+   ```
+
+   用 Expo Go 扫描二维码。若局域网发现失败：
+
+   ```powershell
+   npm run dev -- --tunnel
+   ```
+
+7. 在另一个终端验证后端：
+
+   ```powershell
+   Invoke-RestMethod http://localhost:8081/api/health
+   npm run verify:backend -- http://localhost:8081
+   ```
+
+   完整 smoke check 成功时输出：
+
+   ```json
+   {"health":200,"register":201,"create":201,"list":200,"delete":204}
+   ```
+
+### 日常开发与维护
+
+正常情况下每天只需：
 
 ```powershell
-Copy-Item .env.example .env
-npm install
-npm run db:migrate
+# Windows 上先确认 Docker Desktop 已启动
+docker start adventurex-postgres
 npm run dev
 ```
 
-编辑 `.env`，至少将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。默认 `TURSO_DATABASE_URL=file:./.data/backend.db` 使用被 Git 忽略的本地 libSQL 文件；本地开发无需 Turso 账号。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。
+`docker start` 提示容器已运行可以忽略。`npm run db:migrate` 不需要每天执行；仅在首次创建数据库或拉取到新的 `drizzle/*.sql` 时执行。
 
-直接验证开发后端：
-
-```bash
-npm run verify:backend -- http://localhost:8081
-```
-
-成功时输出：
-
-```json
-{"health":200,"register":201,"create":201,"list":200,"delete":204}
-```
-
-如果启动时仍看到“Using API routes requires the web.output to be set to `server`”提示，先按 `Ctrl+C` 停止旧进程，确认当前目录是项目根目录，再清除 Expo 缓存重启：
+拉取代码后的维护顺序：
 
 ```powershell
-Get-Location
-npx expo config --type public
-npm run start -- --clear
+npm ci
+npm run db:migrate
+npm run lint
+npm run typecheck
+npm run test:ci
 ```
 
-`npx expo config --type public` 的输出中应包含 `web: { output: 'server' }`。如果没有，说明启动命令不是从本项目目录执行，或当前分支不是 `codex/backend-api-routes-skeleton`。
+如果修改服务端 schema：
+
+1. 修改 `src/server/db/schema.ts`。
+2. 执行 `npm run db:generate` 生成新的递增 migration。
+3. 审查生成的 SQL；不要修改已经应用过的 migration。
+4. 执行 `npm run db:migrate` 和 `npm run verify:backend -- http://localhost:8081`。
+5. 提交 schema、SQL 和 `drizzle/meta/*`。
+
+开发结束后按 `Ctrl+C` 停止 Expo。数据库可以继续运行；如需停止：
+
+```powershell
+docker stop adventurex-postgres
+```
+
+### npm 与锁文件规范
+
+- 执行安装或项目脚本时出现 `EBADDEVENGINES`，表示当前 Node 或 npm 不在项目允许范围。先运行 `node --version` 与 `npm --version`；Node 必须是 `20.19.0` 以上且低于 `21`，npm 必须是 `10.8.2`。先切换到 Node 20，再用 `npx --yes npm@10.8.2 ci` 安装。
+- `package.json` 是直接依赖的来源，`package-lock.json` 必须由约定的 `npm@10.8.2` 生成，不手工编辑。
+- 普通安装和 Railway 复现使用 `npm ci`；只有在明确新增、升级或删除依赖时才使用 `npm install`。
+- 发生合并冲突时，先正确解决 `package.json`，不要逐行合并锁文件，也不要无条件选择某一侧的锁文件。
+- 解决 `package.json` 后，使用下面的命令重新生成并验证锁文件：
+
+  ```powershell
+  npx --yes npm@10.8.2 install --package-lock-only
+  npx --yes npm@10.8.2 ci
+  ```
+
+- 删除整个 `package-lock.json` 后重新解析所有依赖只作为最后手段；提交前检查锁文件 diff，避免夹带无关依赖升级。
 
 ## 模拟 Railway 生产启动
 
@@ -67,7 +162,7 @@ npm run build:server
 npm run start:server
 ```
 
-默认读取 `.env` 并监听 `PORT=3000`。另开终端验证：
+该命令仍需要 `.env` 中的 `DATABASE_URL`，默认监听 `PORT=3000`。另开终端验证：
 
 ```bash
 npm run verify:backend -- http://127.0.0.1:3000
@@ -75,32 +170,81 @@ npm run verify:backend -- http://127.0.0.1:3000
 
 `build:server` 使用 API-only export，不构建依赖本地 `expo-sqlite` 的 Web App。Railway 部署配置、变量清单和上线后操作见 [docs/backend/RAILWAY.md](./docs/backend/RAILWAY.md)。
 
-Railway 生成域名后，把 native 构建环境中的公开地址设为：
+Railway 部署成功后，不需要每天手动启动线上前后端：PostgreSQL 与 OneTapServer 会持续运行；连接 GitHub 的 Service 会在 `main` 更新后自动构建并重新部署。
+
+Railway 生产 API 已部署在：
 
 ```env
-EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
+EXPO_PUBLIC_API_ORIGIN=https://onetapserver-production.up.railway.app
 ```
 
-随后重新构建 App。动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。这是公开服务地址，不是秘密；Turso token 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway。
-
-## 验证后端接入
-
-### 方式一：检查 App 页面
-
-1. 启动 `npm run start` 或 `npm run web`。
-2. 打开 App 的“设置”→“后端实验”。
-3. 点击“检查后端连接”。
-4. 页面显示“后端连接正常”即表示 `/api/health` 和 `/api/capabilities` 都已成功调用。
-
-该页面只检查服务能力，不会自动注册设备、上传照片或同步本地旅行册。
-
-### 方式二：跨平台 API smoke check
+`eas.json` 的 `production` profile 已固定使用该公开地址。创建 iOS 或 Android 生产构建：
 
 ```bash
+npx eas-cli@latest build -p ios --profile production
+npx eas-cli@latest build -p android --profile production
+```
+
+动态 Expo config 会同时把该地址写入 API client 和 Expo Router `origin`。本地 `npm run start` 不使用 `production` profile，继续通过相对 `/api/*` 连接同一个 Expo dev server。Railway 域名是公开地址，不是秘密；`DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 只能配置在 Railway 后端服务。
+
+## 后端验证与调试流程
+
+App 的“设置 → 后端实验”只验证两件事：
+
+- `/api/health` 能否连接 PostgreSQL 并执行 `SELECT 1`。
+- `/api/capabilities` 是否返回预期接口能力。
+
+它不会展示数据库内容，也不会注册设备、同步本地旅行册或上传照片。因此 `devices`、`memories` 和 `memory_pages` 都是空表时，页面仍应显示“后端连接正常”。health 也不验证业务表是否已经由 migration 创建。
+
+从底层到上层依次检查：
+
+```powershell
+# A. Docker 容器
+docker ps -a --filter "name=adventurex-postgres"
+
+# B. PostgreSQL 就绪状态和端口
+docker exec adventurex-postgres pg_isready -U postgres -d adventurex
+Test-NetConnection localhost -Port 5432
+
+# C. migration 与业务表
+npm run db:migrate
+docker exec adventurex-postgres psql -U postgres -d adventurex -c "\dt"
+
+# D. Expo API；保持 npm run dev 在另一终端运行
+Invoke-RestMethod http://localhost:8081/api/health
+Invoke-RestMethod http://localhost:8081/api/capabilities
+
+# E. 匿名注册与 CRUD 全链路
 npm run verify:backend -- http://localhost:8081
 ```
 
-脚本自动验证 health、匿名设备注册、旅行册创建、列表可见性和删除清理，不打印 access token。若返回 `database_unavailable` 或 `no such table`，停止服务并执行 `npm run db:migrate`；若返回 `network_unavailable`，确认 origin 与当前服务端口一致。
+health 成功时返回：
+
+```json
+{"service":"adventurex-api","contractVersion":1,"database":"ok"}
+```
+
+smoke check 成功时返回：
+
+```json
+{"health":200,"register":201,"create":201,"list":200,"delete":204}
+```
+
+smoke 脚本会删除自己创建的测试旅行册，但会保留一条匿名测试设备记录；它不会打印 access token 或上传照片。
+
+### 常见问题定位
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| `docker start` 返回 `No such container` | 数据库容器从未创建 | 执行首次搭建中的 `docker run ... postgres:17` |
+| 无法连接 Docker API | Docker Desktop 未启动 | 启动 Docker Desktop，等待引擎就绪 |
+| `pg_isready` 未显示 `accepting connections` | PostgreSQL 尚未启动或正在初始化 | 查看 `docker logs adventurex-postgres` 后重试 |
+| `Test-NetConnection` 的 `TcpTestSucceeded` 为 `False` | 5432 未监听或被其他服务占用 | 检查容器状态、端口映射和本机 PostgreSQL |
+| capabilities 正常，但 health 返回 `503 database_unavailable` | Expo API 正常，数据库未启动或 `DATABASE_URL` 错误 | 启动 PostgreSQL 并检查 `.env` |
+| health 正常，但注册/CRUD 提示表不存在 | 数据库可连接，但 migration 未应用 | 执行 `npm run db:migrate` 并用 `\dt` 验证 |
+| App 显示 `Network unavailable` | Expo dev server 不可达或 API origin 不正确 | 确认 `npm run dev` 正在运行；真机发现失败时使用 `--tunnel` |
+| 提示 `web.output` 必须为 `server` | 启动目录/分支错误或 Expo 缓存陈旧 | 在项目根目录检查 `npx expo config --type public`，再执行 `npm run start -- --clear` |
+| npm 返回 `EBADDEVENGINES` | 当前 Node 不是受支持的 Node 20，或 npm 不是 10.8.2 | 用版本管理器切换至 Node `>=20.19.0 <21`，再执行 `npx --yes npm@10.8.2 ci` |
 
 ## 检查命令
 

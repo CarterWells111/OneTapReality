@@ -3,14 +3,14 @@ import {
   getCityStats,
 } from "../src/features/cities";
 import { createMemory } from "../src/features/memories/memory-factory";
+import { cities } from "../src/types/city";
 
 describe("city map domain data", () => {
   it("returns zeroed statistics for every city when no saved memories exist", () => {
-    expect(getCityStats([])).toEqual([
-      { city: "hangzhou", visitCount: 0, unlocked: false, isVisited: false, intensity: "none" },
-      { city: "shanghai", visitCount: 0, unlocked: false, isVisited: false, intensity: "none" },
-      { city: "shenzhen", visitCount: 0, unlocked: false, isVisited: false, intensity: "none" },
-    ]);
+    const stats = getCityStats([]);
+
+    expect(stats).toHaveLength(cities.length);
+    expect(stats).toEqual(cities.map((city) => ({ city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" })));
   });
 
   it("counts only saved memories across cities and assigns every intensity threshold", () => {
@@ -27,11 +27,13 @@ describe("city map domain data", () => {
       { city: "hangzhou", status: "draft" },
     ] as const;
 
-    expect(getCityStats(memories)).toEqual([
-      { city: "hangzhou", visitCount: 1, unlocked: true, isVisited: true, intensity: "light" },
-      { city: "shanghai", visitCount: 3, unlocked: true, isVisited: true, intensity: "medium" },
-      { city: "shenzhen", visitCount: 4, unlocked: true, isVisited: true, intensity: "strong" },
-    ]);
+    const stats = getCityStats(memories);
+
+    expect(stats).toHaveLength(cities.length);
+    expect(stats.find((stat) => stat.city === "hangzhou")).toMatchObject({ visitCount: 1, unlocked: true, isVisited: true, intensity: "light" });
+    expect(stats.find((stat) => stat.city === "shanghai")).toMatchObject({ visitCount: 3, unlocked: true, isVisited: true, intensity: "medium" });
+    expect(stats.find((stat) => stat.city === "shenzhen")).toMatchObject({ visitCount: 4, unlocked: true, isVisited: true, intensity: "strong" });
+    expect(stats.find((stat) => stat.city === "beijing")).toMatchObject({ visitCount: 0, unlocked: false, intensity: "none" });
   });
 
   it("treats legacy memories without a status as saved", () => {
@@ -47,7 +49,7 @@ describe("city map domain data", () => {
       pages: [],
     });
 
-    expect(getCityStats([legacyMemory, { city: "hangzhou", status: "draft" }])[0]).toMatchObject({
+    expect(getCityStats([legacyMemory, { city: "hangzhou", status: "draft" }]).find((stat) => stat.city === "hangzhou")).toMatchObject({
       city: "hangzhou",
       visitCount: 1,
       intensity: "light",
@@ -60,11 +62,14 @@ describe("city map domain data", () => {
 
     expect(adapter.outline).toMatchObject({ id: "china-simplified", coordinateSpace: "relative" });
     expect(adapter.outline.points.length).toBeGreaterThan(3);
-    expect(adapter.markers).toEqual([
-      { city: "hangzhou", coordinate: { x: 0.73, y: 0.47 } },
-      { city: "shanghai", coordinate: { x: 0.78, y: 0.42 } },
-      { city: "shenzhen", coordinate: { x: 0.62, y: 0.77 } },
-    ]);
+    expect(adapter.markers.map((marker) => marker.city)).toEqual(cities);
+    expect(adapter.markers.find((marker) => marker.city === "beijing")).toMatchObject({
+      coordinate: { x: expect.closeTo(0.7, 2), y: expect.closeTo(0.46, 2) },
+    });
+    expect(adapter.cityFocus.taipei).toMatchObject({
+      center: adapter.markers.find((marker) => marker.city === "taipei")?.coordinate,
+      zoom: 2,
+    });
     expect(adapter.initialFocus).toEqual({ center: { x: 0.62, y: 0.53 }, zoom: 1 });
     expect(serialized).not.toMatch(/https?:|www\./i);
   });
@@ -82,7 +87,7 @@ describe("city map domain data", () => {
     }
 
     const secondAdapter = new OfflineChinaMapAdapter();
-    expect(secondAdapter.markers[0].coordinate).toEqual({ x: 0.73, y: 0.47 });
+    expect(secondAdapter.markers[0].coordinate).toEqual(firstAdapter.markers[0].coordinate);
     expect(secondAdapter.outline.points[0]).toEqual({ x: 0.14, y: 0.25 });
   });
 });

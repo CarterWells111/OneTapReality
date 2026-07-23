@@ -33,10 +33,9 @@ describe("OneTapReality brand copy", () => {
     expect(screen.getByText("选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。")).toBeTruthy();
   });
 
-  it("shows the OneTapReality profile eyebrow and supporting slogan", async () => {
+  it("keeps the OneTapReality slogan as the default profile bio", async () => {
     const screen = await render(<ProfileScreen />);
 
-    expect(screen.getByText("一触如初 · 共同档案")).toBeTruthy();
     expect(screen.getByText("让每一次触碰，都回到故事最初的地方。")).toBeTruthy();
   });
 

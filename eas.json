@@ -1,0 +1,12 @@
+{
+  "cli": {
+    "version": ">= 16.0.1"
+  },
+  "build": {
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://onetapserver-production.up.railway.app"
+      }
+    }
+  }
+}

@@ -56,10 +56,9 @@ export default function ShopSkuScreen() {
   const engravingLabel = engravingFieldByKind[sku.kind];
   const trimmedEngraving = engraving.trim();
   const city = sku.cityLimited ? cityContent[sku.cityLimited] : null;
-  const canSubmit = priceFeel !== null && intendedRange !== null && submitState !== "saving";
+  const canSubmit = submitState !== "saving";
 
   const submit = async () => {
-    if (!priceFeel || !intendedRange) return;
     setSubmitState("saving");
     try {
       await saveOrderIntent({
@@ -73,8 +72,9 @@ export default function ShopSkuScreen() {
         unitPriceCny: unitPrice,
         totalPriceCny: total,
         priceFeel,
-        intendedPriceRange: intendedRange,
+        intendedPriceRange: intendedRange ?? "",
         note: note.trim(),
+        leadTimeDays: sku.craft.leadTimeDays,
         createdAt: new Date().toISOString(),
       });
       setSubmitState("done");
@@ -94,12 +94,13 @@ export default function ShopSkuScreen() {
             {engravingLabel && trimmedEngraving ? ` · ${engravingLabel}「${trimmedEngraving}」` : ""}
           </Text>
           <Text selectable style={styles.mutedCenter}>
-            演示合计 {formatCny(total)} · 愿付价位 {intendedRange}
+            演示合计 {formatCny(total)}
+            {intendedRange ? ` · 愿付价位 ${intendedRange}` : ""}
           </Text>
           <Text selectable style={styles.footNote}>
             仅保存在这台设备上，用于现场收集价格意向，不是真实订单。
           </Text>
-          <AppButton label="查看意向记录" onPress={() => router.push("/shop/orders")} />
+          <AppButton label="查看订单记录" onPress={() => router.push("/shop/orders")} />
           <AppButton label="继续逛商店" tone="secondary" onPress={() => router.back()} />
         </View>
       </ScrollView>
@@ -189,7 +190,7 @@ export default function ShopSkuScreen() {
         <Text selectable style={styles.mutedSmall}>{demoQuoteDisclaimer}</Text>
       </View>
 
-      <Section title="价格意向 · 帮我们定价">
+      <Section title="价格意向 · 帮我们定价（选填）">
         <Text selectable style={styles.mutedText}>这个价格你觉得怎么样？</Text>
         <View style={styles.chipRow}>
           {priceFeelOptions.map((option) => (

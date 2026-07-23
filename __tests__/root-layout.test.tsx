@@ -1,9 +1,9 @@
-import { render } from "@testing-library/react-native";
+import { render, within } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = ({ children }: { children: React.ReactNode }) => <View testID="stack">{children}</View>;
-  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string } }) => (
-    <View testID={`screen-${name}`} title={options?.title} />
+  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string; presentation?: string } }) => (
+    <View testID={`screen-${name}`} title={options?.title} options={options} />
   );
   return { Stack };
 });
@@ -15,6 +15,10 @@ jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
 jest.mock("react-native-gesture-handler", () => {
   const { View } = require("react-native");
   return { GestureHandlerRootView: ({ children }: { children: React.ReactNode }) => <View testID="gesture-root">{children}</View> };
+});
+jest.mock("react-native-safe-area-context", () => {
+  const { View } = require("react-native");
+  return { SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <View testID="safe-area-provider">{children}</View> };
 });
 jest.mock("../src/features/memories/memories-provider", () => {
   const { View } = require("react-native");
@@ -32,7 +36,12 @@ describe("RootLayout", () => {
   it("makes the local profile available around memory screens", async () => {
     const screen = await render(<RootLayout />);
 
-    expect(screen.getByTestId("memories-provider").parent?.props.testID).toBe("profile-provider");
+    expect(screen.getByTestId("safe-area-provider")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("profile-provider")).getByTestId(
+        "memories-provider",
+      ),
+    ).toBeTruthy();
   });
 
   it("registers the native privacy declaration route", async () => {
@@ -45,5 +54,13 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+  });
+
+  it("registers the native fullscreen city map as a full-screen modal", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-city-map/index").props.options).toMatchObject({
+      presentation: "fullScreenModal",
+    });
   });
 });

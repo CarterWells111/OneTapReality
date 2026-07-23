@@ -21,6 +21,7 @@ jest.mock("../src/features/profile/profile-provider", () => ({
 }));
 
 import SettingsScreen from "../src/app/settings";
+import { DEFAULT_BIO } from "../src/features/profile/local-profile";
 
 describe("SettingsScreen", () => {
   beforeEach(() => {
@@ -97,9 +98,32 @@ describe("SettingsScreen", () => {
     });
 
     await waitFor(() =>
-      expect(mockUpdateProfile).toHaveBeenCalledWith({ nickname: "小林", avatarUri: null }),
+      expect(mockUpdateProfile).toHaveBeenCalledWith({
+        nickname: "小林",
+        avatarUri: null,
+        bio: DEFAULT_BIO,
+      }),
     );
     expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves a trimmed bio alongside the nickname", async () => {
+    const screen = await render(<SettingsScreen />);
+
+    fireEvent.changeText(screen.getByLabelText("签名"), "  记录每一次出发  ");
+    await waitFor(() => expect(screen.getByLabelText("签名").props.value).toBe("  记录每一次出发  "));
+    await act(async () => {
+      fireEvent.press(screen.getByText("保存资料"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(mockUpdateProfile).toHaveBeenCalledWith({
+        nickname: "旅忆用户",
+        avatarUri: null,
+        bio: "记录每一次出发",
+      }),
+    );
   });
 
   it("prevents a second save while the first save is pending", async () => {

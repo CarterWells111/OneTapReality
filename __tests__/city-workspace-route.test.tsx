@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { fireEvent, renderAsync, waitFor } from "@testing-library/react-native";
 
 const mockReplace = jest.fn();
 const mockDatabase = { name: "local" };
@@ -25,7 +25,7 @@ describe("city workspace route", () => {
   });
 
   it("loads its local collection on entry, omits NFC content, and routes city markers by replacement", async () => {
-    const screen = await render(<CityScreen />);
+    const screen = await renderAsync(<CityScreen />);
 
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "hangzhou"));
     expect(screen.getByText("0 saved memories")).toBeTruthy();

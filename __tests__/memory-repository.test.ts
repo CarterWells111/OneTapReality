@@ -4,8 +4,10 @@ import {
   createDraft,
   discardDraft,
   getDraft,
+  listDiscardedMemories,
   listMemories,
   migrateDbIfNeeded,
+  restoreDiscardedMemory,
   saveMemory,
   saveDraft,
 } from "../src/storage/memory-repository";
@@ -192,6 +194,25 @@ describe("memory draft lifecycle repository", () => {
 
     expect(execStatements.join(" ")).toContain("CREATE TABLE IF NOT EXISTS city_collection_arrangements");
     expect(execStatements.join(" ")).toContain("FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE");
+  });
+
+  it("lists discarded memories in the recycle bin and restores one to saved", async () => {
+    const { database } = createMemoryDatabase();
+
+    await createDraft(database, draftMemory);
+    await discardDraft(database, draftMemory.id, "2026-07-22T10:02:00.000Z");
+
+    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+      { id: draftMemory.id, status: "discarded" },
+    ]);
+    await expect(listMemories(database)).resolves.toEqual([]);
+
+    await restoreDiscardedMemory(database, draftMemory.id, "2026-07-22T10:03:00.000Z");
+
+    await expect(listDiscardedMemories(database)).resolves.toEqual([]);
+    await expect(listMemories(database)).resolves.toMatchObject([
+      { id: draftMemory.id, status: "saved", updatedAt: "2026-07-22T10:03:00.000Z" },
+    ]);
   });
 
   it("serializes a page canvas layout when saving a memory", async () => {
