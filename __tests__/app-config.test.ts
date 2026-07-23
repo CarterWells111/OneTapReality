@@ -19,4 +19,10 @@ describe("Expo Router production origin", () => {
   it("leaves the development config unchanged without an origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
   });
+
+  it("uses the local OneTapReality logo for the Expo Go preview icon", () => {
+    const expoConfig = require("../app.json").expo;
+
+    expect(expoConfig.icon).toBe("./assets/images/onetapreality-icon.png");
+  });
 });
