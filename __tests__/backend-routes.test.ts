@@ -1,5 +1,7 @@
+const mockDatabaseExecute = jest.fn();
+
 jest.mock("../src/server/db/client", () => ({
-  getServerDatabase: jest.fn(() => ({ run: jest.fn().mockResolvedValue(undefined) })),
+  getServerDatabase: jest.fn(() => ({ execute: mockDatabaseExecute })),
 }));
 
 jest.mock("../src/server/auth/device-auth", () => ({
@@ -28,6 +30,11 @@ import { authenticateRequest } from "../src/server/auth/device-auth";
 import { createDevice, getDeviceByInstallationId, listMemories } from "../src/server/memories/repository";
 
 describe("backend API routes", () => {
+  beforeEach(() => {
+    mockDatabaseExecute.mockReset();
+    mockDatabaseExecute.mockResolvedValue([]);
+  });
+
   it("returns health and capabilities without authentication", async () => {
     const health = await getHealth(new Request("http://localhost/api/health"));
     const capabilities = await getCapabilities(new Request("http://localhost/api/capabilities"));
@@ -35,6 +42,20 @@ describe("backend API routes", () => {
     expect(health.status).toBe(200);
     expect((await health.json()).contractVersion).toBe(1);
     expect((await capabilities.json()).features.automaticSync).toBe(false);
+  });
+
+  it("reports an unavailable PostgreSQL database", async () => {
+    mockDatabaseExecute.mockRejectedValueOnce(new Error("connection failed"));
+
+    const response = await getHealth(new Request("http://localhost/api/health"));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Database is unavailable",
+      },
+    });
   });
 
   it("rejects memory listing when authentication fails", async () => {
