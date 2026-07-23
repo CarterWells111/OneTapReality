@@ -33,8 +33,8 @@ describe("CityCollectionManager", () => {
   it("always provides Fabric with a transform array for an idle row", async () => {
     const screen = await render(<CityCollectionManager featuredMemoryId="one" memories={memories} onCancel={() => {}} onSave={() => {}} />);
 
-    const row = screen.getByText("One").parent?.parent;
+    const row = screen.getByTestId("city-collection-row-one");
 
-    expect(row?.props.style.transform).toEqual([]);
+    expect(row.props.style.transform).toEqual([]);
   });
 });

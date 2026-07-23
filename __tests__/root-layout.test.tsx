@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react-native";
+import { render, within } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = ({ children }: { children: React.ReactNode }) => <View testID="stack">{children}</View>;
@@ -37,7 +37,11 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("safe-area-provider")).toBeTruthy();
-    expect(screen.getByTestId("memories-provider").parent?.props.testID).toBe("profile-provider");
+    expect(
+      within(screen.getByTestId("profile-provider")).getByTestId(
+        "memories-provider",
+      ),
+    ).toBeTruthy();
   });
 
   it("registers the native privacy declaration route", async () => {

@@ -4,7 +4,19 @@
   "version": "1.0.0",
   "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20.16.0"
+    "node": ">=20.19.0 <21"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=20.19.0 <21",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "10.8.2",
+      "onFail": "error"
+    }
   },
   "dependencies": {
     "@svg-maps/china": "^2.0.0",
@@ -43,7 +55,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@testing-library/react-native": "^14.0.1",
+    "@testing-library/react-native": "13.3.3",
     "@types/jest": "^29.5.14",
     "@types/pg": "^8.20.0",
     "@types/react": "~19.1.10",
@@ -51,6 +63,7 @@
     "drizzle-kit": "^0.31.10",
     "jest-expo": "~54.0.17",
     "pg-mem": "^3.0.14",
+    "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
   "scripts": {
