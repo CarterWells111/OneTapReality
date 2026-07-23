@@ -24,8 +24,11 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 
    ```powershell
    Copy-Item .env.example .env
-   npm install
+   npm --version
+   npm ci
    ```
+
+   项目约定使用 `npm@10.8.2`，与当前 Railway 构建环境一致。`package.json` 中的 `packageManager` 用于记录并供支持它的工具识别该版本；如果本机版本不同，可执行 `npx --yes npm@10.8.2 ci` 完成严格的锁文件安装。
 
 2. 编辑 `.env`。本地开发保持公开 origin 为空，并为 pepper 设置仅供本机使用的随机长字符串：
 
@@ -113,7 +116,7 @@ npm run dev
 拉取代码后的维护顺序：
 
 ```powershell
-npm install
+npm ci
 npm run db:migrate
 npm run lint
 npm run typecheck
@@ -133,6 +136,20 @@ npm run test:ci
 ```powershell
 docker stop adventurex-postgres
 ```
+
+### npm 与锁文件规范
+
+- `package.json` 是直接依赖的来源，`package-lock.json` 必须由约定的 `npm@10.8.2` 生成，不手工编辑。
+- 普通安装和 Railway 复现使用 `npm ci`；只有在明确新增、升级或删除依赖时才使用 `npm install`。
+- 发生合并冲突时，先正确解决 `package.json`，不要逐行合并锁文件，也不要无条件选择某一侧的锁文件。
+- 解决 `package.json` 后，使用下面的命令重新生成并验证锁文件：
+
+  ```powershell
+  npx --yes npm@10.8.2 install --package-lock-only
+  npx --yes npm@10.8.2 ci
+  ```
+
+- 删除整个 `package-lock.json` 后重新解析所有依赖只作为最后手段；提交前检查锁文件 diff，避免夹带无关依赖升级。
 
 ## 模拟 Railway 生产启动
 
