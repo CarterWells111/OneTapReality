@@ -26,6 +26,7 @@ export default function RootLayout() {
               <Stack.Screen name="shop/[skuId]" options={{ title: "纪念品详情" }} />
               <Stack.Screen name="shop/orders" options={{ title: "订购意向记录" }} />
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
+              <Stack.Screen name="backend/index" options={{ title: "后端实验" }} />
               <Stack.Screen name="privacy/index" options={{ title: "本机数据与隐私声明" }} />
             </Stack>
           </MemoriesProvider>
