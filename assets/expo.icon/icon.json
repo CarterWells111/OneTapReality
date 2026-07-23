@@ -6,8 +6,8 @@
     {
       "layers" : [
         {
-          "image-name" : "expo-symbol 2.svg",
-          "name" : "expo-symbol 2",
+          "image-name" : "onetapreality-icon.png",
+          "name" : "onetapreality-icon",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
@@ -15,10 +15,6 @@
               -16.046875
             ]
           }
-        },
-        {
-          "image-name" : "grid.png",
-          "name" : "grid"
         }
       ],
       "shadow" : {

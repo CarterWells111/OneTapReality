@@ -150,3 +150,6 @@
 - Turso 尚未创建且不存在云端生产数据，因此本次允许将尚未部署的 `drizzle/0000_initial.sql` 与 meta 重建为 PostgreSQL baseline，不迁移本地 `.data/backend.db`。该 baseline 部署后恢复“已应用 migration 不可修改”的规则。
 - 云端 API 契约、设备隔离、硬删除与外键级联行为保持不变；不新增账号、自动同步、照片上传、支付、分析、真实 AI、CI 或客户端秘密。
 
+## 2026-07-23：Expo 图标素材入口
+
+保留 `app.json` 现有的 `icon.png` 与 `expo.icon` 路径，直接替换对应的本地图片和 `.icon` 图层定义，确保 Expo Go 预览与 iOS 原生图标不再引用默认 Expo 图形。

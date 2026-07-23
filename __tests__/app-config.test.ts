@@ -19,4 +19,21 @@ describe("Expo Router production origin", () => {
   it("leaves the development config unchanged without an origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
   });
+
+  it("uses the branded image in both Expo icon asset entry points", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const expoConfig = require("../app.json").expo;
+    const iconDefinitionPath = path.resolve(__dirname, "..", "assets/expo.icon/icon.json");
+    const iconDefinition = JSON.parse(fs.readFileSync(iconDefinitionPath, "utf8"));
+    const imageNames = iconDefinition.groups.flatMap((group: { layers: Array<{ "image-name": string }> }) =>
+      group.layers.map((layer) => layer["image-name"])
+    );
+
+    expect(expoConfig.icon).toBe("./assets/images/icon.png");
+    expect(expoConfig.ios.icon).toBe("./assets/expo.icon");
+    expect(imageNames).toContain("onetapreality-icon.png");
+    expect(imageNames).not.toContain("expo-symbol 2.svg");
+    expect(fs.existsSync(path.resolve(__dirname, "..", "assets/expo.icon/Assets/onetapreality-icon.png"))).toBe(true);
+  });
 });
