@@ -48,9 +48,9 @@ const layout: CanvasLayout = {
 };
 
 describe("CanvasPage", () => {
-  it("renders image, text and sticker elements then selects the pressed element", async () => {
+  it("renders image, text and sticker elements and only selects after a double press", () => {
     const onSelect = jest.fn();
-    const screen = await render(
+    const screen = render(
       <CanvasPage layout={layout} selectedElementId="caption-1" onSelectElement={onSelect} />,
     );
 
@@ -61,8 +61,10 @@ describe("CanvasPage", () => {
       expect.arrayContaining([expect.objectContaining({ borderWidth: 2 })]),
     );
 
-    await fireEvent.press(screen.getByTestId("canvas-element-sticker-1"));
+    fireEvent.press(screen.getByTestId("canvas-element-sticker-1"));
+    expect(onSelect).not.toHaveBeenCalled();
 
+    fireEvent.press(screen.getByTestId("canvas-element-sticker-1"));
     expect(onSelect).toHaveBeenCalledWith("sticker-1");
   });
 
@@ -86,6 +88,7 @@ describe("CanvasToolbar", () => {
     const onLayer = jest.fn();
     const onDuplicate = jest.fn();
     const onDelete = jest.fn();
+    const onDone = jest.fn();
     const screen = await render(
       <CanvasToolbar
         selectedElement={selected}
@@ -95,6 +98,7 @@ describe("CanvasToolbar", () => {
         onChangeLayer={onLayer}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
+        onDone={onDone}
       />,
     );
 
@@ -106,6 +110,7 @@ describe("CanvasToolbar", () => {
     await fireEvent.press(screen.getByText("后移"));
     await fireEvent.press(screen.getByText("复制"));
     await fireEvent.press(screen.getByText("删除"));
+    await fireEvent.press(screen.getByText("完成"));
 
     expect(onAddText).toHaveBeenCalledTimes(1);
     expect(onAddSticker).toHaveBeenCalledTimes(1);
@@ -115,5 +120,6 @@ describe("CanvasToolbar", () => {
     expect(onLayer).toHaveBeenNthCalledWith(2, "caption-1", "backward");
     expect(onDuplicate).toHaveBeenCalledWith("caption-1");
     expect(onDelete).toHaveBeenCalledWith("caption-1");
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });

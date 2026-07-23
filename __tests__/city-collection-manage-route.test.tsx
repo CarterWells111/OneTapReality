@@ -1,4 +1,4 @@
-import { act, fireEvent, renderAsync, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
 const mockDatabase = { name: "local" };
@@ -31,7 +31,7 @@ describe("city collection management route", () => {
   });
 
   it("atomically persists the selected representative with the full order and returns", async () => {
-    const screen = await renderAsync(<ManageCityCollectionScreen />);
+    const screen = render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai"));
 
     await act(async () => { fireEvent.press(screen.getByLabelText("Set Two as representative")); });
@@ -42,7 +42,7 @@ describe("city collection management route", () => {
   });
 
   it("cancels without writing any database changes", async () => {
-    const screen = await renderAsync(<ManageCityCollectionScreen />);
+    const screen = render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalled());
 
     await act(async () => { fireEvent.press(screen.getByLabelText("Cancel collection changes")); });

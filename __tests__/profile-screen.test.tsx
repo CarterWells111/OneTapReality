@@ -1,4 +1,4 @@
-import { fireEvent, renderAsync } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
 const mockIsReady = jest.fn();
@@ -38,7 +38,7 @@ describe("ProfileScreen", () => {
 
   it("shows the simplified profile card with the brand slogan as the default bio", async () => {
     mockMemories.mockReturnValue([savedMemory]);
-    const screen = await renderAsync(<ProfileScreen />);
+    const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("小林")).toBeTruthy();
     expect(screen.getByText(DEFAULT_BIO)).toBeTruthy();
@@ -47,14 +47,14 @@ describe("ProfileScreen", () => {
   it("shows a custom bio when the profile has one", async () => {
     mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null, bio: "记录每一次出发" });
     mockMemories.mockReturnValue([]);
-    const screen = await renderAsync(<ProfileScreen />);
+    const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("记录每一次出发")).toBeTruthy();
   });
 
   it("shows the same archive statistics as the home tab", async () => {
     mockMemories.mockReturnValue([savedMemory]);
-    const screen = await renderAsync(<ProfileScreen />);
+    const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("旅行记忆")).toBeTruthy();
     expect(screen.getByText("1 册")).toBeTruthy();
@@ -66,7 +66,7 @@ describe("ProfileScreen", () => {
 
   it("routes each plain list entry to its destination", async () => {
     mockMemories.mockReturnValue([]);
-    const screen = await renderAsync(<ProfileScreen />);
+    const screen = render(<ProfileScreen />);
 
     await fireEvent.press(screen.getByText("我的订单"));
     await fireEvent.press(screen.getByText("我的收藏"));
@@ -87,7 +87,7 @@ describe("ProfileScreen", () => {
     mockIsReady.mockReturnValue(false);
     mockMemories.mockReturnValue([]);
 
-    const screen = await renderAsync(<ProfileScreen />);
+    const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("正在读取本地记忆…")).toBeTruthy();
     expect(screen.queryByText("我的订单")).toBeNull();

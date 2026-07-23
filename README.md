@@ -29,7 +29,7 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
    npm ci
    ```
 
-   项目要求 Node `>=20.19.0 <21`，并固定使用 `npm@10.8.2`，与 Expo SDK 54 和当前 Railway 构建环境一致。请先使用自己的 Node 版本管理器切换到 Node 20；随后如果 npm 版本不同，可执行 `npx --yes npm@10.8.2 ci` 完成严格的锁文件安装。`package.json` 中的 `engines`、`packageManager` 与 `devEngines` 分别供 Railway 和 npm 执行这些约束。
+   项目最低要求为 Node `>=20.19.0` 和 npm `>=10.8.2`；满足最低要求的更高版本也可使用。`package.json` 中的 `engines` 与 `devEngines` 分别供 Railway 和 npm 执行这些最低版本约束。
 
 2. 编辑 `.env`。本地开发保持公开 origin 为空，并为 pepper 设置仅供本机使用的随机长字符串：
 
@@ -140,15 +140,15 @@ docker stop adventurex-postgres
 
 ### npm 与锁文件规范
 
-- 执行安装或项目脚本时出现 `EBADDEVENGINES`，表示当前 Node 或 npm 不在项目允许范围。先运行 `node --version` 与 `npm --version`；Node 必须是 `20.19.0` 以上且低于 `21`，npm 必须是 `10.8.2`。先切换到 Node 20，再用 `npx --yes npm@10.8.2 ci` 安装。
-- `package.json` 是直接依赖的来源，`package-lock.json` 必须由约定的 `npm@10.8.2` 生成，不手工编辑。
+- 执行安装或项目脚本时出现 `EBADDEVENGINES`，表示当前 Node 或 npm 低于项目最低要求。先运行 `node --version` 与 `npm --version`；Node 必须为 `20.19.0` 或更高版本，npm 必须为 `10.8.2` 或更高版本。
+- `package.json` 是直接依赖的来源，`package-lock.json` 由满足最低要求的 npm 生成，不手工编辑。
 - 普通安装和 Railway 复现使用 `npm ci`；只有在明确新增、升级或删除依赖时才使用 `npm install`。
 - 发生合并冲突时，先正确解决 `package.json`，不要逐行合并锁文件，也不要无条件选择某一侧的锁文件。
 - 解决 `package.json` 后，使用下面的命令重新生成并验证锁文件：
 
   ```powershell
-  npx --yes npm@10.8.2 install --package-lock-only
-  npx --yes npm@10.8.2 ci
+  npm install --package-lock-only
+  npm ci
   ```
 
 - 删除整个 `package-lock.json` 后重新解析所有依赖只作为最后手段；提交前检查锁文件 diff，避免夹带无关依赖升级。
@@ -244,7 +244,7 @@ smoke 脚本会删除自己创建的测试旅行册，但会保留一条匿名�
 | health 正常，但注册/CRUD 提示表不存在 | 数据库可连接，但 migration 未应用 | 执行 `npm run db:migrate` 并用 `\dt` 验证 |
 | App 显示 `Network unavailable` | Expo dev server 不可达或 API origin 不正确 | 确认 `npm run dev` 正在运行；真机发现失败时使用 `--tunnel` |
 | 提示 `web.output` 必须为 `server` | 启动目录/分支错误或 Expo 缓存陈旧 | 在项目根目录检查 `npx expo config --type public`，再执行 `npm run start -- --clear` |
-| npm 返回 `EBADDEVENGINES` | 当前 Node 不是受支持的 Node 20，或 npm 不是 10.8.2 | 用版本管理器切换至 Node `>=20.19.0 <21`，再执行 `npx --yes npm@10.8.2 ci` |
+| npm 返回 `EBADDEVENGINES` | 当前 Node 或 npm 低于项目最低要求 | 升级至 Node `>=20.19.0`、npm `>=10.8.2`，再执行 `npm ci` |
 
 ## 检查命令
 

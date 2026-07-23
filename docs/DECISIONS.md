@@ -12,7 +12,7 @@
 
 ## 2026-07-23：Node 与 npm 版本治理
 
-本地开发、Railway 构建与未来 CI 统一使用 Expo SDK 54 支持的 Node 20（`>=20.19.0 <21`）和 npm 10.8.2。`package.json` 是唯一版本来源：Railpack 读取 `engines.node` 与 `packageManager`，npm 通过 `devEngines` 在安装、CI 安装和脚本执行前拒绝不兼容环境。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。由于 `@testing-library/react-native@14` 要求 Node 22.13 或 24 以上，测试开发依赖固定为兼容 Node 20 的 `13.3.3`；其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
+本地开发、Railway 构建与未来 CI 的最低工具链要求为 Node `>=20.19.0` 和 npm `>=10.8.2`，允许使用满足最低要求的更高版本。`package.json` 是唯一版本来源：Railpack 读取 `engines`，npm 通过 `devEngines` 只拒绝低于最低要求的环境；移除会固定 npm 精确版本的顶层 `packageManager`。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。测试开发依赖继续使用 `@testing-library/react-native@13.3.3`，其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
 
 ## 2026-07-23：全屏地图缩放标记与标签
 
@@ -150,3 +150,18 @@
 - Turso 尚未创建且不存在云端生产数据，因此本次允许将尚未部署的 `drizzle/0000_initial.sql` 与 meta 重建为 PostgreSQL baseline，不迁移本地 `.data/backend.db`。该 baseline 部署后恢复“已应用 migration 不可修改”的规则。
 - 云端 API 契约、设备隔离、硬删除与外键级联行为保持不变；不新增账号、自动同步、照片上传、支付、分析、真实 AI、CI 或客户端秘密。
 
+## 2026-07-23：Expo 图标素材入口
+
+保留 `app.json` 现有的 `icon.png` 与 `expo.icon` 路径，直接替换对应的本地图片和 `.icon` 图层定义，确保 Expo Go 预览与 iOS 原生图标不再引用默认 Expo 图形。
+
+## 2026-07-23：半本书式旅行册草稿编辑器
+
+- 草稿确认页直接承担编辑职责，不再通过右上角铅笔进入独立编辑页；重新生成、丢弃与最终“保留草稿”仍保留。
+- 抽取受控的共享 `BookCanvasEditor`，同时服务草稿自动保存和已保存旅行册的显式保存流程。书页以单张 3:4 竖版纸页呈现，奇偶页交替模拟内侧书脊、外侧圆角与纸张阴影。
+- 采用轻量原生翻页反馈：页面跟随横向手势位移，并叠加轻微透视、`rotateY` 与阴影变化；位移达到页面宽度 22% 或速度达到 650px/s 才翻页，首尾页不越界。实现只使用现有 Gesture Handler 与 Reanimated，不引入第三方翻页库。
+- 元素坐标、尺寸、旋转与层级继续写入既有 0–1 归一化 Canvas JSON，不修改 SQLite schema，也不迁移旧方形画布。渲染和变换计算扩展为分别使用矩形宽高。
+- 未选中组件不捕获移动，单次横滑用于翻页；双击组件后才进入元素编辑。选中组件内部起始的拖动、缩放和旋转只编辑该组件，空白区域仍可翻页；点击“完成”或成功翻页退出选择。
+- 页面管理保留本地照片选择、添加、删除、前移与后移，并禁止删除最后一页。贴纸继续全部使用本地元数据，增加“全部、情感、旅行、日常、自然”五个标签。
+- 草稿页面写入复用 `updateMemoryPages`，但不刷新完整已保存记忆列表。自动保存队列一次只执行一个 SQLite 写入，写入期间的新编辑合并为最新快照；文字输入使用 400ms debounce，手势在结束时保存，其余结构操作立即保存。
+- “保留草稿”必须等待自动保存队列清空，失败快照未重试成功时不得完成确认；重新生成和丢弃与保存生命周期串行协调，并可明确清除被覆盖的失败快照。
+- 本次不新增网络服务、远程素材、账号、支付、分析、真实 AI、真实 NFC 或客户端秘密。
