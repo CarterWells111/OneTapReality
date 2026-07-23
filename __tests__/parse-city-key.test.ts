@@ -58,7 +58,7 @@ describe("parseCityKey · 安全错误", () => {
   });
 
   it("rejects unknown cities", () => {
-    const payload = "tralbum://city-key/v1?city=chengdu&exp=2027-07-01&sig=0000";
+    const payload = "tralbum://city-key/v1?city=hong-kong&exp=2027-07-01&sig=0000";
 
     expect(parseCityKey(payload, now)).toEqual({ ok: false, reason: "unknown-city" });
   });

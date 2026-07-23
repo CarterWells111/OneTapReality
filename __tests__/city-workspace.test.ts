@@ -24,7 +24,7 @@ describe("city workspace helpers", () => {
     const adapter = new OfflineChinaMapAdapter();
 
     expect(resolveCityFocus(adapter, "shenzhen")).toEqual({
-      center: { x: 0.62, y: 0.77 },
+      center: { x: 0.71, y: 0.84 },
       zoom: 2,
     });
   });

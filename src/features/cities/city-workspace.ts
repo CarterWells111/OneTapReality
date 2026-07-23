@@ -12,9 +12,13 @@ export type WorkspaceSize = {
   readonly width: number;
 };
 
-const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), maximum);
+const clamp = (value: number, minimum: number, maximum: number) => {
+  "worklet";
+  return Math.min(Math.max(value, minimum), maximum);
+};
 
 export function clampWorkspaceViewport(viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceViewport {
+  "worklet";
   const scale = clamp(viewport.scale, 1, 3.5);
   const translateXLimit = Math.max(0, (size.width * (scale - 1)) / 2);
   const translateYLimit = Math.max(0, (size.height * (scale - 1)) / 2);

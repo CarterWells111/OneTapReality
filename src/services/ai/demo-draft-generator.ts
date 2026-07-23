@@ -1,14 +1,20 @@
 import type { MemoryDraftInput, StoryPage } from "../../types/memory";
+import { cityRegistry, type City } from "../../types/city";
 
 export interface DraftGenerator {
   generate(input: MemoryDraftInput): Promise<StoryPage[]>;
 }
 
-const cityPhrases = {
+const existingCityPhrases: Partial<Record<City, string>> = {
   hangzhou: "在西湖边慢慢走过的这一天",
   shanghai: "在城市灯光里并肩前行的这一天",
   shenzhen: "在海风与新鲜感中出发的这一天",
-} as const;
+};
+
+const cityPhrases: Record<City, string> = Object.fromEntries(cityRegistry.map((city) => [
+  city.id,
+  existingCityPhrases[city.id] ?? `在${city.name}慢慢走过的这一天`,
+])) as Record<City, string>;
 
 export class DemoDraftGenerator implements DraftGenerator {
   async generate(input: MemoryDraftInput): Promise<StoryPage[]> {
