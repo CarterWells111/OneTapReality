@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { readFileSync } from "node:fs";
 
 import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
 
@@ -24,8 +25,9 @@ describe("CityMap", () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
     const provinces = screen.getAllByTestId(/^china-province-/);
 
-    expect(provinces.length).toBeGreaterThanOrEqual(30);
+    expect(provinces.length).toBeGreaterThanOrEqual(31);
     expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
+    expect(screen.getByTestId("china-province-taiwan-inset")).toBeTruthy();
     expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
   });
 
@@ -40,7 +42,10 @@ describe("CityMap", () => {
       expect(coordinate.y).toBeLessThanOrEqual(569);
     }
 
-    expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toEqual({ x: 603.72, y: 386.92 });
+    expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toMatchObject({
+      x: expect.closeTo(602.03, 2),
+      y: expect.closeTo(405.28, 2),
+    });
   });
 
   it("uses the SVG meet content frame for a letterboxed workspace", () => {
@@ -54,16 +59,12 @@ describe("CityMap", () => {
   });
 
   it("renders provinces, markers, and labels inside one undistorted China SVG", async () => {
-    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    const screen = await render(<CityMap initialCity="hangzhou" stats={stats} variant="workspace" />);
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
-    const dot = screen.getByTestId("city-map-marker-dot-hangzhou-medium").props;
-    expect(dot).toMatchObject({
-      cx: 603.72,
-      cy: 386.92,
-    });
-    const label = screen.getByTestId("city-map-label-hangzhou").props;
-    expect(label.x).toEqual([603.72]);
+    const dot = screen.getByTestId("city-map-marker-dot-jinan-none").props;
+    const label = screen.getByTestId("city-map-label-jinan").props;
+    expect(label.x).toEqual([dot.cx]);
     expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
     expect(label.y[0]).toBeLessThan(dot.cy);
     expect(dot.r).toBeLessThanOrEqual(12);
@@ -140,11 +141,17 @@ describe("CityMap", () => {
     expect(visibleModels[0]?.showLabel).toBe(true);
   });
 
-  it("resolves each workspace label independently to keep pinch updates linear", () => {
+  it("shows only one of two colliding workspace labels", () => {
     const markers = new OfflineChinaMapAdapter().markers;
     const overlappingMarkers = [markers[0], { ...markers[1], coordinate: markers[0].coordinate }];
     const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
 
-    expect(models.map((model) => model.showLabel)).toEqual([true, true]);
+    expect(models.map((model) => model.showLabel)).toEqual([true, false]);
+  });
+
+  it("avoids object spread in the UI-thread label collision worklet", () => {
+    const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
+
+    expect(source).not.toContain("{ ...candidate.model");
   });
 });

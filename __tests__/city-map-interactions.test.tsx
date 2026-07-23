@@ -3,6 +3,7 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 const mockGestureHandlers: Record<string, { begin?: () => void; update?: (event: { scale?: number; translationX?: number; translationY?: number }) => void }> = {};
 const mockRunOnJS = jest.fn();
 const mockSharedValues: Array<{ value: number }> = [];
+let mockDerivedValueCalls = 0;
 
 jest.mock("react-native-reanimated", () => {
   const { View } = require("react-native");
@@ -13,6 +14,12 @@ jest.mock("react-native-reanimated", () => {
     runOnJS: (...args: unknown[]) => mockRunOnJS(...args),
     useAnimatedProps: (worklet: () => unknown) => worklet(),
     useAnimatedStyle: (worklet: () => unknown) => worklet(),
+    useDerivedValue: (worklet: () => unknown) => {
+      mockDerivedValueCalls += 1;
+      const shared = React.useRef(null) as { current: { value: unknown } | null };
+      if (shared.current === null) shared.current = { value: worklet() };
+      return shared.current;
+    },
     useSharedValue: (value: number) => {
       const shared = React.useRef(null) as { current: { value: number } | null };
       if (shared.current === null) {
@@ -56,6 +63,19 @@ describe("CityMap workspace gestures", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSharedValues.splice(0, mockSharedValues.length);
+    mockDerivedValueCalls = 0;
+  });
+
+  it("does not start the UI-thread label worklet for the static overview map", async () => {
+    await render(<CityMap stats={stats} variant="overview" />);
+
+    expect(mockDerivedValueCalls).toBe(0);
+  });
+
+  it("does not start a derived UI-thread worklet when the fullscreen map opens", async () => {
+    await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
+
+    expect(mockDerivedValueCalls).toBe(0);
   });
 
   it("clamps shared pan and pinch values without calling React across gesture frames", async () => {
