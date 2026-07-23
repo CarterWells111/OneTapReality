@@ -31,12 +31,12 @@ const markerTokens: Record<CityVisitIntensity, { fill: string; border: string }>
 };
 const overviewMapDimensions = Object.freeze({ height: 210, width: 300 });
 const markerTargetSize = 44;
-const markerVisualSize = 14;
-const markerLabelFontSize = 12;
+const markerVisualSize = 8;
+const markerLabelFontSize = 11;
 const markerLabelWidth = 88;
 const markerLabelHeight = 20;
 export const workspaceLabelZoomThreshold = 1.8;
-const minimumReadableMarkerSize = 24;
+const minimumReadableMarkerSize = 12;
 const chinaMapViewBox = chinaMap.viewBox;
 type ChinaProvince = { readonly id: string; readonly path: string };
 const chinaProvinces = chinaMap.locations as readonly ChinaProvince[];
@@ -46,9 +46,7 @@ const markerSvgScale = chinaMapCoordinateSpace.height / overviewMapDimensions.he
 const markerSvgRadius = markerVisualSize * markerSvgScale / 2;
 const markerTargetSvgSize = markerTargetSize * markerSvgScale;
 const markerLabelSvgFontSize = markerLabelFontSize * markerSvgScale;
-const markerLabelSvgHeight = markerLabelHeight * markerSvgScale;
-const markerLabelSvgOffsetY = 30 * markerSvgScale;
-const markerLabelSvgWidth = markerLabelWidth * markerSvgScale;
+const markerLabelSvgOffsetY = (markerVisualSize / 2 + markerLabelFontSize) * markerSvgScale;
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
@@ -87,47 +85,25 @@ type WorkspaceMarkerModel = {
   readonly pressSize: number;
   readonly showLabel: boolean;
 };
-type WorkspaceLabelFrame = { readonly height: number; readonly width: number; readonly x: number; readonly y: number };
-
-function labelFramesIntersect(first: WorkspaceLabelFrame, second: WorkspaceLabelFrame) {
+export function resolveWorkspaceMarkerModel(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel {
   "worklet";
-  return first.x < second.x + second.width && first.x + first.width > second.x && first.y < second.y + second.height && first.y + first.height > second.y;
-}
-
-export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel[] {
-  "worklet";
-  const models: WorkspaceMarkerModel[] = [];
-  const visibleLabelFrames: WorkspaceLabelFrame[] = [];
   const contentFrame = resolveChinaMapContentFrame(size);
   const dotSize = markerSvgRadius * 2 * contentFrame.scale * viewport.scale;
   const pressSize = markerTargetSvgSize * contentFrame.scale * viewport.scale;
   const fontSize = markerLabelSvgFontSize * contentFrame.scale * viewport.scale;
+  const coordinate = resolveChinaMapCoordinate(marker);
+  const contentX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
+  const contentY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
+  const anchorX = (contentX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX;
+  const anchorY = (contentY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY;
+  const onScreen = anchorX + dotSize / 2 >= 0 && anchorX - dotSize / 2 <= size.width && anchorY + dotSize / 2 >= 0 && anchorY - dotSize / 2 <= size.height;
+  const showLabel = viewport.scale >= workspaceLabelZoomThreshold && dotSize >= minimumReadableMarkerSize && onScreen;
+  return { dotSize, fontSize, onScreen, pressSize, showLabel };
+}
 
-  for (const marker of markers) {
-    const coordinate = resolveChinaMapCoordinate(marker);
-    const contentX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
-    const contentY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
-    const anchorX = (contentX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX;
-    const anchorY = (contentY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY;
-    const onScreen = anchorX + dotSize / 2 >= 0 && anchorX - dotSize / 2 <= size.width && anchorY + dotSize / 2 >= 0 && anchorY - dotSize / 2 <= size.height;
-    const labelFrame = {
-      height: markerLabelSvgHeight * contentFrame.scale * viewport.scale,
-      width: markerLabelSvgWidth * contentFrame.scale * viewport.scale,
-      x: anchorX - markerLabelSvgWidth * contentFrame.scale * viewport.scale / 2,
-      y: anchorY - markerLabelSvgOffsetY * contentFrame.scale * viewport.scale,
-    };
-    let collides = false;
-    for (const visibleLabelFrame of visibleLabelFrames) {
-      if (labelFramesIntersect(labelFrame, visibleLabelFrame)) {
-        collides = true;
-        break;
-      }
-    }
-    const showLabel = viewport.scale >= workspaceLabelZoomThreshold && dotSize >= minimumReadableMarkerSize && onScreen && !collides;
-    if (showLabel) visibleLabelFrames.push(labelFrame);
-    models.push({ dotSize, fontSize, onScreen, pressSize, showLabel });
-  }
-  return models;
+export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel[] {
+  "worklet";
+  return markers.map((marker) => resolveWorkspaceMarkerModel(marker, viewport, size));
 }
 
 function savedMemoryLabel(city: City, visitCount: number) {
@@ -163,12 +139,11 @@ type AnimatedWorkspaceValues = {
   readonly translateY: { readonly value: number };
 };
 
-function CityMapMarkerView({ animatedValues, city, interactive, marker, markers, onCityPress, stat, variant }: {
+function CityMapMarkerView({ animatedValues, city, interactive, marker, onCityPress, stat, variant }: {
   readonly animatedValues: AnimatedWorkspaceValues;
   readonly city: City;
   readonly interactive: boolean;
   readonly marker: CityMapMarker;
-  readonly markers: readonly CityMapMarker[];
   readonly onCityPress?: (city: City) => void;
   readonly stat: CityStats;
   readonly variant: CityMapVariant;
@@ -177,19 +152,18 @@ function CityMapMarkerView({ animatedValues, city, interactive, marker, markers,
   const coordinate = resolveChinaMapCoordinate(marker);
   const animatedLabelProps = useAnimatedProps(() => {
     if (variant !== "workspace") return { opacity: 0 };
-    const models = resolveWorkspaceMarkerModels(markers, {
+    const model = resolveWorkspaceMarkerModel(marker, {
       scale: animatedValues.scale.value,
       translateX: animatedValues.translateX.value,
       translateY: animatedValues.translateY.value,
     }, { height: animatedValues.mapHeight.value, width: animatedValues.mapWidth.value });
-    const markerIndex = markers.indexOf(marker);
-    return { opacity: models[markerIndex]?.showLabel ? 1 : 0 };
+    return { opacity: model.showLabel ? 1 : 0 };
   });
 
   return (
     <G accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" accessible onPress={interactive ? () => onCityPress?.(city) : undefined} testID={`city-map-marker-${city}-${stat.intensity}`}>
       <Rect fill="transparent" height={markerTargetSvgSize} width={markerTargetSvgSize} x={coordinate.x - markerTargetSvgSize / 2} y={coordinate.y - markerTargetSvgSize / 2} testID={`city-map-marker-target-${city}-${stat.intensity}`} />
-      <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={3 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
+      <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
       {variant === "workspace" ? <AnimatedSvgText animatedProps={animatedLabelProps} fill={colors.ink} fontSize={markerLabelSvgFontSize} fontWeight="800" textAnchor="middle" x={coordinate.x} y={coordinate.y - markerLabelSvgOffsetY} testID={`city-map-label-${city}`}>{cityContent[city].name}</AnimatedSvgText> : null}
     </G>
   );
@@ -276,7 +250,7 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
           return (
-            <CityMapMarkerView animatedValues={{ mapHeight, mapWidth, scale, translateX, translateY }} city={city} interactive={interactive} key={city} marker={marker} markers={adapter.markers} onCityPress={onCityPress} stat={stat} variant={variant} />
+            <CityMapMarkerView animatedValues={{ mapHeight, mapWidth, scale, translateX, translateY }} city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} variant={variant} />
           );
           })}
         </Svg>

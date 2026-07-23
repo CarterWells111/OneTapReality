@@ -57,13 +57,17 @@ describe("CityMap", () => {
     const screen = await render(<CityMap stats={stats} variant="workspace" />);
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
-    expect(screen.getByTestId("city-map-marker-dot-hangzhou-medium").props).toMatchObject({
+    const dot = screen.getByTestId("city-map-marker-dot-hangzhou-medium").props;
+    expect(dot).toMatchObject({
       cx: 603.72,
       cy: 386.92,
     });
     const label = screen.getByTestId("city-map-label-hangzhou").props;
     expect(label.x).toEqual([603.72]);
-    expect(label.y[0]).toEqual(expect.any(Number));
+    expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
+    expect(label.y[0]).toBeLessThan(dot.cy);
+    expect(dot.r).toBeLessThanOrEqual(12);
+    expect(dot.strokeWidth).toBeLessThanOrEqual(6);
   });
 
   it("calls the city callback when an interactive marker is pressed", async () => {
@@ -130,17 +134,17 @@ describe("CityMap", () => {
     const visibleModels = resolveWorkspaceMarkerModels([markers[0]], { scale: 1.8, translateX: 100, translateY: 0 }, size);
 
     expect(hiddenModels.every((model) => !model.showLabel)).toBe(true);
-    expect(visibleModels[0]?.dotSize).toBeCloseTo(25.2);
-    expect(visibleModels[0]?.fontSize).toBeCloseTo(21.6);
+    expect(visibleModels[0]?.dotSize).toBeCloseTo(14.4);
+    expect(visibleModels[0]?.fontSize).toBeCloseTo(19.8);
     expect(visibleModels[0]?.pressSize).toBeCloseTo(79.2);
     expect(visibleModels[0]?.showLabel).toBe(true);
   });
 
-  it("keeps only the first colliding workspace city label visible", () => {
+  it("resolves each workspace label independently to keep pinch updates linear", () => {
     const markers = new OfflineChinaMapAdapter().markers;
     const overlappingMarkers = [markers[0], { ...markers[1], coordinate: markers[0].coordinate }];
     const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
 
-    expect(models.map((model) => model.showLabel)).toEqual([true, false]);
+    expect(models.map((model) => model.showLabel)).toEqual([true, true]);
   });
 });
