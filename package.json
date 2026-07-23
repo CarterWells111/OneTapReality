@@ -2,19 +2,19 @@
   "name": "travel-memory-demo",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20.19.0 <21"
+    "node": ">=20.19.0",
+    "npm": ">=10.8.2"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=20.19.0 <21",
+      "version": ">=20.19.0",
       "onFail": "error"
     },
     "packageManager": {
       "name": "npm",
-      "version": "10.8.2",
+      "version": ">=10.8.2",
       "onFail": "error"
     }
   },

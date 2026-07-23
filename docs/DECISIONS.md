@@ -12,7 +12,7 @@
 
 ## 2026-07-23：Node 与 npm 版本治理
 
-本地开发、Railway 构建与未来 CI 统一使用 Expo SDK 54 支持的 Node 20（`>=20.19.0 <21`）和 npm 10.8.2。`package.json` 是唯一版本来源：Railpack 读取 `engines.node` 与 `packageManager`，npm 通过 `devEngines` 在安装、CI 安装和脚本执行前拒绝不兼容环境。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。由于 `@testing-library/react-native@14` 要求 Node 22.13 或 24 以上，测试开发依赖固定为兼容 Node 20 的 `13.3.3`；其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
+本地开发、Railway 构建与未来 CI 的最低工具链要求为 Node `>=20.19.0` 和 npm `>=10.8.2`，允许使用满足最低要求的更高版本。`package.json` 是唯一版本来源：Railpack 读取 `engines`，npm 通过 `devEngines` 只拒绝低于最低要求的环境；移除会固定 npm 精确版本的顶层 `packageManager`。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。测试开发依赖继续使用 `@testing-library/react-native@13.3.3`，其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
 
 ## 2026-07-23：全屏地图缩放标记与标签
 

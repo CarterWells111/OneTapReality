@@ -9,7 +9,7 @@ Railway 托管 Expo API Routes 的 Node server 和同项目 PostgreSQL；现有 
 - `npm run db:migrate`：在发布新版本前应用 Drizzle migration。
 - `npm run start:server`：启动 Expo Server 的 Express adapter。
 - `/api/health`：Railway 健康检查路径。
-- Node.js：`>=20.19.0 <21`。
+- Node.js：`>=20.19.0`。
 
 ## 第一次配置
 
