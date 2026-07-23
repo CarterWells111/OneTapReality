@@ -10,28 +10,17 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 - 本地演示草稿生成器；不接入真实 AI；设置中提供不上传数据的手动后端接口检查
 - Expo Go 可直接运行的 NFC“模拟碰一碰”体验
 
-## 本地启动
+## 本地开发：一次启动 App 与 API
 
 本项目固定使用 **Expo SDK 54**，请使用与你安装版本相匹配的 Expo Go。
 
-```bash
-npm install
-npm run start
-```
+开发期不需要分别启动前端和 API。一个 Expo dev server 会同时提供 App bundle 和 `/api/*`；PostgreSQL 是独立基础设施，需要保持运行。
 
-用 iPhone 上的 Expo Go 扫描终端二维码。若局域网发现失败，使用 `npm run start -- --tunnel`。
-
-## 本地启动后端
-
-开发期不需要分别启动前端和 API。Expo dev server 同时提供 App bundle 和 `/api/*`，Expo Go 会自动把相对 API 请求指向当前 dev server。PostgreSQL 是独立基础设施，必须先在本机或 Docker 中运行。
-
-首次启动：
+### 首次准备
 
 ```powershell
 Copy-Item .env.example .env
 npm install
-npm run db:migrate
-npm run dev
 ```
 
 如果本机没有 PostgreSQL，可先用 Docker 创建开发数据库：
@@ -40,7 +29,34 @@ npm run dev
 docker run --name adventurex-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=adventurex -p 5432:5432 -d postgres:17
 ```
 
-以后只需执行 `docker start adventurex-postgres`。编辑 `.env`，确认 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex`，并将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。若使用已安装的 PostgreSQL，创建 `adventurex` 数据库并按实际用户名、密码和端口修改 URL。
+编辑 `.env`，确认 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex`，并将 `DEVICE_TOKEN_PEPPER` 换成仅用于本机的随机字符串。开发期保持 `EXPO_PUBLIC_API_ORIGIN` 为空。若使用已安装的 PostgreSQL，创建 `adventurex` 数据库并按实际用户名、密码和端口修改 URL。
+
+首次创建数据库后应用 migration：
+
+```powershell
+npm run db:migrate
+```
+
+### 日常启动
+
+如果 PostgreSQL 已经运行，只需一条命令同时启动 App 与 API：
+
+```powershell
+npm run dev
+```
+
+如果使用 Docker 且容器没有运行，先启动数据库，再启动 App 与 API：
+
+```powershell
+docker start adventurex-postgres
+npm run dev
+```
+
+`npm run db:migrate` 只在首次创建数据库或仓库新增 migration 后执行，不需要每天运行。用 iPhone 上的 Expo Go 扫描终端二维码；若局域网发现失败，使用：
+
+```powershell
+npm run dev -- --tunnel
+```
 
 直接验证开发后端：
 
@@ -80,6 +96,8 @@ npm run verify:backend -- http://127.0.0.1:3000
 ```
 
 `build:server` 使用 API-only export，不构建依赖本地 `expo-sqlite` 的 Web App。Railway 部署配置、变量清单和上线后操作见 [docs/backend/RAILWAY.md](./docs/backend/RAILWAY.md)。
+
+Railway 部署成功后，不需要每天手动启动线上前后端：PostgreSQL 与 OneTapServer 会持续运行；连接 GitHub 的 Service 会在 `main` 更新后自动构建并重新部署。
 
 Railway 生成域名后，把 native 构建环境中的公开地址设为：
 
