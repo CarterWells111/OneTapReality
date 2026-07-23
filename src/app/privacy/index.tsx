@@ -18,12 +18,18 @@ export default function PrivacyScreen() {
       <View style={styles.hero}>
         <Text selectable style={styles.eyebrow}>本机优先</Text>
         <Text selectable style={styles.title}>本机数据与隐私声明</Text>
-        <Text selectable style={styles.helper}>这是一款本地演示应用，不使用账户、云同步或远程服务。</Text>
+        <Text selectable style={styles.helper}>这是一款本地优先演示应用，不使用账户或自动云同步。你可以在设置中主动打开后端实验页检查接口，但不会上传旅行册或照片。</Text>
       </View>
 
       <Section title="数据只留在设备上">
         <PrivacyCard title="本机 SQLite 存储">
           旅行信息、照片 URI 和旅行册内容仅保存在本机 SQLite 中；照片不会上传或共享。
+        </PrivacyCard>
+      </Section>
+
+      <Section title="可选后端实验">
+        <PrivacyCard title="只在主动点击时请求">
+          后端实验页只检查服务健康状态和能力，不上传旅行信息、照片 URI、照片二进制或本地文件路径。断网不会影响本地旅行册。
         </PrivacyCard>
       </Section>
 

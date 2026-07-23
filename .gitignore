@@ -33,7 +33,13 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
 .env*.local
+.data/*
+!.data/
+!.data/.gitkeep
 
 # typescript
 *.tsbuildinfo
@@ -43,3 +49,6 @@ example
 # generated native folders
 /ios
 /android
+
+# local helper scripts
+*.bat

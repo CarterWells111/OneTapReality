@@ -1,0 +1,68 @@
+/**
+ * 模拟订购的意向记录：只保存在本机 kv-store，
+ * 用于现场收集「想要什么样式、愿意付多少」，不构成订单或支付。
+ */
+
+import Storage from "expo-sqlite/kv-store";
+
+import { priceFeelLabels, type PriceFeel } from "./shop-options";
+
+export type OrderIntent = {
+  id: string;
+  skuId: string;
+  skuName: string;
+  styleId: string;
+  styleName: string;
+  /** 空字符串表示未刻字或该商品不支持刻字。 */
+  engraving: string;
+  quantity: number;
+  unitPriceCny: number;
+  totalPriceCny: number;
+  priceFeel: PriceFeel;
+  intendedPriceRange: string;
+  note: string;
+  createdAt: string;
+};
+
+const orderIntentsKey = "luyi.shop.order-intents.v1";
+
+export async function listOrderIntents(): Promise<OrderIntent[]> {
+  try {
+    const stored = await Storage.getItemAsync(orderIntentsKey);
+    if (!stored) return [];
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) ? (parsed as OrderIntent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveOrderIntent(intent: OrderIntent): Promise<void> {
+  const existing = await listOrderIntents();
+  await Storage.setItemAsync(orderIntentsKey, JSON.stringify([intent, ...existing]));
+}
+
+export async function clearOrderIntents(): Promise<void> {
+  await Storage.setItemAsync(orderIntentsKey, JSON.stringify([]));
+}
+
+export function createOrderIntentId(): string {
+  return `intent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function formatIntentTime(createdAt: string): string {
+  return `${createdAt.slice(0, 10)} ${createdAt.slice(11, 16)}`;
+}
+
+export function exportOrderIntents(intents: OrderIntent[]): string {
+  const lines = intents.map((intent, index) => {
+    const engraving = intent.engraving ? `；刻字：「${intent.engraving}」` : "";
+    const note = intent.note ? `；备注：${intent.note}` : "";
+    return `${index + 1}. ${intent.skuName}（${intent.styleName}）× ${intent.quantity}，演示价 ¥${intent.totalPriceCny}；价格感受：${priceFeelLabels[intent.priceFeel]}；愿付价位：${intent.intendedPriceRange}${engraving}${note}（${formatIntentTime(intent.createdAt)}）`;
+  });
+  return [
+    "一触如初 · 纪念品订购意向记录",
+    "仅现场演示收集，不构成订单或支付。",
+    ...lines,
+  ].join("\n");
+}

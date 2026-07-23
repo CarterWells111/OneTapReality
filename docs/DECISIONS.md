@@ -100,3 +100,20 @@
 
 备注：本批次在无法运行 npm 的会话环境中编写，测试已随代码提交但未在本机执行；合并前需运行 `npm run lint`、`npm run typecheck`、`npm run test:ci` 确认全绿。
 
+## 2026-07-22：Expo API Routes 后端接口骨架
+
+本阶段新增 Expo Router API Routes、Turso/libSQL 与 Drizzle 的后端接口骨架。首期只实现匿名设备注册、能力探测和旅行册 CRUD 接口；现有 `luyi.db` 仍是 app 的唯一业务数据源，客户端不自动同步、不双写、不替换本地仓储。
+
+- 匿名身份使用安装随机 ID 与不透明 bearer token；token 只以 SecureStore 形式保存在客户端，服务端只保存带 pepper 的 hash。
+- 云端 DTO 只包含标题、城市、日期、状态、照片数量、文字和脱敏页面布局；不上传照片二进制、本地照片 URI、精确位置或其他秘密。
+- 服务端 schema 独立于本地 SQLite，使用 `devices`、`memories`、`memory_pages` 三张表；migration 由 Drizzle 生成并以不可修改的版本化 SQL 提交。
+- 本阶段不引入账号、支付、分析、对象存储、自动同步、冲突解决、真实 AI 或真实 NFC，也不执行真实 EAS/Turso 部署。
+
+## 2026-07-23：统一开发入口与 Railway 部署适配
+
+- 本地开发继续由一个 Expo dev server 同时承载客户端资源和 `/api/*`，不要求分别启动前后端。
+- 生产后端以 Expo Web server export 为唯一构建产物，通过 `expo-server` 的 Express adapter 在 Railway Node 服务中运行。
+- Railway 进程必须监听平台注入的 `PORT`，健康检查使用 `/api/health`，部署前应用 Drizzle migration。
+- Web 和开发期 native 请求继续使用相对 `/api/*`；生产 native 通过 `EXPO_PUBLIC_API_ORIGIN` 同时配置 API client 与 Expo Router `origin`。
+- 不引入第二套 Express 业务路由、Railway PostgreSQL、自动同步、照片上传或客户端秘密；Express 只负责托管 Expo 导出物。
+
