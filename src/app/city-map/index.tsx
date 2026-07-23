@@ -15,16 +15,15 @@ export default function FullscreenCityMapScreen() {
 
   return (
     <SafeAreaView style={{ backgroundColor: colors.background, flex: 1 }} testID="fullscreen-city-map-screen">
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", padding: 20 }}>
+      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 6 }} testID="fullscreen-city-map-header">
         <View>
-          <Text selectable style={{ color: colors.ink, fontSize: 22, fontWeight: "800" }}>中国旅行地图</Text>
-          <Text selectable style={{ color: colors.muted, marginTop: 4 }}>双指缩放，单指平移</Text>
+          <Text selectable style={{ color: colors.ink, fontSize: 15, fontWeight: "800" }}>中国旅行地图</Text>
         </View>
-        <Pressable accessibilityLabel="关闭全屏地图" accessibilityRole="button" onPress={() => router.back()} style={({ pressed }) => ({ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 16, borderWidth: 1, opacity: pressed ? 0.82 : 1, paddingHorizontal: 14, paddingVertical: 10 })}>
+        <Pressable accessibilityLabel="关闭全屏地图" accessibilityRole="button" onPress={() => router.back()} style={({ pressed }) => ({ alignItems: "center", backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, height: 36, justifyContent: "center", opacity: pressed ? 0.82 : 1, width: 36 })} testID="fullscreen-city-map-close">
           <Text selectable style={{ color: colors.ink, fontWeight: "800" }}>关闭</Text>
         </Pressable>
       </View>
-      <View style={{ flex: 1, justifyContent: "center", padding: 16 }}>
+      <View style={{ flex: 1, padding: 4 }} testID="fullscreen-city-map-viewport">
         <CityMap stats={cityStats} variant="workspace" interactive onCityPress={goToCity} />
       </View>
     </SafeAreaView>
