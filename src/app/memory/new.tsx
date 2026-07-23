@@ -1,11 +1,12 @@
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
 import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, Section } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
+import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { useMemories } from "../../features/memories/memories-provider";
 import { cities, type City } from "../../types/memory";
 
@@ -15,13 +16,19 @@ function today() {
 
 export default function NewMemoryScreen() {
   const router = useRouter();
+  const { city: rawCity } = useLocalSearchParams<{ city?: string }>();
   const { createDraft } = useMemories();
   const [title, setTitle] = React.useState("我们的旅行");
-  const [city, setCity] = React.useState<City>("hangzhou");
+  const presetCity = resolveCityRouteParam(rawCity);
+  const [city, setCity] = React.useState<City>(presetCity);
   const [travelDate, setTravelDate] = React.useState(today);
   const [photoUris, setPhotoUris] = React.useState<string[]>([]);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setCity(presetCity);
+  }, [presetCity]);
 
   const selectPhotos = async () => {
     setError("");

@@ -63,6 +63,16 @@ describe("CityMap", () => {
     expect(onCityPress).toHaveBeenCalledWith("hangzhou");
   });
 
+  it("starts a workspace map at the selected adapter city focus", async () => {
+    const screen = await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
+
+    expect(screen.getByTestId("city-map-workspace-canvas").props.style.transform).toEqual([
+      { translateX: -72 },
+      { translateY: -105 },
+      { scale: 2 },
+    ]);
+  });
+
   it("keeps nearby Hangzhou and Shanghai 44px overview marker targets separate", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
     const hangzhouStyle = screen.getByTestId("city-map-marker-hangzhou-medium").props.style;

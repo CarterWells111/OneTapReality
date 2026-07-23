@@ -25,6 +25,7 @@ export interface CityMapAdapter {
   readonly outline: LocalMapOutline;
   readonly markers: readonly CityMapMarker[];
   readonly initialFocus: CityMapFocus;
+  readonly cityFocus: Readonly<Record<City, CityMapFocus>>;
 }
 
 function freezeCoordinate({ x, y }: RelativeMapCoordinate): RelativeMapCoordinate {
@@ -63,5 +64,10 @@ export class OfflineChinaMapAdapter implements CityMapAdapter {
   readonly initialFocus: CityMapFocus = Object.freeze({
     center: freezeCoordinate({ x: 0.62, y: 0.53 }),
     zoom: 1,
+  });
+  readonly cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze({
+    hangzhou: Object.freeze({ center: freezeCoordinate({ x: 0.73, y: 0.47 }), zoom: 2 }),
+    shanghai: Object.freeze({ center: freezeCoordinate({ x: 0.78, y: 0.42 }), zoom: 2 }),
+    shenzhen: Object.freeze({ center: freezeCoordinate({ x: 0.62, y: 0.77 }), zoom: 2 }),
   });
 }

@@ -1,4 +1,7 @@
+import * as React from "react";
 import { Pressable, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS, useSharedValue } from "react-native-reanimated";
 import Svg, { Polygon } from "react-native-svg";
 
 import { colors } from "../../components/ui";
@@ -6,6 +9,7 @@ import type { City } from "../../types/memory";
 import { cityContent } from "./city-content";
 import { OfflineChinaMapAdapter, type CityMapFocus, type CityMapMarker } from "./city-map-adapter";
 import type { CityStats, CityVisitIntensity } from "./city-stats";
+import { clampWorkspaceViewport, resolveCityFocus, type WorkspaceViewport } from "./city-workspace";
 
 type CityMapVariant = "overview" | "workspace";
 
@@ -29,20 +33,13 @@ const overviewMapDimensions = Object.freeze({ height: 210, width: 300 });
 const markerTargetSize = 44;
 const markerVisualSize = 14;
 
-type MarkerFrame = {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-};
-
+type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = {
   readonly anchor: { readonly x: number; readonly y: number };
   readonly pressFrame: MarkerFrame;
   readonly labelFrame: MarkerFrame;
   readonly markerFrame: MarkerFrame;
 };
-
 type MarkerPlacement = {
   readonly label: Omit<MarkerFrame, "x" | "y"> & { readonly offsetX: number; readonly offsetY: number };
   readonly pressOffsetX: number;
@@ -50,29 +47,13 @@ type MarkerPlacement = {
 };
 
 const markerPlacements: Record<City, MarkerPlacement> = {
-  // These nearby source coordinates stay fixed; only their hit target and text placement are offset.
-  hangzhou: {
-    label: { height: 20, offsetX: -76, offsetY: 28, width: 80 },
-    pressOffsetX: -37,
-    pressOffsetY: -22,
-  },
-  shanghai: {
-    label: { height: 20, offsetX: -8, offsetY: -48, width: 72 },
-    pressOffsetX: -7,
-    pressOffsetY: -22,
-  },
-  shenzhen: {
-    label: { height: 20, offsetX: -37, offsetY: 26, width: 74 },
-    pressOffsetX: -22,
-    pressOffsetY: -22,
-  },
+  hangzhou: { label: { height: 20, offsetX: -76, offsetY: 28, width: 80 }, pressOffsetX: -37, pressOffsetY: -22 },
+  shanghai: { label: { height: 20, offsetX: -8, offsetY: -48, width: 72 }, pressOffsetX: -7, pressOffsetY: -22 },
+  shenzhen: { label: { height: 20, offsetX: -37, offsetY: 26, width: 74 }, pressOffsetX: -22, pressOffsetY: -22 },
 };
 
 export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout {
-  const anchor = {
-    x: marker.coordinate.x * overviewMapDimensions.width,
-    y: marker.coordinate.y * overviewMapDimensions.height,
-  };
+  const anchor = { x: marker.coordinate.x * overviewMapDimensions.width, y: marker.coordinate.y * overviewMapDimensions.height };
   const placement = markerPlacements[marker.city];
   const pressFrame = {
     height: markerTargetSize,
@@ -80,21 +61,10 @@ export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout
     x: anchor.x + placement.pressOffsetX,
     y: anchor.y + placement.pressOffsetY,
   };
-
   return {
     anchor,
-    labelFrame: {
-      height: placement.label.height,
-      width: placement.label.width,
-      x: anchor.x + placement.label.offsetX,
-      y: anchor.y + placement.label.offsetY,
-    },
-    markerFrame: {
-      height: markerVisualSize,
-      width: markerVisualSize,
-      x: anchor.x - markerVisualSize / 2,
-      y: anchor.y - markerVisualSize / 2,
-    },
+    labelFrame: { height: placement.label.height, width: placement.label.width, x: anchor.x + placement.label.offsetX, y: anchor.y + placement.label.offsetY },
+    markerFrame: { height: markerVisualSize, width: markerVisualSize, x: anchor.x - markerVisualSize / 2, y: anchor.y - markerVisualSize / 2 },
     pressFrame,
   };
 }
@@ -103,88 +73,91 @@ function savedMemoryLabel(city: City, visitCount: number) {
   return `${cityContent[city].name}，已保存 ${visitCount} 册旅行记忆`;
 }
 
-export function CityMap({ stats, variant, interactive = false, onCityPress }: CityMapProps) {
-  const adapter = new OfflineChinaMapAdapter();
+function focusViewport(focus: CityMapFocus): WorkspaceViewport {
+  return clampWorkspaceViewport({
+    scale: focus.zoom,
+    translateX: (0.5 - focus.center.x) * overviewMapDimensions.width * focus.zoom,
+    translateY: (0.5 - focus.center.y) * overviewMapDimensions.height * focus.zoom,
+  }, overviewMapDimensions);
+}
+
+export function CityMap({ stats, variant, initialCity, interactive = false, onCityPress }: CityMapProps) {
+  const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
+  const initialViewport = variant === "workspace" && initialCity
+    ? focusViewport(resolveCityFocus(adapter, initialCity))
+    : { scale: 1, translateX: 0, translateY: 0 };
+  const [viewport, setViewport] = React.useState<WorkspaceViewport>(initialViewport);
+  const translateX = useSharedValue(initialViewport.translateX);
+  const translateY = useSharedValue(initialViewport.translateY);
+  const scale = useSharedValue(initialViewport.scale);
+  const panStartX = useSharedValue(initialViewport.translateX);
+  const panStartY = useSharedValue(initialViewport.translateY);
+  const pinchStartScale = useSharedValue(initialViewport.scale);
+
+  React.useEffect(() => {
+    const nextViewport = variant === "workspace" && initialCity
+      ? focusViewport(resolveCityFocus(adapter, initialCity))
+      : { scale: 1, translateX: 0, translateY: 0 };
+    translateX.value = nextViewport.translateX;
+    translateY.value = nextViewport.translateY;
+    scale.value = nextViewport.scale;
+    setViewport(nextViewport);
+  }, [adapter, initialCity, scale, translateX, translateY, variant]);
+
+  const updateViewport = React.useCallback((nextViewport: WorkspaceViewport) => {
+    setViewport(clampWorkspaceViewport(nextViewport, overviewMapDimensions));
+  }, []);
+  const pan = Gesture.Pan().enabled(variant === "workspace")
+    .onBegin(() => { panStartX.value = translateX.value; panStartY.value = translateY.value; })
+    .onUpdate((event) => {
+      const next = clampWorkspaceViewport({ scale: scale.value, translateX: panStartX.value + event.translationX, translateY: panStartY.value + event.translationY }, overviewMapDimensions);
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
+      runOnJS(updateViewport)(next);
+    });
+  const pinch = Gesture.Pinch().enabled(variant === "workspace")
+    .onBegin(() => { pinchStartScale.value = scale.value; })
+    .onUpdate((event) => {
+      const next = clampWorkspaceViewport({ scale: pinchStartScale.value * event.scale, translateX: translateX.value, translateY: translateY.value }, overviewMapDimensions);
+      scale.value = next.scale;
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
+      runOnJS(updateViewport)(next);
+    });
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
   const outlinePoints = adapter.outline.points.map(({ x, y }) => `${x * 300},${y * 210}`).join(" ");
 
-  return (
-    <View
-      accessibilityLabel={variant === "overview" ? "离线中国城市旅行地图概览" : "离线中国城市旅行地图工作区"}
-      style={{ aspectRatio: 300 / 210, backgroundColor: "#EEF2EE", borderRadius: 20, overflow: "hidden" }}
-    >
-      <Svg height="100%" width="100%" viewBox="0 0 300 210">
-        <Polygon fill="#DDEBDD" points={outlinePoints} stroke={colors.accent} strokeWidth={2} />
-      </Svg>
-      {adapter.markers.map((marker) => {
-        const { city, coordinate } = marker;
-        const stat = statsByCity.get(city) ?? {
-          city,
-          visitCount: 0,
-          unlocked: false,
-          isVisited: false,
-          intensity: "none" as const,
-        };
-        const token = markerTokens[stat.intensity];
-        const label = savedMemoryLabel(city, stat.visitCount);
-        const layout = resolveCityMarkerLayout(marker);
-        const pressOffsetX = layout.pressFrame.x - layout.anchor.x;
-        const pressOffsetY = layout.pressFrame.y - layout.anchor.y;
-        const markerOffsetX = layout.markerFrame.x - layout.pressFrame.x;
-        const markerOffsetY = layout.markerFrame.y - layout.pressFrame.y;
-
-        return (
-          <Pressable
-            key={city}
-            accessibilityLabel={label}
-            accessibilityRole="button"
-            disabled={!interactive}
-            onPress={() => onCityPress?.(city)}
-            style={({ pressed }) => ({
-              height: markerTargetSize,
-              left: `${coordinate.x * 100}%`,
-              minHeight: markerTargetSize,
-              minWidth: markerTargetSize,
-              opacity: pressed ? 0.82 : 1,
-              position: "absolute",
-              top: `${coordinate.y * 100}%`,
-              transform: [{ translateX: pressOffsetX }, { translateY: pressOffsetY }],
-              width: markerTargetSize,
-            })}
-            testID={`city-map-marker-${city}-${stat.intensity}`}
-          >
-            <View
-              style={{
-                backgroundColor: token.fill,
-                borderColor: token.border,
-                borderRadius: markerVisualSize / 2,
-                borderWidth: 3,
-                height: markerVisualSize,
-                left: markerOffsetX,
-                position: "absolute",
-                top: markerOffsetY,
-                width: markerVisualSize,
-              }}
-            />
-            <Text
-              selectable
-              style={{
-                color: colors.ink,
-                fontSize: 12,
-                fontWeight: "800",
-                left: layout.labelFrame.x - layout.pressFrame.x,
-                position: "absolute",
-                top: layout.labelFrame.y - layout.pressFrame.y,
-                width: layout.labelFrame.width,
-              }}
-            >
-              {cityContent[city].name} · {stat.visitCount} 册
-            </Text>
-          </Pressable>
-        );
-      })}
+  const map = (
+    <View accessibilityLabel={variant === "overview" ? "离线中国城市旅行地图概览" : "离线中国城市旅行地图工作区"} style={{ aspectRatio: 300 / 210, backgroundColor: "#EEF2EE", borderRadius: 20, overflow: "hidden" }}>
+      <View testID={variant === "workspace" ? "city-map-workspace-canvas" : undefined} style={{ flex: 1, transform: [{ translateX: viewport.translateX }, { translateY: viewport.translateY }, { scale: viewport.scale }] }}>
+        <Svg height="100%" width="100%" viewBox="0 0 300 210">
+          <Polygon fill="#DDEBDD" points={outlinePoints} stroke={colors.accent} strokeWidth={2} />
+        </Svg>
+        {adapter.markers.map((marker) => {
+          const { city, coordinate } = marker;
+          const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
+          const token = markerTokens[stat.intensity];
+          const layout = resolveCityMarkerLayout(marker);
+          const pressOffsetX = layout.pressFrame.x - layout.anchor.x;
+          const pressOffsetY = layout.pressFrame.y - layout.anchor.y;
+          const markerOffsetX = layout.markerFrame.x - layout.pressFrame.x;
+          const markerOffsetY = layout.markerFrame.y - layout.pressFrame.y;
+          return (
+            <Pressable key={city} accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" disabled={!interactive} onPress={() => onCityPress?.(city)}
+              style={({ pressed }) => ({ height: markerTargetSize, left: `${coordinate.x * 100}%`, minHeight: markerTargetSize, minWidth: markerTargetSize, opacity: pressed ? 0.82 : 1, position: "absolute", top: `${coordinate.y * 100}%`, transform: [{ translateX: pressOffsetX }, { translateY: pressOffsetY }], width: markerTargetSize })}
+              testID={`city-map-marker-${city}-${stat.intensity}`}>
+              <View style={{ backgroundColor: token.fill, borderColor: token.border, borderRadius: markerVisualSize / 2, borderWidth: 3, height: markerVisualSize, left: markerOffsetX, position: "absolute", top: markerOffsetY, width: markerVisualSize }} />
+              <Text selectable style={{ color: colors.ink, fontSize: 12, fontWeight: "800", left: layout.labelFrame.x - layout.pressFrame.x, position: "absolute", top: layout.labelFrame.y - layout.pressFrame.y, width: layout.labelFrame.width }}>
+                {cityContent[city].name} · {stat.visitCount} 册
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
+
+  return variant === "workspace" ? <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>{map}</GestureDetector> : map;
 }
 
 export type { CityMapProps, CityMapVariant };
