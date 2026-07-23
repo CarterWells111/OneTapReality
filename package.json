@@ -2,7 +2,13 @@
   "name": "travel-memory-demo",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.16.0"
+  },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "compression": "^1.8.1",
+    "drizzle-orm": "^0.45.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~10.0.0",
     "expo": "~54.0.36",
@@ -13,11 +19,15 @@
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.12",
     "expo-router": "~6.0.24",
+    "expo-secure-store": "~15.0.8",
+    "expo-server": "~1.0.7",
     "expo-splash-screen": "~31.0.13",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
     "expo-web-browser": "~15.0.11",
+    "express": "^5.2.1",
+    "morgan": "^1.11.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -26,17 +36,24 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.5.1"
+    "react-native-worklets": "0.5.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.10",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
     "jest-expo": "~54.0.17",
     "typescript": "~5.9.2"
   },
   "scripts": {
+    "dev": "expo start",
     "start": "expo start",
+    "build:server": "expo export --platform web --no-ssg",
+    "start:server": "node --require dotenv/config server.cjs",
+    "verify:backend": "node scripts/verify-backend.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -44,13 +61,24 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest --watch",
-    "test:ci": "jest --runInBand"
+    "test:ci": "jest --runInBand",
+    "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/backend-screen.test.tsx __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:check": "drizzle-kit check"
   },
   "jest": {
     "preset": "jest-expo",
     "testMatch": [
       "**/__tests__/**/*.test.ts",
       "**/__tests__/**/*.test.tsx"
+    ],
+    "testPathIgnorePatterns": [
+      "<rootDir>/node_modules/",
+      "<rootDir>/.worktrees/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.worktrees/"
     ]
   },
   "private": true

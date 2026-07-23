@@ -101,6 +101,11 @@ export default function SettingsScreen() {
         </View>
       </Section>
 
+      <Section title="后端实验">
+        <Text selectable style={styles.helper}>仅手动检查接口能力，不会同步本地旅行册或上传照片。</Text>
+        <AppButton label="打开后端实验" onPress={() => router.push("/backend")} tone="secondary" />
+      </Section>
+
       <AppButton disabled={isSaving} label={isSaving ? "正在保存资料…" : "保存资料"} onPress={() => void saveProfile()} />
     </ScrollView>
   );
