@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 
-import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
+import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
 
 const stats: CityStats[] = [
   { city: "hangzhou", visitCount: 2, unlocked: true, isVisited: true, intensity: "medium" },
@@ -29,6 +29,47 @@ describe("CityMap", () => {
     expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
   });
 
+  it("projects every local marker into the China SVG viewBox rather than the outer map container", () => {
+    const adapter = new OfflineChinaMapAdapter();
+
+    for (const marker of adapter.markers) {
+      const coordinate = resolveChinaMapCoordinate(marker);
+      expect(coordinate.x).toBeGreaterThanOrEqual(0);
+      expect(coordinate.x).toBeLessThanOrEqual(774);
+      expect(coordinate.y).toBeGreaterThanOrEqual(0);
+      expect(coordinate.y).toBeLessThanOrEqual(569);
+    }
+
+    expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toEqual({ x: 603.72, y: 386.92 });
+  });
+
+  it("uses the SVG meet content frame for a letterboxed workspace", () => {
+    expect(resolveChinaMapContentFrame({ height: 320, width: 480 })).toEqual({
+      height: 320,
+      scale: 320 / 569,
+      width: (774 * 320) / 569,
+      x: (480 - (774 * 320) / 569) / 2,
+      y: 0,
+    });
+  });
+
+  it("renders provinces, markers, and labels inside one undistorted China SVG", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+
+    expect(screen.getByTestId("city-map-content")).toBeTruthy();
+    const dot = screen.getByTestId("city-map-marker-dot-hangzhou-medium").props;
+    expect(dot).toMatchObject({
+      cx: 603.72,
+      cy: 386.92,
+    });
+    const label = screen.getByTestId("city-map-label-hangzhou").props;
+    expect(label.x).toEqual([603.72]);
+    expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
+    expect(label.y[0]).toBeLessThan(dot.cy);
+    expect(dot.r).toBeLessThanOrEqual(12);
+    expect(dot.strokeWidth).toBeLessThanOrEqual(6);
+  });
+
   it("calls the city callback when an interactive marker is pressed", async () => {
     const onCityPress = jest.fn();
     const screen = await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={onCityPress} />);
@@ -55,13 +96,13 @@ describe("CityMap", () => {
 
   it("keeps every overview marker accessible while labels remain hidden at the low overview zoom", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
-    const hangzhouStyle = screen.getByTestId("city-map-marker-hangzhou-medium").props.style;
-    const shanghaiStyle = screen.getByTestId("city-map-marker-shanghai-none").props.style;
+    const hangzhouTarget = screen.getByTestId("city-map-marker-target-hangzhou-medium").props;
+    const shanghaiTarget = screen.getByTestId("city-map-marker-target-shanghai-none").props;
 
-    expect(hangzhouStyle.minWidth).toBeGreaterThanOrEqual(44);
-    expect(hangzhouStyle.minHeight).toBeGreaterThanOrEqual(44);
-    expect(shanghaiStyle.minWidth).toBeGreaterThanOrEqual(44);
-    expect(shanghaiStyle.minHeight).toBeGreaterThanOrEqual(44);
+    expect(hangzhouTarget.width).toBeGreaterThanOrEqual(44);
+    expect(hangzhouTarget.height).toBeGreaterThanOrEqual(44);
+    expect(shanghaiTarget.width).toBeGreaterThanOrEqual(44);
+    expect(shanghaiTarget.height).toBeGreaterThanOrEqual(44);
     expect(screen.queryByText("杭州 · 2 册")).toBeNull();
     expect(screen.queryByText("上海 · 0 册")).toBeNull();
     expect(screen.getByTestId("city-map-marker-beijing-none")).toBeTruthy();
@@ -93,19 +134,17 @@ describe("CityMap", () => {
     const visibleModels = resolveWorkspaceMarkerModels([markers[0]], { scale: 1.8, translateX: 100, translateY: 0 }, size);
 
     expect(hiddenModels.every((model) => !model.showLabel)).toBe(true);
-    expect(visibleModels[0]).toMatchObject({
-      dotSize: 25.2,
-      fontSize: 21.6,
-      pressSize: 79.2,
-      showLabel: true,
-    });
+    expect(visibleModels[0]?.dotSize).toBeCloseTo(14.4);
+    expect(visibleModels[0]?.fontSize).toBeCloseTo(19.8);
+    expect(visibleModels[0]?.pressSize).toBeCloseTo(79.2);
+    expect(visibleModels[0]?.showLabel).toBe(true);
   });
 
-  it("keeps only the first colliding workspace city label visible", () => {
+  it("resolves each workspace label independently to keep pinch updates linear", () => {
     const markers = new OfflineChinaMapAdapter().markers;
     const overlappingMarkers = [markers[0], { ...markers[1], coordinate: markers[0].coordinate }];
     const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
 
-    expect(models.map((model) => model.showLabel)).toEqual([true, false]);
+    expect(models.map((model) => model.showLabel)).toEqual([true, true]);
   });
 });

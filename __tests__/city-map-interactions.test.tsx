@@ -9,8 +9,9 @@ jest.mock("react-native-reanimated", () => {
   const React = require("react");
   return {
     __esModule: true,
-    default: { View },
+    default: { View, createAnimatedComponent: (component: unknown) => component },
     runOnJS: (...args: unknown[]) => mockRunOnJS(...args),
+    useAnimatedProps: (worklet: () => unknown) => worklet(),
     useAnimatedStyle: (worklet: () => unknown) => worklet(),
     useSharedValue: (value: number) => {
       const shared = React.useRef(null) as { current: { value: number } | null };
