@@ -3,8 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 const mockBack = jest.fn();
 const mockDatabase = { name: "local" };
 const mockResolveCityCollection = jest.fn();
-const mockPersistCityCollectionOrder = jest.fn();
-const mockSetFeaturedCityMemory = jest.fn();
+const mockSaveCityCollection = jest.fn();
 
 jest.mock("expo-router", () => ({
   useFocusEffect: (effect: () => void | (() => void)) => { require("react").useEffect(effect, [effect]); },
@@ -13,9 +12,8 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/storage/city-collection-repository", () => ({
-  persistCityCollectionOrder: (...args: unknown[]) => mockPersistCityCollectionOrder(...args),
   resolveCityCollection: (...args: unknown[]) => mockResolveCityCollection(...args),
-  setFeaturedCityMemory: (...args: unknown[]) => mockSetFeaturedCityMemory(...args),
+  saveCityCollection: (...args: unknown[]) => mockSaveCityCollection(...args),
 }));
 
 import ManageCityCollectionScreen from "../src/app/city/[city]/manage";
@@ -28,12 +26,11 @@ const memories = [
 describe("city collection management route", () => {
   beforeEach(() => {
     mockBack.mockReset();
-    mockPersistCityCollectionOrder.mockReset().mockResolvedValue(undefined);
-    mockSetFeaturedCityMemory.mockReset().mockResolvedValue(undefined);
+    mockSaveCityCollection.mockReset().mockResolvedValue(undefined);
     mockResolveCityCollection.mockReset().mockResolvedValue({ city: "shanghai", featuredMemory: memories[0], memories });
   });
 
-  it("persists the selected representative after the full order with one timestamp and returns", async () => {
+  it("atomically persists the selected representative with the full order and returns", async () => {
     const screen = await render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai"));
 
@@ -41,9 +38,7 @@ describe("city collection management route", () => {
     await act(async () => { fireEvent.press(screen.getByLabelText("Save collection changes")); });
 
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
-    expect(mockPersistCityCollectionOrder).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], expect.any(String));
-    expect(mockSetFeaturedCityMemory).toHaveBeenCalledWith(mockDatabase, "shanghai", "two", expect.any(String));
-    expect(mockPersistCityCollectionOrder.mock.calls[0][3]).toBe(mockSetFeaturedCityMemory.mock.calls[0][3]);
+    expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String));
   });
 
   it("cancels without writing any database changes", async () => {
@@ -53,7 +48,6 @@ describe("city collection management route", () => {
     await act(async () => { fireEvent.press(screen.getByLabelText("Cancel collection changes")); });
 
     expect(mockBack).toHaveBeenCalledTimes(1);
-    expect(mockPersistCityCollectionOrder).not.toHaveBeenCalled();
-    expect(mockSetFeaturedCityMemory).not.toHaveBeenCalled();
+    expect(mockSaveCityCollection).not.toHaveBeenCalled();
   });
 });

@@ -35,7 +35,7 @@ describe("city workspace helpers", () => {
   });
 
   it("chooses a split workspace at tablet widths and stacked workspace below it", () => {
-    expect(getCityWorkspaceLayout(720)).toEqual({ collectionWidth: "55%", direction: "row", mapWidth: "45%" });
-    expect(getCityWorkspaceLayout(719)).toEqual({ collectionWidth: "100%", direction: "column", mapWidth: "100%" });
+    expect(getCityWorkspaceLayout(720)).toEqual({ collectionFlex: 55, direction: "row", mapFlex: 45 });
+    expect(getCityWorkspaceLayout(719)).toEqual({ collectionFlex: undefined, direction: "column", mapFlex: undefined });
   });
 });

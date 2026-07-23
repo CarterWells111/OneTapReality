@@ -6,12 +6,7 @@ import { ScrollView, Text } from "react-native";
 import { colors } from "../../../components/ui";
 import { CityCollectionManager } from "../../../features/cities/city-collection-manager";
 import { resolveCityRouteParam } from "../../../features/cities/city-route";
-import {
-  persistCityCollectionOrder,
-  resolveCityCollection,
-  setFeaturedCityMemory,
-  type ResolvedCityCollection,
-} from "../../../storage/city-collection-repository";
+import { resolveCityCollection, saveCityCollection, type ResolvedCityCollection } from "../../../storage/city-collection-repository";
 
 export default function ManageCityCollectionScreen() {
   const db = useSQLiteContext();
@@ -35,8 +30,7 @@ export default function ManageCityCollectionScreen() {
     setIsSaving(true);
     try {
       const updatedAt = new Date().toISOString();
-      await persistCityCollectionOrder(db, city, memoryIds, updatedAt);
-      if (featuredMemoryId) await setFeaturedCityMemory(db, city, featuredMemoryId, updatedAt);
+      await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt);
       router.back();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to save the city collection.");

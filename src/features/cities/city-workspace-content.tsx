@@ -41,10 +41,10 @@ export function CityWorkspaceContent({
         <Text selectable style={{ color: colors.muted, fontSize: 16 }}>{collection.memories.length} saved memories</Text>
       </View>
       <View testID="city-workspace-layout" style={{ flexDirection: layout.direction, gap: 16 }}>
-        <View style={{ width: layout.mapWidth }}>
+        <View style={{ flex: layout.mapFlex, minWidth: 0 }}>
           <CityMap initialCity={city} interactive onCityPress={onCityPress} stats={getCityStats(mapMemories)} variant="workspace" />
         </View>
-        <View style={{ flex: layout.direction === "row" ? 1 : undefined, gap: 14, width: layout.collectionWidth }}>
+        <View style={{ flex: layout.collectionFlex, gap: 14, minWidth: 0 }}>
           <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
             <Text selectable style={{ color: colors.ink, fontSize: 19, fontWeight: "700" }}>City collection</Text>
             <Pressable

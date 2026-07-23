@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { CityMap, OfflineChinaMapAdapter, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
 
@@ -66,11 +66,16 @@ describe("CityMap", () => {
   it("starts a workspace map at the selected adapter city focus", async () => {
     const screen = await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
 
-    expect(screen.getByTestId("city-map-workspace-canvas").props.style.transform).toEqual([
-      { translateX: -72 },
-      { translateY: -105 },
-      { scale: 2 },
-    ]);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+    });
+
+    const transforms = screen.getByTestId("city-map-workspace-canvas").props.style.transform;
+    expect(transforms[0].translateX).toBeCloseTo(-115.2);
+    expect(transforms[1]).toEqual({ translateY: -160 });
+    expect(transforms[2]).toEqual({ scale: 2 });
   });
 
   it("keeps nearby Hangzhou and Shanghai 44px overview marker targets separate", async () => {

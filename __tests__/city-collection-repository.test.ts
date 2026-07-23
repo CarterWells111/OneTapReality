@@ -4,6 +4,7 @@ import {
   fetchCityCollectionArrangements,
   persistCityCollectionOrder,
   resolveCityCollection,
+  saveCityCollection,
   setFeaturedCityMemory,
 } from "../src/storage/city-collection-repository";
 
@@ -29,6 +30,7 @@ function createDatabase(options: {
   memories: MemoryRow[];
   arrangements?: ArrangementRow[];
   failOnMemoryId?: string;
+  failOnFeaturedMemoryId?: string;
 }) {
   const memories = [...options.memories];
   const arrangements = [...(options.arrangements ?? [])];
@@ -52,6 +54,7 @@ function createDatabase(options: {
       if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("VALUES")) {
         const [memoryId, city, position, isFeatured, updatedAt] = parameters;
         if (memoryId === options.failOnMemoryId) throw new Error("arrangement write failed");
+        if (memoryId === options.failOnFeaturedMemoryId && isFeatured === 1) throw new Error("feature write failed");
         const existing = arrangements.find((row) => row.memory_id === memoryId);
         if (existing) {
           existing.city = city as ArrangementRow["city"];
@@ -247,6 +250,45 @@ describe("city collection repository", () => {
     await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
       { memoryId: "original-first", city: "hangzhou", position: 0, isFeatured: true, updatedAt: "2026-07-19T10:00:00.000Z" },
       { memoryId: "original-second", city: "hangzhou", position: 1, isFeatured: false, updatedAt: "2026-07-19T10:00:00.000Z" },
+    ]);
+  });
+
+  it("atomically writes order and representative selection", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "first", city: "hangzhou", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "second", city: "hangzhou", status: "saved", updatedAt: "2026-07-21T10:00:00.000Z" },
+      ],
+    });
+
+    await saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z");
+
+    expect(fixture.exclusiveTransactions).toBe(1);
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+      { memoryId: "second", city: "hangzhou", position: 0, isFeatured: false, updatedAt: "2026-07-24T10:00:00.000Z" },
+      { memoryId: "first", city: "hangzhou", position: 1, isFeatured: true, updatedAt: "2026-07-24T10:00:00.000Z" },
+    ]);
+  });
+
+  it("rolls back the replacement order when representative persistence fails", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "first", city: "hangzhou", status: "saved", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "second", city: "hangzhou", status: "saved", updatedAt: "2026-07-21T10:00:00.000Z" },
+      ],
+      arrangements: [
+        { memory_id: "original", city: "hangzhou", position: 0, is_featured: 1, updated_at: "2026-07-19T10:00:00.000Z" },
+      ],
+      failOnFeaturedMemoryId: "first",
+    });
+
+    await expect(
+      saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z")
+    ).rejects.toThrow("feature write failed");
+
+    expect(fixture.exclusiveTransactions).toBe(1);
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+      { memoryId: "original", city: "hangzhou", position: 0, isFeatured: true, updatedAt: "2026-07-19T10:00:00.000Z" },
     ]);
   });
 });

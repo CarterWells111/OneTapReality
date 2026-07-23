@@ -89,6 +89,44 @@ export async function persistCityCollectionOrder(
   });
 }
 
+export async function saveCityCollection(
+  db: SQLiteDatabase,
+  city: City,
+  memoryIds: readonly string[],
+  featuredMemoryId: string | null,
+  updatedAt: string
+) {
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    const memories = await listMemories(transaction);
+    const savedCityMemoryIds = new Set(
+      memories
+        .filter((memory) => memory.city === city && memory.status === "saved")
+        .map((memory) => memory.id)
+    );
+    const orderedMemoryIds = Array.from(new Set(memoryIds)).filter((memoryId) =>
+      savedCityMemoryIds.has(memoryId)
+    );
+    const validFeaturedMemoryId = featuredMemoryId && orderedMemoryIds.includes(featuredMemoryId)
+      ? featuredMemoryId
+      : null;
+
+    await transaction.runAsync(
+      "DELETE FROM city_collection_arrangements WHERE city = ?",
+      city
+    );
+    for (const [position, memoryId] of orderedMemoryIds.entries()) {
+      await transaction.runAsync(
+        "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) VALUES (?, ?, ?, ?, ?)",
+        memoryId,
+        city,
+        position,
+        memoryId === validFeaturedMemoryId ? 1 : 0,
+        updatedAt
+      );
+    }
+  });
+}
+
 export async function setFeaturedCityMemory(
   db: SQLiteDatabase,
   city: City,

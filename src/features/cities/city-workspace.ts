@@ -44,6 +44,6 @@ export function reorderCityMemoryIds(memoryIds: readonly string[], memoryId: str
 
 export function getCityWorkspaceLayout(width: number) {
   return width >= 720
-    ? { collectionWidth: "55%" as const, direction: "row" as const, mapWidth: "45%" as const }
-    : { collectionWidth: "100%" as const, direction: "column" as const, mapWidth: "100%" as const };
+    ? { collectionFlex: 55, direction: "row" as const, mapFlex: 45 }
+    : { collectionFlex: undefined, direction: "column" as const, mapFlex: undefined };
 }
