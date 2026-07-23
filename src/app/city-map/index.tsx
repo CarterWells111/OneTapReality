@@ -16,7 +16,7 @@ export default function FullscreenCityMapScreen() {
 
   return (
     <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.background, flex: 1 }} testID="fullscreen-city-map-screen">
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 6 }} testID="fullscreen-city-map-header">
+      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingBottom: 8, paddingHorizontal: 12, paddingTop: 18 }} testID="fullscreen-city-map-header">
         <View>
           <Text selectable style={{ color: colors.ink, fontSize: 15, fontWeight: "800" }}>中国旅行地图</Text>
         </View>
