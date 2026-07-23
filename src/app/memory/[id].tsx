@@ -1,14 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { IconButton } from "../../components/icon-button";
-import { AppButton, colors } from "../../components/ui";
+import { AppButton, colors, serifFont, Tag } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
-
-const serifFont = Platform.select({ android: "serif", default: "Georgia" });
 
 export default function MemoryDetailScreen() {
   const router = useRouter();
@@ -63,6 +61,7 @@ export default function MemoryDetailScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
         <View style={[styles.cover, { backgroundColor: memory.coverColor ?? city.color }]}>
           <View style={styles.coverTop}>
+            <Tag label={isSample ? "示例 · 扉页" : "扉页"} />
             <Text selectable style={styles.coverTitle}>{memory.title}</Text>
             <View style={styles.coverAccent} />
           </View>
@@ -73,6 +72,7 @@ export default function MemoryDetailScreen() {
             </Text>
           </View>
         </View>
+        <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。</Text>
         <PageReader pages={memory.pages} />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
@@ -87,12 +87,15 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: 2 },
   cover: {
     aspectRatio: 1,
+    borderColor: colors.paperEdge,
     borderRadius: 22,
+    borderWidth: 1,
     justifyContent: "space-between",
     padding: 24,
   },
-  coverTop: { gap: 12 },
+  coverTop: { alignItems: "flex-start", gap: 12 },
   coverTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 30, fontWeight: "800", lineHeight: 38 },
   coverAccent: { backgroundColor: colors.warmAccent, height: 3, width: 40 },
   coverMeta: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  readerLead: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
 });

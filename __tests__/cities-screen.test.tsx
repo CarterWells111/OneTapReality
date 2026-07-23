@@ -20,9 +20,10 @@ describe("CitiesScreen", () => {
     const screen = await render(<CitiesScreen />);
 
     expect(screen.getByText("城市旅行地图")).toBeTruthy();
-    expect(screen.getByText("杭州 · 尚未保存旅行记忆")).toBeTruthy();
-    expect(screen.getByText("上海 · 尚未保存旅行记忆")).toBeTruthy();
-    expect(screen.getByText("深圳 · 尚未保存旅行记忆")).toBeTruthy();
+    expect(screen.getByText("杭州")).toBeTruthy();
+    expect(screen.getByText("上海")).toBeTruthy();
+    expect(screen.getByText("深圳")).toBeTruthy();
+    expect(screen.getByText("乌鲁木齐")).toBeTruthy();
   });
 
   it("counts statusless local memories and routes from the fallback city list", async () => {
@@ -32,8 +33,9 @@ describe("CitiesScreen", () => {
     ]);
     const screen = await render(<CitiesScreen />);
 
-    expect(screen.getByText("杭州 · 已保存 2 册旅行记忆")).toBeTruthy();
-    fireEvent.press(screen.getByText("杭州 · 已保存 2 册旅行记忆"));
+    expect(screen.getByText("杭州")).toBeTruthy();
+    expect(screen.getByText("已保存 2 册旅行记忆")).toBeTruthy();
+    fireEvent.press(screen.getByText("杭州"));
 
     expect(mockPush).toHaveBeenCalledWith({ pathname: "/city/[city]", params: { city: "hangzhou" } });
   });

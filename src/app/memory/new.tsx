@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { AppButton, colors, Section } from "../../components/ui";
+import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { useMemories } from "../../features/memories/memories-provider";
@@ -130,11 +130,14 @@ export default function NewMemoryScreen() {
   return (
     <View style={styles.root}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      <Text selectable style={styles.helper}>
-        你选择的照片只在这台设备上使用。本版会生成固定的本地旅行册草稿，之后可随时修改。
-      </Text>
+      <PaperCard tone="paper" style={styles.intro}>
+        <Tag label="开始新的一册" />
+        <Text selectable style={styles.introText}>
+          翻开一页空白的旅行册。你选择的照片只在这台设备上使用，本版会生成固定的本地旅行册草稿，之后可随时修改。
+        </Text>
+      </PaperCard>
 
-      <Section title="旅行信息">
+      <Section title="旅行信息" caption="TRIP INFO">
         <View style={styles.formCard}>
           <View style={[styles.formRow, styles.formRowDivider]}>
             <Text selectable style={styles.formLabel}>名称</Text>
@@ -174,7 +177,7 @@ export default function NewMemoryScreen() {
         </View>
       </Section>
 
-      <Section title="封面颜色">
+      <Section title="封面颜色" caption="COVER">
         <View style={styles.coverPreviewRow}>
           <View style={[styles.coverPreview, { backgroundColor: coverColor }]} />
           <Text selectable style={styles.coverHint}>点选一个颜色作为这册的封面底色。</Text>
@@ -196,7 +199,7 @@ export default function NewMemoryScreen() {
         </View>
       </Section>
 
-      <Section title="选择照片">
+      <Section title="选择照片" caption="PHOTOS">
         <AppButton label={photoUris.length ? `已选 ${photoUris.length} 张，重新选择` : "从相册选择照片"} tone="secondary" onPress={() => void selectPhotos()} />
         {photoUris.length > 0 ? (
           <ScrollView horizontal contentContainerStyle={styles.photoStrip} showsHorizontalScrollIndicator={false}>
@@ -204,12 +207,17 @@ export default function NewMemoryScreen() {
               <Image key={uri} source={{ uri }} style={styles.photoPreview} />
             ))}
           </ScrollView>
-        ) : null}
+        ) : (
+          <View style={styles.photoPlaceholder}>
+            <Text selectable style={styles.photoPlaceholderGlyph}>＋</Text>
+            <Text selectable style={styles.photoPlaceholderText}>把第一张照片贴进这一页</Text>
+          </View>
+        )}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
       {photoUris.length > 0 ? (
-        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} disabled={isSaving} onPress={() => void generate()} />
+        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving} onPress={() => void generate()} />
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}
@@ -291,7 +299,8 @@ export default function NewMemoryScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { gap: 22, padding: 20, paddingBottom: 40 },
-  helper: { color: colors.muted, lineHeight: 22 },
+  intro: { gap: 10 },
+  introText: { color: colors.muted, fontSize: 14, lineHeight: 22 },
   formCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -307,11 +316,24 @@ const styles = StyleSheet.create({
     minHeight: 54,
   },
   formRowDivider: { borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth },
-  formLabel: { color: colors.ink, fontSize: 15.5, fontWeight: "700" },
+  formLabel: { color: colors.ink, fontFamily: serifFont, fontSize: 15.5, fontWeight: "700" },
   formInput: { color: colors.ink, flex: 1, fontSize: 15.5, textAlign: "right" },
   formValue: { color: colors.accent, fontSize: 15.5, fontWeight: "700" },
   photoStrip: { gap: 10 },
   photoPreview: { borderRadius: 12, height: 92, width: 92 },
+  photoPlaceholder: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 14,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 26,
+  },
+  photoPlaceholderGlyph: { color: colors.warmAccent, fontSize: 30, fontWeight: "300" },
+  photoPlaceholderText: { color: colors.muted, fontSize: 13 },
   errorText: { color: colors.danger, lineHeight: 21 },
   footNote: { color: colors.muted, fontSize: 13, textAlign: "center" },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },

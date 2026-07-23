@@ -1,5 +1,15 @@
 # 决策记录
 
+## 2026-07-23：旅行手账视觉风格改版
+
+本次对所有主要页面进行纯视觉/布局/文案呈现改版，统一为「旅行手账 / 纸感 / 笨拙本真 / 温柔复古」风格。不改数据逻辑、路由、字段含义、交互行为，不加依赖。
+
+- 共享设计套件 `src/components/ui.tsx`：新增 `ScreenTitle`、`PaperCard`、`SketchDivider`、`Tag` 等可复用纸感组件；品牌色板 `colors` 的四个锁定键（`background`、`accent`、`warmAccent`、`accentSoft`）不变。
+- 六个主要页面重写：记忆首页、城市页、旅行册详情页、商店页、我的页、创建纪念册页。底部 tabbar 改为手绘 SVG 描边图标。
+- 根布局 `_layout.tsx` 统一 Stack header 为纸感配色。
+- 测试适配：新增 `jest.setup.ts` mock `useSafeAreaInsets`；`cities-screen` 和 `profile-screen` 测试适配新文案与统计数字拆分布局。
+- 新增 `memory-card.test.tsx` 的「打开旅行册 {title}」无障碍标签保持不变；`brand-palette` 四色锁与 `brand-copy` 三段文案逐字保留。
+
 ## 2026-07-23：创建流程精简、图标化操作与书封面陈列
 
 本轮只调整既有本地流程的呈现与交互，不新增网络、支付、账号、真实 AI、真实 NFC 或新依赖：

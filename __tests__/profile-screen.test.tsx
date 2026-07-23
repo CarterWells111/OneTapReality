@@ -57,11 +57,11 @@ describe("ProfileScreen", () => {
     const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("旅行记忆")).toBeTruthy();
-    expect(screen.getByText("1 册")).toBeTruthy();
     expect(screen.getByText("城市足迹")).toBeTruthy();
-    expect(screen.getByText("1 座")).toBeTruthy();
     expect(screen.getByText("已收录照片")).toBeTruthy();
-    expect(screen.getByText("2 张")).toBeTruthy();
+    const ones = screen.getAllByText("1");
+    expect(ones.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("2")).toBeTruthy();
   });
 
   it("routes each plain list entry to its destination", async () => {

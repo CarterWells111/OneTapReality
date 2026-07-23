@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { colors, serifFont } from "../components/ui";
 import { MemoriesProvider } from "../features/memories/memories-provider";
 import { ProfileProvider } from "../features/profile/profile-provider";
 import { migrateDbIfNeeded } from "../storage/memory-repository";
@@ -16,7 +17,16 @@ export default function RootLayout() {
           <ProfileProvider>
             <MemoriesProvider>
               <StatusBar style="dark" />
-              <Stack screenOptions={{ headerBackButtonDisplayMode: "minimal" }}>
+              <Stack
+                screenOptions={{
+                  headerBackButtonDisplayMode: "minimal",
+                  headerShadowVisible: false,
+                  headerStyle: { backgroundColor: colors.background },
+                  headerTintColor: colors.ink,
+                  headerTitleStyle: { fontFamily: serifFont, fontWeight: "700" },
+                  contentStyle: { backgroundColor: colors.background },
+                }}
+              >
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
               <Stack.Screen name="memory/review/[id]" options={{ title: "确认草稿" }} />

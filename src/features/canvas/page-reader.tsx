@@ -110,7 +110,9 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
 
   return (
     <View style={styles.reader}>
-      <Text selectable style={styles.counter}>{index + 1} / {pages.length}</Text>
+      <View style={styles.counterChip}>
+        <Text selectable style={styles.counter}>第 {index + 1} 页 · 共 {pages.length} 页</Text>
+      </View>
       <View style={styles.stage}>
         <GestureDetector gesture={pan}>
           <View style={{ height: pageHeight, width: pageWidth }}>
@@ -131,13 +133,21 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
 }
 
 const styles = StyleSheet.create({
-  reader: { alignItems: "center", gap: 10 },
-  counter: { color: colors.accent, fontSize: 13, fontWeight: "800" },
+  reader: { alignItems: "center", gap: 12 },
+  counterChip: {
+    backgroundColor: colors.paper,
+    borderColor: colors.paperEdge,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  counter: { color: colors.warmAccent, fontSize: 12.5, fontWeight: "800" },
   stage: { alignItems: "center" },
   pageLayer: { left: 0, position: "absolute", top: 0 },
   textPage: {
     backgroundColor: colors.surface,
-    borderColor: colors.line,
+    borderColor: colors.paperEdge,
     borderRadius: 16,
     borderWidth: 1,
     gap: 10,
