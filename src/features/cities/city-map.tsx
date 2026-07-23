@@ -210,7 +210,65 @@ function CityMapMarkerView({ animatedValues, city, interactive, marker, markerIn
   );
 }
 
-export function CityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress, onMapPress }: CityMapProps) {
+function StaticCityMapMarkerView({ city, interactive, marker, onCityPress, stat }: {
+  readonly city: City;
+  readonly interactive: boolean;
+  readonly marker: CityMapMarker;
+  readonly onCityPress?: (city: City) => void;
+  readonly stat: CityStats;
+}) {
+  const token = markerTokens[stat.intensity];
+  const coordinate = resolveChinaMapCoordinate(marker);
+
+  return (
+    <G accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" accessible onPress={interactive ? () => onCityPress?.(city) : undefined} testID={`city-map-marker-${city}-${stat.intensity}`}>
+      <Rect fill="transparent" height={markerTargetSvgSize} width={markerTargetSvgSize} x={coordinate.x - markerTargetSvgSize / 2} y={coordinate.y - markerTargetSvgSize / 2} testID={`city-map-marker-target-${city}-${stat.intensity}`} />
+      <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
+    </G>
+  );
+}
+
+function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }: CityMapProps) {
+  const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
+  const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
+
+  return (
+    <View accessibilityLabel="离线中国城市旅行地图概览" style={{ aspectRatio: 300 / 210, backgroundColor: "#EEF2EE", borderRadius: 20, overflow: "hidden" }}>
+      <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
+        {chinaProvinces.map((province) => (
+          <Path
+            key={province.id}
+            d={province.path}
+            fill="#DDEBDD"
+            onPress={onMapPress}
+            stroke={colors.accent}
+            strokeWidth={0.8}
+            testID={`china-province-${province.id}`}
+          />
+        ))}
+        <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
+        {adapter.markers.map((marker) => {
+          const { city } = marker;
+          const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
+          return <StaticCityMapMarkerView city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} />;
+        })}
+      </Svg>
+      {onMapPress ? (
+        <Pressable
+          accessibilityLabel="全屏查看中国地图"
+          accessibilityRole="button"
+          onPress={onMapPress}
+          style={({ pressed }) => ({ backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: 16, borderWidth: 1, bottom: 12, opacity: pressed ? 0.82 : 1, paddingHorizontal: 12, paddingVertical: 8, position: "absolute", right: 12 })}
+        >
+          <Text selectable style={{ color: colors.accent, fontSize: 13, fontWeight: "800" }}>全屏查看</Text>
+        </Pressable>
+      ) : null}
+      <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
+    </View>
+  );
+}
+
+function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
   const initialViewport = variant === "workspace"
@@ -315,7 +373,11 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
       <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
     </View>
   );
-  return variant === "workspace" ? <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>{map}</GestureDetector> : map;
+  return <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>{map}</GestureDetector>;
+}
+
+export function CityMap(props: CityMapProps) {
+  return props.variant === "overview" ? <OverviewCityMap {...props} /> : <WorkspaceCityMap {...props} />;
 }
 
 export type { CityMapProps, CityMapVariant };
