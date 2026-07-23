@@ -20,7 +20,7 @@ describe("Expo Router production origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
   });
 
-  it("uses the branded image in both Expo icon asset entry points", () => {
+  it("uses the local OneTapReality images in both Expo icon asset entry points", () => {
     const fs = require("node:fs");
     const path = require("node:path");
     const expoConfig = require("../app.json").expo;
@@ -30,7 +30,7 @@ describe("Expo Router production origin", () => {
       group.layers.map((layer) => layer["image-name"])
     );
 
-    expect(expoConfig.icon).toBe("./assets/images/icon.png");
+    expect(expoConfig.icon).toBe("./assets/images/onetapreality-icon.png");
     expect(expoConfig.ios.icon).toBe("./assets/expo.icon");
     expect(imageNames).toContain("onetapreality-icon.png");
     expect(imageNames).not.toContain("expo-symbol 2.svg");
