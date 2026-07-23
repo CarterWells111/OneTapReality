@@ -15,12 +15,16 @@ describe("demoCatalog", () => {
     expect(validateCatalog(demoCatalog)).toEqual([]);
   });
 
-  it("has a city-limited sku for every launch city", () => {
-    const limitedCities = demoCatalog
+  it("has souvenir pendants for 10 cities", () => {
+    const pendantCities = demoCatalog
+      .filter((sku) => sku.kind === "souvenir-pendant")
       .map((sku) => sku.cityLimited)
       .filter((city) => city !== null);
 
-    expect(new Set(limitedCities)).toEqual(new Set(["hangzhou", "shanghai", "shenzhen"]));
+    const unique = new Set(pendantCities);
+    expect(unique.size).toBe(10);
+    expect(unique).toContain("beijing");
+    expect(unique).toContain("wuhan");
   });
 
   it("keeps every material and craft traceable", () => {
@@ -31,17 +35,32 @@ describe("demoCatalog", () => {
       expect(sku.craft.workshop).toBeTruthy();
     }
   });
+
+  it("every SKU has image and tier fields", () => {
+    for (const sku of demoCatalog) {
+      expect(sku).toHaveProperty("image");
+      expect(sku).toHaveProperty("tier");
+      expect(["basic", "special"]).toContain(sku.tier);
+    }
+  });
 });
 
 describe("listSkusForCity", () => {
-  it("returns the city-limited sku plus city-agnostic skus", () => {
+  it("returns city-limited and city-agnostic skus for hangzhou", () => {
     const skus = listSkusForCity(demoCatalog, "hangzhou");
 
-    expect(skus.map((sku) => sku.id)).toEqual([
-      "sku-key-hangzhou",
-      "sku-album-square",
-      "sku-sticker-journey",
-    ]);
+    expect(skus.some((sku) => sku.id === "sku-key-hangzhou")).toBe(true);
+    expect(skus.some((sku) => sku.id === "sku-album-square")).toBe(true);
+    expect(skus.some((sku) => sku.id === "sku-sticker-journey")).toBe(true);
+    expect(skus.some((sku) => sku.id === "sku-pendant-hangzhou-basic")).toBe(true);
+    expect(skus.some((sku) => sku.id === "sku-pendant-hangzhou-special")).toBe(true);
+  });
+
+  it("does not return other city limited skus", () => {
+    const skus = listSkusForCity(demoCatalog, "hangzhou");
+
+    expect(skus.some((sku) => sku.id === "sku-key-shanghai")).toBe(false);
+    expect(skus.some((sku) => sku.id === "sku-pendant-beijing-basic")).toBe(false);
   });
 });
 
@@ -77,9 +96,9 @@ describe("computeDemoQuote", () => {
     const quote = computeDemoQuote(sku);
     const { materialsCny, craftCny, packagingCny, marginCny } = quote.breakdown;
 
-    expect(materialsCny).toBeCloseTo(9.7);
-    expect(craftCny).toBe(8);
-    expect(packagingCny).toBe(2.5);
+    expect(materialsCny).toBeCloseTo(23.61);
+    expect(craftCny).toBe(7.5);
+    expect(packagingCny).toBe(0);
     expect(quote.amount).toBeCloseTo(materialsCny + craftCny + packagingCny + marginCny);
   });
 
@@ -97,6 +116,14 @@ describe("computeDemoQuote", () => {
     const zeroMargin = computeDemoQuote(sku, 0);
 
     expect(zeroMargin.breakdown.marginCny).toBe(0);
-    expect(zeroMargin.amount).toBeCloseTo(20.2);
+    expect(zeroMargin.amount).toBeCloseTo(31.11);
+  });
+
+  it("basic pendant is ¥42 and special pendant is ¥52", () => {
+    const basic = demoCatalog.find((s) => s.id === "sku-pendant-beijing-basic")!;
+    const special = demoCatalog.find((s) => s.id === "sku-pendant-beijing-special")!;
+
+    expect(computeDemoQuote(basic).amount).toBeCloseTo(42);
+    expect(computeDemoQuote(special).amount).toBeCloseTo(52);
   });
 });

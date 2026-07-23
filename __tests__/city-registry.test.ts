@@ -4,14 +4,14 @@ import { OfflineChinaMapAdapter, getCityStats } from "../src/features/cities";
 
 describe("city registry", () => {
   it("covers every first-batch capital and municipality with stable local metadata", () => {
-    expect(cities).toHaveLength(33);
+    expect(cities).toHaveLength(35);
     expect(cities).toEqual(expect.arrayContaining([
       "beijing", "tianjin", "shanghai", "chongqing", "taipei",
       "hefei", "fuzhou", "lanzhou", "guangzhou", "guiyang", "haikou",
       "shijiazhuang", "harbin", "zhengzhou", "wuhan", "changsha", "nanjing",
       "nanchang", "changchun", "shenyang", "xining", "xian", "jinan",
       "taiyuan", "chengdu", "kunming", "hangzhou", "nanning", "hohhot",
-      "yinchuan", "urumqi", "lhasa",
+      "yinchuan", "urumqi", "lhasa", "luoyang", "suzhou",
     ]));
     expect(cities).toContain("shenzhen");
     expect(cityRegistry.find((city) => city.id === "beijing")).toMatchObject({

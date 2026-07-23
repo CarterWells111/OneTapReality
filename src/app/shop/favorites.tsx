@@ -13,6 +13,7 @@ const kindGlyphs: Record<SkuKind, string> = {
   "city-key": "钥",
   "album-print": "册",
   "sticker-pack": "贴",
+  "souvenir-pendant": "坠",
 };
 
 export default function ShopFavoritesScreen() {

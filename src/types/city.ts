@@ -39,6 +39,7 @@ const geographicCoordinates: Readonly<Record<string, GeographicCoordinate>> = Ob
   kunming: { longitude: 102.8329, latitude: 24.8801 },
   lanzhou: { longitude: 103.8343, latitude: 36.0611 },
   lhasa: { longitude: 91.1409, latitude: 29.6456 },
+  luoyang: { longitude: 112.4544, latitude: 34.6181 },
   nanchang: { longitude: 115.8582, latitude: 28.6829 },
   nanjing: { longitude: 118.7969, latitude: 32.0603 },
   nanning: { longitude: 108.32, latitude: 22.824 },
@@ -46,6 +47,7 @@ const geographicCoordinates: Readonly<Record<string, GeographicCoordinate>> = Ob
   shenyang: { longitude: 123.4315, latitude: 41.8057 },
   shenzhen: { longitude: 114.0579, latitude: 22.5431 },
   shijiazhuang: { longitude: 114.5149, latitude: 38.0428 },
+  suzhou: { longitude: 120.5853, latitude: 31.299 },
   taipei: { longitude: 121.5654, latitude: 25.033 },
   taiyuan: { longitude: 112.5492, latitude: 37.857 },
   tianjin: { longitude: 117.201, latitude: 39.0842 },
@@ -102,6 +104,7 @@ export const cityRegistry = Object.freeze([
   location("jinan", "济南", "province-capital", "山东省", 0.71, 0.49),
   location("xining", "西宁", "province-capital", "青海省", 0.38, 0.51),
   location("lhasa", "拉萨", "autonomous-region-capital", "西藏自治区", 0.30, 0.59),
+  location("luoyang", "洛阳", "legacy-city", "河南省", 0.61, 0.56),
   location("zhengzhou", "郑州", "province-capital", "河南省", 0.62, 0.53),
   location("xian", "西安", "province-capital", "陕西省", 0.53, 0.55),
   location("nanjing", "南京", "province-capital", "江苏省", 0.76, 0.59),
@@ -120,6 +123,7 @@ export const cityRegistry = Object.freeze([
   location("guangzhou", "广州", "province-capital", "广东省", 0.68, 0.80),
   location("nanning", "南宁", "autonomous-region-capital", "广西壮族自治区", 0.58, 0.82),
   location("shenzhen", "深圳", "legacy-city", "广东省", 0.71, 0.84),
+  location("suzhou", "苏州", "legacy-city", "江苏省", 0.78, 0.61),
   location("haikou", "海口", "province-capital", "海南省", 0.54, 0.91),
 ] as const);
 

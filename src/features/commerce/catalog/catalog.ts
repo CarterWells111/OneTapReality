@@ -5,7 +5,7 @@
 
 import { cities, type City } from "../../../types/memory";
 
-export const skuKinds = ["city-key", "album-print", "sticker-pack"] as const;
+export const skuKinds = ["city-key", "album-print", "sticker-pack", "souvenir-pendant"] as const;
 
 export type SkuKind = (typeof skuKinds)[number];
 
@@ -34,6 +34,10 @@ export type CatalogSku = {
   materials: SkuMaterial[];
   craft: SkuCraft;
   packagingCostCny: number;
+  /** 商品预览图本地路径；空字符串表示无图片（使用纯色占位）。 */
+  image: string;
+  /** 商品层级：普通版或特殊版。 */
+  tier: "basic" | "special";
 };
 
 export function validateSku(sku: CatalogSku): string[] {
@@ -89,8 +93,71 @@ export function listSkusForCity(
   return catalog.filter((sku) => sku.cityLimited === null || sku.cityLimited === city);
 }
 
-/** 演示目录：三座首发城市的城市限定钥匙 + 通用打印册。 */
+/** 城市市花纪念挂坠：每城普通版 + 特殊版。 */
+const souvenirCities = [
+  { city: "beijing" as City, nameCity: "北京", namePoetic: "京·玉兰坠", flower: "玉兰", craft: "景泰蓝掐丝珐琅", image: "beijing-yulan" },
+  { city: "fuzhou" as City, nameCity: "福州", namePoetic: "榕·茉莉坠", flower: "茉莉花", craft: "脱胎漆器", image: "fuzhou-moli" },
+  { city: "hangzhou" as City, nameCity: "杭州", namePoetic: "杭·荷风坠", flower: "荷花", craft: "木版水印", image: "hangzhou-hehua" },
+  { city: "kunming" as City, nameCity: "昆明", namePoetic: "昆·山茶坠", flower: "山茶花", craft: "珐琅工艺", image: "kunming-shancha" },
+  { city: "luoyang" as City, nameCity: "洛阳", namePoetic: "洛·天香坠", flower: "牡丹", craft: "唐三彩", image: "luoyang-mudan" },
+  { city: "nanjing" as City, nameCity: "南京", namePoetic: "宁·梅影坠", flower: "梅花", craft: "云锦", image: "nanjing-meihua" },
+  { city: "shanghai" as City, nameCity: "上海", namePoetic: "沪·白玉坠", flower: "白玉兰", craft: "顾绣", image: "shanghai-baiyulan" },
+  { city: "suzhou" as City, nameCity: "苏州", namePoetic: "苏·紫藤坠", flower: "紫藤", craft: "苏绣", image: "suzhou-ziteng" },
+  { city: "tianjin" as City, nameCity: "天津", namePoetic: "津·月季坠", flower: "月季", craft: "杨柳青年画", image: "tianjin-yueji" },
+  { city: "wuhan" as City, nameCity: "武汉", namePoetic: "汉·荷语坠", flower: "荷花", craft: "汉绣", image: "wuhan-hehua" },
+];
+
+function souvenirBasic(d: (typeof souvenirCities)[number]): CatalogSku {
+  return {
+    id: `sku-pendant-${d.city}-basic`,
+    name: d.namePoetic,
+    kind: "souvenir-pendant",
+    cityLimited: d.city,
+    materials: [
+      { name: "黄铜八角坯", source: "演示供应商 A（杭州）", costCny: 14.98 },
+      { name: "珐琅底色", source: "演示供应商 B（东莞）", costCny: 8.63 },
+    ],
+    craft: {
+      process: `八棱吊坠·${d.flower}·普通版`,
+      workshop: `演示工坊（${d.nameCity}）`,
+      leadTimeDays: 14,
+      costCny: 7.5,
+    },
+    packagingCostCny: 0,
+    image: "",
+    tier: "basic",
+  };
+}
+
+function souvenirSpecial(d: (typeof souvenirCities)[number]): CatalogSku {
+  return {
+    id: `sku-pendant-${d.city}-special`,
+    name: `${d.namePoetic}·${d.craft}`,
+    kind: "souvenir-pendant",
+    cityLimited: d.city,
+    materials: [
+      { name: "黄铜八角坯", source: "演示供应商 A（杭州）", costCny: 14.98 },
+      { name: `${d.craft}彩绘`, source: `演示供应商（${d.nameCity}）`, costCny: 14.76 },
+    ],
+    craft: {
+      process: `八棱吊坠·${d.flower}·${d.craft}`,
+      workshop: `演示工坊（${d.nameCity}）`,
+      leadTimeDays: 21,
+      costCny: 8.78,
+    },
+    packagingCostCny: 0,
+    image: `souvenirs/${d.image}.png`,
+    tier: "special",
+  };
+}
+
+const souvenirSkus: CatalogSku[] = souvenirCities.flatMap((d) => [
+  souvenirBasic(d),
+  souvenirSpecial(d),
+]);
+
 export const demoCatalog: CatalogSku[] = [
+  ...souvenirSkus,
   {
     id: "sku-key-hangzhou",
     name: "西湖莲影纪念钥匙",
@@ -107,6 +174,8 @@ export const demoCatalog: CatalogSku[] = [
       costCny: 8,
     },
     packagingCostCny: 2.5,
+    image: "",
+    tier: "special",
   },
   {
     id: "sku-key-shanghai",
@@ -124,6 +193,8 @@ export const demoCatalog: CatalogSku[] = [
       costCny: 7.5,
     },
     packagingCostCny: 2.5,
+    image: "",
+    tier: "special",
   },
   {
     id: "sku-key-shenzhen",
@@ -141,6 +212,8 @@ export const demoCatalog: CatalogSku[] = [
       costCny: 9,
     },
     packagingCostCny: 2.5,
+    image: "",
+    tier: "special",
   },
   {
     id: "sku-album-square",
@@ -158,6 +231,8 @@ export const demoCatalog: CatalogSku[] = [
       costCny: 18,
     },
     packagingCostCny: 4,
+    image: "",
+    tier: "basic",
   },
   {
     id: "sku-sticker-journey",
@@ -175,5 +250,7 @@ export const demoCatalog: CatalogSku[] = [
       costCny: 3.5,
     },
     packagingCostCny: 1.5,
+    image: "",
+    tier: "basic",
   },
 ];

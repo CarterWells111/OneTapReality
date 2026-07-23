@@ -21,6 +21,18 @@ const existingContent: Partial<Record<City, CityContent>> = {
     souvenir: "海湾科技线纪念钥匙",
     color: "#DDEBF4",
   },
+  luoyang: {
+    name: "洛阳",
+    subtitle: "把千年的花开花落收进手心",
+    souvenir: "洛·天香坠·唐三彩",
+    color: "#F5E6D3",
+  },
+  suzhou: {
+    name: "苏州",
+    subtitle: "把江南的紫藤烟雨留在襟前",
+    souvenir: "苏·紫藤坠·苏绣",
+    color: "#E8E0F0",
+  },
 };
 
 const colorsByKind = {

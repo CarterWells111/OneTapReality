@@ -1,5 +1,18 @@
 # 决策记录
 
+## 2026-07-23：城市市花纪念挂坠商品新增
+
+本次在商品目录中新增「城市市花纪念挂坠」品类（`souvenir-pendant`），10 座城市的普通版与特殊版共 20 个 SKU。不新增支付、账号、网络、真实 AI 或真实 NFC。
+
+- 图片：微信传输的 10 张城市市花图从 `pic/` 移至 `assets/souvenirs/`，使用英文 slug 重命名；特殊版 SKU 的 `image` 字段引用这些图片，通过 `souvenir-images.ts` 注册表提供静态 require 供 Metro bundler 使用；普通版保持纯色占位。
+- 数据模型（`catalog.ts`）：`CatalogSku` 新增 `image` 与 `tier` 字段；`SkuKind` 新增 `"souvenir-pendant"`；`demoCatalog` 按市花数据生成 10 城 × 2 版 = 20 个挂坠 SKU，成本设计确保 `computeDemoQuote` 精确输出 ¥42（普通版）与 ¥52（特殊版）。
+- 城市注册表（`city.ts`）：新增 `luoyang`（洛阳，legacy-city）与 `suzhou`（苏州，legacy-city），含经纬度、相对坐标与地图焦点；`cities` 总数从 33 升至 35。
+- 城市内容（`city-content.ts`）：为洛阳与苏州新增主题色、副标题与纪念品字段。
+- 商店配置（`shop-options.ts`）：`getSkuTier` 改用 `sku.tier` 字段，不再根据城市限定推断；新增挂坠样式选项（标准链绳 / 礼盒装）与背面刻字支持。
+- 商店页面（`shop.tsx`）：`SkuGridCard` 使用 `getSouvenirImage` 渲染特殊版真实花卉图片，基础款与旧商品维持纯色占位。
+- 挂坠命名：普通版 `{简称}·{花名}坠`（如「京·玉兰坠」），特殊版叠加传统工艺名（如「京·玉兰坠·景泰蓝掐丝珐琅」）。
+- 测试：`commerce-catalog.test.ts` 适配新结构与定价；`city-registry.test.ts` 更新城市数量至 35。
+
 ## 2026-07-23：旅行手账视觉风格改版
 
 本次对所有主要页面进行纯视觉/布局/文案呈现改版，统一为「旅行手账 / 纸感 / 笨拙本真 / 温柔复古」风格。不改数据逻辑、路由、字段含义、交互行为，不加依赖。

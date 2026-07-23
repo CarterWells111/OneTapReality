@@ -8,14 +8,14 @@ import { computeDemoQuote } from "../catalog/pricing";
 
 export type ShopTier = "basic" | "special";
 
-/** 城市限定 SKU 视为特殊款，其余为基础款。 */
+/** 使用 SKU 自身的 tier 字段，不再根据城市限定推断。 */
 export function getSkuTier(sku: CatalogSku): ShopTier {
-  return sku.cityLimited === null ? "basic" : "special";
+  return sku.tier;
 }
 
 export const tierLabels: Record<ShopTier, string> = {
   basic: "基础款",
-  special: "特殊款 · 城市限定",
+  special: "特殊款",
 };
 
 export type StyleOption = {
@@ -41,6 +41,10 @@ export const styleOptionsByKind: Record<SkuKind, StyleOption[]> = {
     { id: "classic", name: "经典油墨", note: "标准印刷", deltaCny: 0 },
     { id: "gilded", name: "烫金点缀", note: "局部烫金工艺", deltaCny: 4 },
   ],
+  "souvenir-pendant": [
+    { id: "standard", name: "标准链绳", note: "皮绳 + 绒布袋", deltaCny: 0 },
+    { id: "giftbox", name: "礼盒装", note: "丝绒内衬礼盒 + 缎带", deltaCny: 8 },
+  ],
 };
 
 /** 该类型支持的刻字位置文案；null 表示不支持刻字。 */
@@ -48,6 +52,7 @@ export const engravingFieldByKind: Record<SkuKind, string | null> = {
   "city-key": "背面刻字",
   "album-print": "封面烫字",
   "sticker-pack": null,
+  "souvenir-pendant": "背面刻字",
 };
 
 export const maxEngravingLength = 12;

@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, PaperCard, ScreenTitle, Section, serifFont, Tag } from "../../components/ui";
@@ -10,11 +10,13 @@ import { computeDemoQuote, demoQuoteDisclaimer } from "../../features/commerce/c
 import { isFavoriteSku } from "../../features/commerce/shop/favorites";
 import { listFavoriteSkuIds, toggleFavorite } from "../../features/commerce/shop/favorites-store";
 import { formatCny, getSkuTier } from "../../features/commerce/shop/shop-options";
+import { getSouvenirImage } from "../../features/assets/souvenir-images";
 
 const kindGlyphs: Record<SkuKind, string> = {
   "city-key": "钥",
   "album-print": "册",
   "sticker-pack": "贴",
+  "souvenir-pendant": "坠",
 };
 
 export default function ShopScreen() {
@@ -67,7 +69,7 @@ export default function ShopScreen() {
         </Pressable>
       </PaperCard>
 
-      <Section title="特殊款 · 城市限定" caption="CITY EDITIONS">
+      <Section title="特殊款" caption="CITY EDITIONS">
         <View style={styles.grid}>
           {specialSkus.map((sku) => (
             <SkuGridCard
@@ -81,7 +83,7 @@ export default function ShopScreen() {
         </View>
       </Section>
 
-      <Section title="基础款 · 经典通用" caption="EVERYDAY">
+      <Section title="基础款" caption="EVERYDAY">
         <View style={styles.grid}>
           {basicSkus.map((sku) => (
             <SkuGridCard
@@ -113,6 +115,7 @@ function SkuGridCard({
 }) {
   const quote = computeDemoQuote(sku);
   const city = sku.cityLimited ? cityContent[sku.cityLimited] : null;
+  const imageSource = sku.image ? getSouvenirImage(sku.image) : null;
 
   return (
     <Pressable
@@ -121,9 +124,18 @@ function SkuGridCard({
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       <View style={[styles.swatch, { backgroundColor: city ? city.color : colors.paper }]}>
-        <Text selectable style={styles.swatchText}>
-          {city ? city.name.slice(0, 1) : kindGlyphs[sku.kind]}
-        </Text>
+        {imageSource ? (
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="cover"
+            source={imageSource}
+            style={styles.swatchImage}
+          />
+        ) : (
+          <Text selectable style={styles.swatchText}>
+            {city ? city.name.slice(0, 1) : kindGlyphs[sku.kind]}
+          </Text>
+        )}
         <Pressable
           accessibilityLabel={favorited ? `取消收藏${sku.name}` : `收藏${sku.name}`}
           accessibilityRole="button"
@@ -169,6 +181,7 @@ const styles = StyleSheet.create({
     width: "48.5%",
   },
   swatch: { alignItems: "center", aspectRatio: 1, justifyContent: "center" },
+  swatchImage: { height: "100%", width: "100%" },
   swatchText: { color: colors.ink, fontFamily: serifFont, fontSize: 38, fontWeight: "800" },
   starButton: {
     alignItems: "center",
