@@ -3,15 +3,25 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 const mockGetDraftById = jest.fn();
 const mockSaveDraft = jest.fn();
 const mockRetryDraft = jest.fn();
 const mockDiscardDraft = jest.fn();
 
-jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ id: "draft-1" }),
-  useRouter: () => ({ replace: mockReplace }),
-}));
+jest.mock("expo-router", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return {
+    Stack: {
+      Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) => (
+        <View>{options?.headerRight ? options.headerRight() : null}</View>
+      ),
+    },
+    useLocalSearchParams: () => ({ id: "draft-1" }),
+    useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  };
+});
 
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({
@@ -51,7 +61,7 @@ describe("DraftReviewScreen", () => {
     mockSaveDraft.mockResolvedValue(undefined);
   });
 
-  it("saves a loaded draft before opening its memory detail", async () => {
+  it("saves a loaded draft and returns straight to the home tab", async () => {
     const screen = await render(<DraftReviewScreen />);
 
     await waitFor(() => {
@@ -63,10 +73,32 @@ describe("DraftReviewScreen", () => {
 
     await waitFor(() => {
       expect(mockSaveDraft).toHaveBeenCalledWith("draft-1");
-      expect(mockReplace).toHaveBeenCalledWith({
-        pathname: "/memory/[id]",
-        params: { id: "draft-1" },
-      });
+      expect(mockReplace).toHaveBeenCalledWith("/");
     });
+  });
+
+  it("keeps regenerate, edit, and discard as header icon actions only", async () => {
+    const screen = await render(<DraftReviewScreen />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("West Lake weekend").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("重新生成")).toBeNull();
+    expect(screen.queryByText("丢弃草稿")).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("编辑这册草稿"));
+    });
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/memory/[id]/edit",
+      params: { id: "draft-1" },
+    });
+
+    mockRetryDraft.mockResolvedValue(draft);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新生成草稿"));
+    });
+    await waitFor(() => expect(mockRetryDraft).toHaveBeenCalledWith("draft-1"));
   });
 });

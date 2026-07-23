@@ -2,10 +2,19 @@ import { render } from "@testing-library/react-native";
 
 const mockGetMemoryById = jest.fn();
 
-jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ id: "memory-canvas" }),
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
-}));
+jest.mock("expo-router", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return {
+    Stack: {
+      Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) => (
+        <View>{options?.headerRight ? options.headerRight() : null}</View>
+      ),
+    },
+    useLocalSearchParams: () => ({ id: "memory-canvas" }),
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  };
+});
 
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ deleteMemory: jest.fn(), getMemoryById: mockGetMemoryById }),

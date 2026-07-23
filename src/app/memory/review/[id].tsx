@@ -1,7 +1,8 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 
+import { IconButton } from "../../../components/icon-button";
 import { AppButton, colors } from "../../../components/ui";
 import { cityContent } from "../../../features/cities/city-content";
 import { useMemories } from "../../../features/memories/memories-provider";
@@ -47,7 +48,7 @@ export default function DraftReviewScreen() {
     setError("");
     try {
       await saveDraft(id);
-      router.replace({ pathname: "/memory/[id]", params: { id } });
+      router.replace("/");
     } catch {
       setError("暂时无法保留草稿，请重试。");
     } finally {
@@ -93,6 +94,37 @@ export default function DraftReviewScreen() {
     }
   };
 
+  const openEditor = () => {
+    router.push({ pathname: "/memory/[id]/edit", params: { id } });
+  };
+
+  const isActing = action !== null;
+  const headerRight = draft
+    ? () => (
+        <View style={{ flexDirection: "row", gap: 2 }}>
+          <IconButton
+            accessibilityLabel="重新生成草稿"
+            disabled={isActing}
+            icon="refresh"
+            onPress={() => void regenerate()}
+          />
+          <IconButton
+            accessibilityLabel="编辑这册草稿"
+            disabled={isActing}
+            icon="edit"
+            onPress={openEditor}
+          />
+          <IconButton
+            accessibilityLabel="丢弃草稿"
+            disabled={isActing}
+            icon="trash"
+            onPress={confirmDiscard}
+            tone="danger"
+          />
+        </View>
+      )
+    : undefined;
+
   if (isLoading) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 20 }}>
@@ -111,29 +143,29 @@ export default function DraftReviewScreen() {
   }
 
   const city = cityContent[draft.city];
-  const isActing = action !== null;
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 18, padding: 20 }}>
-      <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-        这是仅保存在本机的演示草稿。确认后才会加入你的旅行记忆。
-      </Text>
-      <View style={{ backgroundColor: city.color, borderRadius: 22, gap: 8, padding: 22 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 28, fontWeight: "800" }}>{draft.title}</Text>
-        <Text selectable style={{ color: colors.muted }}>{city.name} · {draft.travelDate}</Text>
-        <Text selectable style={{ color: colors.muted }}>{draft.photoUris.length} 张本地照片 · {draft.pages.length} 页草稿</Text>
-      </View>
-      {draft.pages.map((page) => (
-        <View key={page.id} style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 8, padding: 18 }}>
-          <Text selectable style={{ color: colors.muted, fontSize: 13, fontWeight: "700" }}>{page.position + 1} / {draft.pages.length}</Text>
-          <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>{page.headline}</Text>
-          <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{page.body}</Text>
+    <>
+      <Stack.Screen options={{ headerRight }} />
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 18, padding: 20 }}>
+        <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
+          这是仅保存在本机的演示草稿。右上角可重新生成、编辑或丢弃；确认后才会加入你的旅行记忆。
+        </Text>
+        <View style={{ backgroundColor: city.color, borderRadius: 22, gap: 8, padding: 22 }}>
+          <Text selectable style={{ color: colors.ink, fontSize: 28, fontWeight: "800" }}>{draft.title}</Text>
+          <Text selectable style={{ color: colors.muted }}>{city.name} · {draft.travelDate}</Text>
+          <Text selectable style={{ color: colors.muted }}>{draft.photoUris.length} 张本地照片 · {draft.pages.length} 页草稿</Text>
         </View>
-      ))}
-      {error ? <Text selectable style={{ color: colors.danger, lineHeight: 21 }}>{error}</Text> : null}
-      <AppButton label={action === "save" ? "正在保留…" : "保留草稿"} disabled={isActing} onPress={() => void keepDraft()} />
-      <AppButton label={action === "retry" ? "正在重新生成…" : "重新生成"} disabled={isActing} tone="secondary" onPress={() => void regenerate()} />
-      <AppButton label={action === "discard" ? "正在丢弃…" : "丢弃草稿"} disabled={isActing} tone="danger" onPress={confirmDiscard} />
-    </ScrollView>
+        {draft.pages.map((page) => (
+          <View key={page.id} style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 8, padding: 18 }}>
+            <Text selectable style={{ color: colors.muted, fontSize: 13, fontWeight: "700" }}>{page.position + 1} / {draft.pages.length}</Text>
+            <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>{page.headline}</Text>
+            <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{page.body}</Text>
+          </View>
+        ))}
+        {error ? <Text selectable style={{ color: colors.danger, lineHeight: 21 }}>{error}</Text> : null}
+        <AppButton label={action === "save" ? "正在保留…" : "保留草稿"} disabled={isActing} onPress={() => void keepDraft()} />
+      </ScrollView>
+    </>
   );
 }

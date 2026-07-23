@@ -5,21 +5,12 @@ const mockIsReady = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockProfile = jest.fn();
 
-jest.mock("expo-router", () => {
-  const React = require("react");
-  return {
-    useRouter: () => ({ push: mockPush }),
-    useFocusEffect: (effect: () => void | (() => void)) => React.useEffect(effect, [effect]),
-  };
-});
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: [], isReady: mockIsReady(), clearAllMemories: jest.fn() }),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
-}));
-jest.mock("../src/features/commerce/shop/order-intent-store", () => ({
-  listOrderIntents: () => Promise.resolve([]),
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";

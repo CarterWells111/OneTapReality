@@ -23,7 +23,7 @@ import {
   updateCanvasElement,
 } from "../../../features/canvas/editor-pages";
 import { useMemories } from "../../../features/memories/memories-provider";
-import type { StoryPage } from "../../../types/memory";
+import type { Memory, StoryPage } from "../../../types/memory";
 
 function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -32,9 +32,28 @@ function buildCanvasId(prefix: string) {
 export default function EditMemoryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getMemoryById, updatePages } = useMemories();
-  const memory = getMemoryById(id);
+  const { getDraftById, getMemoryById, updatePages } = useMemories();
+  const savedMemory = getMemoryById(id);
+  const [draftMemory, setDraftMemory] = React.useState<Memory | null>(null);
+  const memory = savedMemory ?? draftMemory ?? undefined;
   const [pages, setPages] = React.useState<StoryPage[]>([]);
+
+  React.useEffect(() => {
+    if (savedMemory) {
+      return;
+    }
+    let isMounted = true;
+    void getDraftById(id)
+      .then((nextDraft) => {
+        if (isMounted) {
+          setDraftMemory(nextDraft);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, [getDraftById, id, savedMemory]);
   const [selectedPageId, setSelectedPageId] = React.useState<string>();
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [selectedPhotoUris, setSelectedPhotoUris] = React.useState<string[]>([]);

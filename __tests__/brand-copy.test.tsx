@@ -4,13 +4,7 @@ const mockPush = jest.fn();
 const mockMemories = jest.fn();
 const mockProfile = jest.fn();
 
-jest.mock("expo-router", () => {
-  const React = require("react");
-  return {
-    useRouter: () => ({ push: mockPush }),
-    useFocusEffect: (effect: () => void | (() => void)) => React.useEffect(effect, [effect]),
-  };
-});
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({
     memories: mockMemories(),
@@ -20,9 +14,6 @@ jest.mock("../src/features/memories/memories-provider", () => ({
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: true }),
-}));
-jest.mock("../src/features/commerce/shop/order-intent-store", () => ({
-  listOrderIntents: () => Promise.resolve([]),
 }));
 
 import MemoriesHomeScreen from "../src/app/(tabs)/index";
