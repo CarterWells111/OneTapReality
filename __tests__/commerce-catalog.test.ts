@@ -37,7 +37,11 @@ describe("listSkusForCity", () => {
   it("returns the city-limited sku plus city-agnostic skus", () => {
     const skus = listSkusForCity(demoCatalog, "hangzhou");
 
-    expect(skus.map((sku) => sku.id)).toEqual(["sku-key-hangzhou", "sku-album-square"]);
+    expect(skus.map((sku) => sku.id)).toEqual([
+      "sku-key-hangzhou",
+      "sku-album-square",
+      "sku-sticker-journey",
+    ]);
   });
 });
 
