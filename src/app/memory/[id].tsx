@@ -79,7 +79,12 @@ export default function MemoryDetailScreen() {
               {page.position + 1} / {memory.pages.length}
             </Text>
             {page.layout ? (
-              <CanvasPage interactive={false} layout={page.layout} />
+              <CanvasPage
+                displayAspectRatio={3 / 4}
+                interactive={false}
+                layout={page.layout}
+                pageSide={page.position % 2 === 0 ? "right" : "left"}
+              />
             ) : (
               <>
                 <Text selectable style={styles.pageHeadline}>{page.headline}</Text>

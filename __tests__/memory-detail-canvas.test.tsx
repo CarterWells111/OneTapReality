@@ -1,4 +1,5 @@
 import { render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 const mockGetMemoryById = jest.fn();
 
@@ -42,7 +43,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
           layout: {
             aspectRatio: 1,
             elements: [
-              { id: "title", type: "text", text: "外滩的风", fontStyle: "avenir", color: "#1C2C28", x: 0.1, y: 0.2, width: 0.8, height: 0.1, rotation: 0, zIndex: 1 },
+              { id: "title", type: "text", text: "外滩的风", fontStyle: "avenir", color: "#1C2C28", x: 0.1, y: 0.2, width: 0.8, height: 0.1, rotation: 0.25, zIndex: 1 },
             ],
           },
         },
@@ -54,5 +55,10 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(screen.getByText("上海之夜")).toBeTruthy();
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(screen.getByText("外滩的风")).toBeTruthy();
+    const canvasStyle = StyleSheet.flatten(screen.getByTestId("album-canvas").props.style);
+    expect(canvasStyle.height / canvasStyle.width).toBeCloseTo(4 / 3);
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-title").props.style)).toMatchObject({
+      transform: [{ rotate: "0.25rad" }],
+    });
   });
 });

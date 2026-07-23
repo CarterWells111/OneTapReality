@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 import { CanvasPage } from "../src/features/canvas/canvas-page";
 import { CanvasToolbar } from "../src/features/canvas/canvas-toolbar";
@@ -75,6 +76,40 @@ describe("CanvasPage", () => {
     await fireEvent.press(screen.getByTestId("canvas-element-sticker-1"));
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("preserves saved size, position, and rotation in a read-only 3:4 page", () => {
+    const transformedLayout: CanvasLayout = {
+      ...layout,
+      elements: [{
+        ...layout.elements[0],
+        x: 0.2,
+        y: 0.25,
+        width: 0.5,
+        height: 0.3,
+        rotation: 0.42,
+      }],
+    };
+    const screen = render(
+      <CanvasPage
+        displayAspectRatio={3 / 4}
+        interactive={false}
+        layout={transformedLayout}
+        width={300}
+      />,
+    );
+
+    expect(StyleSheet.flatten(screen.getByTestId("album-canvas").props.style)).toMatchObject({
+      height: 400,
+      width: 300,
+    });
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-photo-1").props.style)).toMatchObject({
+      height: 120,
+      left: 60,
+      top: 100,
+      width: 150,
+      transform: [{ rotate: "0.42rad" }],
+    });
   });
 });
 

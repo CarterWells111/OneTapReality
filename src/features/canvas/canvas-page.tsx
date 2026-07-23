@@ -7,6 +7,7 @@ import type { CanvasElement as CanvasElementModel, CanvasLayout } from "../../ty
 type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
 
 type CanvasPageProps = {
+  displayAspectRatio?: number;
   height?: number;
   layout: CanvasLayout;
   selectedElementId?: string;
@@ -18,6 +19,7 @@ type CanvasPageProps = {
 };
 
 export function CanvasPage({
+  displayAspectRatio = 1,
   height,
   layout,
   selectedElementId,
@@ -29,7 +31,7 @@ export function CanvasPage({
 }: CanvasPageProps) {
   const { width } = useWindowDimensions();
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
-  const canvasHeight = height ?? canvasWidth;
+  const canvasHeight = height ?? canvasWidth / displayAspectRatio;
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
 
   return (

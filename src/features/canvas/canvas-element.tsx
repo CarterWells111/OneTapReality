@@ -141,10 +141,19 @@ export function CanvasElement({
     height: element.height * canvasHeight,
     zIndex: element.zIndex,
   };
+  const savedRotationStyle = {
+    transform: [{ rotate: `${element.rotation}rad` }],
+  };
 
   const content = <ElementContent element={element} />;
   if (!interactive) {
-    return <View style={[styles.positioned, frameStyle]} testID={`canvas-element-${element.id}`}>{content}</View>;
+    return (
+      <View
+        style={[styles.positioned, frameStyle, savedRotationStyle]}
+        testID={`canvas-element-${element.id}`}>
+        {content}
+      </View>
+    );
   }
 
   return (
