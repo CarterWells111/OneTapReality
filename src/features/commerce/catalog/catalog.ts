@@ -159,4 +159,21 @@ export const demoCatalog: CatalogSku[] = [
     },
     packagingCostCny: 4,
   },
+  {
+    id: "sku-sticker-journey",
+    name: "旅程贴纸手账包",
+    kind: "sticker-pack",
+    cityLimited: null,
+    materials: [
+      { name: "和纸贴纸", source: "演示纸厂 E（广州）", costCny: 4.5 },
+      { name: "烫金箔", source: "演示供应商 B（东莞）", costCny: 1.8 },
+    ],
+    craft: {
+      process: "模切 + 局部烫金",
+      workshop: "演示印厂（广州）",
+      leadTimeDays: 5,
+      costCny: 3.5,
+    },
+    packagingCostCny: 1.5,
+  },
 ];
