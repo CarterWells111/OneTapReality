@@ -1,6 +1,6 @@
-export const cities = ["hangzhou", "shanghai", "shenzhen"] as const;
+import type { City } from "./city";
 
-export type City = (typeof cities)[number];
+export { cities, type City } from "./city";
 
 export const memoryStatuses = ["draft", "saved", "discarded"] as const;
 

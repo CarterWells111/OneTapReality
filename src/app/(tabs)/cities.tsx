@@ -23,7 +23,7 @@ export default function CitiesScreen() {
         <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
           每一册本地保存的旅行记忆，都会在这张离线地图上留下城市足迹。
         </Text>
-        <CityMap stats={cityStats} variant="overview" interactive onCityPress={goToCity} />
+        <CityMap stats={cityStats} variant="overview" interactive onCityPress={goToCity} onMapPress={() => router.push("/city-map")} />
       </Section>
       <Section title="城市文字列表">
         <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
