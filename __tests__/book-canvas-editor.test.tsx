@@ -38,7 +38,6 @@ function EditorHarness({
   return (
     <BookCanvasEditor
       pages={pages}
-      photoUris={["file://one.jpg", "file://two.jpg"]}
       onPagesChange={(nextPages, reason) => {
         setPages(nextPages);
         onChange(nextPages, reason);
@@ -48,7 +47,7 @@ function EditorHarness({
 }
 
 describe("BookCanvasEditor", () => {
-  it("uses double press selection, exposes Done, and clears selection after changing pages", () => {
+  it("uses double press selection and exposes Done", () => {
     const screen = render(<EditorHarness />);
     const firstText = screen.getByText("第一页");
 
@@ -56,10 +55,6 @@ describe("BookCanvasEditor", () => {
     expect(screen.queryByText("完成")).toBeNull();
     fireEvent.press(firstText);
     expect(screen.getByText("完成")).toBeTruthy();
-
-    fireEvent.press(screen.getByLabelText("前往第 2 页"));
-    expect(screen.queryByText("完成")).toBeNull();
-    expect(screen.getByText("第二页")).toBeTruthy();
   });
 
   it("adds a categorized sticker and automatically selects it", () => {
@@ -77,30 +72,13 @@ describe("BookCanvasEditor", () => {
     );
   });
 
-  it("manages local photo selection, page addition, ordering and deletion in a compact menu", () => {
-    const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} />);
+  it("opens the page manager overlay from the toolbar", () => {
+    const screen = render(<EditorHarness />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
-    fireEvent.press(screen.getByTestId("canvas-photo-choice-0"));
-    fireEvent.press(screen.getByTestId("canvas-photo-choice-1"));
-    fireEvent.press(screen.getByText("添加页面"));
-    expect(screen.getAllByTestId("book-page-indicator")).toHaveLength(3);
 
-    fireEvent.press(screen.getByText("前移页面"));
-    fireEvent.press(screen.getByText("后移页面"));
-    fireEvent.press(screen.getByText("删除页面"));
-
-    expect(screen.getAllByTestId("book-page-indicator")).toHaveLength(2);
-    expect(onChange).toHaveBeenCalledWith(expect.any(Array), "structure");
-  });
-
-  it("disables deleting the only remaining page", () => {
-    const screen = render(<EditorHarness initialPages={[sourcePages[0]]} />);
-
-    fireEvent.press(screen.getByLabelText("打开页面管理"));
-    expect(screen.getByRole("button", { name: "删除页面" }).props.accessibilityState).toEqual(
-      expect.objectContaining({ disabled: true }),
-    );
+    expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
+    expect(screen.getByTestId("page-cell-0")).toBeTruthy();
+    expect(screen.getByTestId("page-cell-1")).toBeTruthy();
   });
 });

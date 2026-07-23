@@ -19,30 +19,37 @@ export function MemoryBookCover({ memory, onPress }: { memory: Memory; onPress: 
   const city = cityContent[memory.city];
 
   return (
-    <Pressable
-      accessibilityLabel={`打开旅行册 ${memory.title}`}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.book, pressed && styles.pressed]}
-    >
-      <View style={styles.spine}>
-        <View style={styles.spineEdge} />
-      </View>
-      <View style={styles.coverBody}>
-        <View style={styles.titleBlock}>
-          <Text numberOfLines={3} selectable style={styles.title}>{memory.title}</Text>
-          <View style={styles.accentLine} />
+    <View style={styles.bookSlot}>
+      <Pressable
+        accessibilityLabel={`打开旅行册 ${memory.title}`}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.book,
+          memory.coverColor ? { backgroundColor: memory.coverColor } : null,
+          pressed && styles.pressed,
+        ]}
+      >
+        <View style={styles.spine}>
+          <View style={styles.spineEdge} />
         </View>
-        <View>
-          <Text numberOfLines={1} selectable style={styles.meta}>{city.name} · {memory.travelDate}</Text>
-          <Text selectable style={styles.meta}>{memory.photoUris.length} 张照片</Text>
+        <View style={styles.coverBody}>
+          <View style={styles.titleBlock}>
+            <Text numberOfLines={3} selectable style={styles.title}>{memory.title}</Text>
+            <View style={styles.accentLine} />
+          </View>
+          <View>
+            <Text numberOfLines={1} selectable style={styles.meta}>{city.name} · {memory.travelDate}</Text>
+            <Text selectable style={styles.meta}>{memory.photoUris.length} 张照片</Text>
+          </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  bookSlot: { width: "48.5%" },
   book: {
     aspectRatio: 3 / 4,
     backgroundColor: bookColors.cover,
@@ -50,7 +57,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 10,
     flexDirection: "row",
     overflow: "hidden",
-    width: "48.5%",
+    width: "100%",
   },
   spine: { backgroundColor: bookColors.spine, flexDirection: "row", width: 9 },
   spineEdge: { backgroundColor: bookColors.spineEdge, marginLeft: "auto", width: 1.5 },

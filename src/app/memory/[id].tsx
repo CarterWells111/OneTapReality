@@ -4,7 +4,7 @@ import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-nativ
 import { IconButton } from "../../components/icon-button";
 import { AppButton, colors } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
-import { CanvasPage } from "../../features/canvas/canvas-page";
+import { PageReader } from "../../features/canvas/page-reader";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 
@@ -13,7 +13,7 @@ const serifFont = Platform.select({ android: "serif", default: "Georgia" });
 export default function MemoryDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { deleteMemory, getMemoryById } = useMemories();
+  const { discardMemory, getMemoryById } = useMemories();
   const isSample = id === sampleMemory.id;
   const memory = isSample ? sampleMemory : getMemoryById(id);
 
@@ -27,13 +27,13 @@ export default function MemoryDetailScreen() {
 
   const city = cityContent[memory.city];
   const confirmDelete = () => {
-    Alert.alert("删除这册旅行记忆？", "删除后无法恢复。", [
+    Alert.alert("删除这册旅行记忆？", "会移入回收站，可在回收站里恢复或彻底删除。", [
       { text: "取消", style: "cancel" },
       {
         text: "删除",
         style: "destructive",
         onPress: () => {
-          void deleteMemory(memory.id).then(() => router.replace("/"));
+          void discardMemory(memory.id).then(() => router.replace("/"));
         },
       },
     ]);
@@ -61,7 +61,7 @@ export default function MemoryDetailScreen() {
     <>
       <Stack.Screen options={{ headerRight }} />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <View style={[styles.cover, { backgroundColor: city.color }]}>
+        <View style={[styles.cover, { backgroundColor: memory.coverColor ?? city.color }]}>
           <View style={styles.coverTop}>
             <Text selectable style={styles.coverTitle}>{memory.title}</Text>
             <View style={styles.coverAccent} />
@@ -73,21 +73,7 @@ export default function MemoryDetailScreen() {
             </Text>
           </View>
         </View>
-        {memory.pages.map((page) => (
-          <View key={page.id} style={styles.pageCard}>
-            <Text selectable style={styles.pageNumber}>
-              {page.position + 1} / {memory.pages.length}
-            </Text>
-            {page.layout ? (
-              <CanvasPage interactive={false} layout={page.layout} />
-            ) : (
-              <>
-                <Text selectable style={styles.pageHeadline}>{page.headline}</Text>
-                <Text selectable style={styles.pageBody}>{page.body}</Text>
-              </>
-            )}
-          </View>
-        ))}
+        <PageReader pages={memory.pages} />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
         ) : null}
@@ -109,15 +95,4 @@ const styles = StyleSheet.create({
   coverTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 30, fontWeight: "800", lineHeight: 38 },
   coverAccent: { backgroundColor: colors.warmAccent, height: 3, width: 40 },
   coverMeta: { color: colors.muted, fontSize: 14, lineHeight: 21 },
-  pageCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 8,
-    padding: 18,
-  },
-  pageNumber: { color: colors.muted, fontSize: 13, fontWeight: "700" },
-  pageHeadline: { color: colors.ink, fontSize: 20, fontWeight: "800" },
-  pageBody: { color: colors.muted, lineHeight: 22 },
 });

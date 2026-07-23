@@ -1,8 +1,9 @@
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, Section } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
@@ -17,16 +18,34 @@ const cityGroupLabels: Record<CityKind, string> = {
   "province-capital": "省会",
 };
 
+const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
+
+/** 封面预设颜色（十六进制）。仅用于选色，其余封面样式不变。 */
+const COVER_COLORS = [
+  "#EFE2CF",
+  "#F6D8C7",
+  "#E9C4A3",
+  "#D9E3D0",
+  "#BFD8E2",
+  "#E7D2E6",
+  "#D8CFC4",
+  "#C7B79C",
+] as const;
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function formatDate(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+function parseIsoDate(value: string): Date {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export default function NewMemoryScreen() {
@@ -38,23 +57,16 @@ export default function NewMemoryScreen() {
   const [city, setCity] = React.useState<City>(presetCity);
   const [cityQuery, setCityQuery] = React.useState("");
   const [travelDate, setTravelDate] = React.useState(today);
+  const [coverColor, setCoverColor] = React.useState<string>(COVER_COLORS[0]);
   const [photoUris, setPhotoUris] = React.useState<string[]>([]);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
-  const [activeSheet, setActiveSheet] = React.useState<"date" | "city" | null>(null);
-
-  const initialDate = new Date(travelDate);
-  const [draftYear, setDraftYear] = React.useState(initialDate.getFullYear());
-  const [draftMonth, setDraftMonth] = React.useState(initialDate.getMonth() + 1);
-  const [draftDay, setDraftDay] = React.useState(initialDate.getDate());
+  const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
 
   React.useEffect(() => {
     setCity(presetCity);
   }, [presetCity]);
-
-  const currentYear = new Date().getFullYear();
-  const yearOptions = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
-  const dayCount = daysInMonth(draftYear, draftMonth);
 
   const visibleCityGroups = React.useMemo(() => {
     const normalizedQuery = cityQuery.trim().toLocaleLowerCase();
@@ -64,10 +76,15 @@ export default function NewMemoryScreen() {
     })).filter((group) => group.cities.length > 0);
   }, [cityQuery]);
 
-  const confirmDate = () => {
-    const clampedDay = Math.min(draftDay, dayCount);
-    setTravelDate(formatDate(draftYear, draftMonth, clampedDay));
-    setActiveSheet(null);
+  const openDatePicker = () => setShowDatePicker(true);
+
+  const handleDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== "ios") {
+      setShowDatePicker(false);
+    }
+    if (event.type === "set" && selected) {
+      setTravelDate(toIsoDate(selected));
+    }
   };
 
   const pickCity = (nextCity: City) => {
@@ -100,7 +117,7 @@ export default function NewMemoryScreen() {
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createDraft({ title, city, travelDate, photoUris });
+      const memory = await createDraft({ title, city, travelDate, photoUris, coverColor });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
     } catch (caughtError) {
@@ -133,7 +150,7 @@ export default function NewMemoryScreen() {
           <Pressable
             accessibilityLabel="选择旅行日期"
             accessibilityRole="button"
-            onPress={() => setActiveSheet("date")}
+            onPress={openDatePicker}
             style={({ pressed }) => [styles.formRow, styles.formRowDivider, pressed && styles.pressed]}
           >
             <Text selectable style={styles.formLabel}>日期</Text>
@@ -157,6 +174,28 @@ export default function NewMemoryScreen() {
         </View>
       </Section>
 
+      <Section title="封面颜色">
+        <View style={styles.coverPreviewRow}>
+          <View style={[styles.coverPreview, { backgroundColor: coverColor }]} />
+          <Text selectable style={styles.coverHint}>点选一个颜色作为这册的封面底色。</Text>
+        </View>
+        <View style={styles.swatchRow}>
+          {COVER_COLORS.map((swatch) => (
+            <Pressable
+              accessibilityLabel={`封面颜色 ${swatch}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: coverColor === swatch }}
+              key={swatch}
+              onPress={() => {
+                setCoverColor(swatch);
+                void Haptics.selectionAsync();
+              }}
+              style={[styles.swatch, { backgroundColor: swatch }, coverColor === swatch && styles.swatchSelected]}
+            />
+          ))}
+        </View>
+      </Section>
+
       <Section title="选择照片">
         <AppButton label={photoUris.length ? `已选 ${photoUris.length} 张，重新选择` : "从相册选择照片"} tone="secondary" onPress={() => void selectPhotos()} />
         {photoUris.length > 0 ? (
@@ -176,30 +215,31 @@ export default function NewMemoryScreen() {
       )}
       </ScrollView>
 
-      {activeSheet === "date" ? (
+      {showDatePicker && Platform.OS === "android" ? (
+        <DateTimePicker
+          maximumDate={new Date()}
+          minimumDate={MIN_TRAVEL_DATE}
+          mode="date"
+          onChange={handleDateChange}
+          value={parseIsoDate(travelDate)}
+        />
+      ) : null}
+
+      {showDatePicker && Platform.OS === "ios" ? (
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text selectable style={styles.sheetTitle}>选择旅行日期</Text>
-            <Text selectable style={styles.sheetGroupLabel}>年份</Text>
-            <View style={styles.chipRow}>
-              {yearOptions.map((year) => (
-                <SheetChip key={year} label={`${year}`} selected={draftYear === year} onPress={() => setDraftYear(year)} />
-              ))}
-            </View>
-            <Text selectable style={styles.sheetGroupLabel}>月份</Text>
-            <View style={styles.chipRow}>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <SheetChip key={month} label={`${month} 月`} selected={draftMonth === month} onPress={() => setDraftMonth(month)} />
-              ))}
-            </View>
-            <Text selectable style={styles.sheetGroupLabel}>日期</Text>
-            <View style={styles.chipRow}>
-              {Array.from({ length: dayCount }, (_, index) => index + 1).map((day) => (
-                <SheetChip key={day} label={`${day}`} selected={Math.min(draftDay, dayCount) === day} onPress={() => setDraftDay(day)} />
-              ))}
-            </View>
-            <AppButton label="确认日期" onPress={confirmDate} />
-            <AppButton label="取消" tone="secondary" onPress={() => setActiveSheet(null)} />
+            <DateTimePicker
+              display="spinner"
+              maximumDate={new Date()}
+              minimumDate={MIN_TRAVEL_DATE}
+              mode="date"
+              onChange={handleDateChange}
+              textColor={colors.ink}
+              themeVariant="light"
+              value={parseIsoDate(travelDate)}
+            />
+            <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
           </View>
         </View>
       ) : null}
@@ -245,27 +285,6 @@ export default function NewMemoryScreen() {
         </View>
       ) : null}
     </View>
-  );
-}
-
-function SheetChip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed]}
-    >
-      <Text selectable style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -316,19 +335,24 @@ const styles = StyleSheet.create({
     minHeight: 50,
     paddingHorizontal: 14,
   },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    backgroundColor: colors.surface,
+  coverPreviewRow: { alignItems: "center", flexDirection: "row", gap: 12 },
+  coverPreview: {
     borderColor: colors.line,
     borderRadius: 12,
     borderWidth: 1,
-    minHeight: 40,
-    justifyContent: "center",
-    paddingHorizontal: 12,
+    height: 44,
+    width: 60,
   },
-  chipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipLabel: { color: colors.ink, fontSize: 14, fontWeight: "700" },
-  chipLabelSelected: { color: "#FFFFFF" },
+  coverHint: { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 },
+  swatchRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  swatch: {
+    borderColor: colors.line,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    width: 44,
+  },
+  swatchSelected: { borderColor: colors.ink, borderWidth: 3 },
   cityList: { gap: 14, paddingBottom: 10 },
   cityGroup: { gap: 8 },
   cityOption: {

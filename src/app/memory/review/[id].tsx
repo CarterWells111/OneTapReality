@@ -263,7 +263,6 @@ export default function DraftReviewScreen() {
           <BookCanvasEditor
             onPagesChange={changePages}
             pages={draft.pages}
-            photoUris={draft.photoUris}
           />
 
           <AutosaveStatus

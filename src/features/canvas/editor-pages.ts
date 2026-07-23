@@ -76,6 +76,29 @@ export function deleteCanvasPage(pages: StoryPage[], pageId: string) {
   return normalizePositions(pages.filter((page) => page.id !== pageId).map(withLayout));
 }
 
+export function reorderCanvasPages(pages: StoryPage[], fromIndex: number, toIndex: number) {
+  const next = canvasPages(pages);
+  if (
+    fromIndex < 0 || fromIndex >= next.length ||
+    toIndex < 0 || toIndex >= next.length ||
+    fromIndex === toIndex
+  ) {
+    return next;
+  }
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return normalizePositions(next);
+}
+
+export function deleteCanvasPages(pages: StoryPage[], ids: string[]) {
+  const removal = new Set(ids);
+  const remaining = pages.filter((page) => !removal.has(page.id));
+  if (remaining.length === 0) {
+    return canvasPages(pages);
+  }
+  return normalizePositions(remaining.map(withLayout));
+}
+
 export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "forward" | "backward") {
   const next = canvasPages(pages);
   const index = next.findIndex((page) => page.id === pageId);

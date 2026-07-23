@@ -20,6 +20,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       city TEXT NOT NULL,
       travelDate TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'saved',
+      coverColor TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -60,6 +61,9 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     await db.execAsync(
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
+  }
+  if (!columns.some((column) => column.name === "coverColor")) {
+    await db.execAsync("ALTER TABLE memories ADD COLUMN coverColor TEXT");
   }
   const pageColumns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(story_pages)");
   if (!pageColumns.some((column) => column.name === "layout_json")) {
@@ -106,7 +110,7 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
 
 export async function listMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
     "saved"
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
@@ -117,7 +121,7 @@ export async function getMemory(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
     id,
     "saved"
   );
@@ -129,7 +133,7 @@ export async function getDraft(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
     id,
     "draft"
   );
@@ -139,7 +143,7 @@ export async function getDraft(
 /** 回收站：列出已丢弃的本机记忆，最近更新在前。 */
 export async function listDiscardedMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
     "discarded"
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
@@ -175,14 +179,15 @@ async function insertMemory(
 ) {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt, coverColor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       memory.id,
       memory.title,
       memory.city,
       memory.travelDate,
       status,
       memory.createdAt,
-      memory.updatedAt
+      memory.updatedAt,
+      memory.coverColor ?? null
     );
 
     for (const [position, uri] of memory.photoUris.entries()) {
@@ -259,6 +264,21 @@ export async function updateMemoryPages(
     await db.runAsync("DELETE FROM story_pages WHERE memory_id = ?", memory.id);
     await writeStoryPages(db, memory.id, memory.pages);
   });
+}
+
+/** 把已保存的旅行册移入回收站（软删除，可在回收站恢复或彻底删除）。 */
+export async function discardMemory(
+  db: SQLiteDatabase,
+  id: string,
+  updatedAt: string
+) {
+  await db.runAsync(
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "discarded",
+    updatedAt,
+    id,
+    "saved"
+  );
 }
 
 export async function deleteMemory(db: SQLiteDatabase, id: string) {

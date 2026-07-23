@@ -7,6 +7,7 @@ import {
   createDraft as createDraftInDb,
   deleteMemory as deleteMemoryFromDb,
   discardDraft as discardDraftInDb,
+  discardMemory as discardMemoryInDb,
   getDraft,
   listDiscardedMemories,
   listMemories,
@@ -30,6 +31,7 @@ type MemoriesContextValue = {
   discardDraft: (id: string) => Promise<void>;
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   updateDraftPages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
+  discardMemory: (id: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
   getMemoryById: (id: string) => Memory | undefined;
@@ -160,6 +162,14 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [db]
   );
 
+  const discardMemory = React.useCallback(
+    async (id: string) => {
+      await discardMemoryInDb(db, id, new Date().toISOString());
+      await refresh();
+    },
+    [db, refresh]
+  );
+
   const deleteMemory = React.useCallback(
     async (id: string) => {
       await deleteMemoryFromDb(db, id);
@@ -198,6 +208,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardDraft,
       updatePages,
       updateDraftPages,
+      discardMemory,
       deleteMemory,
       clearAllMemories,
       getMemoryById: (id) => memories.find((memory) => memory.id === id),
@@ -209,6 +220,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       createDraft,
       createMemory,
       deleteMemory,
+      discardMemory,
       discardDraft,
       getDraftById,
       isReady,
