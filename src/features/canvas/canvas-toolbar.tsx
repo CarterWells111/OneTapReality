@@ -11,6 +11,7 @@ type CanvasToolbarProps = {
   onChangeLayer: (id: string, direction: "forward" | "backward") => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  onDone?: () => void;
 };
 
 const colors = [
@@ -27,6 +28,7 @@ export function CanvasToolbar({
   onChangeLayer,
   onDuplicate,
   onDelete,
+  onDone,
 }: CanvasToolbarProps) {
   const selectedId = selectedElement?.id;
   const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
@@ -60,6 +62,7 @@ export function CanvasToolbar({
         {selectedId ? <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} /> : null}
         {selectedId ? <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} /> : null}
         {selectedId ? <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} /> : null}
+        {selectedId && onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
       </ScrollView>
     </View>
   );

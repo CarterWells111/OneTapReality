@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFonts, canvasStickers } from "./canvas-assets";
@@ -8,8 +9,11 @@ import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
 
+type CanvasDimensions = { width: number; height: number };
+
 type CanvasElementProps = {
-  canvasSize: number;
+  canvasHeight: number;
+  canvasWidth: number;
   element: CanvasElementModel;
   interactive: boolean;
   isSelected: boolean;
@@ -23,12 +27,15 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 export function calculateCanvasTransform(
   element: Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">,
   transform: { rotation: number; scale: number; translationX: number; translationY: number },
-  canvasSize: number,
+  canvasDimensions: number | CanvasDimensions,
 ): ElementPatch {
+  const { width: canvasWidth, height: canvasHeight } = typeof canvasDimensions === "number"
+    ? { width: canvasDimensions, height: canvasDimensions }
+    : canvasDimensions;
   const width = clamp(element.width * transform.scale, 0.05, 1);
   const height = clamp(element.height * transform.scale, 0.05, 1);
-  const x = clamp(element.x + transform.translationX / canvasSize + (element.width - width) / 2, 0, 1 - width);
-  const y = clamp(element.y + transform.translationY / canvasSize + (element.height - height) / 2, 0, 1 - height);
+  const x = clamp(element.x + transform.translationX / canvasWidth + (element.width - width) / 2, 0, 1 - width);
+  const y = clamp(element.y + transform.translationY / canvasHeight + (element.height - height) / 2, 0, 1 - height);
   return { x, y, width, height, rotation: element.rotation + transform.rotation };
 }
 
@@ -42,13 +49,15 @@ export function finalizeCanvasGesture(started: boolean, activeGestureCount: numb
 }
 
 export function CanvasElement({
-  canvasSize,
+  canvasHeight,
+  canvasWidth,
   element,
   interactive,
   isSelected,
   onSelect,
   onTransformEnd,
 }: CanvasElementProps) {
+  const lastPressAt = React.useRef<number | null>(null);
   const offsetX = useSharedValue(0);
   const offsetY = useSharedValue(0);
   const scale = useSharedValue(1);
@@ -62,7 +71,7 @@ export function CanvasElement({
     onTransformEnd?.(element.id, calculateCanvasTransform(
       element,
       { translationX, translationY, scale: nextScale, rotation: nextRotation },
-      canvasSize,
+      { width: canvasWidth, height: canvasHeight },
     ));
   };
 
@@ -70,7 +79,6 @@ export function CanvasElement({
     "worklet";
     started.value = true;
     activeGestureCount.value += 1;
-    runOnJS(onSelect)(element.id);
   };
 
   const finalizeGesture = (started: typeof panStarted) => {
@@ -96,7 +104,7 @@ export function CanvasElement({
   };
 
   const pan = Gesture.Pan()
-    .enabled(interactive)
+    .enabled(interactive && isSelected)
     .onBegin(() => beginGesture(panStarted))
     .onUpdate((event) => {
       offsetX.value = event.translationX;
@@ -104,14 +112,14 @@ export function CanvasElement({
     })
     .onFinalize(() => finalizeGesture(panStarted));
   const pinch = Gesture.Pinch()
-    .enabled(interactive)
+    .enabled(interactive && isSelected)
     .onBegin(() => beginGesture(pinchStarted))
     .onUpdate((event) => {
       scale.value = event.scale;
     })
     .onFinalize(() => finalizeGesture(pinchStarted));
   const rotate = Gesture.Rotation()
-    .enabled(interactive)
+    .enabled(interactive && isSelected)
     .onBegin(() => beginGesture(rotationStarted))
     .onUpdate((event) => {
       rotation.value = event.rotation;
@@ -127,10 +135,10 @@ export function CanvasElement({
     ],
   }));
   const frameStyle = {
-    left: element.x * canvasSize,
-    top: element.y * canvasSize,
-    width: element.width * canvasSize,
-    height: element.height * canvasSize,
+    left: element.x * canvasWidth,
+    top: element.y * canvasHeight,
+    width: element.width * canvasWidth,
+    height: element.height * canvasHeight,
     zIndex: element.zIndex,
   };
 
@@ -144,7 +152,16 @@ export function CanvasElement({
       <Animated.View style={[styles.positioned, frameStyle, animatedStyle]}>
         <Pressable
           accessibilityRole="button"
-          onPress={() => onSelect(element.id)}
+          accessibilityHint="双击以选中并编辑"
+          onPress={() => {
+            const now = Date.now();
+            if (lastPressAt.current !== null && now - lastPressAt.current <= 320) {
+              lastPressAt.current = null;
+              onSelect(element.id);
+              return;
+            }
+            lastPressAt.current = now;
+          }}
           style={[styles.element, isSelected && styles.selected]}
           testID={`canvas-element-${element.id}`}>
           {content}

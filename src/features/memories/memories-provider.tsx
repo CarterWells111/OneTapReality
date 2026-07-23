@@ -29,6 +29,7 @@ type MemoriesContextValue = {
   retryDraft: (id: string) => Promise<Memory>;
   discardDraft: (id: string) => Promise<void>;
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
+  updateDraftPages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
   getMemoryById: (id: string) => Memory | undefined;
@@ -148,6 +149,17 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [db, refresh]
   );
 
+  const updateDraftPages = React.useCallback(
+    async (memory: Memory, pages: StoryPage[]) => {
+      await updateMemoryPages(db, {
+        ...memory,
+        pages,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [db]
+  );
+
   const deleteMemory = React.useCallback(
     async (id: string) => {
       await deleteMemoryFromDb(db, id);
@@ -185,6 +197,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       retryDraft,
       discardDraft,
       updatePages,
+      updateDraftPages,
       deleteMemory,
       clearAllMemories,
       getMemoryById: (id) => memories.find((memory) => memory.id === id),
@@ -205,6 +218,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       retryDraft,
       saveDraft,
       updatePages,
+      updateDraftPages,
     ]
   );
 
