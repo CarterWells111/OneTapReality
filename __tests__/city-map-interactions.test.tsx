@@ -72,6 +72,12 @@ describe("CityMap workspace gestures", () => {
     expect(mockDerivedValueCalls).toBe(0);
   });
 
+  it("does not start a derived UI-thread worklet when the fullscreen map opens", async () => {
+    await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
+
+    expect(mockDerivedValueCalls).toBe(0);
+  });
+
   it("clamps shared pan and pinch values without calling React across gesture frames", async () => {
     const screen = await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
     await act(async () => {

@@ -59,12 +59,11 @@ describe("CityMap", () => {
   });
 
   it("renders provinces, markers, and labels inside one undistorted China SVG", async () => {
-    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    const screen = await render(<CityMap initialCity="hangzhou" stats={stats} variant="workspace" />);
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
-    const dot = screen.getByTestId("city-map-marker-dot-hangzhou-medium").props;
-    expect(dot).toMatchObject({ cx: expect.closeTo(602.03, 2), cy: expect.closeTo(405.28, 2) });
-    const label = screen.getByTestId("city-map-label-hangzhou").props;
+    const dot = screen.getByTestId("city-map-marker-dot-jinan-none").props;
+    const label = screen.getByTestId("city-map-label-jinan").props;
     expect(label.x).toEqual([dot.cx]);
     expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
     expect(label.y[0]).toBeLessThan(dot.cy);

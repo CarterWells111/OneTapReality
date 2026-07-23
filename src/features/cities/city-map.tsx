@@ -1,7 +1,7 @@
 import * as React from "react";
 import { type LayoutChangeEvent, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useAnimatedProps, useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import Svg, { Circle, G, Path, Rect, Text as SvgText } from "react-native-svg";
 import chinaMap from "@svg-maps/china";
 
@@ -50,7 +50,6 @@ const markerLabelSvgFontSize = markerLabelFontSize * markerSvgScale;
 const markerLabelSvgOffsetY = (markerVisualSize / 2 + markerLabelFontSize) * markerSvgScale;
 const markerLabelSvgWidth = markerLabelWidth * markerSvgScale;
 const markerLabelCollisionPadding = 8;
-const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
@@ -150,6 +149,11 @@ export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], 
   });
 }
 
+function resolveVisibleWorkspaceLabelCities(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): City[] {
+  const models = resolveWorkspaceMarkerModels(markers, viewport, size);
+  return markers.flatMap((marker, index) => models[index]?.showLabel ? [marker.city] : []);
+}
+
 function savedMemoryLabel(city: City, visitCount: number) {
   return `${cityContent[city].name}，已保存 ${visitCount} 册旅行记忆`;
 }
@@ -175,37 +179,22 @@ export function getCityMapTransform(viewport: WorkspaceViewport) {
   ];
 }
 
-type AnimatedWorkspaceValues = {
-  readonly labelVisibility: { readonly value: readonly boolean[] };
-  readonly mapHeight: { readonly value: number };
-  readonly mapWidth: { readonly value: number };
-  readonly scale: { readonly value: number };
-  readonly translateX: { readonly value: number };
-  readonly translateY: { readonly value: number };
-};
-
-function CityMapMarkerView({ animatedValues, city, interactive, marker, markerIndex, onCityPress, stat, variant }: {
-  readonly animatedValues: AnimatedWorkspaceValues;
+function CityMapMarkerView({ city, interactive, marker, onCityPress, stat, visibleLabelCities }: {
   readonly city: City;
   readonly interactive: boolean;
   readonly marker: CityMapMarker;
-  readonly markerIndex: number;
   readonly onCityPress?: (city: City) => void;
   readonly stat: CityStats;
-  readonly variant: CityMapVariant;
+  readonly visibleLabelCities: readonly City[];
 }) {
   const token = markerTokens[stat.intensity];
   const coordinate = resolveChinaMapCoordinate(marker);
-  const animatedLabelProps = useAnimatedProps(() => {
-    if (variant !== "workspace") return { opacity: 0 };
-    return { opacity: animatedValues.labelVisibility.value[markerIndex] ? 1 : 0 };
-  });
 
   return (
     <G accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" accessible onPress={interactive ? () => onCityPress?.(city) : undefined} testID={`city-map-marker-${city}-${stat.intensity}`}>
       <Rect fill="transparent" height={markerTargetSvgSize} width={markerTargetSvgSize} x={coordinate.x - markerTargetSvgSize / 2} y={coordinate.y - markerTargetSvgSize / 2} testID={`city-map-marker-target-${city}-${stat.intensity}`} />
       <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
-      {variant === "workspace" ? <AnimatedSvgText animatedProps={animatedLabelProps} fill={colors.ink} fontSize={markerLabelSvgFontSize} fontWeight="800" textAnchor="middle" x={coordinate.x} y={coordinate.y - markerLabelSvgOffsetY} testID={`city-map-label-${city}`}>{cityContent[city].name}</AnimatedSvgText> : null}
+      {visibleLabelCities.includes(city) ? <SvgText fill={colors.ink} fontSize={markerLabelSvgFontSize} fontWeight="800" textAnchor="middle" x={coordinate.x} y={coordinate.y - markerLabelSvgOffsetY} testID={`city-map-label-${city}`}>{cityContent[city].name}</SvgText> : null}
     </G>
   );
 }
@@ -282,11 +271,10 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
   const pinchStartScale = useSharedValue(initialViewport.scale);
   const mapWidth = useSharedValue(workspaceSize.width);
   const mapHeight = useSharedValue(workspaceSize.height);
-  const labelVisibility = useDerivedValue(() => resolveWorkspaceMarkerModels(adapter.markers, {
-    scale: scale.value,
-    translateX: translateX.value,
-    translateY: translateY.value,
-  }, { height: mapHeight.value, width: mapWidth.value }).map((model) => model.showLabel));
+  const [visibleLabelCities, setVisibleLabelCities] = React.useState<readonly City[]>(() => resolveVisibleWorkspaceLabelCities(adapter.markers, initialViewport, workspaceSize));
+  const updateVisibleLabelCities = React.useCallback((viewport: WorkspaceViewport, size: WorkspaceSize) => {
+    setVisibleLabelCities(resolveVisibleWorkspaceLabelCities(adapter.markers, viewport, size));
+  }, [adapter]);
 
   React.useEffect(() => {
     const nextViewport = variant === "workspace"
@@ -295,7 +283,8 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
     scale.value = nextViewport.scale;
-  }, [adapter, focus, initialCity, scale, translateX, translateY, variant, workspaceSize]);
+    updateVisibleLabelCities(nextViewport, workspaceSize);
+  }, [adapter, focus, initialCity, scale, translateX, translateY, updateVisibleLabelCities, variant, workspaceSize]);
 
   const onWorkspaceLayout = React.useCallback((event: LayoutChangeEvent) => {
     const { height, width } = event.nativeEvent.layout;
@@ -315,6 +304,7 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       const next = clampWorkspaceViewport({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
       translateX.value = next.translateX;
       translateY.value = next.translateY;
+      runOnJS(updateVisibleLabelCities)(next, { height: mapHeight.value, width: mapWidth.value });
     });
   const pinch = Gesture.Pinch().enabled(variant === "workspace")
     .onBegin(() => { pinchStartScale.value = scale.value; })
@@ -329,6 +319,7 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       scale.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
+      runOnJS(updateVisibleLabelCities)(next, { height: mapHeight.value, width: mapWidth.value });
     });
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
   const animatedCanvasStyle = useAnimatedStyle(() => ({
@@ -351,11 +342,11 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
             />
           ))}
           <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
-          {adapter.markers.map((marker, markerIndex) => {
+          {adapter.markers.map((marker) => {
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
           return (
-            <CityMapMarkerView animatedValues={{ labelVisibility, mapHeight, mapWidth, scale, translateX, translateY }} city={city} interactive={interactive} key={city} marker={marker} markerIndex={markerIndex} onCityPress={onCityPress} stat={stat} variant={variant} />
+            <CityMapMarkerView city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} visibleLabelCities={visibleLabelCities} />
           );
           })}
         </Svg>
