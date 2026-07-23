@@ -195,3 +195,11 @@
 - 点击组件内部、书页外工具栏、贴纸栏、页码或页面管理区域不会触发取消选中。
 - 由 `CanvasPage` 的书页底层点击回调处理，不使用坐标碰撞检测；保持现有双击选中、组件手势和横滑翻页语义。
 - 取消选中只改变本地 UI 状态，不修改页面数据，也不触发自动保存。
+
+## 2026-07-23：Lockfile 与生产构建合并门禁
+
+- Railway Build image 失败的根因是 `package-lock.json` 缺少依赖图要求的 peer 节点；已有 `node_modules` 会掩盖该问题，干净 `npm ci` 可稳定复现。
+- 新增 GitHub Actions，在 Pull Request 和 `main` push 时强制执行干净安装；Node 20.19 验证最低支持线，Node 24 运行 lint、typecheck、全量测试及 Railway 同款 `build:server`。
+- 工作流检查在远端首次出现后设为 `main` 必需状态检查；配置时保留已有保护规则。
+- 依赖变更必须同时更新 `package.json` 与 `package-lock.json`，并以 `npm ci` 而非已有依赖目录中的开发启动作为合并依据。
+- 保持 Node/npm 为最低版本及以上的兼容范围，不改回封闭版本限定。
