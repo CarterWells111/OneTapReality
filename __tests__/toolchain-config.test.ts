@@ -4,13 +4,13 @@ describe("Node and npm toolchain policy", () => {
   it("accepts supported toolchain versions at or above the minimum", () => {
     expect(packageJson).not.toHaveProperty("packageManager");
     expect(packageJson.engines).toEqual({
-      node: ">=20.19.0",
+      node: ">=20.19.4",
       npm: ">=10.8.2",
     });
     expect(packageJson.devEngines).toEqual({
       runtime: {
         name: "node",
-        version: ">=20.19.0",
+        version: ">=20.19.4",
         onFail: "error",
       },
       packageManager: {

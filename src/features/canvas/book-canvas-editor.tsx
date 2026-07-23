@@ -226,6 +226,7 @@ export function BookCanvasEditor({
               <CanvasPage
                 height={pageHeight}
                 layout={currentPage.layout}
+                onPressBlank={() => setSelectedElementId(undefined)}
                 onSelectElement={setSelectedElementId}
                 onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
                 pageSide={isRightPage ? "right" : "left"}

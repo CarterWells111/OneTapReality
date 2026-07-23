@@ -35,7 +35,7 @@
 
 ## 2026-07-23：Node 与 npm 版本治理
 
-本地开发、Railway 构建与未来 CI 的最低工具链要求为 Node `>=20.19.0` 和 npm `>=10.8.2`，允许使用满足最低要求的更高版本。`package.json` 是唯一版本来源：Railpack 读取 `engines`，npm 通过 `devEngines` 只拒绝低于最低要求的环境；移除会固定 npm 精确版本的顶层 `packageManager`。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。测试开发依赖继续使用 `@testing-library/react-native@13.3.3`，其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
+本地开发、Railway 构建与未来 CI 的最低工具链要求为 Node `>=20.19.4` 和 npm `>=10.8.2`，允许使用满足最低要求的更高版本。`package.json` 是唯一版本来源：Railpack 读取 `engines`，npm 通过 `devEngines` 只拒绝低于最低要求的环境；移除会固定 npm 精确版本的顶层 `packageManager`。仓库不再增加重复的 `.nvmrc`、`.node-version`、自定义 Railpack 安装命令或 Railway Node 版本变量。测试开发依赖继续使用 `@testing-library/react-native@13.3.3`，其 peer dependency `react-test-renderer` 明确固定为与 React 一致的 `19.1.0`，避免 npm 解析到不兼容的 19.2。生产依赖、API、数据库、客户端及服务端运行时业务行为保持不变。
 
 ## 2026-07-23：全屏地图缩放标记与标签
 
@@ -195,3 +195,11 @@
 - 点击组件内部、书页外工具栏、贴纸栏、页码或页面管理区域不会触发取消选中。
 - 由 `CanvasPage` 的书页底层点击回调处理，不使用坐标碰撞检测；保持现有双击选中、组件手势和横滑翻页语义。
 - 取消选中只改变本地 UI 状态，不修改页面数据，也不触发自动保存。
+
+## 2026-07-23：Lockfile 与生产构建合并门禁
+
+- Railway Build image 失败的根因是 `package-lock.json` 缺少依赖图要求的 peer 节点；已有 `node_modules` 会掩盖该问题，干净 `npm ci` 可稳定复现。
+- 新增 GitHub Actions，在 Pull Request 和 `main` push 时强制执行干净安装；Node 20.19.4 验证最低支持线，Node 24 运行 lint、typecheck、全量测试及 Railway 同款 `build:server`。
+- 工作流检查在远端首次出现后设为 `main` 必需状态检查；配置时保留已有保护规则。
+- 依赖变更必须同时更新 `package.json` 与 `package-lock.json`，并以 `npm ci` 而非已有依赖目录中的开发启动作为合并依据。
+- 保持 Node/npm 为最低版本及以上的兼容范围，不改回封闭版本限定。
