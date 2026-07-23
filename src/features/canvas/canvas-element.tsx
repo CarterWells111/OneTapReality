@@ -17,6 +17,7 @@ type CanvasElementProps = {
   element: CanvasElementModel;
   interactive: boolean;
   isSelected: boolean;
+  selectionContext: string | undefined;
   onSelect: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
 };
@@ -54,10 +55,16 @@ export function CanvasElement({
   element,
   interactive,
   isSelected,
+  selectionContext,
   onSelect,
   onTransformEnd,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    lastPressAt.current = null;
+  }, [selectionContext]);
+
   const offsetX = useSharedValue(0);
   const offsetY = useSharedValue(0);
   const scale = useSharedValue(1);
@@ -141,10 +148,19 @@ export function CanvasElement({
     height: element.height * canvasHeight,
     zIndex: element.zIndex,
   };
+  const savedRotationStyle = {
+    transform: [{ rotate: `${element.rotation}rad` }],
+  };
 
   const content = <ElementContent element={element} />;
   if (!interactive) {
-    return <View style={[styles.positioned, frameStyle]} testID={`canvas-element-${element.id}`}>{content}</View>;
+    return (
+      <View
+        style={[styles.positioned, frameStyle, savedRotationStyle]}
+        testID={`canvas-element-${element.id}`}>
+        {content}
+      </View>
+    );
   }
 
   return (

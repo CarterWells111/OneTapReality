@@ -1,4 +1,4 @@
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 
 import { CanvasElement } from "./canvas-element";
 import { colors } from "../../components/ui";
@@ -7,9 +7,11 @@ import type { CanvasElement as CanvasElementModel, CanvasLayout } from "../../ty
 type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
 
 type CanvasPageProps = {
+  displayAspectRatio?: number;
   height?: number;
   layout: CanvasLayout;
   selectedElementId?: string;
+  onPressBlank?: () => void;
   onSelectElement?: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
   interactive?: boolean;
@@ -18,9 +20,11 @@ type CanvasPageProps = {
 };
 
 export function CanvasPage({
+  displayAspectRatio = 1,
   height,
   layout,
   selectedElementId,
+  onPressBlank,
   onSelectElement = () => undefined,
   onTransformEnd,
   interactive = true,
@@ -29,11 +33,15 @@ export function CanvasPage({
 }: CanvasPageProps) {
   const { width } = useWindowDimensions();
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
-  const canvasHeight = height ?? canvasWidth;
+  const canvasHeight = height ?? canvasWidth / displayAspectRatio;
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
+  const canPressBlank = interactive && onPressBlank !== undefined;
 
   return (
-    <View
+    <Pressable
+      accessible={false}
+      disabled={!canPressBlank}
+      onPress={canPressBlank ? onPressBlank : undefined}
       style={[
         styles.canvas,
         pageSide === "right" && styles.rightPage,
@@ -49,11 +57,12 @@ export function CanvasPage({
           interactive={interactive}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
+          selectionContext={selectedElementId}
           onSelect={onSelectElement}
           onTransformEnd={interactive ? onTransformEnd : undefined}
         />
       ))}
-    </View>
+    </Pressable>
   );
 }
 

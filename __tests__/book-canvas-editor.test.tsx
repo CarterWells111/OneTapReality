@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render, userEvent } from "@testing-library/react-native";
 import * as React from "react";
 
 import {
@@ -55,6 +55,74 @@ describe("BookCanvasEditor", () => {
     expect(screen.queryByText("完成")).toBeNull();
     fireEvent.press(firstText);
     expect(screen.getByText("完成")).toBeTruthy();
+  });
+
+  it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const user = userEvent.setup();
+    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+
+    await user.press(firstElement);
+    await user.press(firstElement);
+    expect(screen.getByText("完成")).toBeTruthy();
+
+    await user.press(screen.getByTestId("album-canvas"));
+    expect(screen.queryByText("完成")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+
+    await user.press(firstElement);
+    await user.press(firstElement);
+    await user.press(firstElement);
+
+    expect(screen.getByText("完成")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a component press across blank deselection", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const user = userEvent.setup();
+    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+
+    await user.press(firstElement);
+    await user.press(firstElement);
+    expect(screen.getByText("完成")).toBeTruthy();
+
+    await user.press(firstElement);
+    await user.press(screen.getByTestId("album-canvas"));
+    await user.press(firstElement);
+
+    expect(screen.queryByText("完成")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse an unselected component press after another component is deselected", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const user = userEvent.setup();
+    const headline = screen.getByTestId("canvas-element-page-1:headline");
+    const body = screen.getByTestId("canvas-element-page-1:body");
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
+
+    try {
+      await user.press(headline);
+      now += 100;
+      await user.press(headline);
+      expect(screen.getByText("完成")).toBeTruthy();
+
+      now = 2_000;
+      await user.press(body);
+      await user.press(screen.getByTestId("album-canvas"));
+      now += 100;
+      await user.press(body);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(screen.queryByText("完成")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("adds a categorized sticker and automatically selects it", () => {
