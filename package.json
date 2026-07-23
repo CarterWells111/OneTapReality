@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
+    "@svg-maps/china": "^2.0.0",
     "compression": "^1.8.1",
     "drizzle-orm": "^0.45.2",
     "eslint": "^9.39.5",
@@ -80,6 +81,10 @@
     ],
     "modulePathIgnorePatterns": [
       "<rootDir>/.worktrees/"
+    ],
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|@svg-maps/china))",
+      "/node_modules/react-native-reanimated/plugin/"
     ]
   },
   "private": true
