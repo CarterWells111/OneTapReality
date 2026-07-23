@@ -14,5 +14,6 @@
 - [x] 后端 API、匿名设备、数据库与 migration 边界已记录。
 - [x] API Routes health、capabilities、设备注册和旅行册 CRUD 已实现并测试。
 - [x] Railway build、Node server、健康检查和跨平台 smoke check 已实现并在本地生产导出物上验证。
-- [ ] Turso/libSQL 真实环境已配置（本阶段不执行）。
-- [ ] Railway 真实服务、公开域名和生产变量已配置（本阶段不执行）。
+- [x] 服务端 schema、migration、repository 与测试已改为 PostgreSQL。
+- [ ] Railway PostgreSQL、API Service 引用变量、公开域名和生产 pepper 已配置。
+- [ ] Railway 部署后 smoke check 与 App 生产 origin 已验证。
