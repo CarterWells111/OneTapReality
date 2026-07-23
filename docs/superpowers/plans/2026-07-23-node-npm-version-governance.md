@@ -17,7 +17,7 @@
 
 - [ ] **Step 1: Add the decision**
 
-Record that Node is limited to `>=20.16.0 <21`, npm is fixed at `10.8.2`, and no duplicate `.nvmrc`, Railpack command, or Railway variable is introduced.
+Record that Node is limited to `>=20.19.0 <21`, npm is fixed at `10.8.2`, and no duplicate `.nvmrc`, Railpack command, or Railway variable is introduced.
 
 - [ ] **Step 2: Review the scope**
 
@@ -36,11 +36,11 @@ import packageJson from "../package.json";
 describe("Node and npm toolchain policy", () => {
   it("keeps Railway, npm, and contributor constraints aligned", () => {
     expect(packageJson.packageManager).toBe("npm@10.8.2");
-    expect(packageJson.engines.node).toBe(">=20.16.0 <21");
+    expect(packageJson.engines.node).toBe(">=20.19.0 <21");
     expect(packageJson.devEngines).toEqual({
       runtime: {
         name: "node",
-        version: ">=20.16.0 <21",
+        version: ">=20.19.0 <21",
         onFail: "error",
       },
       packageManager: {
@@ -49,6 +49,10 @@ describe("Node and npm toolchain policy", () => {
         onFail: "error",
       },
     });
+    expect(packageJson.devDependencies["@testing-library/react-native"]).toBe(
+      "13.3.3",
+    );
+    expect(packageJson.devDependencies["react-test-renderer"]).toBe("19.1.0");
   });
 });
 ```
@@ -61,12 +65,13 @@ Run:
 npx --yes npm@10.8.2 exec -- jest --runInBand --runTestsByPath __tests__/toolchain-config.test.ts
 ```
 
-Expected: FAIL because `engines.node` has no upper bound and `devEngines` is absent.
+Expected: FAIL because `engines.node` has no upper bound, `devEngines` is absent, or the testing library still requires Node 22/24.
 
 ### Task 3: Enforce the Toolchain
 
 **Files:**
 - Modify: `package.json`
+- Modify: `package-lock.json`
 
 - [ ] **Step 1: Add the minimal configuration**
 
@@ -75,12 +80,12 @@ Set:
 ```json
 "packageManager": "npm@10.8.2",
 "engines": {
-  "node": ">=20.16.0 <21"
+  "node": ">=20.19.0 <21"
 },
 "devEngines": {
   "runtime": {
     "name": "node",
-    "version": ">=20.16.0 <21",
+    "version": ">=20.19.0 <21",
     "onFail": "error"
   },
   "packageManager": {
@@ -91,7 +96,15 @@ Set:
 }
 ```
 
-- [ ] **Step 2: Verify the focused test passes**
+- [ ] **Step 2: Install the Node 20-compatible test dependency**
+
+Run with Node 20.20.2 and npm 10.8.2:
+
+```powershell
+npm install --save-dev --save-exact @testing-library/react-native@13.3.3 react-test-renderer@19.1.0
+```
+
+- [ ] **Step 3: Verify the focused test passes**
 
 Run:
 

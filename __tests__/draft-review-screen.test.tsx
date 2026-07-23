@@ -1,4 +1,4 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, renderAsync, waitFor } from "@testing-library/react-native";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -62,7 +62,7 @@ describe("DraftReviewScreen", () => {
   });
 
   it("saves a loaded draft and returns straight to the home tab", async () => {
-    const screen = await render(<DraftReviewScreen />);
+    const screen = await renderAsync(<DraftReviewScreen />);
 
     await waitFor(() => {
       expect(screen.getAllByText("West Lake weekend").length).toBeGreaterThan(0);
@@ -78,7 +78,7 @@ describe("DraftReviewScreen", () => {
   });
 
   it("keeps regenerate, edit, and discard as header icon actions only", async () => {
-    const screen = await render(<DraftReviewScreen />);
+    const screen = await renderAsync(<DraftReviewScreen />);
 
     await waitFor(() => {
       expect(screen.getAllByText("West Lake weekend").length).toBeGreaterThan(0);

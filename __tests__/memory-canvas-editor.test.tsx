@@ -1,4 +1,8 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import {
+  fireEvent,
+  fireEventAsync,
+  renderAsync,
+} from "@testing-library/react-native";
 
 import {
   addCanvasPage,
@@ -113,7 +117,7 @@ describe("EditMemoryScreen", () => {
   });
 
   it("converts legacy pages for the canvas and saves changed layouts only after Save", async () => {
-    const screen = await render(<EditMemoryScreen />);
+    const screen = await renderAsync(<EditMemoryScreen />);
 
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(mockUpdatePages).not.toHaveBeenCalled();
@@ -124,7 +128,7 @@ describe("EditMemoryScreen", () => {
     expect(screen.getAllByTestId("canvas-page-thumbnail")).toHaveLength(3);
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("保存画布"));
+    await fireEventAsync.press(screen.getByText("保存画布"));
 
     expect(mockUpdatePages).toHaveBeenCalledWith(
       memory,
