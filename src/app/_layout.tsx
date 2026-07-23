@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { MemoriesProvider } from "../features/memories/memories-provider";
 import { ProfileProvider } from "../features/profile/profile-provider";
@@ -10,11 +11,12 @@ import { migrateDbIfNeeded } from "../storage/memory-repository";
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
-        <ProfileProvider>
-          <MemoriesProvider>
-            <StatusBar style="dark" />
-            <Stack screenOptions={{ headerBackButtonDisplayMode: "minimal" }}>
+      <SafeAreaProvider>
+        <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
+          <ProfileProvider>
+            <MemoriesProvider>
+              <StatusBar style="dark" />
+              <Stack screenOptions={{ headerBackButtonDisplayMode: "minimal" }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
               <Stack.Screen name="memory/review/[id]" options={{ title: "确认草稿" }} />
@@ -32,10 +34,11 @@ export default function RootLayout() {
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
               <Stack.Screen name="backend/index" options={{ title: "后端实验" }} />
               <Stack.Screen name="privacy/index" options={{ title: "本机数据与隐私声明" }} />
-            </Stack>
-          </MemoriesProvider>
-        </ProfileProvider>
-      </SQLiteProvider>
+              </Stack>
+            </MemoriesProvider>
+          </ProfileProvider>
+        </SQLiteProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
