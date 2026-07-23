@@ -55,7 +55,7 @@ export function CityCollectionManager({ featuredMemoryId, memories, onCancel, on
         const isDragging = draggingId === memoryId;
         return (
           <GestureDetector key={memoryId} gesture={pan}>
-            <View style={{ backgroundColor: colors.surface, borderColor: isDragging ? colors.accent : colors.line, borderRadius: 16, borderWidth: isDragging ? 2 : 1, gap: 8, minHeight: 76, opacity: isDragging ? 0.86 : 1, padding: 14, transform: isDragging ? [{ translateY: dragOffset }] : undefined }}>
+            <View style={{ backgroundColor: colors.surface, borderColor: isDragging ? colors.accent : colors.line, borderRadius: 16, borderWidth: isDragging ? 2 : 1, gap: 8, minHeight: 76, opacity: isDragging ? 0.86 : 1, padding: 14, transform: isDragging ? [{ translateY: dragOffset }] : [] }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
                 <Text selectable style={{ color: colors.ink, flex: 1, fontSize: 17, fontWeight: "700" }}>{memory.title}</Text>
                 <Text selectable style={{ color: colors.muted, fontSize: 13 }}>Long press to drag</Text>
