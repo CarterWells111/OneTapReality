@@ -90,8 +90,8 @@ describe("ProfileScreen", () => {
     expect(mockPush).toHaveBeenNthCalledWith(1, "/shop/orders");
     expect(mockPush).toHaveBeenNthCalledWith(2, "/shop/favorites");
     expect(mockPush).toHaveBeenNthCalledWith(3, "/cities");
-    expect(mockPush).toHaveBeenNthCalledWith(4, "/recycle-bin");
-    expect(mockPush).toHaveBeenNthCalledWith(5, "/feedback");
+    expect(mockPush).toHaveBeenNthCalledWith(4, "/recycle-bin/index");
+    expect(mockPush).toHaveBeenNthCalledWith(5, "/feedback/index");
     expect(mockPush).toHaveBeenNthCalledWith(6, "/privacy");
   });
 
