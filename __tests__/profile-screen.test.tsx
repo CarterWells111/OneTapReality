@@ -1,27 +1,17 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
 const mockIsReady = jest.fn();
 const mockMemories = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockProfile = jest.fn();
-const mockListOrderIntents = jest.fn();
 
-jest.mock("expo-router", () => {
-  const React = require("react");
-  return {
-    useRouter: () => ({ push: mockPush }),
-    useFocusEffect: (effect: () => void | (() => void)) => React.useEffect(effect, [effect]),
-  };
-});
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady() }),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
-}));
-jest.mock("../src/features/commerce/shop/order-intent-store", () => ({
-  listOrderIntents: (...args: unknown[]) => mockListOrderIntents(...args),
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
@@ -44,7 +34,6 @@ describe("ProfileScreen", () => {
     mockIsReady.mockReturnValue(true);
     mockIsProfileReady.mockReturnValue(true);
     mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null });
-    mockListOrderIntents.mockResolvedValue([]);
   });
 
   it("shows the simplified profile card with the brand slogan as the default bio", async () => {
@@ -63,17 +52,16 @@ describe("ProfileScreen", () => {
     expect(screen.getByText("记录每一次出发")).toBeTruthy();
   });
 
-  it("shows city, album, and souvenir statistics", async () => {
+  it("shows the same archive statistics as the home tab", async () => {
     mockMemories.mockReturnValue([savedMemory]);
-    mockListOrderIntents.mockResolvedValue([{ quantity: 2 }, { quantity: 1 }]);
     const screen = await render(<ProfileScreen />);
 
-    expect(screen.getByText("走过的城市")).toBeTruthy();
-    expect(screen.getByText("1 座")).toBeTruthy();
-    expect(screen.getByText("珍藏的旅行册")).toBeTruthy();
+    expect(screen.getByText("旅行记忆")).toBeTruthy();
     expect(screen.getByText("1 册")).toBeTruthy();
-    expect(screen.getByText("收入的纪念品")).toBeTruthy();
-    await waitFor(() => expect(screen.getByText("3 件")).toBeTruthy());
+    expect(screen.getByText("城市足迹")).toBeTruthy();
+    expect(screen.getByText("1 座")).toBeTruthy();
+    expect(screen.getByText("已收录照片")).toBeTruthy();
+    expect(screen.getByText("2 张")).toBeTruthy();
   });
 
   it("routes each plain list entry to its destination", async () => {

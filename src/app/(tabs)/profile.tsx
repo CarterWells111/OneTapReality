@@ -1,11 +1,8 @@
-import { useFocusEffect, useRouter, type Href } from "expo-router";
-import { useCallback, useState } from "react";
+import { useRouter, type Href } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { colors } from "../../components/ui";
-import { listOrderIntents } from "../../features/commerce/shop/order-intent-store";
-import { countSouvenirItems } from "../../features/commerce/shop/order-status";
 import { useMemories } from "../../features/memories/memories-provider";
 import { DEFAULT_BIO } from "../../features/profile/local-profile";
 import { useProfile } from "../../features/profile/profile-provider";
@@ -31,21 +28,6 @@ export default function ProfileScreen() {
   const { memories, isReady } = useMemories();
   const { profile, isProfileReady } = useProfile();
   const summary = getProfileSummary(memories);
-  const [souvenirCount, setSouvenirCount] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
-      void listOrderIntents()
-        .then((intents) => {
-          if (isActive) setSouvenirCount(countSouvenirItems(intents));
-        })
-        .catch(() => undefined);
-      return () => {
-        isActive = false;
-      };
-    }, [])
-  );
 
   if (!isReady || !isProfileReady) {
     return (
@@ -74,9 +56,9 @@ export default function ProfileScreen() {
       </Pressable>
 
       <View style={styles.stats}>
-        <Statistic label="走过的城市" value={`${summary.cityCount} 座`} />
-        <Statistic label="珍藏的旅行册" value={`${summary.memoryCount} 册`} />
-        <Statistic label="收入的纪念品" value={`${souvenirCount} 件`} />
+        <Statistic label="旅行记忆" value={`${summary.memoryCount} 册`} />
+        <Statistic label="城市足迹" value={`${summary.cityCount} 座`} />
+        <Statistic label="已收录照片" value={`${summary.photoCount} 张`} />
       </View>
 
       <View style={styles.listCard}>
