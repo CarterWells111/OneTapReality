@@ -103,3 +103,6 @@
 - Web 和开发期 native 请求继续使用相对 `/api/*`；生产 native 通过 `EXPO_PUBLIC_API_ORIGIN` 同时配置 API client 与 Expo Router `origin`。
 - 不引入第二套 Express 业务路由、Railway PostgreSQL、自动同步、照片上传或客户端秘密；Express 只负责托管 Expo 导出物。
 
+## 2026-07-23：Expo Go 预览图标
+
+Expo Go 的预览图标使用产品品牌提供的本地 PNG，只修改 `app.json` 顶层 `expo.icon` 指向的文件，不改动独立的 iOS/Android 原生图标配置。不引入网络、云服务或新的秘密。

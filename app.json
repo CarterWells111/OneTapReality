@@ -4,7 +4,7 @@
     "slug": "travel-memory-demo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/onetapreality-icon.png",
     "scheme": "lvyidemo",
     "userInterfaceStyle": "automatic",
     "ios": {
