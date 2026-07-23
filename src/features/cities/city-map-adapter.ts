@@ -53,9 +53,9 @@ const chinaOutline: LocalMapOutline = Object.freeze({
 });
 
 const cityMarkers: readonly CityMapMarker[] = Object.freeze([
-  Object.freeze({ city: "hangzhou" as const, coordinate: freezeCoordinate({ x: 0.73, y: 0.47 }) }),
-  Object.freeze({ city: "shanghai" as const, coordinate: freezeCoordinate({ x: 0.78, y: 0.42 }) }),
-  Object.freeze({ city: "shenzhen" as const, coordinate: freezeCoordinate({ x: 0.62, y: 0.77 }) }),
+  Object.freeze({ city: "hangzhou" as const, coordinate: freezeCoordinate({ x: 0.77, y: 0.69 }) }),
+  Object.freeze({ city: "shanghai" as const, coordinate: freezeCoordinate({ x: 0.86, y: 0.64 }) }),
+  Object.freeze({ city: "shenzhen" as const, coordinate: freezeCoordinate({ x: 0.71, y: 0.84 }) }),
 ]);
 
 export class OfflineChinaMapAdapter implements CityMapAdapter {
@@ -66,8 +66,8 @@ export class OfflineChinaMapAdapter implements CityMapAdapter {
     zoom: 1,
   });
   readonly cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze({
-    hangzhou: Object.freeze({ center: freezeCoordinate({ x: 0.73, y: 0.47 }), zoom: 2 }),
-    shanghai: Object.freeze({ center: freezeCoordinate({ x: 0.78, y: 0.42 }), zoom: 2 }),
-    shenzhen: Object.freeze({ center: freezeCoordinate({ x: 0.62, y: 0.77 }), zoom: 2 }),
+    hangzhou: Object.freeze({ center: freezeCoordinate({ x: 0.77, y: 0.69 }), zoom: 2 }),
+    shanghai: Object.freeze({ center: freezeCoordinate({ x: 0.86, y: 0.64 }), zoom: 2 }),
+    shenzhen: Object.freeze({ center: freezeCoordinate({ x: 0.71, y: 0.84 }), zoom: 2 }),
   });
 }

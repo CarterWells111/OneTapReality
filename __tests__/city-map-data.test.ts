@@ -61,9 +61,9 @@ describe("city map domain data", () => {
     expect(adapter.outline).toMatchObject({ id: "china-simplified", coordinateSpace: "relative" });
     expect(adapter.outline.points.length).toBeGreaterThan(3);
     expect(adapter.markers).toEqual([
-      { city: "hangzhou", coordinate: { x: 0.73, y: 0.47 } },
-      { city: "shanghai", coordinate: { x: 0.78, y: 0.42 } },
-      { city: "shenzhen", coordinate: { x: 0.62, y: 0.77 } },
+      { city: "hangzhou", coordinate: { x: 0.77, y: 0.69 } },
+      { city: "shanghai", coordinate: { x: 0.86, y: 0.64 } },
+      { city: "shenzhen", coordinate: { x: 0.71, y: 0.84 } },
     ]);
     expect(adapter.initialFocus).toEqual({ center: { x: 0.62, y: 0.53 }, zoom: 1 });
     expect(serialized).not.toMatch(/https?:|www\./i);
@@ -82,7 +82,7 @@ describe("city map domain data", () => {
     }
 
     const secondAdapter = new OfflineChinaMapAdapter();
-    expect(secondAdapter.markers[0].coordinate).toEqual({ x: 0.73, y: 0.47 });
+    expect(secondAdapter.markers[0].coordinate).toEqual({ x: 0.77, y: 0.69 });
     expect(secondAdapter.outline.points[0]).toEqual({ x: 0.14, y: 0.25 });
   });
 });

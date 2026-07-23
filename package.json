@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@svg-maps/china": "^2.0.0",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~10.0.0",
     "expo": "~54.0.36",
@@ -52,7 +53,10 @@
     "testMatch": [
       "**/__tests__/**/*.test.ts",
       "**/__tests__/**/*.test.tsx"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@svg-maps/china$": "<rootDir>/__mocks__/svg-maps-china.ts"
+    }
   },
   "private": true
 }

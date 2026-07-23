@@ -37,4 +37,13 @@ describe("CitiesScreen", () => {
 
     expect(mockPush).toHaveBeenCalledWith({ pathname: "/city/[city]", params: { city: "hangzhou" } });
   });
+
+  it("opens the native fullscreen map from the explicit map affordance", async () => {
+    mockMemories.mockReturnValue([]);
+    const screen = await render(<CitiesScreen />);
+
+    fireEvent.press(screen.getByLabelText("全屏查看中国地图"));
+
+    expect(mockPush).toHaveBeenCalledWith("/city-map/index");
+  });
 });

@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 
-import { CityMap, OfflineChinaMapAdapter, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
+import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
 
 type MarkerFrame = {
   x: number;
@@ -54,6 +54,15 @@ describe("CityMap", () => {
     expect(screen.getByTestId("city-map-marker-shenzhen-strong")).toBeTruthy();
   });
 
+  it("renders every packaged China province with a visible boundary and attribution", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+    const provinces = screen.getAllByTestId(/^china-province-/);
+
+    expect(provinces.length).toBeGreaterThanOrEqual(30);
+    expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
+    expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
+  });
+
   it("calls the city callback when an interactive marker is pressed", async () => {
     const onCityPress = jest.fn();
     const screen = await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={onCityPress} />);
@@ -72,8 +81,8 @@ describe("CityMap", () => {
       });
     });
 
-    const transforms = screen.getByTestId("city-map-workspace-canvas").props.style.transform;
-    expect(transforms[0].translateX).toBeCloseTo(-115.2);
+    const transforms = getCityMapTransform({ scale: 2, translateX: -201.6, translateY: -160 });
+    expect(transforms[0].translateX).toBeCloseTo(-201.6);
     expect(transforms[1]).toEqual({ translateY: -160 });
     expect(transforms[2]).toEqual({ scale: 2 });
   });

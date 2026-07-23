@@ -1,8 +1,9 @@
 import * as React from "react";
 import { type LayoutChangeEvent, Pressable, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS, useSharedValue } from "react-native-reanimated";
-import Svg, { Polygon } from "react-native-svg";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Svg, { Path } from "react-native-svg";
+import chinaMap from "@svg-maps/china";
 
 import { colors } from "../../components/ui";
 import type { City } from "../../types/memory";
@@ -19,6 +20,7 @@ type CityMapProps = {
   focus?: CityMapFocus;
   interactive?: boolean;
   onCityPress?: (city: City) => void;
+  onMapPress?: () => void;
 };
 
 const markerTokens: Record<CityVisitIntensity, { fill: string; border: string }> = {
@@ -30,6 +32,9 @@ const markerTokens: Record<CityVisitIntensity, { fill: string; border: string }>
 const overviewMapDimensions = Object.freeze({ height: 210, width: 300 });
 const markerTargetSize = 44;
 const markerVisualSize = 14;
+const chinaMapViewBox = chinaMap.viewBox;
+type ChinaProvince = { readonly id: string; readonly path: string };
+const chinaProvinces = chinaMap.locations as readonly ChinaProvince[];
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
@@ -37,8 +42,8 @@ type MarkerPlacement = { readonly label: Omit<MarkerFrame, "x" | "y"> & { readon
 
 const markerPlacements: Record<City, MarkerPlacement> = {
   hangzhou: { label: { height: 20, offsetX: -76, offsetY: 28, width: 80 }, pressOffsetX: -37, pressOffsetY: -22 },
-  shanghai: { label: { height: 20, offsetX: -8, offsetY: -48, width: 72 }, pressOffsetX: -7, pressOffsetY: -22 },
-  shenzhen: { label: { height: 20, offsetX: -37, offsetY: 26, width: 74 }, pressOffsetX: -22, pressOffsetY: -22 },
+  shanghai: { label: { height: 20, offsetX: -76, offsetY: -48, width: 72 }, pressOffsetX: -7, pressOffsetY: -22 },
+  shenzhen: { label: { height: 20, offsetX: -37, offsetY: -48, width: 74 }, pressOffsetX: -22, pressOffsetY: 0 },
 };
 
 export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout {
@@ -69,19 +74,29 @@ function getWorkspaceFocus(adapter: OfflineChinaMapAdapter, initialCity: City | 
   return focus ?? (initialCity ? resolveCityFocus(adapter, initialCity) : adapter.initialFocus);
 }
 
-export function CityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress }: CityMapProps) {
+export function getCityMapTransform(viewport: WorkspaceViewport) {
+  "worklet";
+  return [
+    { translateX: viewport.translateX },
+    { translateY: viewport.translateY },
+    { scale: viewport.scale },
+  ];
+}
+
+export function CityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
   const initialViewport = variant === "workspace"
     ? focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize)
     : { scale: 1, translateX: 0, translateY: 0 };
-  const [viewport, setViewport] = React.useState<WorkspaceViewport>(initialViewport);
   const translateX = useSharedValue(initialViewport.translateX);
   const translateY = useSharedValue(initialViewport.translateY);
   const scale = useSharedValue(initialViewport.scale);
   const panStartX = useSharedValue(initialViewport.translateX);
   const panStartY = useSharedValue(initialViewport.translateY);
   const pinchStartScale = useSharedValue(initialViewport.scale);
+  const mapWidth = useSharedValue(workspaceSize.width);
+  const mapHeight = useSharedValue(workspaceSize.height);
 
   React.useEffect(() => {
     const nextViewport = variant === "workspace"
@@ -90,42 +105,61 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
     scale.value = nextViewport.scale;
-    setViewport(nextViewport);
   }, [adapter, focus, initialCity, scale, translateX, translateY, variant, workspaceSize]);
 
-  const updateViewport = React.useCallback((nextViewport: WorkspaceViewport) => {
-    setViewport(clampWorkspaceViewport(nextViewport, workspaceSize));
-  }, [workspaceSize]);
   const onWorkspaceLayout = React.useCallback((event: LayoutChangeEvent) => {
     const { height, width } = event.nativeEvent.layout;
     if (height <= 0 || width <= 0) return;
+    mapWidth.value = width;
+    mapHeight.value = height;
     setWorkspaceSize((current) => current.height === height && current.width === width ? current : { height, width });
-  }, []);
+  }, [mapHeight, mapWidth]);
   const pan = Gesture.Pan().enabled(variant === "workspace")
     .onBegin(() => { panStartX.value = translateX.value; panStartY.value = translateY.value; })
     .onUpdate((event) => {
-      const next = clampWorkspaceViewport({ scale: scale.value, translateX: panStartX.value + event.translationX, translateY: panStartY.value + event.translationY }, workspaceSize);
+      const next = clampWorkspaceViewport({ scale: scale.value, translateX: panStartX.value + event.translationX, translateY: panStartY.value + event.translationY }, { height: mapHeight.value, width: mapWidth.value });
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateViewport)(next);
+    })
+    .onFinalize(() => {
+      const next = clampWorkspaceViewport({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
     });
   const pinch = Gesture.Pinch().enabled(variant === "workspace")
     .onBegin(() => { pinchStartScale.value = scale.value; })
     .onUpdate((event) => {
-      const next = clampWorkspaceViewport({ scale: pinchStartScale.value * event.scale, translateX: translateX.value, translateY: translateY.value }, workspaceSize);
+      const next = clampWorkspaceViewport({ scale: pinchStartScale.value * event.scale, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
       scale.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateViewport)(next);
+    })
+    .onFinalize(() => {
+      const next = clampWorkspaceViewport({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
+      scale.value = next.scale;
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
     });
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
-  const outlinePoints = adapter.outline.points.map(({ x, y }) => `${x * 300},${y * 210}`).join(" ");
+  const animatedCanvasStyle = useAnimatedStyle(() => ({
+    transform: getCityMapTransform({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }),
+  }));
 
   const map = (
     <View accessibilityLabel={variant === "overview" ? "离线中国城市旅行地图概览" : "离线中国城市旅行地图工作区"} onLayout={variant === "workspace" ? onWorkspaceLayout : undefined} style={{ aspectRatio: 300 / 210, backgroundColor: "#EEF2EE", borderRadius: 20, overflow: "hidden" }} testID={variant === "workspace" ? "city-map-workspace" : undefined}>
-      <View testID={variant === "workspace" ? "city-map-workspace-canvas" : undefined} style={{ flex: 1, transform: [{ translateX: viewport.translateX }, { translateY: viewport.translateY }, { scale: viewport.scale }] }}>
-        <Svg height="100%" width="100%" viewBox="0 0 300 210">
-          <Polygon fill="#DDEBDD" points={outlinePoints} stroke={colors.accent} strokeWidth={2} />
+      <Animated.View testID={variant === "workspace" ? "city-map-workspace-canvas" : undefined} style={[{ flex: 1 }, animatedCanvasStyle]}>
+        <Svg height="100%" width="100%" viewBox={chinaMapViewBox}>
+          {chinaProvinces.map((province) => (
+            <Path
+              key={province.id}
+              d={province.path}
+              fill="#DDEBDD"
+              onPress={variant === "overview" ? onMapPress : undefined}
+              stroke={colors.accent}
+              strokeWidth={0.8}
+              testID={`china-province-${province.id}`}
+            />
+          ))}
         </Svg>
         {adapter.markers.map((marker) => {
           const { city, coordinate } = marker;
@@ -143,7 +177,18 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
             </Pressable>
           );
         })}
-      </View>
+      </Animated.View>
+      {variant === "overview" && onMapPress ? (
+        <Pressable
+          accessibilityLabel="全屏查看中国地图"
+          accessibilityRole="button"
+          onPress={onMapPress}
+          style={({ pressed }) => ({ backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: 16, borderWidth: 1, bottom: 12, opacity: pressed ? 0.82 : 1, paddingHorizontal: 12, paddingVertical: 8, position: "absolute", right: 12 })}
+        >
+          <Text selectable style={{ color: colors.accent, fontSize: 13, fontWeight: "800" }}>全屏查看</Text>
+        </Pressable>
+      ) : null}
+      <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
     </View>
   );
   return variant === "workspace" ? <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>{map}</GestureDetector> : map;

@@ -2,8 +2,8 @@ import { render } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = ({ children }: { children: React.ReactNode }) => <View testID="stack">{children}</View>;
-  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string } }) => (
-    <View testID={`screen-${name}`} title={options?.title} />
+  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string; presentation?: string } }) => (
+    <View testID={`screen-${name}`} title={options?.title} options={options} />
   );
   return { Stack };
 });
@@ -45,5 +45,13 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+  });
+
+  it("registers the native fullscreen city map as a full-screen modal", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-city-map/index").props.options).toMatchObject({
+      presentation: "fullScreenModal",
+    });
   });
 });
