@@ -17,6 +17,7 @@ type CanvasElementProps = {
   element: CanvasElementModel;
   interactive: boolean;
   isSelected: boolean;
+  selectionContext: string | undefined;
   onSelect: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
 };
@@ -54,6 +55,7 @@ export function CanvasElement({
   element,
   interactive,
   isSelected,
+  selectionContext,
   onSelect,
   onTransformEnd,
 }: CanvasElementProps) {
@@ -61,7 +63,7 @@ export function CanvasElement({
 
   React.useEffect(() => {
     lastPressAt.current = null;
-  }, [isSelected]);
+  }, [selectionContext]);
 
   const offsetX = useSharedValue(0);
   const offsetY = useSharedValue(0);

@@ -57,6 +57,7 @@ export function CanvasPage({
           interactive={interactive}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
+          selectionContext={selectedElementId}
           onSelect={onSelectElement}
           onTransformEnd={interactive ? onTransformEnd : undefined}
         />

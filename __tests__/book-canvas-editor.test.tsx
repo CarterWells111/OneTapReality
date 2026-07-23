@@ -102,6 +102,34 @@ describe("BookCanvasEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("does not reuse an unselected component press after another component is deselected", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const user = userEvent.setup();
+    const headline = screen.getByTestId("canvas-element-page-1:headline");
+    const body = screen.getByTestId("canvas-element-page-1:body");
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
+
+    try {
+      await user.press(headline);
+      now += 100;
+      await user.press(headline);
+      expect(screen.getByText("完成")).toBeTruthy();
+
+      now = 2_000;
+      await user.press(body);
+      await user.press(screen.getByTestId("album-canvas"));
+      now += 100;
+      await user.press(body);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(screen.queryByText("完成")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("adds a categorized sticker and automatically selects it", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
