@@ -41,6 +41,18 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       layout_json TEXT,
       FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS city_collection_arrangements (
+      memory_id TEXT PRIMARY KEY NOT NULL,
+      city TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      is_featured INTEGER NOT NULL DEFAULT 0 CHECK (is_featured IN (0, 1)),
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS city_collection_arrangements_city_position
+      ON city_collection_arrangements (city, position);
+    CREATE UNIQUE INDEX IF NOT EXISTS city_collection_arrangements_one_featured_city
+      ON city_collection_arrangements (city) WHERE is_featured = 1;
   `);
 
   const columns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(memories)");

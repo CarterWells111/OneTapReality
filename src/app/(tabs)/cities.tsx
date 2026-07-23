@@ -2,46 +2,55 @@ import { useRouter } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { colors, Section } from "../../components/ui";
+import { CityMap } from "../../features/cities/city-map";
 import { cityContent } from "../../features/cities/city-content";
-import { getUnlockedCities } from "../../features/cities/city-unlocks";
+import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
-import { cities } from "../../types/memory";
+import type { City } from "../../types/memory";
 
 export default function CitiesScreen() {
   const router = useRouter();
   const { memories } = useMemories();
-  const unlockedCities = getUnlockedCities(memories);
+  const cityStats = getCityStats(memories);
+  const goToCity = (city: City) => router.push({ pathname: "/city/[city]", params: { city } });
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 20, padding: 20 }}>
-      <Section title="城市记忆地图">
+      <Section title="城市旅行地图">
+        <Text selectable style={{ color: colors.accent, fontSize: 14, fontWeight: "800" }}>
+          OneTapReality · 一触如初
+        </Text>
         <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-          保存该城市的旅行册后即可解锁它的收藏状态。现在所有城市都可预览。
+          每一册本地保存的旅行记忆，都会在这张离线地图上留下城市足迹。
+        </Text>
+        <CityMap stats={cityStats} variant="overview" interactive onCityPress={goToCity} />
+      </Section>
+      <Section title="城市文字列表">
+        <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
+          也可从文字列表查看每座城市已保存的旅行记忆。
         </Text>
         <View style={{ gap: 12 }}>
-          {cities.map((city) => {
+          {cityStats.map((stat) => {
+            const { city } = stat;
             const item = cityContent[city];
-            const unlocked = unlockedCities.includes(city);
+            const visitState = stat.isVisited ? `已保存 ${stat.visitCount} 册旅行记忆` : "尚未保存旅行记忆";
             return (
               <Pressable
                 key={city}
-                onPress={() => router.push({ pathname: "/city/[city]", params: { city } })}
+                accessibilityRole="button"
+                onPress={() => goToCity(city)}
                 style={({ pressed }) => ({
                   backgroundColor: item.color,
                   borderRadius: 18,
                   gap: 8,
+                  minHeight: 88,
                   opacity: pressed ? 0.85 : 1,
                   padding: 18,
                 })}
               >
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>
-                    {item.name}
-                  </Text>
-                  <Text selectable style={{ color: colors.accent, fontWeight: "700" }}>
-                    {unlocked ? "已解锁" : "可预览"}
-                  </Text>
-                </View>
+                <Text selectable style={{ color: colors.ink, fontSize: 20, fontWeight: "800" }}>
+                  {item.name} · {visitState}
+                </Text>
                 <Text selectable style={{ color: colors.muted }}>{item.subtitle}</Text>
               </Pressable>
             );
