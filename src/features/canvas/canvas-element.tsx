@@ -58,6 +58,11 @@ export function CanvasElement({
   onTransformEnd,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    lastPressAt.current = null;
+  }, [isSelected]);
+
   const offsetX = useSharedValue(0);
   const offsetY = useSharedValue(0);
   const scale = useSharedValue(1);

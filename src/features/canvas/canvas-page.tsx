@@ -35,10 +35,13 @@ export function CanvasPage({
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
   const canvasHeight = height ?? canvasWidth / displayAspectRatio;
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
+  const canPressBlank = interactive && onPressBlank !== undefined;
 
   return (
     <Pressable
-      onPress={interactive ? onPressBlank : undefined}
+      accessible={false}
+      disabled={!canPressBlank}
+      onPress={canPressBlank ? onPressBlank : undefined}
       style={[
         styles.canvas,
         pageSide === "right" && styles.rightPage,

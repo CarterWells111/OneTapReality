@@ -78,6 +78,20 @@ describe("CanvasPage", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("disables the blank-press surface when read-only or missing a callback", () => {
+    const screen = render(
+      <CanvasPage interactive={false} layout={layout} onPressBlank={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("album-canvas")).toHaveProp("accessible", false);
+    expect(screen.getByTestId("album-canvas")).toBeDisabled();
+
+    screen.rerender(<CanvasPage layout={layout} />);
+
+    expect(screen.getByTestId("album-canvas")).toHaveProp("accessible", false);
+    expect(screen.getByTestId("album-canvas")).toBeDisabled();
+  });
+
   it("preserves saved size, position, and rotation in a read-only 3:4 page", () => {
     const transformedLayout: CanvasLayout = {
       ...layout,

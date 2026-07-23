@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render, userEvent } from "@testing-library/react-native";
 import * as React from "react";
 
 import {
@@ -62,24 +62,43 @@ describe("BookCanvasEditor", () => {
     expect(screen.getByText("第二页")).toBeTruthy();
   });
 
-  it("deselects on a blank page press without changing pages, but keeps selection on an element press", () => {
+  it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
-    const firstText = screen.getByText("第一页");
+    const user = userEvent.setup();
+    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
 
-    fireEvent.press(firstText);
-    fireEvent.press(firstText);
+    await user.press(firstElement);
+    await user.press(firstElement);
     expect(screen.getByText("完成")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("album-canvas"));
+    await user.press(screen.getByTestId("album-canvas"));
     expect(screen.queryByText("完成")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
 
-    fireEvent.press(firstText);
-    fireEvent.press(firstText);
-    fireEvent.press(firstText);
+    await user.press(firstElement);
+    await user.press(firstElement);
+    await user.press(firstElement);
 
     expect(screen.getByText("完成")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a component press across blank deselection", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const user = userEvent.setup();
+    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+
+    await user.press(firstElement);
+    await user.press(firstElement);
+    expect(screen.getByText("完成")).toBeTruthy();
+
+    await user.press(firstElement);
+    await user.press(screen.getByTestId("album-canvas"));
+    await user.press(firstElement);
+
+    expect(screen.queryByText("完成")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
