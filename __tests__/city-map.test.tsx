@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { readFileSync } from "node:fs";
 
 import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
 
@@ -147,5 +148,11 @@ describe("CityMap", () => {
     const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
 
     expect(models.map((model) => model.showLabel)).toEqual([true, false]);
+  });
+
+  it("avoids object spread in the UI-thread label collision worklet", () => {
+    const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
+
+    expect(source).not.toContain("{ ...candidate.model");
   });
 });

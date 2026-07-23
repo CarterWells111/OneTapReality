@@ -137,7 +137,13 @@ export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], 
   return markers.map((marker) => {
     const candidate = resolveWorkspaceMarkerCandidate(marker, viewport, size);
     if (!candidate.model.showLabel || visibleLabelFrames.some((frame) => labelFramesIntersect(frame, candidate.labelFrame))) {
-      return { ...candidate.model, showLabel: false };
+      return {
+        dotSize: candidate.model.dotSize,
+        fontSize: candidate.model.fontSize,
+        onScreen: candidate.model.onScreen,
+        pressSize: candidate.model.pressSize,
+        showLabel: false,
+      };
     }
     visibleLabelFrames.push(candidate.labelFrame);
     return candidate.model;
