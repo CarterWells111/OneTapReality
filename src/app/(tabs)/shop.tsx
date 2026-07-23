@@ -1,15 +1,14 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors, Section } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { demoCatalog, type CatalogSku, type SkuKind } from "../../features/commerce/catalog/catalog";
 import { computeDemoQuote, demoQuoteDisclaimer } from "../../features/commerce/catalog/pricing";
-import {
-  engravingFieldByKind,
-  formatCny,
-  getSkuTier,
-} from "../../features/commerce/shop/shop-options";
+import { isFavoriteSku } from "../../features/commerce/shop/favorites";
+import { listFavoriteSkuIds, toggleFavorite } from "../../features/commerce/shop/favorites-store";
+import { formatCny, getSkuTier } from "../../features/commerce/shop/shop-options";
 
 const kindGlyphs: Record<SkuKind, string> = {
   "city-key": "钥",
@@ -19,11 +18,28 @@ const kindGlyphs: Record<SkuKind, string> = {
 
 export default function ShopScreen() {
   const router = useRouter();
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const specialSkus = demoCatalog.filter((sku) => getSkuTier(sku) === "special");
   const basicSkus = demoCatalog.filter((sku) => getSkuTier(sku) === "basic");
 
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      void listFavoriteSkuIds().then((ids) => {
+        if (isActive) setFavoriteIds(ids);
+      });
+      return () => {
+        isActive = false;
+      };
+    }, [])
+  );
+
   const openSku = (skuId: string) => {
     router.push({ pathname: "/shop/[skuId]", params: { skuId } });
+  };
+
+  const onToggleFavorite = async (skuId: string) => {
+    setFavoriteIds(await toggleFavorite(skuId));
   };
 
   return (
@@ -39,22 +55,34 @@ export default function ShopScreen() {
           onPress={() => router.push("/shop/orders")}
           style={({ pressed }) => [styles.heroLink, pressed && styles.pressed]}
         >
-          <Text selectable style={styles.heroLinkText}>查看已收集的订购意向 ›</Text>
+          <Text selectable style={styles.heroLinkText}>查看订单记录 ›</Text>
         </Pressable>
       </View>
 
       <Section title="特殊款 · 城市限定">
-        <View style={styles.cardList}>
+        <View style={styles.grid}>
           {specialSkus.map((sku) => (
-            <SkuCard key={sku.id} sku={sku} onPress={() => openSku(sku.id)} />
+            <SkuGridCard
+              key={sku.id}
+              favorited={isFavoriteSku(favoriteIds, sku.id)}
+              sku={sku}
+              onPress={() => openSku(sku.id)}
+              onToggleFavorite={() => void onToggleFavorite(sku.id)}
+            />
           ))}
         </View>
       </Section>
 
       <Section title="基础款 · 经典通用">
-        <View style={styles.cardList}>
+        <View style={styles.grid}>
           {basicSkus.map((sku) => (
-            <SkuCard key={sku.id} sku={sku} onPress={() => openSku(sku.id)} />
+            <SkuGridCard
+              key={sku.id}
+              favorited={isFavoriteSku(favoriteIds, sku.id)}
+              sku={sku}
+              onPress={() => openSku(sku.id)}
+              onToggleFavorite={() => void onToggleFavorite(sku.id)}
+            />
           ))}
         </View>
       </Section>
@@ -64,10 +92,19 @@ export default function ShopScreen() {
   );
 }
 
-function SkuCard({ sku, onPress }: { sku: CatalogSku; onPress: () => void }) {
+function SkuGridCard({
+  sku,
+  favorited,
+  onPress,
+  onToggleFavorite,
+}: {
+  sku: CatalogSku;
+  favorited: boolean;
+  onPress: () => void;
+  onToggleFavorite: () => void;
+}) {
   const quote = computeDemoQuote(sku);
   const city = sku.cityLimited ? cityContent[sku.cityLimited] : null;
-  const canEngrave = engravingFieldByKind[sku.kind] !== null;
 
   return (
     <Pressable
@@ -79,19 +116,28 @@ function SkuCard({ sku, onPress }: { sku: CatalogSku; onPress: () => void }) {
         <Text selectable style={styles.swatchText}>
           {city ? city.name.slice(0, 1) : kindGlyphs[sku.kind]}
         </Text>
+        <Pressable
+          accessibilityLabel={favorited ? `取消收藏${sku.name}` : `收藏${sku.name}`}
+          accessibilityRole="button"
+          accessibilityState={{ selected: favorited }}
+          hitSlop={8}
+          onPress={onToggleFavorite}
+          style={({ pressed }) => [styles.starButton, pressed && styles.pressed]}
+        >
+          <Text style={[styles.star, favorited && styles.starFavorited]}>
+            {favorited ? "★" : "☆"}
+          </Text>
+        </Pressable>
       </View>
       <View style={styles.cardBody}>
-        <Text numberOfLines={1} selectable style={styles.cardTitle}>{sku.name}</Text>
+        <Text numberOfLines={2} selectable style={styles.cardTitle}>{sku.name}</Text>
         <Text numberOfLines={1} selectable style={styles.cardMeta}>
           {city ? `${city.name}限定` : "通用款"} · {sku.craft.process}
         </Text>
-        <Text numberOfLines={1} selectable style={styles.cardMeta}>
-          约 {sku.craft.leadTimeDays} 天制作 · 可选样式{canEngrave ? " · 可刻字" : ""}
-        </Text>
-      </View>
-      <View style={styles.cardRight}>
-        <Text selectable style={styles.cardPrice}>{formatCny(quote.amount)}</Text>
-        <Text selectable style={styles.cardFrom}>起 · 演示价</Text>
+        <View style={styles.priceRow}>
+          <Text selectable style={styles.cardPrice}>{formatCny(quote.amount)}</Text>
+          <Text selectable style={styles.cardFrom}>起 · 演示价</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -105,25 +151,36 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
   heroLinkText: { color: colors.warmAccent, fontSize: 14, fontWeight: "800" },
-  cardList: { gap: 12 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
   card: {
-    alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.line,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
-    flexDirection: "row",
-    gap: 12,
-    padding: 12,
+    overflow: "hidden",
+    width: "48.5%",
   },
-  swatch: { alignItems: "center", borderRadius: 14, height: 64, justifyContent: "center", width: 64 },
-  swatchText: { color: colors.ink, fontSize: 22, fontWeight: "800" },
-  cardBody: { flex: 1, gap: 4 },
-  cardTitle: { color: colors.ink, fontSize: 16, fontWeight: "700" },
-  cardMeta: { color: colors.muted, fontSize: 12.5 },
-  cardRight: { alignItems: "flex-end", gap: 2 },
-  cardPrice: { color: colors.ink, fontSize: 17, fontWeight: "800" },
-  cardFrom: { color: colors.muted, fontSize: 11.5 },
+  swatch: { alignItems: "center", aspectRatio: 1, justifyContent: "center" },
+  swatchText: { color: colors.ink, fontSize: 34, fontWeight: "800" },
+  starButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    borderRadius: 16,
+    height: 32,
+    justifyContent: "center",
+    position: "absolute",
+    right: 8,
+    top: 8,
+    width: 32,
+  },
+  star: { color: colors.ink, fontSize: 18, lineHeight: 22 },
+  starFavorited: { color: "#F5B301" },
+  cardBody: { gap: 4, padding: 10 },
+  cardTitle: { color: colors.ink, fontSize: 14.5, fontWeight: "700", minHeight: 38 },
+  cardMeta: { color: colors.muted, fontSize: 12 },
+  priceRow: { alignItems: "baseline", flexDirection: "row", gap: 4 },
+  cardPrice: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  cardFrom: { color: colors.muted, fontSize: 11 },
   disclaimer: { color: colors.muted, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
   pressed: { opacity: 0.85 },
 });

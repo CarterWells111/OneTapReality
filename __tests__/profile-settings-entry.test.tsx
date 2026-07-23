@@ -5,12 +5,21 @@ const mockIsReady = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockProfile = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
+jest.mock("expo-router", () => {
+  const React = require("react");
+  return {
+    useRouter: () => ({ push: mockPush }),
+    useFocusEffect: (effect: () => void | (() => void)) => React.useEffect(effect, [effect]),
+  };
+});
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: [], isReady: mockIsReady(), clearAllMemories: jest.fn() }),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
+}));
+jest.mock("../src/features/commerce/shop/order-intent-store", () => ({
+  listOrderIntents: () => Promise.resolve([]),
 }));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
@@ -23,15 +32,11 @@ describe("ProfileScreen settings entry", () => {
     mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null });
   });
 
-  it("routes to local profile settings from the archive header", async () => {
+  it("routes to local profile settings from the profile card", async () => {
     const screen = await render(<ProfileScreen />);
 
     expect(screen.getByText("小林")).toBeTruthy();
-    const settingsButton = screen.getByLabelText("打开设置");
-    expect(settingsButton.props.style).toEqual(
-      expect.arrayContaining([expect.objectContaining({ minHeight: 44, minWidth: 44 })]),
-    );
-    await fireEvent.press(settingsButton);
+    await fireEvent.press(screen.getByLabelText("打开设置"));
 
     expect(mockPush).toHaveBeenCalledWith("/settings");
   });

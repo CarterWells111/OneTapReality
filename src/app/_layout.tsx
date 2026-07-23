@@ -25,7 +25,10 @@ export default function RootLayout() {
               <Stack.Screen name="city-map" options={{ headerShown: false, presentation: "fullScreenModal" }} />
               <Stack.Screen name="nfc-demo/[city]" options={{ title: "模拟碰一碰" }} />
               <Stack.Screen name="shop/[skuId]" options={{ title: "纪念品详情" }} />
-              <Stack.Screen name="shop/orders" options={{ title: "订购意向记录" }} />
+              <Stack.Screen name="shop/orders" options={{ title: "订单记录" }} />
+              <Stack.Screen name="shop/favorites" options={{ title: "我的收藏" }} />
+              <Stack.Screen name="recycle-bin/index" options={{ title: "回收站" }} />
+              <Stack.Screen name="feedback/index" options={{ title: "意见反馈" }} />
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
               <Stack.Screen name="backend/index" options={{ title: "后端实验" }} />
               <Stack.Screen name="privacy/index" options={{ title: "本机数据与隐私声明" }} />
