@@ -1,41 +1,47 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ScrollView, Text, View } from "react-native";
+import * as React from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
+import { ScrollView, useWindowDimensions } from "react-native";
 
-import { AppButton, colors, Section } from "../../components/ui";
-import { cityContent } from "../../features/cities/city-content";
-import { cities, type City } from "../../types/memory";
+import { CityWorkspaceContent } from "../../features/cities/city-workspace-content";
+import { resolveCityRouteParam } from "../../features/cities/city-route";
+import { useMemories } from "../../features/memories/memories-provider";
+import { resolveCityCollection, type ResolvedCityCollection } from "../../storage/city-collection-repository";
+import type { City } from "../../types/memory";
 
-function asCity(value: string): City {
-  return cities.includes(value as City) ? (value as City) : "hangzhou";
+function emptyCollection(city: City): ResolvedCityCollection {
+  return { city, featuredMemory: null, memories: [] };
 }
 
 export default function CityScreen() {
+  const db = useSQLiteContext();
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { city: rawCity } = useLocalSearchParams<{ city: string }>();
-  const city = asCity(rawCity);
-  const item = cityContent[city];
+  const city = resolveCityRouteParam(rawCity);
+  const { memories } = useMemories();
+  const [collection, setCollection] = React.useState<ResolvedCityCollection>(() => emptyCollection(city));
+
+  useFocusEffect(React.useCallback(() => {
+    let active = true;
+    void resolveCityCollection(db, city).then((nextCollection) => {
+      if (active) setCollection(nextCollection);
+    });
+    return () => { active = false; };
+  }, [city, db]));
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 20, padding: 20 }}>
-      <View style={{ backgroundColor: item.color, borderRadius: 24, gap: 10, padding: 22 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 30, fontWeight: "800" }}>{item.name}</Text>
-        <Text selectable style={{ color: colors.muted, fontSize: 16, lineHeight: 23 }}>{item.subtitle}</Text>
-      </View>
-      <Section title="城市纪念钥匙">
-        <View style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 10, padding: 18 }}>
-          <Text selectable style={{ color: colors.ink, fontSize: 18, fontWeight: "800" }}>{item.souvenir}</Text>
-          <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-            这是可嵌入 NFC 芯片的 3D 打印概念件。正式版可通过碰一碰打开对应旅行册和限定实体相册设计。
-          </Text>
-        </View>
-      </Section>
-      <Section title="实体旅行册概念">
-        <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-          现场演示仅收集体验反馈，不包含支付或下单。未来可提供字体、贴画、版式和城市合作材料。
-        </Text>
-      </Section>
-      <AppButton label="模拟碰一碰" onPress={() => router.push({ pathname: "/nfc-demo/[city]", params: { city } })} />
+      <CityWorkspaceContent
+        allMemories={memories}
+        city={city}
+        collection={collection.city === city ? collection : emptyCollection(city)}
+        onCityPress={(nextCity) => router.replace({ pathname: "/city/[city]", params: { city: nextCity } })}
+        onCreate={(selectedCity) => router.push({ pathname: "/memory/new", params: { city: selectedCity } })}
+        onManage={(selectedCity) => router.push({ pathname: "/city/[city]/manage", params: { city: selectedCity } })}
+        onMemoryPress={(id) => router.push({ pathname: "/memory/[id]", params: { id } })}
+        width={width}
+      />
     </ScrollView>
   );
 }
-

@@ -40,4 +40,10 @@ describe("RootLayout", () => {
 
     expect(screen.getByTestId("screen-privacy/index").props.title).toBe("本机数据与隐私声明");
   });
+
+  it("registers the city collection management route", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+  });
 });
