@@ -16,6 +16,10 @@ jest.mock("react-native-gesture-handler", () => {
   const { View } = require("react-native");
   return { GestureHandlerRootView: ({ children }: { children: React.ReactNode }) => <View testID="gesture-root">{children}</View> };
 });
+jest.mock("react-native-safe-area-context", () => {
+  const { View } = require("react-native");
+  return { SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <View testID="safe-area-provider">{children}</View> };
+});
 jest.mock("../src/features/memories/memories-provider", () => {
   const { View } = require("react-native");
   return { MemoriesProvider: ({ children }: { children: React.ReactNode }) => <View testID="memories-provider">{children}</View> };
@@ -32,6 +36,7 @@ describe("RootLayout", () => {
   it("makes the local profile available around memory screens", async () => {
     const screen = await render(<RootLayout />);
 
+    expect(screen.getByTestId("safe-area-provider")).toBeTruthy();
     expect(screen.getByTestId("memories-provider").parent?.props.testID).toBe("profile-provider");
   });
 

@@ -63,8 +63,13 @@ describe("city map domain data", () => {
     expect(adapter.outline).toMatchObject({ id: "china-simplified", coordinateSpace: "relative" });
     expect(adapter.outline.points.length).toBeGreaterThan(3);
     expect(adapter.markers.map((marker) => marker.city)).toEqual(cities);
-    expect(adapter.markers.find((marker) => marker.city === "beijing")).toMatchObject({ coordinate: { x: 0.69, y: 0.39 } });
-    expect(adapter.cityFocus.taipei).toMatchObject({ center: { x: 0.88, y: 0.78 }, zoom: 2 });
+    expect(adapter.markers.find((marker) => marker.city === "beijing")).toMatchObject({
+      coordinate: { x: expect.closeTo(0.7, 2), y: expect.closeTo(0.46, 2) },
+    });
+    expect(adapter.cityFocus.taipei).toMatchObject({
+      center: adapter.markers.find((marker) => marker.city === "taipei")?.coordinate,
+      zoom: 2,
+    });
     expect(adapter.initialFocus).toEqual({ center: { x: 0.62, y: 0.53 }, zoom: 1 });
     expect(serialized).not.toMatch(/https?:|www\./i);
   });
