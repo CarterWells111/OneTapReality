@@ -36,4 +36,13 @@ describe("city registry", () => {
     expect(getCityStats([])).toHaveLength(cities.length);
     expect(getCityStats([{ city: "beijing", status: "saved" }]).find((stat) => stat.city === "beijing")).toMatchObject({ visitCount: 1, unlocked: true });
   });
+
+  it("calibrates city markers to the packaged China SVG geography", () => {
+    const byId = Object.fromEntries(cityRegistry.map((city) => [city.id, city]));
+
+    expect(byId.beijing?.coordinate).toMatchObject({ x: expect.closeTo(0.7, 2), y: expect.closeTo(0.46, 2) });
+    expect(byId.shanghai?.coordinate).toMatchObject({ x: expect.closeTo(0.8, 2), y: expect.closeTo(0.69, 2) });
+    expect(byId.shenzhen?.coordinate).toMatchObject({ x: expect.closeTo(0.68, 2), y: expect.closeTo(0.9, 2) });
+    expect(byId.haikou?.coordinate).toMatchObject({ x: expect.closeTo(0.62, 2), y: expect.closeTo(0.95, 2) });
+  });
 });

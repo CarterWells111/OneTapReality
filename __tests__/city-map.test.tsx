@@ -40,7 +40,10 @@ describe("CityMap", () => {
       expect(coordinate.y).toBeLessThanOrEqual(569);
     }
 
-    expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toEqual({ x: 603.72, y: 386.92 });
+    expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toMatchObject({
+      x: expect.closeTo(602.03, 2),
+      y: expect.closeTo(405.28, 2),
+    });
   });
 
   it("uses the SVG meet content frame for a letterboxed workspace", () => {
@@ -58,12 +61,9 @@ describe("CityMap", () => {
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
     const dot = screen.getByTestId("city-map-marker-dot-hangzhou-medium").props;
-    expect(dot).toMatchObject({
-      cx: 603.72,
-      cy: 386.92,
-    });
+    expect(dot).toMatchObject({ cx: expect.closeTo(602.03, 2), cy: expect.closeTo(405.28, 2) });
     const label = screen.getByTestId("city-map-label-hangzhou").props;
-    expect(label.x).toEqual([603.72]);
+    expect(label.x).toEqual([dot.cx]);
     expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
     expect(label.y[0]).toBeLessThan(dot.cy);
     expect(dot.r).toBeLessThanOrEqual(12);

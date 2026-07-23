@@ -23,10 +23,7 @@ describe("city workspace helpers", () => {
   it("uses the adapter city focus rather than the overview focus", () => {
     const adapter = new OfflineChinaMapAdapter();
 
-    expect(resolveCityFocus(adapter, "shenzhen")).toEqual({
-      center: { x: 0.71, y: 0.84 },
-      zoom: 2,
-    });
+    expect(resolveCityFocus(adapter, "shenzhen")).toEqual(adapter.cityFocus.shenzhen);
   });
 
   it("reorders a memory id deterministically without losing any entries", () => {
