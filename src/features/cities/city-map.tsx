@@ -40,6 +40,7 @@ const minimumReadableMarkerSize = 12;
 const chinaMapViewBox = chinaMap.viewBox;
 type ChinaProvince = { readonly id: string; readonly path: string };
 const chinaProvinces = chinaMap.locations as readonly ChinaProvince[];
+const taiwanInsetPath = "M 622 454 C 628 449 635 453 637 462 C 640 471 637 482 632 491 C 627 499 621 496 618 487 C 616 477 618 464 622 454 Z";
 const [minX, minY, width, height] = chinaMapViewBox.split(/\s+/).map(Number);
 export const chinaMapCoordinateSpace = Object.freeze({ height, minX, minY, width });
 const markerSvgScale = chinaMapCoordinateSpace.height / overviewMapDimensions.height;
@@ -246,6 +247,7 @@ export function CityMap({ stats, variant, initialCity, focus, interactive = fals
               testID={`china-province-${province.id}`}
             />
           ))}
+          <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
           {adapter.markers.map((marker) => {
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };

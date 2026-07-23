@@ -24,8 +24,9 @@ describe("CityMap", () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
     const provinces = screen.getAllByTestId(/^china-province-/);
 
-    expect(provinces.length).toBeGreaterThanOrEqual(30);
+    expect(provinces.length).toBeGreaterThanOrEqual(31);
     expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
+    expect(screen.getByTestId("china-province-taiwan-inset")).toBeTruthy();
     expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
   });
 
