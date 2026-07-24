@@ -5,6 +5,7 @@ import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
+import { SelectionHandles, type HandleDragCallback, type HandleDragEndCallback } from "./selection-handles";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {
@@ -258,6 +259,50 @@ export function CanvasElement({
           testID={`canvas-element-${element.id}`}>
           {content}
         </Pressable>
+        {/* 选中时显示四角拖拽手柄 */}
+        {isSelected ? (
+          <SelectionHandles
+            height={element.height * canvasHeight}
+            left={0}
+            onHandleDrag={(corner, dx, dy) => {
+              // 根据拖动的角调整元素位置和尺寸
+              const newX = element.x * canvasWidth;
+              const newY = element.y * canvasHeight;
+              const newW = element.width * canvasWidth;
+              const newH = element.height * canvasHeight;
+              let patch: Partial<{ x: number; y: number; width: number; height: number }> = {};
+              const minSize = 20; // 最小像素尺寸
+              switch (corner) {
+                case "top-left":
+                  patch = { x: newX + dx, y: newY + dy, width: Math.max(minSize, newW - dx), height: Math.max(minSize, newH - dy) };
+                  break;
+                case "top-right":
+                  patch = { y: newY + dy, width: Math.max(minSize, newW + dx), height: Math.max(minSize, newH - dy) };
+                  break;
+                case "bottom-left":
+                  patch = { x: newX + dx, width: Math.max(minSize, newW - dx), height: Math.max(minSize, newH + dy) };
+                  break;
+                case "bottom-right":
+                  patch = { width: Math.max(minSize, newW + dx), height: Math.max(minSize, newH + dy) };
+                  break;
+              }
+              if (patch.x !== undefined || patch.y !== undefined || patch.width !== undefined || patch.height !== undefined) {
+                // 实时更新共享值（不经过 React state）
+                if (patch.x !== undefined) posX.value = patch.x;
+                if (patch.y !== undefined) posY.value = patch.y;
+                if (patch.width !== undefined) elemW.value = patch.width;
+                if (patch.height !== undefined) elemH.value = patch.height;
+              }
+            }}
+            onHandleDragEnd={() => {
+              // 拖拽结束，提交变换
+              commitTransform(posX.value, posY.value, elemW.value * gestureScale.value, elemH.value * gestureScale.value, element.rotation + gestureRotation.value);
+            }}
+            rotationDeg={element.rotation * (180 / Math.PI)}
+            top={0}
+            width={element.width * canvasWidth}
+          />
+        ) : null}
       </Animated.View>
     </GestureDetector>
   );
