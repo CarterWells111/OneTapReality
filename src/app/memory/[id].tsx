@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
 import { IconButton } from "../../components/icon-button";
 import { AppButton, colors, Tag } from "../../components/ui";
@@ -7,6 +8,7 @@ import { cityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
+import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoryDetailScreen() {
   const router = useRouter();
@@ -41,6 +43,7 @@ export default function MemoryDetailScreen() {
     ? undefined
     : () => (
         <View style={styles.headerActions}>
+          <ShareButton onPress={() => showShareActionSheet({ pages: memory.pages, title: memory.title })} />
           <IconButton
             accessibilityLabel="编辑旅行册"
             icon="edit"
@@ -79,4 +82,32 @@ const styles = StyleSheet.create({
   summaryRow: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" },
   summaryMeta: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   readerLead: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
+});
+
+/** Apple 风格分享按钮（方框+箭头），用于 header。 */
+function ShareButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityLabel="分享这册旅行记忆"
+      accessibilityRole="button"
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [
+        shareStyles.button,
+        pressed && shareStyles.pressed,
+      ]}
+    >
+      <Svg height={20} viewBox="0 0 24 24" width={20}>
+        <Path
+          d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"
+          fill={colors.ink}
+        />
+      </Svg>
+    </Pressable>
+  );
+}
+
+const shareStyles = StyleSheet.create({
+  button: { alignItems: "center", height: 36, justifyContent: "center", width: 36 },
+  pressed: { opacity: 0.6 },
 });
