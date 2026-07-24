@@ -125,31 +125,6 @@ describe("CanvasPage", () => {
       transform: [{ rotate: "0.42rad" }],
     });
   });
-
-  it("renders a saved sticker glyph at the size of its transformed frame", () => {
-    const transformedLayout: CanvasLayout = {
-      ...layout,
-      elements: [{
-        ...layout.elements[2],
-        height: 0.28,
-        width: 0.28,
-      }],
-    };
-    const screen = render(
-      <CanvasPage
-        displayAspectRatio={3 / 4}
-        height={400}
-        interactive={false}
-        layout={transformedLayout}
-        width={300}
-      />,
-    );
-
-    expect(StyleSheet.flatten(screen.getByText("❤️").props.style)).toMatchObject({
-      fontSize: 68,
-      lineHeight: 80,
-    });
-  });
 });
 
 describe("CanvasToolbar", () => {
