@@ -89,8 +89,9 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
     return null;
   }
 
-  const renderPage = (page: StoryPage, isRight: boolean) =>
-    page.layout ? (
+  const renderPage = (page: StoryPage, isRight: boolean) => {
+    const isCover = page.kind === "cover";
+    return page.layout ? (
       <CanvasPage
         height={pageHeight}
         interactive={false}
@@ -99,11 +100,12 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
         width={pageWidth}
       />
     ) : (
-      <View style={[styles.textPage, { height: pageHeight, width: pageWidth }]}>
+      <View style={[styles.textPage, isCover && { backgroundColor: page.coverColor ?? "#EFE2CF" }, { height: pageHeight, width: pageWidth }]}>
         <Text selectable style={styles.pageHeadline}>{page.headline}</Text>
         <Text selectable style={styles.pageBody}>{page.body}</Text>
       </View>
     );
+  };
 
   const isRightPage = index % 2 === 0;
   const incomingIsRight = pending ? pending.targetIndex % 2 === 0 : false;

@@ -66,12 +66,20 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
   }, [cellHeight, cellWidth]);
 
   const toggleSelect = (id: string) => {
+    // 封面不可多选
+    if (pages[0]?.id === id) {
+      return;
+    }
     setSelectedIds((current) =>
       current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id],
     );
   };
 
   const startDrag = (index: number) => {
+    // 封面不可拖动
+    if (index === 0) {
+      return;
+    }
     hoverRef.current = index;
     setDraggingIndex(index);
     setHoverIndex(index);
@@ -110,12 +118,23 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
   };
 
   const deleteSelected = () => {
-    if (selectedIds.length === 0) {
+    // 封面不可删除
+    const isCover = (id: string) => id === pages[0]?.id;
+    const safeIds = selectedIds.filter((id) => !isCover(id));
+    if (safeIds.length === 0) {
       return;
     }
-    onChange(deleteCanvasPages(pages, selectedIds));
+    if (safeIds.length >= pages.length) {
+      return;
+    }
+    onChange(deleteCanvasPages(pages, safeIds));
     setSelectedIds([]);
   };
+
+  const safeIds = React.useMemo(
+    () => selectedIds.filter((id) => id !== pages[0]?.id),
+    [selectedIds, pages],
+  );
 
   const draggedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: dragX.value }, { translateY: dragY.value }, { scale: draggingIndex === null ? 1 : 1.04 }],
@@ -144,8 +163,10 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
               const isDragging = draggingIndex === index;
               const isHovered = hoverIndex === index && draggingIndex !== null && draggingIndex !== index;
 
+              const isCover = index === 0;
               const pan = Gesture.Pan()
                 .activateAfterLongPress(200)
+                .enabled(!isCover)
                 .onStart(() => {
                   runOnJS(startDrag)(index);
                 })
@@ -198,7 +219,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
                       ) : null}
                     </Pressable>
                     <View style={styles.cellFooter}>
-                      <Text style={styles.cellIndex}>第 {index + 1} 页</Text>
+                      <Text style={styles.cellIndex}>{isCover ? "扉页" : `第 ${index + 1} 页`}</Text>
                       {onJumpToPage ? (
                         <Pressable
                           accessibilityLabel={`打开第 ${index + 1} 页`}
@@ -232,7 +253,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
               <Pressable
                 accessibilityLabel="删除所选页面"
                 accessibilityRole="button"
-                disabled={selectedIds.length >= pages.length}
+                disabled={safeIds.length >= pages.length || safeIds.length === 0}
                 onPress={deleteSelected}
                 style={[styles.toolbarButton, selectedIds.length >= pages.length && styles.toolbarButtonDisabled]}>
                 <Text style={styles.toolbarDangerText}>删除所选</Text>

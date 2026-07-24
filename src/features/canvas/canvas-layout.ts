@@ -42,5 +42,10 @@ export function createLegacyLayout(page: Omit<StoryPage, "layout">): CanvasLayou
     { id: `${page.id}:headline`, type: "text", text: page.headline, fontStyle: bodyFontFamily, color: "#24312B", fontSize: 22, x: 0.1, y: page.photoUri ? 0.62 : 0.24, width: 0.8, height: 0.12, rotation: 0, zIndex: 2 },
     { id: `${page.id}:body`, type: "text", text: page.body, fontStyle: bodyFontFamily, color: "#69756E", fontSize: 16, x: 0.1, y: page.photoUri ? 0.78 : 0.42, width: 0.8, height: 0.14, rotation: 0, zIndex: 3 }
   );
-  return { aspectRatio: 1, elements };
+  return {
+    aspectRatio: 1,
+    elements,
+    ...(page.kind === "cover" && page.coverColor ? { coverColor: page.coverColor } : {}),
+    ...(page.kind === "cover" && page.coverImage ? { coverImage: page.coverImage } : {}),
+  };
 }

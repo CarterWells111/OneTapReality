@@ -203,7 +203,7 @@ export function BookCanvasEditor({
 
   const updateElement = (
     elementId: string,
-    patch: Parameters<typeof updateCanvasElement>[3],
+    patch: { x?: number; y?: number; width?: number; height?: number; rotation?: number; text?: string; color?: string; fontSize?: number; fontStyle?: string },
     reason: BookEditorChangeReason,
   ) => {
     changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);

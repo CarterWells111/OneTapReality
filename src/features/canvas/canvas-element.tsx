@@ -7,7 +7,14 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
-type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
+type ElementPatch = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  fontSize?: number;
+};
 
 type CanvasDimensions = { width: number; height: number };
 
@@ -26,19 +33,39 @@ type CanvasElementProps = {
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
 
+/**
+ * 计算手势结束后的元素新位置和尺寸。
+ * 元素允许越界（部分超出画布），保留最小尺寸防止消失。
+ * 对于文字元素，同步缩放 fontSize。
+ */
 export function calculateCanvasTransform(
-  element: Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">,
+  element: CanvasElementModel,
   transform: { rotation: number; scale: number; translationX: number; translationY: number },
   canvasDimensions: number | CanvasDimensions,
 ): ElementPatch {
   const { width: canvasWidth, height: canvasHeight } = typeof canvasDimensions === "number"
     ? { width: canvasDimensions, height: canvasDimensions }
     : canvasDimensions;
-  const width = clamp(element.width * transform.scale, 0.05, 1);
-  const height = clamp(element.height * transform.scale, 0.05, 1);
-  const x = clamp(element.x + transform.translationX / canvasWidth + (element.width - width) / 2, 0, 1 - width);
-  const y = clamp(element.y + transform.translationY / canvasHeight + (element.height - height) / 2, 0, 1 - height);
-  return { x, y, width, height, rotation: element.rotation + transform.rotation };
+  // 最小尺寸 3%（比原来的 5% 更宽松），最大不过分膨胀
+  const width = clamp(element.width * transform.scale, 0.03, 0.95);
+  const height = clamp(element.height * transform.scale, 0.03, 0.95);
+  // 允许越界到 -0.8 到 +0.8 之间（元素部分可见即可被拖回）
+  const x = clamp(
+    element.x + transform.translationX / canvasWidth + (element.width - width) / 2,
+    -0.8,
+    0.8,
+  );
+  const y = clamp(
+    element.y + transform.translationY / canvasHeight + (element.height - height) / 2,
+    -0.8,
+    0.8,
+  );
+  const patch: ElementPatch = { x, y, width, height, rotation: element.rotation + transform.rotation };
+  // 文字元素：同步缩放 fontSize
+  if (element.type === "text" && transform.scale !== 1) {
+    patch.fontSize = Math.max(8, Math.round((element.fontSize ?? 16) * transform.scale));
+  }
+  return patch;
 }
 
 export function finalizeCanvasGesture(started: boolean, activeGestureCount: number) {

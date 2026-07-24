@@ -23,6 +23,10 @@ export type StoryPage = {
   body: string;
   photoUri?: string;
   layout?: CanvasLayout;
+  /** 封面专用背景色（十六进制），仅 kind="cover" 时有效 */
+  coverColor?: string;
+  /** 封面专用背景图 URI，仅 kind="cover" 时有效 */
+  coverImage?: string;
 };
 
 export type CanvasFontStyle = string;
@@ -72,6 +76,10 @@ export type CanvasElement =
 export type CanvasLayout = {
   aspectRatio: 1;
   backgroundId?: CanvasBackgroundId;
+  /** 封面专用：纯色背景（十六进制） */
+  coverColor?: string;
+  /** 封面专用：自定义背景图 URI */
+  coverImage?: string;
   elements: CanvasElement[];
 };
 

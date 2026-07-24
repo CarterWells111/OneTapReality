@@ -199,6 +199,40 @@ export function setCanvasBackground(
   }));
 }
 
+export function setCanvasCoverColor(
+  pages: StoryPage[],
+  pageId: string,
+  coverColor: string | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    coverColor,
+    layout: {
+      aspectRatio: 1,
+      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
+      coverColor,
+      elements: page.layout!.elements,
+    },
+  }));
+}
+
+export function setCanvasCoverImage(
+  pages: StoryPage[],
+  pageId: string,
+  coverImage: string | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    coverImage,
+    layout: {
+      aspectRatio: 1,
+      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
+      coverImage,
+      elements: page.layout!.elements,
+    },
+  }));
+}
+
 export function updateCanvasElement(
   pages: StoryPage[],
   pageId: string,

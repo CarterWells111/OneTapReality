@@ -20,7 +20,7 @@ const cityGroupLabels: Record<CityKind, string> = {
 
 const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
 
-/** 封面预设颜色（十六进制）。仅用于选色，其余封面样式不变。 */
+/** 封面预设颜色（十六进制）。 */
 const COVER_COLORS = [
   "#EFE2CF",
   "#F6D8C7",
@@ -30,6 +30,15 @@ const COVER_COLORS = [
   "#E7D2E6",
   "#D8CFC4",
   "#C7B79C",
+] as const;
+
+/** 扩展色盘：更多预设颜色可供选择 */
+const CUSTOM_COLORS = [
+  "#EFE2CF", "#F6D8C7", "#E9C4A3", "#D9E3D0", "#BFD8E2", "#E7D2E6",
+  "#D8CFC4", "#C7B79C", "#F2D7D5", "#D5D0E8", "#C5D5CB", "#D4C5B2",
+  "#E8C5C5", "#C5D3E8", "#E2D5C5", "#C8C5E0", "#D5E8C5", "#C5E5E8",
+  "#F5F0E1", "#E1E8F5", "#F0E5D8", "#D8E8E0", "#E8D8E0", "#F5E8D8",
+  "#E0D8C8", "#C8D8E0", "#E0E0D8", "#D8E0D8", "#E8D8D0", "#D0D8E8",
 ] as const;
 
 function today() {
@@ -58,6 +67,8 @@ export default function NewMemoryScreen() {
   const [cityQuery, setCityQuery] = React.useState("");
   const [travelDate, setTravelDate] = React.useState(today);
   const [coverColor, setCoverColor] = React.useState<string>(COVER_COLORS[0]);
+  const [customColorHex, setCustomColorHex] = React.useState("#C5B9A5");
+  const [showColorPicker, setShowColorPicker] = React.useState(false);
   const [photoUris, setPhotoUris] = React.useState<string[]>([]);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -182,7 +193,7 @@ export default function NewMemoryScreen() {
           <View style={[styles.coverPreview, { backgroundColor: coverColor }]} />
           <Text selectable style={styles.coverHint}>点选一个颜色作为这册的封面底色。</Text>
         </View>
-        <View style={styles.swatchRow}>
+        <View style={styles.swatchGrid}>
           {COVER_COLORS.map((swatch) => (
             <Pressable
               accessibilityLabel={`封面颜色 ${swatch}`}
@@ -196,6 +207,15 @@ export default function NewMemoryScreen() {
               style={[styles.swatch, { backgroundColor: swatch }, coverColor === swatch && styles.swatchSelected]}
             />
           ))}
+          {/* 自定义颜色入口 */}
+          <Pressable
+            accessibilityLabel="自定义封面颜色"
+            accessibilityRole="button"
+            onPress={() => setShowColorPicker(true)}
+            style={[styles.swatch, styles.customSwatch]}
+          >
+            <Text selectable style={styles.customSwatchText}>＋</Text>
+          </Pressable>
         </View>
       </Section>
 
@@ -207,12 +227,7 @@ export default function NewMemoryScreen() {
               <Image key={uri} source={{ uri }} style={styles.photoPreview} />
             ))}
           </ScrollView>
-        ) : (
-          <View style={styles.photoPlaceholder}>
-            <Text selectable style={styles.photoPlaceholderGlyph}>＋</Text>
-            <Text selectable style={styles.photoPlaceholderText}>把第一张照片贴进这一页</Text>
-          </View>
-        )}
+        ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
@@ -292,6 +307,68 @@ export default function NewMemoryScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* 自定义颜色选择器 */}
+      {showColorPicker ? (
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <Text selectable style={styles.sheetTitle}>自定义封面颜色</Text>
+            {/* 色环预览 */}
+            <View style={styles.colorPreviewRow}>
+              <View style={[styles.colorPreviewLarge, { backgroundColor: customColorHex }]} />
+              <View style={styles.colorPreviewInfo}>
+                <Text style={styles.colorPreviewHex}>{customColorHex.toUpperCase()}</Text>
+                <Text selectable style={styles.colorPreviewHint}>从下方色盘点选，或手动输入十六进制颜色值</Text>
+              </View>
+            </View>
+            {/* 色盘网格 */}
+            <ScrollView contentContainerStyle={styles.customColorGrid} showsVerticalScrollIndicator={false} style={styles.customColorGridScroll}>
+              {CUSTOM_COLORS.map((color) => (
+                <Pressable
+                  accessibilityLabel={`选择颜色 ${color}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: customColorHex === color }}
+                  key={color}
+                  onPress={() => {
+                    setCustomColorHex(color);
+                    void Haptics.selectionAsync();
+                  }}
+                  style={[
+                    styles.customColorSwatch,
+                    { backgroundColor: color },
+                    customColorHex === color && styles.customColorSwatchSelected,
+                  ]}
+                />
+              ))}
+            </ScrollView>
+            {/* 手动输入 */}
+            <TextInput
+              accessibilityLabel="输入十六进制颜色值"
+              autoCapitalize="none"
+              maxLength={7}
+              onChangeText={(text) => {
+                const clean = text.startsWith("#") ? text : `#${text}`;
+                setCustomColorHex(clean);
+              }}
+              placeholder="#C5B9A5"
+              placeholderTextColor={colors.muted}
+              style={styles.sheetInput}
+              value={customColorHex}
+            />
+            <View style={styles.colorPickerActions}>
+              <AppButton label="取消" tone="secondary" onPress={() => setShowColorPicker(false)} />
+              <AppButton
+                label="确认"
+                onPress={() => {
+                  setCoverColor(customColorHex);
+                  setShowColorPicker(false);
+                  void Haptics.selectionAsync();
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -366,15 +443,48 @@ const styles = StyleSheet.create({
     width: 60,
   },
   coverHint: { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 },
-  swatchRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  swatchGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   swatch: {
     borderColor: colors.line,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 44,
-    width: 44,
+    height: 40,
+    width: 40,
   },
   swatchSelected: { borderColor: colors.ink, borderWidth: 3 },
+  customSwatch: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+  },
+  customSwatchText: { color: colors.muted, fontSize: 20, fontWeight: "300" },
+  // 自定义颜色弹层样式
+  colorPreviewRow: { alignItems: "center", flexDirection: "row", gap: 14, paddingVertical: 4 },
+  colorPreviewLarge: {
+    borderColor: colors.line,
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 56,
+    width: 56,
+  },
+  colorPreviewInfo: { flex: 1, gap: 2 },
+  colorPreviewHex: { color: colors.ink, fontSize: 17, fontWeight: "800" },
+  colorPreviewHint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  customColorGridScroll: { maxHeight: 220 },
+  customColorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
+  customColorSwatch: {
+    borderColor: colors.line,
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 40,
+    width: 40,
+  },
+  customColorSwatchSelected: { borderColor: colors.ink, borderWidth: 3 },
+  colorPickerActions: { flexDirection: "row", gap: 10, justifyContent: "flex-end", marginTop: 4 },
   cityList: { gap: 14, paddingBottom: 10 },
   cityGroup: { gap: 8 },
   cityOption: {

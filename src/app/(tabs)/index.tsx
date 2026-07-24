@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as React from "react";
 
 import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
@@ -9,8 +10,55 @@ import { sampleMemory } from "../../features/memories/sample-memory";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, isReady } = useMemories();
+  const { memories, isReady, deleteMemory } = useMemories();
   const insets = useSafeAreaInsets();
+  const [multiSelect, setMultiSelect] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+
+  const enterMultiSelect = (id: string) => {
+    setMultiSelect(true);
+    setSelectedIds([id]);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((c) => c !== id) : [...current, id],
+    );
+  };
+
+  const selectAll = () => {
+    if (selectedIds.length === memories.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(memories.map((m) => m.id));
+    }
+  };
+
+  const exitMultiSelect = () => {
+    setMultiSelect(false);
+    setSelectedIds([]);
+  };
+
+  const confirmDeleteSelected = () => {
+    if (selectedIds.length === 0) return;
+    Alert.alert(
+      `删除 ${selectedIds.length} 册旅行记忆？`,
+      "会移入回收站，可在回收站里恢复或彻底删除。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删除",
+          style: "destructive",
+          onPress: async () => {
+            for (const id of selectedIds) {
+              await deleteMemory(id);
+            }
+            exitMultiSelect();
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <ScrollView
@@ -46,15 +94,59 @@ export default function MemoriesHomeScreen() {
         {!isReady ? (
           <Text selectable style={styles.mutedText}>正在读取记忆…</Text>
         ) : memories.length > 0 ? (
-          <View style={styles.bookGrid}>
-            {memories.map((memory) => (
-              <MemoryBookCover
-                key={memory.id}
-                memory={memory}
-                onPress={() => router.push({ pathname: "/memory/[id]", params: { id: memory.id } })}
-              />
-            ))}
-          </View>
+          <>
+            {/* 多选模式操作栏 */}
+            {multiSelect ? (
+              <View style={styles.selectionBar}>
+                <Pressable
+                  accessibilityLabel="全选"
+                  accessibilityRole="button"
+                  onPress={selectAll}
+                  style={styles.selectionAction}
+                >
+                  <Text style={styles.selectionActionText}>
+                    {selectedIds.length === memories.length ? "取消全选" : "全选"}
+                  </Text>
+                </Pressable>
+                <Text style={styles.selectionCount}>已选 {selectedIds.length}</Text>
+                <Pressable
+                  accessibilityLabel="删除所选"
+                  accessibilityRole="button"
+                  disabled={selectedIds.length === 0}
+                  onPress={confirmDeleteSelected}
+                  style={[styles.selectionAction, selectedIds.length === 0 && styles.disabledAction]}
+                >
+                  <Text style={[styles.selectionDangerText, selectedIds.length === 0 && styles.disabledText]}>删除所选</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="取消多选"
+                  accessibilityRole="button"
+                  onPress={exitMultiSelect}
+                  style={styles.selectionAction}
+                >
+                  <Text style={styles.selectionCancelText}>取消</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <View style={styles.bookGrid}>
+              {memories.map((memory) => (
+                <MemoryBookCover
+                  key={memory.id}
+                  memory={memory}
+                  multiSelect={multiSelect}
+                  selected={selectedIds.includes(memory.id)}
+                  onPress={() => {
+                    if (multiSelect) {
+                      toggleSelect(memory.id);
+                    } else {
+                      router.push({ pathname: "/memory/[id]", params: { id: memory.id } });
+                    }
+                  }}
+                  onLongPress={() => enterMultiSelect(memory.id)}
+                />
+              ))}
+            </View>
+          </>
         ) : (
           <PaperCard style={styles.emptyCard}>
             <Text selectable style={styles.emptyTitle}>还没有保存的旅行册</Text>
@@ -98,6 +190,25 @@ const styles = StyleSheet.create({
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
   heroLinkText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
   bookGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 16 },
+  selectionBar: {
+    alignItems: "center",
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "flex-end",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  selectionCount: { color: colors.ink, flex: 1, fontSize: 14, fontWeight: "800" },
+  selectionAction: { paddingHorizontal: 8, paddingVertical: 4 },
+  selectionActionText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
+  selectionDangerText: { color: colors.danger, fontSize: 14, fontWeight: "800" },
+  selectionCancelText: { color: colors.muted, fontSize: 14, fontWeight: "700" },
+  disabledAction: { opacity: 0.4 },
+  disabledText: { opacity: 0.4 },
   emptyCard: { gap: 12 },
   emptyTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "700" },
   mutedText: { color: colors.muted, fontSize: 14, lineHeight: 21 },

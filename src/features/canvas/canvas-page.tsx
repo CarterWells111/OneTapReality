@@ -4,9 +4,16 @@ import { Image } from "expo-image";
 import { canvasBackgrounds } from "./canvas-assets";
 import { CanvasElement } from "./canvas-element";
 import { colors } from "../../components/ui";
-import type { CanvasElement as CanvasElementModel, CanvasLayout } from "../../types/memory";
+import type { CanvasLayout } from "../../types/memory";
 
-type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
+type ElementPatch = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  fontSize?: number;
+};
 
 type CanvasPageProps = {
   displayAspectRatio?: number;
@@ -41,6 +48,10 @@ export function CanvasPage({
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
   const canPressBlank = interactive && onPressBlank !== undefined;
   const background = canvasBackgrounds.find((asset) => asset.id === layout.backgroundId);
+  const coverSolidColor = layout.coverColor ?? undefined;
+  const coverImageUri = layout.coverImage ?? undefined;
+  // 封面页有 coverColor 或 coverImage 时使用自定义封面背景
+  const hasCoverBackground = !background && (coverSolidColor || coverImageUri);
 
   return (
     <Pressable
@@ -51,6 +62,7 @@ export function CanvasPage({
         styles.canvas,
         pageSide === "right" && styles.rightPage,
         pageSide === "left" && styles.leftPage,
+        hasCoverBackground && { backgroundColor: coverSolidColor ?? "#EFE2CF" },
         { height: canvasHeight, width: canvasWidth },
       ]}
       testID="album-canvas">
@@ -61,6 +73,16 @@ export function CanvasPage({
           source={background.source}
           style={StyleSheet.absoluteFill}
           testID={`canvas-background-${background.id}`}
+        />
+      ) : null}
+      {/* 封面自定义背景图 */}
+      {!background && coverImageUri ? (
+        <Image
+          contentFit="cover"
+          pointerEvents="none"
+          source={{ uri: coverImageUri }}
+          style={StyleSheet.absoluteFill}
+          testID="canvas-cover-image"
         />
       ) : null}
       {elements.map((element) => (

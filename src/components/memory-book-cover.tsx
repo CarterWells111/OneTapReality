@@ -15,7 +15,22 @@ const bookColors = {
 
 const serifFont = Platform.select({ android: "serif", default: "Georgia" });
 
-export function MemoryBookCover({ memory, onPress }: { memory: Memory; onPress: () => void }) {
+type MemoryBookCoverProps = {
+  memory: Memory;
+  onPress: () => void;
+  /** 多选模式 */
+  multiSelect?: boolean;
+  selected?: boolean;
+  onLongPress?: () => void;
+};
+
+export function MemoryBookCover({
+  memory,
+  onPress,
+  multiSelect = false,
+  selected = false,
+  onLongPress,
+}: MemoryBookCoverProps) {
   const city = cityContent[memory.city];
 
   return (
@@ -23,7 +38,18 @@ export function MemoryBookCover({ memory, onPress }: { memory: Memory; onPress: 
       <Pressable
         accessibilityLabel={`打开旅行册 ${memory.title}`}
         accessibilityRole="button"
-        onPress={onPress}
+        onPress={() => {
+          if (multiSelect && onLongPress) {
+            onLongPress();
+          } else {
+            onPress();
+          }
+        }}
+        onLongPress={() => {
+          if (!multiSelect && onLongPress) {
+            onLongPress();
+          }
+        }}
         style={({ pressed }) => [
           styles.book,
           memory.coverColor ? { backgroundColor: memory.coverColor } : null,
@@ -44,6 +70,12 @@ export function MemoryBookCover({ memory, onPress }: { memory: Memory; onPress: 
           </View>
         </View>
       </Pressable>
+      {/* 多选勾选框 */}
+      {multiSelect ? (
+        <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
+          {selected ? <Text style={styles.checkMark}>✓</Text> : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -79,4 +111,19 @@ const styles = StyleSheet.create({
   accentLine: { backgroundColor: bookColors.accentLine, height: 2, width: 26 },
   meta: { color: bookColors.meta, fontSize: 11.5, lineHeight: 17 },
   pressed: { opacity: 0.85 },
+  checkCircle: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: "#C4B8A9",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    height: 28,
+    justifyContent: "center",
+    left: 8,
+    position: "absolute",
+    top: 8,
+    width: 28,
+  },
+  checkCircleSelected: { backgroundColor: "#56708A", borderColor: "#56708A" },
+  checkMark: { color: "#FFFFFF", fontSize: 16, fontWeight: "900" },
 });
