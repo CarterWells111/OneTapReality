@@ -72,9 +72,27 @@ export default function ProfileScreen() {
       </Pressable>
 
       <View style={styles.stats}>
-        <Statistic label="旅行记忆" value={`${summary.memoryCount}`} unit="册" />
-        <Statistic label="城市足迹" value={`${summary.cityCount}`} unit="座" />
-        <Statistic label="已收录照片" value={`${summary.photoCount}`} unit="张" />
+        <Pressable
+          accessibilityLabel="旅行记忆"
+          accessibilityRole="button"
+          onPress={() => router.push("/(tabs)")}
+          style={({ pressed }) => [pressed && styles.pressed, { flex: 1 }]}>
+          <Statistic label="旅行记忆" value={`${summary.memoryCount}`} unit="册" />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="城市足迹"
+          accessibilityRole="button"
+          onPress={() => router.push("/(tabs)/cities")}
+          style={({ pressed }) => [pressed && styles.pressed, { flex: 1 }]}>
+          <Statistic label="城市足迹" value={`${summary.cityCount}`} unit="座" />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="已收录照片"
+          accessibilityRole="button"
+          onPress={() => router.push("/(tabs)")}
+          style={({ pressed }) => [pressed && styles.pressed, { flex: 1 }]}>
+          <Statistic label="已收录照片" value={`${summary.photoCount}`} unit="张" />
+        </Pressable>
       </View>
 
       <PaperCard style={styles.listCard}>
