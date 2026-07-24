@@ -115,13 +115,19 @@ async function exportPdf(pages: StoryPage[], title: string) {
     .snap-page {
       page-break-after: always;
       width: 100%;
-      position: relative;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #FFFFFF;
     }
     .snap-page:last-child { page-break-after: auto; }
     .snap-img {
       width: 100%;
       display: block;
       object-fit: contain;
+      max-height: 100vh;
     }
     /* ── 回退样式（无 layout 的纯文字页） ── */
     .page {
@@ -191,13 +197,18 @@ async function exportPdf(pages: StoryPage[], title: string) {
 
   const { uri } = await Print.printToFileAsync({ html, base64: false });
 
+  // 复制到以旅行册标题命名的路径，方便用户识别
+  const outputName = `${sanitizeFilename(title) || "旅行手账"}.pdf`;
+  const outputUri = `${FileSystem.cacheDirectory}${outputName}`;
+  await FileSystem.copyAsync({ from: uri, to: outputUri });
+
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, {
+    await Sharing.shareAsync(outputUri, {
       mimeType: "application/pdf",
       dialogTitle: `分享「${title}」PDF`,
     });
   } else {
-    Alert.alert("PDF 已生成", `文件路径：${uri}`);
+    Alert.alert("PDF 已生成", `文件路径：${outputUri}`);
   }
 }
 
