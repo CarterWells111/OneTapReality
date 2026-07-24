@@ -17,10 +17,10 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
       const normalized = {
         ...element,
         id: occurrence === 1 ? element.id : `${element.id}-${occurrence}`,
-        x: clamp(element.x, 0, 1),
-        y: clamp(element.y, 0, 1),
-        width: clamp(element.width, 0.05, 1),
-        height: clamp(element.height, 0.05, 1),
+        x: clamp(element.x, -0.95, 0.95),
+        y: clamp(element.y, -0.95, 0.95),
+        width: clamp(element.width, 0.03, 0.95),
+        height: clamp(element.height, 0.03, 0.95),
       } as CanvasElement;
       return normalized.type === "text"
         ? {

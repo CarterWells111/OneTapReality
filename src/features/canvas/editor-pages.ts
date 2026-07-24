@@ -31,6 +31,18 @@ function maxLayer(elements: CanvasElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex));
 }
 
+/** 保留当前 layout 的背景、封面色、封面图等 meta 字段，仅替换 elements。 */
+function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
+  const prev = page.layout;
+  return {
+    aspectRatio: 1 as const,
+    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
+    ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
+    ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
+    elements,
+  };
+}
+
 export function canvasPages(pages: StoryPage[]) {
   return normalizePositions(pages.map(withLayout));
 }
@@ -115,9 +127,7 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: [
+    layout: preserveLayoutMeta(page, [
         ...page.layout!.elements,
         {
           id,
@@ -133,17 +143,14 @@ export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ],
-    },
+      ]),
   }));
 }
 
 export function addStickerToPage(pages: StoryPage[], pageId: string, id: string, stickerId: CanvasStickerId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: [
+    layout: preserveLayoutMeta(page, [
         ...page.layout!.elements,
         {
           id,
@@ -156,17 +163,14 @@ export function addStickerToPage(pages: StoryPage[], pageId: string, id: string,
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ],
-    },
+      ]),
   }));
 }
 
 export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, frameId: CanvasFrameId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: [
+    layout: preserveLayoutMeta(page, [
         ...page.layout!.elements,
         {
           id,
@@ -179,8 +183,7 @@ export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, f
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ],
-    },
+      ]),
   }));
 }
 
@@ -194,6 +197,8 @@ export function setCanvasBackground(
     layout: {
       aspectRatio: 1,
       ...(backgroundId ? { backgroundId } : {}),
+      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
+      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
       elements: page.layout!.elements,
     },
   }));
@@ -210,7 +215,8 @@ export function setCanvasCoverColor(
     layout: {
       aspectRatio: 1,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      coverColor,
+      ...(coverColor ? { coverColor } : {}),
+      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
       elements: page.layout!.elements,
     },
   }));
@@ -227,7 +233,8 @@ export function setCanvasCoverImage(
     layout: {
       aspectRatio: 1,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      coverImage,
+      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
+      ...(coverImage ? { coverImage } : {}),
       elements: page.layout!.elements,
     },
   }));
@@ -241,12 +248,10 @@ export function updateCanvasElement(
 ) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: page.layout!.elements.map((element) =>
+    layout: preserveLayoutMeta(page, page.layout!.elements.map((element) =>
         element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
       ),
-    },
+    ),
   }));
 }
 
@@ -258,9 +263,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
     }
     return {
       ...page,
-      layout: {
-        aspectRatio: 1,
-        elements: [
+      layout: preserveLayoutMeta(page, [
           ...page.layout!.elements,
           {
             ...source,
@@ -269,8 +272,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
             y: Math.min(source.y + 0.05, 1 - source.height),
             zIndex: maxLayer(page.layout!.elements) + 1,
           },
-        ],
-      },
+        ]),
     };
   });
 }
@@ -291,13 +293,13 @@ export function changeCanvasElementLayer(
     const currentLayer = elements[index].zIndex;
     elements[index] = { ...elements[index], zIndex: elements[target].zIndex };
     elements[target] = { ...elements[target], zIndex: currentLayer };
-    return { ...page, layout: { aspectRatio: 1, elements } };
+    return { ...page, layout: preserveLayoutMeta(page, elements) };
   });
 }
 
 export function deleteCanvasElement(pages: StoryPage[], pageId: string, elementId: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: { aspectRatio: 1, elements: page.layout!.elements.filter((element) => element.id !== elementId) },
+    layout: preserveLayoutMeta(page, page.layout!.elements.filter((element) => element.id !== elementId)),
   }));
 }

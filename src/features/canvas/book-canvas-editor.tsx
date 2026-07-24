@@ -29,6 +29,7 @@ import {
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
 import { CanvasToolbar } from "./canvas-toolbar";
+import { ElementContextMenu } from "./element-context-menu";
 import {
   addStickerToPage,
   addTextToPage,
@@ -43,6 +44,7 @@ import {
 } from "./editor-pages";
 import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
+import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
 import { canvasEditorFontSources } from "../typography/fonts";
@@ -73,10 +75,14 @@ export function BookCanvasEditor({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
+  const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
+    onPagesChange(restoredPages, "structure");
+  });
 
   React.useEffect(() => {
     if (currentIndex >= pages.length) {
@@ -89,11 +95,17 @@ export function BookCanvasEditor({
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
-  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
+  const editingElement = editingElementId
+    ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
+    : undefined;
+  const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
+    if (reason === "structure" || reason === "transform") {
+      pushState(pages);
+    }
     onPagesChange(nextPages, reason);
-  }, [onPagesChange]);
+  }, [onPagesChange, pages, pushState]);
 
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
     if (!pendingTextId || !currentPage) {
@@ -247,6 +259,28 @@ export function BookCanvasEditor({
   return (
     <View style={styles.editor}>
       <View style={styles.editorTopbar}>
+        <View style={styles.undoRedoButtons}>
+          <Pressable
+            accessibilityLabel="撤销"
+            accessibilityRole="button"
+            disabled={!canUndo}
+            onPress={() => {
+              undo(pages);
+            }}
+            style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canUndo && styles.undoRedoTextDisabled]}>←</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="重做"
+            accessibilityRole="button"
+            disabled={!canRedo}
+            onPress={() => {
+              redo(pages);
+            }}
+            style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canRedo && styles.undoRedoTextDisabled]}>→</Text>
+          </Pressable>
+        </View>
         <Text style={styles.currentPageLabel}>第 {currentIndex + 1} / {pages.length} 页</Text>
         <Pressable
           accessibilityLabel="打开页面管理"
@@ -291,8 +325,16 @@ export function BookCanvasEditor({
                 onPressBlank={() => {
                   discardPendingText();
                   setSelectedElementId(undefined);
+                  setEditingElementId(undefined);
                 }}
-                onSelectElement={setSelectedElementId}
+                onSelectElement={(id) => {
+                  // 双击选中
+                  setSelectedElementId(id);
+                  // 如果已选中同一个元素，再次点击进入编辑模式
+                  if (selectedElementId === id && currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                    setEditingElementId(id);
+                  }
+                }}
                 onTransformEnd={(elementId, patch) => {
                   handleElementInteraction(elementId);
                   updateElement(elementId, patch, "transform");
@@ -339,22 +381,39 @@ export function BookCanvasEditor({
         </GestureDetector>
       </View>
 
-      {selectedText ? (
-        <View style={styles.textEditor}>
-          <Text style={styles.sectionLabel}>文字</Text>
-          <TextInput
-            accessibilityLabel="编辑选中文字"
-            multiline
-            onChangeText={(text) => {
-              if (text !== selectedText.text && pendingTextId === selectedText.id) {
-                setPendingTextId(undefined);
-              }
-              updateElement(selectedText.id, { text }, "text");
-            }}
-            style={styles.textInput}
-            value={selectedText.text}
+      {/* 文本编辑：选中后进入编辑模式时显示上下文菜单 + 文字输入 */}
+      {editingText ? (
+        <>
+          <View style={styles.textEditor}>
+            <Text style={styles.sectionLabel}>编辑文字</Text>
+            <TextInput
+              accessibilityLabel="编辑选中文字"
+              multiline
+              onChangeText={(text) => {
+                if (text !== editingText.text && pendingTextId === editingText.id) {
+                  setPendingTextId(undefined);
+                }
+                updateElement(editingText.id, { text }, "text");
+              }}
+              style={styles.textInput}
+              value={editingText.text}
+            />
+          </View>
+          <ElementContextMenu
+            element={editingText}
+            elementFrame={editingText ? {
+              x: editingText.x * pageWidth,
+              y: editingText.y * pageHeight,
+              width: editingText.width * pageWidth,
+              height: editingText.height * pageHeight,
+            } : null}
+            onChangeColor={(color) => updateElement(editingText?.id ?? "", { color }, "structure")}
+            onChangeFont={(fontStyle) => updateElement(editingText?.id ?? "", { fontStyle }, "structure")}
+            onChangeSize={(fontSize) => updateElement(editingText?.id ?? "", { fontSize }, "structure")}
+            onClose={() => setEditingElementId(undefined)}
+            visible={editingElementId !== undefined && editingText !== undefined}
           />
-        </View>
+        </>
       ) : null}
 
       <CanvasToolbar
@@ -579,6 +638,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 20,
+  },
+  undoRedoButtons: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  undoRedoBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  undoRedoBtnDisabled: {
+    opacity: 0.3,
+  },
+  undoRedoText: {
+    color: colors.accent,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  undoRedoTextDisabled: {
+    color: colors.muted,
   },
   currentPageLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
   bookStage: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 6 },

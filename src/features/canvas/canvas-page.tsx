@@ -45,7 +45,14 @@ export function CanvasPage({
   const { width } = useWindowDimensions();
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
   const canvasHeight = height ?? canvasWidth / displayAspectRatio;
-  const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
+  // 选中元素提升到最高视觉层级，防止被上层未选中元素阻挡触摸
+  const elements = [...layout.elements].sort((left, right) => {
+    if (interactive) {
+      if (left.id === selectedElementId && right.id !== selectedElementId) return 1;
+      if (right.id === selectedElementId && left.id !== selectedElementId) return -1;
+    }
+    return left.zIndex - right.zIndex;
+  });
   const canPressBlank = interactive && onPressBlank !== undefined;
   const background = canvasBackgrounds.find((asset) => asset.id === layout.backgroundId);
   const coverSolidColor = layout.coverColor ?? undefined;
