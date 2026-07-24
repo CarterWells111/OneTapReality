@@ -10,9 +10,7 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.onetapreality.app",
-      "associatedDomains": [
-        "applinks:onetapreality.com"
-      ]
+      "associatedDomains": ["applinks:onetapreality.com"]
     },
     "android": {
       "package": "com.onetapreality.app",
@@ -21,21 +19,10 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            {
-              "scheme": "https",
-              "host": "onetapreality.com",
-              "pathPrefix": "/gift"
-            },
-            {
-              "scheme": "https",
-              "host": "onetapreality.com",
-              "pathPrefix": "/activate"
-            }
+            { "scheme": "https", "host": "onetapreality.com", "pathPrefix": "/gift" },
+            { "scheme": "https", "host": "onetapreality.com", "pathPrefix": "/activate" }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
       "adaptiveIcon": {

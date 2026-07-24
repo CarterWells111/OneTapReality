@@ -6,6 +6,7 @@ import * as React from "react";
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
+import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { useMemories } from "../../features/memories/memories-provider";
@@ -20,7 +21,7 @@ const cityGroupLabels: Record<CityKind, string> = {
 
 const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
 
-/** 封面预设颜色（十六进制）。仅用于选色，其余封面样式不变。 */
+/** 封面预设颜色（十六进制）。 */
 const COVER_COLORS = [
   "#EFE2CF",
   "#F6D8C7",
@@ -58,6 +59,8 @@ export default function NewMemoryScreen() {
   const [cityQuery, setCityQuery] = React.useState("");
   const [travelDate, setTravelDate] = React.useState(today);
   const [coverColor, setCoverColor] = React.useState<string>(COVER_COLORS[0]);
+  const [coverImage, setCoverImage] = React.useState<string | undefined>(undefined);
+  const [showColorPicker, setShowColorPicker] = React.useState(false);
   const [photoUris, setPhotoUris] = React.useState<string[]>([]);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -113,11 +116,25 @@ export default function NewMemoryScreen() {
     }
   };
 
+  const pickCoverImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: false,
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setCoverImage(result.assets[0].uri);
+      void Haptics.selectionAsync();
+    }
+  };
+
   const generate = async () => {
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createDraft({ title, city, travelDate, photoUris, coverColor });
+      const memory = await createDraft({ title, city, travelDate, photoUris, coverColor, coverImage });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
     } catch (caughtError) {
@@ -133,7 +150,7 @@ export default function NewMemoryScreen() {
       <PaperCard tone="paper" style={styles.intro}>
         <Tag label="开始新的一册" />
         <Text selectable style={styles.introText}>
-          翻开一页空白的旅行册。你选择的照片只在这台设备上使用，本版会生成固定的本地旅行册草稿，之后可随时修改。
+          翻开一页空白的旅行册。选择照片后即可生成草稿，之后可随时修改。
         </Text>
       </PaperCard>
 
@@ -177,25 +194,56 @@ export default function NewMemoryScreen() {
         </View>
       </Section>
 
-      <Section title="封面颜色" caption="COVER">
+      {/* ── 封面 ── */}
+      <Section title="封面" caption="COVER">
         <View style={styles.coverPreviewRow}>
-          <View style={[styles.coverPreview, { backgroundColor: coverColor }]} />
-          <Text selectable style={styles.coverHint}>点选一个颜色作为这册的封面底色。</Text>
+          <View style={[styles.coverPreview, !coverImage && { backgroundColor: coverColor }]}>
+            {coverImage ? (
+              <Image source={{ uri: coverImage }} style={styles.coverPreviewImage} />
+            ) : null}
+          </View>
+          <View style={styles.coverHintCol}>
+            <Text selectable style={styles.coverHint}>点选颜色或上传一张封面图。</Text>
+            {coverImage ? (
+              <Pressable onPress={() => setCoverImage(undefined)} style={styles.coverClearLink}>
+                <Text style={styles.coverClearText}>移除封面图</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-        <View style={styles.swatchRow}>
+        <View style={styles.swatchGrid}>
           {COVER_COLORS.map((swatch) => (
             <Pressable
               accessibilityLabel={`封面颜色 ${swatch}`}
               accessibilityRole="button"
-              accessibilityState={{ selected: coverColor === swatch }}
+              accessibilityState={{ selected: coverColor === swatch && !coverImage }}
               key={swatch}
               onPress={() => {
                 setCoverColor(swatch);
+                setCoverImage(undefined);
                 void Haptics.selectionAsync();
               }}
-              style={[styles.swatch, { backgroundColor: swatch }, coverColor === swatch && styles.swatchSelected]}
+              style={[styles.swatch, { backgroundColor: swatch }, coverColor === swatch && !coverImage && styles.swatchSelected]}
             />
           ))}
+          {/* 色盘图标 */}
+          <Pressable
+            accessibilityLabel="自定封面颜色"
+            accessibilityRole="button"
+            onPress={() => setShowColorPicker(true)}
+            style={[styles.swatch, styles.toolSwatch]}
+          >
+            <Text selectable style={styles.toolSwatchText}>🎨</Text>
+          </Pressable>
+          {/* 上传封面图 */}
+          <Pressable
+            accessibilityLabel="上传封面图片"
+            accessibilityRole="button"
+            onPress={() => void pickCoverImage()}
+            style={[styles.swatch, styles.toolSwatch]}
+          >
+            <Text selectable style={styles.toolSwatchText}>🖼</Text>
+          </Pressable>
         </View>
       </Section>
 
@@ -207,12 +255,7 @@ export default function NewMemoryScreen() {
               <Image key={uri} source={{ uri }} style={styles.photoPreview} />
             ))}
           </ScrollView>
-        ) : (
-          <View style={styles.photoPlaceholder}>
-            <Text selectable style={styles.photoPlaceholderGlyph}>＋</Text>
-            <Text selectable style={styles.photoPlaceholderText}>把第一张照片贴进这一页</Text>
-          </View>
-        )}
+        ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
@@ -292,6 +335,26 @@ export default function NewMemoryScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* 自定义色盘弹层 */}
+      {showColorPicker ? (
+        <View style={styles.overlay}>
+          <View style={styles.colorSheet}>
+            <Text selectable style={styles.sheetTitle}>自定封面颜色</Text>
+            <ColorPicker
+              value={coverColor}
+              onChange={(hex) => {
+                setCoverColor(hex);
+                setCoverImage(undefined);
+              }}
+            />
+            <View style={styles.colorSheetButtons}>
+              <AppButton label="取消" tone="secondary" onPress={() => setShowColorPicker(false)} />
+              <AppButton label="确认" onPress={() => { setShowColorPicker(false); void Haptics.selectionAsync(); }} />
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -357,24 +420,50 @@ const styles = StyleSheet.create({
     minHeight: 50,
     paddingHorizontal: 14,
   },
+  // ── 封面 ──
   coverPreviewRow: { alignItems: "center", flexDirection: "row", gap: 12 },
   coverPreview: {
     borderColor: colors.line,
     borderRadius: 12,
     borderWidth: 1,
-    height: 44,
-    width: 60,
+    height: 56,
+    overflow: "hidden",
+    width: 72,
   },
-  coverHint: { color: colors.muted, flex: 1, fontSize: 13, lineHeight: 19 },
-  swatchRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  coverPreviewImage: { ...StyleSheet.absoluteFillObject, borderRadius: 11 },
+  coverHintCol: { flex: 1, gap: 4 },
+  coverHint: { color: colors.muted, flexShrink: 1, fontSize: 13, lineHeight: 19 },
+  coverClearLink: { alignSelf: "flex-start" },
+  coverClearText: { color: colors.danger, fontSize: 12, fontWeight: "700" },
+  swatchGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   swatch: {
     borderColor: colors.line,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
-    height: 44,
-    width: 44,
+    height: 40,
+    width: 40,
   },
   swatchSelected: { borderColor: colors.ink, borderWidth: 3 },
+  toolSwatch: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+  },
+  toolSwatchText: { fontSize: 18 },
+  // ── 色盘弹层 ──
+  colorSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    gap: 16,
+    maxHeight: "90%",
+    padding: 20,
+  },
+  colorSheetButtons: { flexDirection: "row", gap: 10, justifyContent: "flex-end", marginTop: 8 },
   cityList: { gap: 14, paddingBottom: 10 },
   cityGroup: { gap: 8 },
   cityOption: {

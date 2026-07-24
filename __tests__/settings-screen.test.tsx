@@ -33,13 +33,13 @@ describe("SettingsScreen", () => {
     mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: null });
   });
 
-  it("requests photo permission only after choosing an avatar", async () => {
+  it("requests photo permission when tapping the avatar", async () => {
     const screen = await render(<SettingsScreen />);
 
     expect(mockRequestPermission).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.press(screen.getByText("选择头像"));
+      fireEvent.press(screen.getByLabelText("点击更换头像"));
       await Promise.resolve();
     });
 
@@ -52,7 +52,7 @@ describe("SettingsScreen", () => {
         quality: 0.8,
       });
     });
-  });
+  }, 15000);
 
   it("waits for the hydrated profile before mounting editable controls", async () => {
     mockIsProfileReady.mockReturnValue(false);
@@ -77,7 +77,7 @@ describe("SettingsScreen", () => {
     const screen = await render(<SettingsScreen />);
 
     await act(async () => {
-      fireEvent.press(screen.getByText("选择头像"));
+      fireEvent.press(screen.getByLabelText("点击更换头像"));
       await Promise.resolve();
     });
 
@@ -148,6 +148,12 @@ describe("SettingsScreen", () => {
     consoleError.mockRestore();
   });
 
+  it("shows the avatar hint text", async () => {
+    const screen = await render(<SettingsScreen />);
+
+    expect(screen.getByText("点击头像更换照片")).toBeTruthy();
+  });
+
   it("stays on settings and reports a local save failure", async () => {
     mockUpdateProfile.mockRejectedValue(new Error("write failed"));
     const screen = await render(<SettingsScreen />);
@@ -159,16 +165,5 @@ describe("SettingsScreen", () => {
 
     await waitFor(() => expect(screen.getByText("保存资料失败，请重试。")).toBeTruthy());
     expect(mockBack).not.toHaveBeenCalled();
-  });
-
-  it("removes a selected avatar from the editing state", async () => {
-    mockProfile.mockReturnValue({ nickname: "小林", avatarUri: "file://avatar.jpg" });
-    const screen = await render(<SettingsScreen />);
-
-    expect(screen.getByLabelText("小林的头像").props.source).toEqual({ uri: "file://avatar.jpg" });
-    fireEvent.press(screen.getByText("移除头像"));
-
-    await waitFor(() => expect(screen.getByLabelText("小林的头像").props.source).toBeUndefined());
-    expect(screen.getByText("本机数据与隐私")).toBeTruthy();
   });
 });

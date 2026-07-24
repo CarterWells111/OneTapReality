@@ -25,7 +25,7 @@ export default function BackendExperimentScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 20, padding: 20 }}>
       <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-        这是后端接口实验页。旅行册仍然只保存在本机 SQLite；不会自动同步，也不会上传照片。
+        可在此检查后端服务连接状态与能力。
       </Text>
       <Section title="连接状态">
         <Text selectable style={{ color: colors.ink, fontSize: 18, fontWeight: "800" }}>{status}</Text>

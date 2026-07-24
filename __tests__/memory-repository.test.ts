@@ -4,6 +4,7 @@ import {
   createDraft,
   discardDraft,
   discardMemory,
+  getMemory,
   getDraft,
   listDiscardedMemories,
   listMemories,
@@ -66,10 +67,14 @@ function createMemoryDatabase(options?: {
       ? String(parameters[id ? 1 : 0])
       : undefined;
 
+    const excludesInactiveStatuses = statement.includes("status IS NULL OR (status <> ? AND status <> ?)");
+    const allowsLegacyStatus = statement.includes("status IS NULL OR status = ?");
+
     return rows.filter(
       (row) =>
         (id === undefined || row.id === id) &&
-        (status === undefined || row.status === status)
+        (status === undefined || row.status === status || (allowsLegacyStatus && row.status === undefined)) &&
+        (!excludesInactiveStatuses || (row.status !== "draft" && row.status !== "discarded"))
     );
   };
 
@@ -144,6 +149,33 @@ describe("memory draft lifecycle repository", () => {
       id: draftMemory.id,
       status: "draft",
     });
+  });
+
+  it("reads a legacy memory without a status as a valid saved memory", async () => {
+    const { database } = createMemoryDatabase({
+      rows: [{
+        id: "legacy-1",
+        title: "Legacy West Lake",
+        city: "hangzhou",
+        travelDate: "2026-07-20",
+        createdAt: "2026-07-22T10:00:00.000Z",
+        updatedAt: "2026-07-22T10:00:00.000Z",
+      }],
+    });
+
+    await expect(getMemory(database, "legacy-1")).resolves.toMatchObject({ id: "legacy-1" });
+  });
+
+  it("does not read draft or discarded memories as valid memory details", async () => {
+    const { database } = createMemoryDatabase({
+      rows: [
+        { id: "draft-detail", title: "Draft", city: "hangzhou", travelDate: "2026-07-20", status: "draft", createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z" },
+        { id: "discarded-detail", title: "Discarded", city: "hangzhou", travelDate: "2026-07-20", status: "discarded", createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z" },
+      ],
+    });
+
+    await expect(getMemory(database, "draft-detail")).resolves.toBeNull();
+    await expect(getMemory(database, "discarded-detail")).resolves.toBeNull();
   });
 
   it("confirms a draft as saved and marks an unconfirmed draft as discarded", async () => {

@@ -30,7 +30,7 @@ export default function RecycleBinScreen() {
   };
 
   const confirmDelete = (memory: Memory) => {
-    Alert.alert("彻底删除", `将从这台设备上永久删除「${memory.title}」，且无法恢复。`, [
+    Alert.alert("彻底删除", `将永久删除「${memory.title}」，且无法恢复。`, [
       { text: "取消", style: "cancel" },
       {
         text: "删除",
@@ -57,7 +57,7 @@ export default function RecycleBinScreen() {
       </View>
 
       {!isReady ? (
-        <Text selectable style={styles.subtitle}>正在读取本机记录…</Text>
+        <Text selectable style={styles.subtitle}>正在读取记录…</Text>
       ) : discarded.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text selectable style={styles.emptyTitle}>回收站是空的</Text>

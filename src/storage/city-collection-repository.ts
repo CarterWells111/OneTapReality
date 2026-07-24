@@ -11,6 +11,8 @@ type CityCollectionArrangementRow = {
   updated_at: string;
 };
 
+const savedOrLegacyStatusSql = "status IS NULL OR status = ?";
+
 export type CityCollectionArrangement = {
   memoryId: string;
   city: City;
@@ -59,7 +61,7 @@ export async function persistCityCollectionOrder(
     ]);
     const savedCityMemoryIds = new Set(
       memories
-        .filter((memory) => memory.city === city && memory.status === "saved")
+        .filter((memory) => memory.city === city && memory.status !== "draft" && memory.status !== "discarded")
         .map((memory) => memory.id)
     );
     const orderedMemoryIds = Array.from(new Set(memoryIds)).filter((memoryId) =>
@@ -100,7 +102,7 @@ export async function saveCityCollection(
     const memories = await listMemories(transaction);
     const savedCityMemoryIds = new Set(
       memories
-        .filter((memory) => memory.city === city && memory.status === "saved")
+        .filter((memory) => memory.city === city && memory.status !== "draft" && memory.status !== "discarded")
         .map((memory) => memory.id)
     );
     const orderedMemoryIds = Array.from(new Set(memoryIds)).filter((memoryId) =>
@@ -135,14 +137,14 @@ export async function setFeaturedCityMemory(
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      "UPDATE city_collection_arrangements SET is_featured = 0 WHERE city = ? AND EXISTS (SELECT 1 FROM memories WHERE id = ? AND city = ? AND status = ?)",
+      `UPDATE city_collection_arrangements SET is_featured = 0 WHERE city = ? AND EXISTS (SELECT 1 FROM memories WHERE id = ? AND city = ? AND (${savedOrLegacyStatusSql}))`,
       city,
       memoryId,
       city,
       "saved"
     );
     await transaction.runAsync(
-      "INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) SELECT memories.id, memories.city, COALESCE((SELECT MAX(position) + 1 FROM city_collection_arrangements WHERE city = ?), 0), 1, ? FROM memories WHERE id = ? AND city = ? AND status = ? ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, is_featured = excluded.is_featured, updated_at = excluded.updated_at",
+      `INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) SELECT memories.id, memories.city, COALESCE((SELECT MAX(position) + 1 FROM city_collection_arrangements WHERE city = ?), 0), 1, ? FROM memories WHERE id = ? AND city = ? AND (${savedOrLegacyStatusSql}) ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, is_featured = excluded.is_featured, updated_at = excluded.updated_at`,
       city,
       updatedAt,
       memoryId,
@@ -160,7 +162,7 @@ export async function resolveCityCollection(
     listMemories(db),
     fetchCityCollectionArrangements(db, city),
   ]);
-  const cityMemories = memories.filter((memory) => memory.city === city && memory.status === "saved");
+  const cityMemories = memories.filter((memory) => memory.city === city && memory.status !== "draft" && memory.status !== "discarded");
   const memoryById = new Map(cityMemories.map((memory) => [memory.id, memory]));
   const arrangedMemories = arrangements
     .map((arrangement) => memoryById.get(arrangement.memoryId))

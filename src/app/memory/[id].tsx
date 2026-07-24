@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { IconButton } from "../../components/icon-button";
-import { AppButton, colors, serifFont, Tag } from "../../components/ui";
+import { AppButton, colors, Tag } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
 import { useMemories } from "../../features/memories/memories-provider";
@@ -59,20 +59,11 @@ export default function MemoryDetailScreen() {
     <>
       <Stack.Screen options={{ headerRight }} />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <View style={[styles.cover, { backgroundColor: memory.coverColor ?? city.color }]}>
-          <View style={styles.coverTop}>
-            <Tag label={isSample ? "示例 · 扉页" : "扉页"} />
-            <Text selectable style={styles.coverTitle}>{memory.title}</Text>
-            <View style={styles.coverAccent} />
-          </View>
-          <View>
-            <Text selectable style={styles.coverMeta}>{city.name} · {memory.travelDate}</Text>
-            <Text selectable style={styles.coverMeta}>
-              {isSample ? "杭州示例旅行册" : `${memory.photoUris.length} 张本地照片`}
-            </Text>
-          </View>
+        <View style={styles.summaryRow}>
+          <Tag label={isSample ? "示例 · 扉页" : "扉页"} />
+          <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
         </View>
-        <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。</Text>
+        <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
         <PageReader pages={memory.pages} />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
@@ -85,17 +76,7 @@ export default function MemoryDetailScreen() {
 const styles = StyleSheet.create({
   content: { gap: 18, padding: 20 },
   headerActions: { flexDirection: "row", gap: 2 },
-  cover: {
-    aspectRatio: 1,
-    borderColor: colors.paperEdge,
-    borderRadius: 22,
-    borderWidth: 1,
-    justifyContent: "space-between",
-    padding: 24,
-  },
-  coverTop: { alignItems: "flex-start", gap: 12 },
-  coverTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 30, fontWeight: "800", lineHeight: 38 },
-  coverAccent: { backgroundColor: colors.warmAccent, height: 3, width: 40 },
-  coverMeta: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  summaryRow: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" },
+  summaryMeta: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   readerLead: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
 });

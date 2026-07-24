@@ -18,19 +18,19 @@ describe("PrivacyScreen", () => {
   it("renders the factual local-only privacy declaration", async () => {
     const screen = await render(<PrivacyScreen />);
 
-    expect(screen.getByText("本机数据与隐私声明")).toBeTruthy();
-    expect(screen.getByText(/照片 URI 和旅行册内容仅保存在本机 SQLite/)).toBeTruthy();
-    expect(screen.getByText(/DemoDraftGenerator 不识别人或地点，也不会上传照片/)).toBeTruthy();
-    expect(screen.getByText(/Expo Go 仅模拟 NFC/)).toBeTruthy();
+    expect(screen.getByText("数据与隐私声明")).toBeTruthy();
+    expect(screen.getByText(/旅行信息、照片 URI 和旅行册内容保存在设备 SQLite 中/)).toBeTruthy();
+    expect(screen.getByText(/不识别图像中的人物或具体内容/)).toBeTruthy();
+    expect(screen.getByText(/当前通过按钮读取城市钥匙/)).toBeTruthy();
   });
 
   it("confirms before deleting all local data", async () => {
     const screen = await render(<PrivacyScreen />);
 
-    await fireEvent.press(screen.getByText("删除所有本地数据"));
+    await fireEvent.press(screen.getByText("删除所有数据"));
 
     expect(mockAlert).toHaveBeenCalledWith(
-      "删除所有本地记忆？",
+      "删除所有记忆？",
       expect.any(String),
       expect.arrayContaining([expect.objectContaining({ style: "destructive" })]),
     );

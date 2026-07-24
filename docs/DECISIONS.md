@@ -27,6 +27,43 @@
 空白实体卡统一写入 `https://onetapreality.com/activate`，该入口只向 `GIFT_ADMIN_EMAILS` 白名单中已验证邮箱开放。开发者在原生 Development Build 或生产 App 内将当前卡重写为唯一 `https://onetapreality.com/gift/<token>`；Expo Go 不提供写卡能力。系统不读取或保存 NFC 芯片 UID，而是为成功初始化的卡生成短卡号和可选备注。
 
 初始化先创建最长 15 分钟的预留；只有原生写入并读取验证成功后，礼品才转为可认领状态。过期预留自动作废且不得认领；已初始化、已认领或已绑定的卡均禁止覆盖或转移。管理操作保留服务端审计记录，所有管理员密钥、白名单和清理密钥仅存 Railway 服务端环境变量。
+## 2026-07-24：离线中国地图多城市足迹打卡与搜索
+
+全屏离线中国地图新增三大能力：城市足迹打卡弹窗、搜索跳转、视觉设计统一化。本轮不引入网络、地图 SDK、定位、账户、支付、分析、真实 NFC 或客户端秘密。
+
+- **配色全局风格化**：Overview 和 Workspace 地图将硬编码的省份底色（`#EEF2EE`、`#DDEBDD`）替换为全局色板 `colors.paper`（`#EFE2CF`）与 `colors.accentSoft`（`#EFE2CF`），描边使用 `colors.accent`（`#B56B52`），背景使用 `colors.accentSoft`。
+- **标记点同步延迟修复**：将 Workspace 中的标记点从 `View` + React state（`viewportState`）改为 `Animated.View` + `useAnimatedStyle`，直接在 UI 线程通过 shared values（`translateX`/`translateY`/`scale`）计算屏幕坐标，消除手势期间标记点滞后于地图 SVG 的延迟问题。
+- **标记点 hit area 动态缩放**：按压区域现在随 `contentFrame.scale * viewport.scale` 动态调整（最小 44px），放大多倍后也能精确点击。
+- **台湾标记补全**：新增 `taiwanInsetCenter` 坐标常量与 `taiwanCities` 集合，台北标记在 overview 和 workspace 中均正确显示于台湾插画中心位置。
+- **城市搜索定位**：全屏地图顶部新增搜索栏，输入城市中文名或英文 slug 即可匹配；选择后通过 `withTiming` 动画将地图视口平滑跳转至该城市焦点并放大。
+- **城市足迹打卡弹窗**：从 `地图/` 文件夹导入 10 张 PNG 至 `assets/city-checkin/`，缓存为 Metro require 注册表。10 座城市（北京、上海、杭州、西安、成都、拉萨、广州、南京、昆明、哈尔滨）点击标记时弹出 `CityCheckinModal`，以对应城市图片为底图，叠加打卡光点（已打卡/待探索双色）、图例、城市宣传语和足迹计数。弹窗采用全局字体（朝华标题 A + 朝华打字机）和纸感色板。
+- 原始 `地图/` 文件夹已在导入完成后删除。
+
+## 2026-07-24: Shop detail and shopping bag concept style
+
+- The shop uses the fixed concept palette only: `#B56B52`, `#56708A`, `#EFE2CF`, `#F7F2EA`, `#2F2A26`, and `#D8CFC4`.
+- Product cards now open a local product detail route with gallery, style, package, engraving, quantity, price feedback, and “add to shopping bag” controls.
+- The shopping bag remains a local demo order-intent list, not payment or checkout. The page now uses hand-drawn paper cards, coupon/address/summary blocks, and a demo checkout action that exports the bag text.
+
+## 2026-07-24：本地字体与手账编辑素材
+
+本次继续只在新分支 `ui-version2-homepage` 中调整本地呈现和编辑体验，不改 `main`，不新增网络、账号、支付、真实 AI、真实 NFC、分析或远程素材依赖。
+
+- 从本机 `AdventureX/字体/中文/` 解出中文字体到 `assets/fonts/`。应用主标题使用油茶馓子体，正文和输入默认使用朝华打字机，以靠近参考图的手绘海报与打字机排版氛围。
+- 底部 TabBar 的版本 2 图标尺寸从 28×28 放大到 56×56，并加高 tabbar，避免图标和文字挤压。
+- 画布编辑器新增文字字号、字色、字体选择；新增文字默认朝华打字机，并保留除油茶馓子体和朝华打字机之外的本地字体作为可选字体。
+- 从本机 `素材库/sticker1..4/` 导入 80 张贴纸，按 4 个文件夹分组；从 `素材库/frame1..2/` 导入 40 张相框，新增“添加相框”入口。贴纸和相框都作为本地静态图片打包。
+
+## 2026-07-24：底部 TabBar 版本 2 本地 UI
+
+本次只在新分支 `ui-version2-homepage` 中调整首页视觉呈现，不改 `main`，不新增网络、账号、支付、真实 AI、真实 NFC、分析或远程素材依赖。
+
+- 从本机 `AdventureX/UI/版本2/` 选取第 2、3、4、5 张 PNG，抠除棋盘格底纹后生成真正透明底的 `assets/tab-icons/` 图标。
+- 底部 TabBar `src/app/(tabs)/_layout.tsx` 将“记忆 / 城市 / 商店 / 我的”四个 SVG 图标替换为版本 2 本地图片。
+- 首页误放的 UI 预览区已移除；既有旅行册列表、创建入口、商店入口和本机数据生命周期保持不变。
+## 2026-07-24：旅行册贴纸缩放与临时文字
+
+旅行册继续只使用本地画布数据与既有持久化结构。贴纸字形尺寸必须由元素已保存的相对宽高及当前画布尺寸计算，使捏合后的字形与选中容器同步缩放。新建文字先以「点击编辑文字」作为仅在当前编辑会话内存在的待确认元素；点按或移动该画布文字元素、或实际修改文字内容后保留。未确认时，任意其他编辑操作会移除它；仅聚焦文字输入框不构成确认。不新增网络、账号、分析、支付、真实 NFC、依赖或数据库字段。
 
 ## 2026-07-23：未打卡城市浏览页
 
@@ -228,6 +265,19 @@
 - 由 `CanvasPage` 的书页底层点击回调处理，不使用坐标碰撞检测；保持现有双击选中、组件手势和横滑翻页语义。
 - 取消选中只改变本地 UI 状态，不修改页面数据，也不触发自动保存。
 
+## 2026-07-24：本地透明素材与页面背景
+
+- 贴纸和相框继续作为可拖拽画布元素保存；导入时将素材中烘焙的浅灰/白色透明预览网格转为真实 alpha 通道，避免在 App 内出现棋盘底。
+- 背景素材来自本地 `素材库/background`，作为 `CanvasLayout.backgroundId` 保存在当前页 layout 上，并由 `CanvasPage` 铺在所有元素最底层。
+- 背景不是可拖拽元素，不占用 zIndex；用户可在素材栏切换到“背景”模式选择或移除当前页背景。
+
+## 2026-07-24：版本1概念图风格与素材性能
+
+- 查看 `产品概念图/版本1` 的 20 张参考图后，仅调整字体、颜色、线条和资源体积，不改变现有页面布局、导航结构或画布交互。
+- 主标题字体改为喜脉喜欢体；正文与默认添加文字使用朝华打字机的真实 family `ZhaohuaTypeWriter`，并减少自定义中文字体上的粗体权重，避免 iOS/Expo 因字重不匹配回退系统字体。
+- App 启动只加载主标题和正文两种字体；画布字体列表中的其他本地字体延后到编辑器中后台加载。
+- 贴纸缩至 512px 以内、相框缩至 720px 以内并保留透明 PNG；背景缩至 720px 以内并改用压缩 JPG，降低 Expo Go 加载和打包成本。
+- 全局风格采用版本1概念图的米纸底、砖橙主色、细墨线和轻手账质感，保留现有信息密度与页面结构。
 ## 2026-07-23：Lockfile 与生产构建合并门禁
 
 - Railway Build image 失败的根因是 `package-lock.json` 缺少依赖图要求的 peer 节点；已有 `node_modules` 会掩盖该问题，干净 `npm ci` 可稳定复现。
@@ -235,3 +285,9 @@
 - 工作流检查在远端首次出现后设为 `main` 必需状态检查；配置时保留已有保护规则。
 - 依赖变更必须同时更新 `package.json` 与 `package-lock.json`，并以 `npm ci` 而非已有依赖目录中的开发启动作为合并依据。
 - 保持 Node/npm 为最低版本及以上的兼容范围，不改回封闭版本限定。
+
+## 2026-07-24：城市详情插画档案页
+
+- `/city/[city]` 采用本地纸本旅行手账式档案布局：城市名、地区、既有宣传语、相册数量与本地插画/线描主视觉；不请求远程图片或新增依赖。
+- 已保存（及兼容的旧版）旅行记忆可在页内作为精选与展开列表浏览，草稿和已丢弃记忆不计入；创建、管理及记忆详情继续复用既有本地路由。
+- 本次仅调整客户端展示和交互，不引入网络服务、登录、支付、分析、真实 NFC 或客户端秘密。

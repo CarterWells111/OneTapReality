@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Platform, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -11,9 +11,10 @@ import Animated, {
 import { CanvasPage } from "./canvas-page";
 import { resolvePageTurn } from "./page-turn";
 import { colors } from "../../components/ui";
+import { headingFontFamily } from "../typography/fonts";
 import type { StoryPage } from "../../types/memory";
 
-const serifFont = Platform.select({ android: "serif", default: "Georgia" });
+const serifFont = headingFontFamily;
 
 /**
  * 只读的左右滑动翻页阅读器：整页滑出后再切换，无回弹。
@@ -89,8 +90,9 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
     return null;
   }
 
-  const renderPage = (page: StoryPage, isRight: boolean) =>
-    page.layout ? (
+  const renderPage = (page: StoryPage, isRight: boolean) => {
+    const isCover = page.kind === "cover";
+    return page.layout ? (
       <CanvasPage
         height={pageHeight}
         interactive={false}
@@ -99,11 +101,12 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
         width={pageWidth}
       />
     ) : (
-      <View style={[styles.textPage, { height: pageHeight, width: pageWidth }]}>
+      <View style={[styles.textPage, isCover && { backgroundColor: page.coverColor ?? "#EFE2CF" }, { height: pageHeight, width: pageWidth }]}>
         <Text selectable style={styles.pageHeadline}>{page.headline}</Text>
         <Text selectable style={styles.pageBody}>{page.body}</Text>
       </View>
     );
+  };
 
   const isRightPage = index % 2 === 0;
   const incomingIsRight = pending ? pending.targetIndex % 2 === 0 : false;

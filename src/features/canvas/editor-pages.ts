@@ -1,10 +1,12 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout } from "./canvas-layout";
-import type { CanvasElement, CanvasStickerId, StoryPage } from "../../types/memory";
+import { bodyFontFamily } from "../typography/fonts";
+import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasStickerId, StoryPage } from "../../types/memory";
 
 export type CanvasElementPatch = {
   color?: string;
-  fontStyle?: "system" | "avenir" | "georgia";
+  fontSize?: number;
+  fontStyle?: string;
   height?: number;
   rotation?: number;
   text?: string;
@@ -27,6 +29,18 @@ function updatePage(pages: StoryPage[], pageId: string, update: (page: StoryPage
 
 function maxLayer(elements: CanvasElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex));
+}
+
+/** 保留当前 layout 的背景、封面色、封面图等 meta 字段，仅替换 elements。 */
+function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
+  const prev = page.layout;
+  return {
+    aspectRatio: 1 as const,
+    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
+    ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
+    ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
+    elements,
+  };
 }
 
 export function canvasPages(pages: StoryPage[]) {
@@ -113,16 +127,15 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: [
+    layout: preserveLayoutMeta(page, [
         ...page.layout!.elements,
         {
           id,
           type: "text",
           text: "点击编辑文字",
-          fontStyle: "avenir",
+          fontStyle: bodyFontFamily,
           color: "#1C2C28",
+          fontSize: 18,
           x: 0.12,
           y: 0.45,
           width: 0.72,
@@ -130,17 +143,14 @@ export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ],
-    },
+      ]),
   }));
 }
 
 export function addStickerToPage(pages: StoryPage[], pageId: string, id: string, stickerId: CanvasStickerId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: [
+    layout: preserveLayoutMeta(page, [
         ...page.layout!.elements,
         {
           id,
@@ -148,12 +158,84 @@ export function addStickerToPage(pages: StoryPage[], pageId: string, id: string,
           stickerId,
           x: 0.72,
           y: 0.78,
-          width: 0.14,
-          height: 0.14,
+          width: 0.2,
+          height: 0.2,
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ],
+      ]),
+  }));
+}
+
+export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, frameId: CanvasFrameId) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: preserveLayoutMeta(page, [
+        ...page.layout!.elements,
+        {
+          id,
+          type: "frame",
+          frameId,
+          x: 0.04,
+          y: 0.04,
+          width: 0.92,
+          height: 0.92,
+          rotation: 0,
+          zIndex: maxLayer(page.layout!.elements) + 1,
+        },
+      ]),
+  }));
+}
+
+export function setCanvasBackground(
+  pages: StoryPage[],
+  pageId: string,
+  backgroundId: CanvasBackgroundId | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: {
+      aspectRatio: 1,
+      ...(backgroundId ? { backgroundId } : {}),
+      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
+      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
+      elements: page.layout!.elements,
+    },
+  }));
+}
+
+export function setCanvasCoverColor(
+  pages: StoryPage[],
+  pageId: string,
+  coverColor: string | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    coverColor,
+    layout: {
+      aspectRatio: 1,
+      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
+      ...(coverColor ? { coverColor } : {}),
+      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
+      elements: page.layout!.elements,
+    },
+  }));
+}
+
+export function setCanvasCoverImage(
+  pages: StoryPage[],
+  pageId: string,
+  coverImage: string | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    coverImage,
+    layout: {
+      aspectRatio: 1,
+      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
+      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
+      ...(coverImage ? { coverImage } : {}),
+      elements: page.layout!.elements,
     },
   }));
 }
@@ -166,12 +248,10 @@ export function updateCanvasElement(
 ) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 1,
-      elements: page.layout!.elements.map((element) =>
+    layout: preserveLayoutMeta(page, page.layout!.elements.map((element) =>
         element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
       ),
-    },
+    ),
   }));
 }
 
@@ -183,9 +263,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
     }
     return {
       ...page,
-      layout: {
-        aspectRatio: 1,
-        elements: [
+      layout: preserveLayoutMeta(page, [
           ...page.layout!.elements,
           {
             ...source,
@@ -194,8 +272,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
             y: Math.min(source.y + 0.05, 1 - source.height),
             zIndex: maxLayer(page.layout!.elements) + 1,
           },
-        ],
-      },
+        ]),
     };
   });
 }
@@ -216,13 +293,13 @@ export function changeCanvasElementLayer(
     const currentLayer = elements[index].zIndex;
     elements[index] = { ...elements[index], zIndex: elements[target].zIndex };
     elements[target] = { ...elements[target], zIndex: currentLayer };
-    return { ...page, layout: { aspectRatio: 1, elements } };
+    return { ...page, layout: preserveLayoutMeta(page, elements) };
   });
 }
 
 export function deleteCanvasElement(pages: StoryPage[], pageId: string, elementId: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: { aspectRatio: 1, elements: page.layout!.elements.filter((element) => element.id !== elementId) },
+    layout: preserveLayoutMeta(page, page.layout!.elements.filter((element) => element.id !== elementId)),
   }));
 }

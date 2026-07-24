@@ -1,12 +1,14 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { canvasFonts, canvasStickers } from "./canvas-assets";
+import { bodyFont } from "../../components/ui";
 import type { CanvasElement, CanvasTextElement } from "../../types/memory";
 
 type CanvasToolbarProps = {
   selectedElement?: CanvasElement;
   onAddText: () => void;
-  onAddSticker: (stickerId?: (typeof canvasStickers)[number]["id"]) => void;
+  onAddSticker: (stickerId?: string) => void;
+  onAddFrame: () => void;
+  onPickBackground: () => void;
   onUpdateElement: (id: string, patch: Partial<CanvasTextElement>) => void;
   onChangeLayer: (id: string, direction: "forward" | "backward") => void;
   onDuplicate: (id: string) => void;
@@ -14,56 +16,49 @@ type CanvasToolbarProps = {
   onDone?: () => void;
 };
 
-const colors = [
-  { label: "深绿", value: "#1C5A4C" },
-  { label: "墨黑", value: "#1C2C28" },
-  { label: "暖红", value: "#A44736" },
-] as const;
-
+/**
+ * 画布编辑器工具栏。
+ *
+ * 两行布局：
+ * - 第一行（始终显示）：添加文字 | 添加贴纸 | 添加相框 | 选择背景
+ * - 第二行（选中元素时出现）：前移 | 后移 | 复制 | 删除 | 完成
+ *
+ * 字体/字号/颜色已移至 ElementContextMenu。
+ */
 export function CanvasToolbar({
   selectedElement,
   onAddText,
   onAddSticker,
-  onUpdateElement,
+  onAddFrame,
+  onPickBackground,
+  onUpdateElement: _onUpdateElement,
   onChangeLayer,
   onDuplicate,
   onDelete,
   onDone,
 }: CanvasToolbarProps) {
   const selectedId = selectedElement?.id;
-  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
 
   return (
     <View style={styles.shell}>
+      {/* 第一行：添加操作 */}
       <ScrollView contentContainerStyle={styles.row} horizontal showsHorizontalScrollIndicator={false}>
-        <ToolbarButton label="添加文字" onPress={onAddText} />
+        <ToolbarButton active label="添加文字" onPress={onAddText} />
         <ToolbarButton label="添加贴纸" onPress={() => onAddSticker()} />
-        {selectedText
-          ? canvasFonts.map((font) => (
-              <ToolbarButton
-                active={selectedText.fontStyle === font.id}
-                key={font.id}
-                label={font.label}
-                onPress={() => onUpdateElement(selectedText.id, { fontStyle: font.id })}
-              />
-            ))
-          : null}
-        {selectedText
-          ? colors.map((color) => (
-              <ToolbarButton
-                active={selectedText.color === color.value}
-                key={color.value}
-                label={color.label}
-                onPress={() => onUpdateElement(selectedText.id, { color: color.value })}
-              />
-            ))
-          : null}
-        {selectedId ? <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} /> : null}
-        {selectedId ? <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} /> : null}
-        {selectedId ? <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} /> : null}
-        {selectedId ? <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} /> : null}
-        {selectedId && onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
+        <ToolbarButton label="添加相框" onPress={onAddFrame} />
+        <ToolbarButton label="选择背景" onPress={onPickBackground} />
       </ScrollView>
+
+      {/* 第二行：元素操作（仅在选中元素时显示） */}
+      {selectedId ? (
+        <ScrollView contentContainerStyle={styles.row} horizontal showsHorizontalScrollIndicator={false}>
+          <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
+          <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
+          <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
+          <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
+          {onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
@@ -90,7 +85,7 @@ function ToolbarButton({
 }
 
 const styles = StyleSheet.create({
-  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, paddingVertical: 10 },
+  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, gap: 8, paddingVertical: 8 },
   row: { alignItems: "center", gap: 8, paddingHorizontal: 20 },
   button: {
     backgroundColor: "#FFFFFF",
@@ -100,9 +95,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  activeButton: { backgroundColor: "#E1F0EA", borderColor: "#1C5A4C" },
+  activeButton: { backgroundColor: "#F7E2BF", borderColor: "#B76545" },
   destructiveButton: { borderColor: "#E6B3AA" },
-  buttonText: { color: "#1C2C28", fontSize: 13, fontWeight: "600" },
-  activeText: { color: "#1C5A4C" },
+  buttonText: { color: "#1C2C28", fontFamily: bodyFont, fontSize: 13, fontWeight: "600" },
+  activeText: { color: "#B76545" },
   destructiveText: { color: "#A44736" },
 });

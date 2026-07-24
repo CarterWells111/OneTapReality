@@ -9,6 +9,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const layout: CanvasLayout = {
   aspectRatio: 1,
+  backgroundId: "background-01",
   elements: [
     {
       id: "photo-1",
@@ -27,6 +28,7 @@ const layout: CanvasLayout = {
       text: "西湖边的下午",
       fontStyle: "system",
       color: "#1C2C28",
+      fontSize: 16,
       x: 0.1,
       y: 0.65,
       width: 0.8,
@@ -37,7 +39,7 @@ const layout: CanvasLayout = {
     {
       id: "sticker-1",
       type: "sticker",
-      stickerId: "heart",
+      stickerId: "sticker1-01",
       x: 0.72,
       y: 0.78,
       width: 0.12,
@@ -56,8 +58,9 @@ describe("CanvasPage", () => {
     );
 
     expect(screen.getByTestId("canvas-image-photo-1")).toBeTruthy();
+    expect(screen.getByTestId("canvas-background-background-01")).toBeTruthy();
     expect(screen.getByText("西湖边的下午")).toBeTruthy();
-    expect(screen.getByText("❤️")).toBeTruthy();
+    expect(screen.getByTestId("canvas-sticker-sticker-1")).toBeTruthy();
     expect(screen.getByTestId("canvas-element-caption-1").props.style).toEqual(
       expect.arrayContaining([expect.objectContaining({ borderWidth: 2 })]),
     );
@@ -133,6 +136,8 @@ describe("CanvasToolbar", () => {
   it("emits practical element actions through callbacks", async () => {
     const onAddText = jest.fn();
     const onAddSticker = jest.fn();
+    const onAddFrame = jest.fn();
+    const onPickBackground = jest.fn();
     const onStyle = jest.fn();
     const onLayer = jest.fn();
     const onDuplicate = jest.fn();
@@ -143,6 +148,8 @@ describe("CanvasToolbar", () => {
         selectedElement={selected}
         onAddText={onAddText}
         onAddSticker={onAddSticker}
+        onAddFrame={onAddFrame}
+        onPickBackground={onPickBackground}
         onUpdateElement={onStyle}
         onChangeLayer={onLayer}
         onDuplicate={onDuplicate}
@@ -153,7 +160,10 @@ describe("CanvasToolbar", () => {
 
     await fireEvent.press(screen.getByText("添加文字"));
     await fireEvent.press(screen.getByText("添加贴纸"));
-    await fireEvent.press(screen.getByText("现代"));
+    await fireEvent.press(screen.getByText("添加相框"));
+    await fireEvent.press(screen.getByText("选择背景"));
+    await fireEvent.press(screen.getByText("18"));
+    await fireEvent.press(screen.getByText("朝华打字机"));
     await fireEvent.press(screen.getByText("深绿"));
     await fireEvent.press(screen.getByText("前移"));
     await fireEvent.press(screen.getByText("后移"));
@@ -163,7 +173,10 @@ describe("CanvasToolbar", () => {
 
     expect(onAddText).toHaveBeenCalledTimes(1);
     expect(onAddSticker).toHaveBeenCalledTimes(1);
-    expect(onStyle).toHaveBeenCalledWith("caption-1", { fontStyle: "avenir" });
+    expect(onAddFrame).toHaveBeenCalledTimes(1);
+    expect(onPickBackground).toHaveBeenCalledTimes(1);
+    expect(onStyle).toHaveBeenCalledWith("caption-1", { fontSize: 18 });
+    expect(onStyle).toHaveBeenCalledWith("caption-1", { fontStyle: "ZhaohuaTypeWriter" });
     expect(onStyle).toHaveBeenCalledWith("caption-1", { color: "#1C5A4C" });
     expect(onLayer).toHaveBeenNthCalledWith(1, "caption-1", "forward");
     expect(onLayer).toHaveBeenNthCalledWith(2, "caption-1", "backward");

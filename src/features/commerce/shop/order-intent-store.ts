@@ -1,6 +1,6 @@
 /**
- * 模拟订购的意向记录：只保存在本机 kv-store，
- * 用于现场收集「想要什么样式、愿意付多少」，不构成订单或支付。
+ * 订购意向记录：只保存在本机 kv-store，
+ * 用于收集样式偏好，不构成真实订单。
  */
 
 import Storage from "expo-sqlite/kv-store";
@@ -64,11 +64,10 @@ export function exportOrderIntents(intents: OrderIntent[]): string {
     const intendedRange = intent.intendedPriceRange || "未填写";
     const engraving = intent.engraving ? `；刻字：「${intent.engraving}」` : "";
     const note = intent.note ? `；备注：${intent.note}` : "";
-    return `${index + 1}. ${intent.skuName}（${intent.styleName}）× ${intent.quantity}，演示价 ¥${intent.totalPriceCny}；价格感受：${priceFeel}；愿付价位：${intendedRange}${engraving}${note}（${formatIntentTime(intent.createdAt)}）`;
+    return `${index + 1}. ${intent.skuName}（${intent.styleName}）× ${intent.quantity}，¥${intent.totalPriceCny}；价格感受：${priceFeel}；愿付价位：${intendedRange}${engraving}${note}（${formatIntentTime(intent.createdAt)}）`;
   });
   return [
-    "一触如初 · 纪念品订购意向记录",
-    "仅现场演示收集，不构成订单或支付。",
+    "一触如初 · 纪念品订购意向",
     ...lines,
   ].join("\n");
 }

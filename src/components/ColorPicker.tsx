@@ -1,0 +1,436 @@
+import * as React from "react";
+import { StyleSheet, Text, TextInput, View } from "react-native";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
+
+import { colors } from "./ui";
+
+// ---------------------------------------------------------------------------
+// 色空间转换工具
+// ---------------------------------------------------------------------------
+
+type RGB = { r: number; g: number; b: number };
+type HSV = { h: number; s: number; v: number };
+
+/** HSV → RGB（h: 0‑360, s: 0‑1, v: 0‑1）。 */
+export function hsvToRgb({ h, s, v }: HSV): RGB {
+  "worklet";
+  const c = v * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const m = v - c;
+  let rp = 0;
+  let gp = 0;
+  let bp = 0;
+  if (hp < 1) {
+    rp = c;
+    gp = x;
+  } else if (hp < 2) {
+    rp = x;
+    gp = c;
+  } else if (hp < 3) {
+    gp = c;
+    bp = x;
+  } else if (hp < 4) {
+    gp = x;
+    bp = c;
+  } else if (hp < 5) {
+    rp = x;
+    bp = c;
+  } else {
+    rp = c;
+    bp = x;
+  }
+  return {
+    r: Math.round((rp + m) * 255),
+    g: Math.round((gp + m) * 255),
+    b: Math.round((bp + m) * 255),
+  };
+}
+
+/** RGB → HSV。 */
+export function rgbToHsv({ r, g, b }: RGB): HSV {
+  "worklet";
+  const rp = r / 255;
+  const gp = g / 255;
+  const bp = b / 255;
+  const cmax = Math.max(rp, gp, bp);
+  const cmin = Math.min(rp, gp, bp);
+  const delta = cmax - cmin;
+  let h = 0;
+  if (delta !== 0) {
+    if (cmax === rp) {
+      h = 60 * (((gp - bp) / delta) % 6);
+    } else if (cmax === gp) {
+      h = 60 * ((bp - rp) / delta + 2);
+    } else {
+      h = 60 * ((rp - gp) / delta + 4);
+    }
+  }
+  if (h < 0) h += 360;
+  const s = cmax === 0 ? 0 : delta / cmax;
+  const v = cmax;
+  return { h, s, v };
+}
+
+/** 六位 HEX → RGB。 */
+export function hexToRgb(hex: string): RGB {
+  "worklet";
+  const clean = hex.replace(/^#/, "");
+  const full = clean.length === 3 ? clean.replace(/(.)/g, "$1$1") : clean;
+  const n = parseInt(full, 16);
+  return {
+    r: (n >> 16) & 0xff,
+    g: (n >> 8) & 0xff,
+    b: n & 0xff,
+  };
+}
+
+/** RGB → 六位 HEX。 */
+export function rgbToHex({ r, g, b }: RGB): string {
+  "worklet";
+  const clamp = (c: number) => Math.max(0, Math.min(255, Math.round(c)));
+  return (
+    "#" +
+    [clamp(r), clamp(g), clamp(b)]
+      .map((c) => c.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+export function hsvToHex(hsv: HSV): string {
+  "worklet";
+  return rgbToHex(hsvToRgb(hsv));
+}
+
+// ---------------------------------------------------------------------------
+// 色盘组件
+// ---------------------------------------------------------------------------
+
+type ColorPickerProps = {
+  /** 当前 Hex 颜色值 */
+  value: string;
+  /** 颜色变更回调 */
+  onChange: (hex: string) => void;
+};
+
+const SV_SIZE = 200;
+const HUE_BAR_WIDTH = 280;
+const HUE_BAR_HEIGHT = 22;
+const THUMB = 26;
+const RING = 3;
+
+/**
+ * 苹果风格 HSV 色盘。
+ *
+ * 提供饱和度‑明度方块 + 色相条 + RGB 数值输入 + 十六进制输入 +
+ * 大块颜色预览。所有转换在 UI 线程执行，无桥接延迟。
+ */
+export function ColorPicker({ value, onChange }: ColorPickerProps) {
+  const currentRgb = hexToRgb(value);
+  const currentHsv = rgbToHsv(currentRgb);
+
+  const hue = useSharedValue(currentHsv.h);
+  const saturation = useSharedValue(currentHsv.s);
+  const brightness = useSharedValue(currentHsv.v);
+
+  // 响应外部 value 变化（例如点击预设色块后）
+  React.useEffect(() => {
+    const next = rgbToHsv(hexToRgb(value));
+    hue.value = next.h;
+    saturation.value = next.s;
+    brightness.value = next.v;
+  }, [value, hue, saturation, brightness]);
+
+  // 布局引用 —— 在 UI 线程测量后写入
+  const svLayout = useSharedValue({ x: 0, y: 0, w: SV_SIZE, h: SV_SIZE });
+  const hueLayout = useSharedValue({ x: 0, w: HUE_BAR_WIDTH });
+
+  const emitChange = (h: number, s: number, v: number) => {
+    onChange(hsvToHex({ h, s, v }));
+  };
+
+  // ---- SV 方块手势 ----
+  const svPan = Gesture.Pan()
+    .onBegin((e) => {
+      const layout = svLayout.value;
+      const sx = Math.max(0, Math.min(1, e.x / layout.w));
+      const sy = Math.max(0, Math.min(1, 1 - e.y / layout.h));
+      saturation.value = sx;
+      brightness.value = sy;
+      runOnJS(emitChange)(hue.value, sx, sy);
+    })
+    .onChange((e) => {
+      const layout = svLayout.value;
+      const sx = Math.max(0, Math.min(1, e.x / layout.w));
+      const sy = Math.max(0, Math.min(1, 1 - e.y / layout.h));
+      saturation.value = sx;
+      brightness.value = sy;
+      runOnJS(emitChange)(hue.value, sx, sy);
+    });
+
+  // ---- Hue 条手势 ----
+  const huePan = Gesture.Pan()
+    .onBegin((e) => {
+      const layout = hueLayout.value;
+      const hx = Math.max(0, Math.min(360, (e.x / layout.w) * 360));
+      hue.value = hx;
+      runOnJS(emitChange)(hx, saturation.value, brightness.value);
+    })
+    .onChange((e) => {
+      const layout = hueLayout.value;
+      const hx = Math.max(0, Math.min(360, (e.x / layout.w) * 360));
+      hue.value = hx;
+      runOnJS(emitChange)(hx, saturation.value, brightness.value);
+    });
+
+  // ---- 动画样式（UI 线程） ----
+  const svThumbStyle = useAnimatedStyle(() => {
+    const layout = svLayout.value;
+    return {
+      left: saturation.value * layout.w - THUMB / 2,
+      top: (1 - brightness.value) * layout.h - THUMB / 2,
+      backgroundColor: hsvToHex({ h: hue.value, s: saturation.value, v: brightness.value }),
+    };
+  });
+
+  const hueThumbStyle = useAnimatedStyle(() => {
+    const layout = hueLayout.value;
+    return {
+      left: (hue.value / 360) * layout.w - THUMB / 2,
+      backgroundColor: hsvToHex({ h: hue.value, s: 1, v: 1 }),
+    };
+  });
+
+  // ---- RGB / Hex 输入 ----
+  const emitRgb = (ch: keyof RGB, text: string) => {
+    const num = Math.max(0, Math.min(255, parseInt(text, 10) || 0));
+    const next = { ...hexToRgb(value), [ch]: num };
+    onChange(rgbToHex(next));
+  };
+
+  const emitHex = (v: string) => {
+    const clean = v.startsWith("#") ? v : `#${v}`;
+    // 允许中间态输入（如 "#FF"）
+    onChange(clean.length <= 7 ? clean : value);
+  };
+
+  const hueColor = hsvToHex({ h: currentHsv.h, s: 1, v: 1 });
+
+  return (
+    <View style={styles.container}>
+      {/* ── 饱和度·明度方块 ── */}
+      <View style={styles.svContainer}>
+        <View
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            svLayout.value = { x: 0, y: 0, w: width, h: height };
+          }}
+        >
+          <Svg height={SV_SIZE} width={SV_SIZE}>
+            <Defs>
+              {/* 水平：白 → 透明（控制饱和度） */}
+              <LinearGradient id="sv-white" x1="0" x2="1" y1="0" y2="0">
+                <Stop offset="0" stopColor="#FFFFFF" stopOpacity={1} />
+                <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
+              </LinearGradient>
+              {/* 垂直：透明 → 黑（控制明度） */}
+              <LinearGradient id="sv-black" x1="0" x2="0" y1="0" y2="1">
+                <Stop offset="0" stopColor="#000000" stopOpacity={0} />
+                <Stop offset="1" stopColor="#000000" stopOpacity={1} />
+              </LinearGradient>
+            </Defs>
+            <Rect fill={hueColor} height={SV_SIZE} width={SV_SIZE} rx={12} />
+            <Rect fill="url(#sv-white)" height={SV_SIZE} width={SV_SIZE} rx={12} />
+            <Rect fill="url(#sv-black)" height={SV_SIZE} width={SV_SIZE} rx={12} />
+          </Svg>
+        </View>
+        <GestureDetector gesture={svPan}>
+          <View style={styles.gestureOverlay} />
+        </GestureDetector>
+        <Animated.View pointerEvents="none" style={[styles.thumb, svThumbStyle]} />
+      </View>
+
+      {/* ── 色相条 ── */}
+      <View style={styles.hueContainer}>
+        <View
+          onLayout={(e) => {
+            const { width } = e.nativeEvent.layout;
+            hueLayout.value = { x: 0, w: width };
+          }}
+        >
+          <Svg height={HUE_BAR_HEIGHT} width={HUE_BAR_WIDTH}>
+            <Defs>
+              <LinearGradient id="hue-grad" x1="0" x2="1" y1="0" y2="0">
+                <Stop offset="0%" stopColor="#FF0000" />
+                <Stop offset="17%" stopColor="#FFFF00" />
+                <Stop offset="33%" stopColor="#00FF00" />
+                <Stop offset="50%" stopColor="#00FFFF" />
+                <Stop offset="67%" stopColor="#0000FF" />
+                <Stop offset="83%" stopColor="#FF00FF" />
+                <Stop offset="100%" stopColor="#FF0000" />
+              </LinearGradient>
+            </Defs>
+            <Rect
+              fill="url(#hue-grad)"
+              height={HUE_BAR_HEIGHT}
+              rx={HUE_BAR_HEIGHT / 2}
+              width={HUE_BAR_WIDTH}
+            />
+          </Svg>
+        </View>
+        <GestureDetector gesture={huePan}>
+          <View style={styles.gestureOverlay} />
+        </GestureDetector>
+        <Animated.View pointerEvents="none" style={[styles.thumb, styles.hueThumb, hueThumbStyle]} />
+      </View>
+
+      {/* ── RGB 输入 ── */}
+      <View style={styles.rgbRow}>
+        {(["r", "g", "b"] as const).map((ch) => (
+          <View key={ch} style={styles.rgbCell}>
+            <Text style={styles.rgbLabel}>{ch.toUpperCase()}</Text>
+            <TextInput
+              accessibilityLabel={`颜色分量 ${ch.toUpperCase()}`}
+              inputMode="numeric"
+              keyboardType="number-pad"
+              maxLength={3}
+              onChangeText={(t) => emitRgb(ch, t)}
+              selectTextOnFocus
+              style={styles.rgbField}
+              value={String(currentRgb[ch])}
+            />
+          </View>
+        ))}
+      </View>
+
+      {/* ── Hex + 预览 ── */}
+      <View style={styles.hexRow}>
+        <View style={[styles.previewBlock, { backgroundColor: value }]} />
+        <TextInput
+          accessibilityLabel="十六进制颜色值"
+          autoCapitalize="none"
+          maxLength={7}
+          onChangeText={emitHex}
+          selectTextOnFocus
+          style={styles.hexField}
+          value={value.toUpperCase()}
+        />
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Style
+// ---------------------------------------------------------------------------
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+    gap: 14,
+    width: "100%",
+  },
+
+  // SV square
+  svContainer: {
+    borderRadius: 12,
+    height: SV_SIZE,
+    overflow: "hidden",
+    position: "relative",
+    width: SV_SIZE,
+  },
+
+  // Hue bar
+  hueContainer: {
+    borderRadius: HUE_BAR_HEIGHT / 2,
+    height: HUE_BAR_HEIGHT,
+    overflow: "visible",
+    position: "relative",
+    width: HUE_BAR_WIDTH,
+  },
+
+  // Shared thumb
+  thumb: {
+    borderColor: "#FFFFFF",
+    borderRadius: THUMB / 2,
+    borderWidth: RING,
+    elevation: 5,
+    height: THUMB,
+    position: "absolute",
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.28,
+    shadowRadius: 4,
+    width: THUMB,
+  },
+  hueThumb: {
+    top: -(THUMB - HUE_BAR_HEIGHT) / 2,
+  },
+
+  // Transparent gesture overlay
+  gestureOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  // RGB
+  rgbRow: {
+    flexDirection: "row",
+    gap: 8,
+    width: "100%",
+  },
+  rgbCell: {
+    alignItems: "center",
+    flex: 1,
+    gap: 4,
+  },
+  rgbLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  rgbField: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 14,
+    paddingHorizontal: 6,
+    paddingVertical: 7,
+    textAlign: "center",
+    width: "100%",
+  },
+
+  // Hex + preview
+  hexRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  previewBlock: {
+    borderColor: colors.line,
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 44,
+    width: 44,
+  },
+  hexField: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.ink,
+    flex: 1,
+    fontSize: 15,
+    fontVariant: ["tabular-nums"],
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+});

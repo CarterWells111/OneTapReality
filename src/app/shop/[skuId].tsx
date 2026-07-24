@@ -1,409 +1,421 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { AppButton, colors, Section } from "../../components/ui";
+import { AppButton, bodyFont, colors, Section, serifFont, SketchDivider } from "../../components/ui";
+import { getSouvenirImage } from "../../features/assets/souvenir-images";
 import { cityContent } from "../../features/cities/city-content";
-import { demoCatalog } from "../../features/commerce/catalog/catalog";
+import { demoCatalog, type CatalogSku, type SkuKind } from "../../features/commerce/catalog/catalog";
 import { demoQuoteDisclaimer } from "../../features/commerce/catalog/pricing";
-import {
-  createOrderIntentId,
-  saveOrderIntent,
-} from "../../features/commerce/shop/order-intent-store";
+import { isFavoriteSku } from "../../features/commerce/shop/favorites";
+import { listFavoriteSkuIds, toggleFavorite } from "../../features/commerce/shop/favorites-store";
+import { createOrderIntentId, saveOrderIntent } from "../../features/commerce/shop/order-intent-store";
 import {
   computeStyledTotal,
   computeStyledUnitPrice,
   engravingFieldByKind,
   formatCny,
-  getSkuTier,
   intendedPriceRanges,
   maxEngravingLength,
   priceFeelOptions,
   styleOptionsByKind,
-  tierLabels,
   type PriceFeel,
 } from "../../features/commerce/shop/shop-options";
 
-export default function ShopSkuScreen() {
-  const router = useRouter();
-  const { skuId } = useLocalSearchParams<{ skuId: string }>();
-  const sku = demoCatalog.find((item) => item.id === skuId);
+const kindGlyphs: Record<SkuKind, string> = {
+  "city-key": "钥",
+  "album-print": "册",
+  "sticker-pack": "贴",
+  "souvenir-pendant": "花",
+};
 
-  const styleOptions = sku ? styleOptionsByKind[sku.kind] : [];
-  const [styleId, setStyleId] = useState<string | null>(null);
-  const [engraving, setEngraving] = useState("");
-  const [quantity, setQuantity] = useState(1);
-  const [priceFeel, setPriceFeel] = useState<PriceFeel | null>(null);
-  const [intendedRange, setIntendedRange] = useState<string | null>(null);
-  const [note, setNote] = useState("");
-  const [submitState, setSubmitState] = useState<"idle" | "saving" | "done" | "error">("idle");
+const packagingOptions = ["牛皮纸包装", "礼盒包装", "手写纸封"];
+
+export default function ShopSkuDetailScreen() {
+  const router = useRouter();
+  const { skuId } = useLocalSearchParams<{ skuId?: string }>();
+  const sku = demoCatalog.find((candidate) => candidate.id === skuId);
 
   if (!sku) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <View style={styles.plainCard}>
-          <Text selectable style={styles.blockTitle}>没有找到这件纪念品</Text>
-          <Text selectable style={styles.mutedText}>它可能已下架，回商店看看其他的吧。</Text>
-          <AppButton label="返回商店" onPress={() => router.back()} />
-        </View>
-      </ScrollView>
+      <View style={styles.missing}>
+        <Text selectable style={styles.missingTitle}>没有找到这件商品</Text>
+        <AppButton label="回到商店" onPress={() => router.replace("/shop")} />
+      </View>
     );
   }
 
-  const selectedStyle = styleOptions.find((option) => option.id === styleId) ?? styleOptions[0];
-  const unitPrice = computeStyledUnitPrice(sku, selectedStyle);
-  const total = computeStyledTotal(sku, selectedStyle, quantity);
-  const engravingLabel = engravingFieldByKind[sku.kind];
-  const trimmedEngraving = engraving.trim();
-  const city = sku.cityLimited ? cityContent[sku.cityLimited] : null;
-  const canSubmit = submitState !== "saving";
+  return <SkuDetail sku={sku} />;
+}
 
-  const submit = async () => {
-    setSubmitState("saving");
-    try {
-      await saveOrderIntent({
-        id: createOrderIntentId(),
-        skuId: sku.id,
-        skuName: sku.name,
-        styleId: selectedStyle.id,
-        styleName: selectedStyle.name,
-        engraving: engravingLabel ? trimmedEngraving : "",
-        quantity,
-        unitPriceCny: unitPrice,
-        totalPriceCny: total,
-        priceFeel,
-        intendedPriceRange: intendedRange ?? "",
-        note: note.trim(),
-        leadTimeDays: sku.craft.leadTimeDays,
-        createdAt: new Date().toISOString(),
-      });
-      setSubmitState("done");
-    } catch {
-      setSubmitState("error");
-    }
+function SkuDetail({ sku }: { sku: CatalogSku }) {
+  const router = useRouter();
+  const styleOptions = styleOptionsByKind[sku.kind];
+  const engravingLabel = engravingFieldByKind[sku.kind];
+  const [styleId, setStyleId] = useState(styleOptions[0].id);
+  const [packageName, setPackageName] = useState(packagingOptions[0]);
+  const [quantity, setQuantity] = useState(1);
+  const [engraving, setEngraving] = useState("");
+  const [priceFeel, setPriceFeel] = useState<PriceFeel | null>(null);
+  const [intendedPriceRange, setIntendedPriceRange] = useState("");
+  const [note, setNote] = useState("");
+  const [isSaved, setIsSaved] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let isActive = true;
+    void listFavoriteSkuIds().then((ids) => {
+      if (isActive) setFavoriteIds(ids);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const selectedStyle = styleOptions.find((option) => option.id === styleId) ?? styleOptions[0];
+  const visual = useMemo(() => getProductVisual(sku), [sku]);
+  const unitPrice = computeStyledUnitPrice(sku, selectedStyle);
+  const totalPrice = computeStyledTotal(sku, selectedStyle, quantity);
+  const favorited = isFavoriteSku(favoriteIds, sku.id);
+
+  const onSave = async () => {
+    await saveOrderIntent({
+      id: createOrderIntentId(),
+      skuId: sku.id,
+      skuName: sku.name,
+      styleId: selectedStyle.id,
+      styleName: `${selectedStyle.name} · ${packageName}`,
+      engraving: engravingLabel ? engraving.trim() : "",
+      quantity,
+      unitPriceCny: unitPrice,
+      totalPriceCny: totalPrice,
+      priceFeel,
+      intendedPriceRange,
+      note: note.trim(),
+      leadTimeDays: sku.craft.leadTimeDays,
+      createdAt: new Date().toISOString(),
+    });
+    setIsSaved(true);
   };
 
-  if (submitState === "done") {
+  const onToggleFavorite = async () => {
+    setFavoriteIds(await toggleFavorite(sku.id));
+  };
+
+  if (isSaved) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-        <View style={styles.successCard}>
-          <Text selectable style={styles.successMark}>✓</Text>
-          <Text selectable style={styles.successTitle}>订购意向已记录</Text>
-          <Text selectable style={styles.mutedCenter}>
-            {sku.name} · {selectedStyle.name} × {quantity}
-            {engravingLabel && trimmedEngraving ? ` · ${engravingLabel}「${trimmedEngraving}」` : ""}
+      <View style={styles.savedScreen}>
+        <View style={styles.savedCard}>
+          <Text selectable style={styles.savedMark}>✓</Text>
+          <Text selectable style={styles.savedTitle}>已加入购物袋</Text>
+          <Text selectable style={styles.savedCopy}>
+            {sku.name}已经放好了，去看看购物袋吧。
           </Text>
-          <Text selectable style={styles.mutedCenter}>
-            演示合计 {formatCny(total)}
-            {intendedRange ? ` · 愿付价位 ${intendedRange}` : ""}
-          </Text>
-          <Text selectable style={styles.footNote}>
-            仅保存在这台设备上，用于现场收集价格意向，不是真实订单。
-          </Text>
-          <AppButton label="查看订单记录" onPress={() => router.push("/shop/orders")} />
+          <AppButton label="查看购物袋" onPress={() => router.replace("/shop/orders")} />
           <AppButton label="继续逛商店" tone="secondary" onPress={() => router.back()} />
         </View>
-      </ScrollView>
+      </View>
     );
   }
 
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.hero}>
-        <View style={styles.tagRow}>
-          <Text selectable style={styles.tag}>{tierLabels[getSkuTier(sku)]}</Text>
-          {city ? <Text selectable style={styles.tagWarm}>{city.name}限定</Text> : null}
-        </View>
-        <Text selectable style={styles.title}>{sku.name}</Text>
-        <Text selectable style={styles.priceLine}>
-          单件 {formatCny(unitPrice)} · 演示价 · 约 {sku.craft.leadTimeDays} 天制作
-        </Text>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+      <View style={styles.topBar}>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.iconButton}>
+          <Text style={styles.iconText}>←</Text>
+        </Pressable>
+        <Text selectable style={styles.pageTitle}>商品详情</Text>
+        <Pressable accessibilityRole="button" onPress={() => router.push("/shop/orders")} style={styles.iconButton}>
+          <Text style={styles.iconText}>袋</Text>
+        </Pressable>
       </View>
 
-      <Section title="材料与工艺 · 可追溯">
-        <View style={styles.plainCard}>
-          {sku.materials.map((material) => (
-            <Text key={material.name} selectable style={styles.traceLine}>
-              · {material.name} —— {material.source}
-            </Text>
-          ))}
-          <Text selectable style={styles.traceLine}>
-            · 工艺：{sku.craft.process}（{sku.craft.workshop}）
-          </Text>
-        </View>
-      </Section>
+      <View style={styles.gallery}>
+        <ProductVisual sku={sku} visual={visual} />
+      </View>
 
-      <Section title="选择订购样式">
-        <View style={styles.chipRow}>
+      <View style={styles.nameRow}>
+        <View style={styles.nameBlock}>
+          <Text selectable style={styles.productName}>{sku.name}</Text>
+          <Text selectable style={styles.price}>{formatCny(unitPrice)}</Text>
+        </View>
+        <Pressable
+          accessibilityLabel={favorited ? "取消收藏" : "收藏商品"}
+          accessibilityRole="button"
+          onPress={() => void onToggleFavorite()}
+          style={styles.roundAction}
+        >
+          <Text style={[styles.roundActionText, favorited && styles.activeActionText]}>
+            {favorited ? "♥" : "♡"}
+          </Text>
+        </Pressable>
+        <View style={styles.roundAction}>
+          <Text style={styles.roundActionText}>↥</Text>
+        </View>
+      </View>
+
+      <Text selectable style={styles.description}>
+        采集城市里小小的形状，用本地材料和手工工艺重新压进纸页。它适合被夹在旅行册里，也适合在某个傍晚拿出来重新想起那一天。
+      </Text>
+
+      <SketchDivider />
+
+      <Section title="款式选择">
+        <View style={styles.chipWrap}>
           {styleOptions.map((option) => (
             <Chip
               key={option.id}
               label={option.name}
-              note={`${option.note}${option.deltaCny > 0 ? ` · +¥${option.deltaCny}` : ""}`}
-              selected={option.id === selectedStyle.id}
+              selected={option.id === styleId}
               onPress={() => setStyleId(option.id)}
+            />
+          ))}
+        </View>
+        <Text selectable style={styles.optionNote}>{selectedStyle.note}</Text>
+      </Section>
+
+      <Section title="包装选择">
+        <View style={styles.chipWrap}>
+          {packagingOptions.map((option) => (
+            <Chip
+              key={option}
+              label={option}
+              selected={option === packageName}
+              onPress={() => setPackageName(option)}
             />
           ))}
         </View>
       </Section>
 
       {engravingLabel ? (
-        <Section title={`${engravingLabel} · 选填`}>
+        <Section title={engravingLabel}>
           <TextInput
-            accessibilityLabel={engravingLabel}
             maxLength={maxEngravingLength}
             onChangeText={setEngraving}
-            placeholder="例如：杭州 · 如初"
+            placeholder="写下想刻的话"
             placeholderTextColor={colors.muted}
             style={styles.input}
             value={engraving}
           />
-          <Text selectable style={styles.counter}>
-            {engraving.length}/{maxEngravingLength}
-          </Text>
-          {trimmedEngraving ? (
-            <View style={styles.engravePreview}>
-              <Text selectable style={styles.engraveText}>「{trimmedEngraving}」</Text>
-              <Text selectable style={styles.mutedSmall}>将以激光工艺呈现在{engravingLabel === "背面刻字" ? "钥匙背面" : "封面"}</Text>
-            </View>
-          ) : null}
         </Section>
       ) : null}
 
       <Section title="数量">
-        <View style={styles.stepperRow}>
-          <StepperButton disabled={quantity <= 1} label="−" onPress={() => setQuantity((q) => Math.max(1, q - 1))} />
-          <Text selectable style={styles.stepperValue}>{quantity}</Text>
-          <StepperButton disabled={quantity >= 9} label="+" onPress={() => setQuantity((q) => Math.min(9, q + 1))} />
+        <View style={styles.stepper}>
+          <Pressable accessibilityRole="button" onPress={() => setQuantity(Math.max(1, quantity - 1))} style={styles.stepButton}>
+            <Text style={styles.stepText}>−</Text>
+          </Pressable>
+          <Text selectable style={styles.quantity}>{quantity}</Text>
+          <Pressable accessibilityRole="button" onPress={() => setQuantity(quantity + 1)} style={styles.stepButton}>
+            <Text style={styles.stepText}>+</Text>
+          </Pressable>
         </View>
       </Section>
 
-      <View style={styles.totalCard}>
-        <Text selectable style={styles.totalLine}>合计 {formatCny(total)}</Text>
-        <Text selectable style={styles.mutedSmall}>
-          {selectedStyle.name} · 单件 {formatCny(unitPrice)} × {quantity} 件
-        </Text>
-        <Text selectable style={styles.mutedSmall}>{demoQuoteDisclaimer}</Text>
-      </View>
-
-      <Section title="价格意向 · 帮我们定价（选填）">
-        <Text selectable style={styles.mutedText}>这个价格你觉得怎么样？</Text>
-        <View style={styles.chipRow}>
+      <Section title="价格感受">
+        <View style={styles.chipWrap}>
           {priceFeelOptions.map((option) => (
             <Chip
               key={option.id}
               label={option.label}
-              selected={priceFeel === option.id}
+              selected={option.id === priceFeel}
               onPress={() => setPriceFeel(option.id)}
             />
           ))}
         </View>
-        <Text selectable style={styles.mutedText}>你更愿意为它付多少？</Text>
-        <View style={styles.chipRow}>
+        <View style={styles.chipWrap}>
           {intendedPriceRanges.map((range) => (
             <Chip
               key={range}
               label={range}
-              selected={intendedRange === range}
-              onPress={() => setIntendedRange(range)}
+              selected={range === intendedPriceRange}
+              onPress={() => setIntendedPriceRange(range)}
             />
           ))}
         </View>
         <TextInput
-          accessibilityLabel="价格建议"
-          maxLength={60}
+          multiline
           onChangeText={setNote}
-          placeholder="一句话建议（选填）"
+          placeholder="可写下喜欢或犹豫的地方"
           placeholderTextColor={colors.muted}
-          style={styles.input}
+          style={[styles.input, styles.noteInput]}
           value={note}
         />
       </Section>
 
-      {submitState === "error" ? (
-        <Text selectable style={styles.errorText}>没有保存成功，请再试一次。</Text>
-      ) : null}
-      <AppButton
-        disabled={!canSubmit}
-        label={submitState === "saving" ? "正在记录…" : "提交订购意向（演示）"}
-        onPress={submit}
-      />
-      <Text selectable style={styles.footNote}>
-        提交后仅在本机记录订购与价格意向，不会付款、不会产生真实订单。
-      </Text>
+      <View style={styles.totalLine}>
+        <Text selectable style={styles.totalLabel}>合计</Text>
+        <Text selectable style={styles.totalPrice}>{formatCny(totalPrice)}</Text>
+      </View>
+      <AppButton label="加入购物袋" onPress={() => void onSave()} />
+      <Text selectable style={styles.disclaimer}>{demoQuoteDisclaimer}</Text>
+      <Text selectable style={styles.physicalGoods}>所有商品为实体手作纪念品，含配送与门店自取服务。</Text>
     </ScrollView>
   );
 }
 
-function Chip({
-  label,
-  note,
-  selected,
-  onPress,
-}: {
-  label: string;
-  note?: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
+function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        selected && styles.chipSelected,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed]}
     >
-      <Text selectable style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{label}</Text>
-      {note ? (
-        <Text selectable style={[styles.chipNote, selected && styles.chipNoteSelected]}>{note}</Text>
-      ) : null}
+      <Text selectable style={[styles.chipText, selected && styles.chipTextSelected]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
-function StepperButton({
-  label,
-  onPress,
-  disabled,
+function ProductVisual({
+  sku,
+  visual,
+  compact = false,
 }: {
-  label: string;
-  onPress: () => void;
-  disabled: boolean;
+  sku: CatalogSku;
+  visual: ReturnType<typeof getProductVisual>;
+  compact?: boolean;
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.stepperButton,
-        disabled && { opacity: 0.35 },
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text selectable style={styles.stepperButtonText}>{label}</Text>
-    </Pressable>
+    <View style={[styles.visualBox, compact && styles.visualBoxCompact]}>
+      {visual.imageSource ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          resizeMode="contain"
+          source={visual.imageSource}
+          style={styles.visualImage}
+        />
+      ) : (
+        <View style={styles.visualPlaceholder}>
+          <Text selectable style={[styles.visualGlyph, compact && styles.visualGlyphCompact]}>
+            {visual.glyph}
+          </Text>
+          {!compact ? <Text selectable style={styles.visualCaption}>{sku.craft.process}</Text> : null}
+        </View>
+      )}
+    </View>
   );
+}
+
+function getProductVisual(sku: CatalogSku) {
+  const city = sku.cityLimited ? cityContent[sku.cityLimited] : null;
+  return {
+    imageSource: sku.image ? getSouvenirImage(sku.image) : null,
+    glyph: city ? city.name.slice(0, 1) : kindGlyphs[sku.kind],
+  };
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 20, padding: 20, paddingBottom: 40 },
-  hero: { backgroundColor: colors.accentSoft, borderRadius: 20, gap: 8, padding: 18 },
-  tagRow: { flexDirection: "row", gap: 8 },
-  tag: {
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  content: { gap: 20, padding: 20, paddingBottom: 42 },
+  topBar: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  iconButton: { alignItems: "center", height: 38, justifyContent: "center", width: 38 },
+  iconText: { color: colors.ink, fontFamily: serifFont, fontSize: 25 },
+  pageTitle: {
+    borderBottomColor: colors.accent,
+    borderBottomWidth: 2,
+    color: colors.ink,
+    fontFamily: serifFont,
+    fontSize: 22,
+    paddingBottom: 4,
   },
-  tagWarm: {
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    color: colors.warmAccent,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  title: { color: colors.ink, fontSize: 24, fontWeight: "800" },
-  priceLine: { color: colors.muted, fontSize: 14, fontWeight: "600" },
-  plainCard: {
-    backgroundColor: colors.surface,
+  gallery: { alignItems: "center" },
+  visualBox: {
+    alignItems: "center",
+    aspectRatio: 1.32,
+    backgroundColor: colors.paper,
     borderColor: colors.line,
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
-    gap: 8,
-    padding: 14,
+    justifyContent: "center",
+    padding: 12,
+    width: "100%",
   },
-  blockTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
-  traceLine: { color: colors.muted, fontSize: 13.5, lineHeight: 20 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  visualBoxCompact: { aspectRatio: 1.45, padding: 4 },
+  visualImage: { height: "100%", width: "100%" },
+  visualPlaceholder: { alignItems: "center", gap: 8, justifyContent: "center" },
+  visualGlyph: { color: colors.ink, fontFamily: serifFont, fontSize: 82 },
+  visualGlyphCompact: { fontSize: 26 },
+  visualCaption: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
+  nameRow: { alignItems: "flex-start", flexDirection: "row", gap: 12 },
+  nameBlock: { flex: 1, gap: 6 },
+  productName: { color: colors.ink, fontFamily: serifFont, fontSize: 26, lineHeight: 34 },
+  price: { color: colors.accent, fontFamily: serifFont, fontSize: 24 },
+  roundAction: { alignItems: "center", height: 36, justifyContent: "center", width: 36 },
+  roundActionText: { color: colors.ink, fontFamily: serifFont, fontSize: 26 },
+  activeActionText: { color: colors.accent },
+  description: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, lineHeight: 25 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   chip: {
-    backgroundColor: colors.surface,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
-    gap: 2,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 8,
   },
-  chipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipLabel: { color: colors.ink, fontSize: 14, fontWeight: "700" },
-  chipLabelSelected: { color: "#FFFFFF" },
-  chipNote: { color: colors.muted, fontSize: 11.5 },
-  chipNoteSelected: { color: "#E3EAF2" },
+  chipSelected: { borderColor: colors.accent },
+  chipText: { color: colors.ink, fontFamily: bodyFont, fontSize: 14 },
+  chipTextSelected: { color: colors.accent },
+  optionNote: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderColor: colors.ink,
+    borderRadius: 6,
     borderWidth: 1,
     color: colors.ink,
+    fontFamily: bodyFont,
     fontSize: 15,
-    minHeight: 48,
+    minHeight: 46,
     paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  counter: { alignSelf: "flex-end", color: colors.muted, fontSize: 12 },
-  engravePreview: {
+  noteInput: { minHeight: 86, textAlignVertical: "top" },
+  stepper: {
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.warmAccent,
-    borderRadius: 14,
-    borderStyle: "dashed",
+    alignSelf: "flex-start",
+    borderColor: colors.ink,
+    borderRadius: 3,
     borderWidth: 1,
-    gap: 4,
-    padding: 14,
+    flexDirection: "row",
+    height: 36,
   },
-  engraveText: { color: colors.warmAccent, fontSize: 18, fontWeight: "800", letterSpacing: 2 },
-  stepperRow: { alignItems: "center", flexDirection: "row", gap: 14 },
-  stepperButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
+  stepButton: { alignItems: "center", height: 34, justifyContent: "center", width: 48 },
+  stepText: { color: colors.ink, fontFamily: serifFont, fontSize: 24 },
+  quantity: {
     borderColor: colors.line,
-    borderRadius: 22,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    color: colors.ink,
+    fontFamily: bodyFont,
+    fontSize: 17,
+    minWidth: 52,
+    textAlign: "center",
   },
-  stepperButtonText: { color: colors.ink, fontSize: 20, fontWeight: "800" },
-  stepperValue: { color: colors.ink, fontSize: 18, fontWeight: "800", minWidth: 28, textAlign: "center" },
-  totalCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 6,
-    padding: 16,
+  totalLine: {
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 14,
   },
-  totalLine: { color: colors.ink, fontSize: 20, fontWeight: "800" },
-  mutedText: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  mutedSmall: { color: colors.muted, fontSize: 12.5, lineHeight: 18 },
-  mutedCenter: { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" },
-  errorText: { color: colors.danger, fontSize: 14, fontWeight: "700", textAlign: "center" },
-  footNote: { color: colors.muted, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
-  successCard: {
-    alignItems: "stretch",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 12,
-    padding: 22,
+  totalLabel: { color: colors.ink, fontFamily: serifFont, fontSize: 20 },
+  totalPrice: { color: colors.accent, fontFamily: serifFont, fontSize: 24 },
+  disclaimer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
+  physicalGoods: { color: colors.muted, fontFamily: bodyFont, fontSize: 11.5, lineHeight: 16, textAlign: "center" },
+  missing: { flex: 1, gap: 14, justifyContent: "center", padding: 24 },
+  missingTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 22, textAlign: "center" },
+  savedScreen: { flex: 1, justifyContent: "center", padding: 24 },
+  savedCard: {
+    backgroundColor: colors.paper,
+    borderColor: colors.ink,
+    borderRadius: 8,
+    borderWidth: 1.3,
+    gap: 13,
+    padding: 20,
   },
-  successMark: { color: colors.accent, fontSize: 40, fontWeight: "800", textAlign: "center" },
-  successTitle: { color: colors.ink, fontSize: 21, fontWeight: "800", textAlign: "center" },
-  pressed: { opacity: 0.85 },
+  savedMark: { color: colors.accent, fontFamily: serifFont, fontSize: 34, textAlign: "center" },
+  savedTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 25, textAlign: "center" },
+  savedCopy: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, lineHeight: 24, textAlign: "center" },
+  pressed: { opacity: 0.78 },
 });

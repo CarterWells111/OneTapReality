@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useFonts } from "expo-font";
+import * as ImagePicker from "expo-image-picker";
 import {
   Pressable,
   ScrollView,
@@ -8,6 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -17,6 +20,8 @@ import Animated, {
 } from "react-native-reanimated";
 
 import {
+  canvasBackgrounds,
+  canvasFrames,
   canvasStickerCategories,
   canvasStickers,
   getCanvasStickers,
@@ -24,17 +29,25 @@ import {
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
 import { CanvasToolbar } from "./canvas-toolbar";
+import { ElementContextMenu } from "./element-context-menu";
 import {
   addStickerToPage,
   addTextToPage,
+  addFrameToPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
+  setCanvasBackground,
+  setCanvasCoverColor,
+  setCanvasCoverImage,
   updateCanvasElement,
 } from "./editor-pages";
 import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
+import { useUndoHistory } from "./undo-history";
+import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
+import { canvasEditorFontSources } from "../typography/fonts";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
@@ -52,6 +65,7 @@ export function BookCanvasEditor({
   onPagesChange,
   pages,
 }: BookCanvasEditorProps) {
+  useFonts(canvasEditorFontSources);
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
   const pageHeight = pageWidth * 4 / 3;
@@ -61,8 +75,14 @@ export function BookCanvasEditor({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
+  const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
+  const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
+  const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
+    onPagesChange(restoredPages, "structure");
+  });
 
   React.useEffect(() => {
     if (currentIndex >= pages.length) {
@@ -75,19 +95,53 @@ export function BookCanvasEditor({
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
-  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
+  const editingElement = editingElementId
+    ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
+    : undefined;
+  const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
+    if (reason === "structure" || reason === "transform") {
+      pushState(pages);
+    }
     onPagesChange(nextPages, reason);
-  }, [onPagesChange]);
+  }, [onPagesChange, pages, pushState]);
+
+  const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
+    if (!pendingTextId || !currentPage) {
+      return sourcePages;
+    }
+    setPendingTextId(undefined);
+    if (selectedElementId === pendingTextId) {
+      setSelectedElementId(undefined);
+    }
+    return deleteCanvasElement(sourcePages, currentPage.id, pendingTextId);
+  }, [currentPage, pages, pendingTextId, selectedElementId]);
+
+  const discardPendingText = React.useCallback(() => {
+    const nextPages = clearPendingTextFrom();
+    if (nextPages !== pages) {
+      changePages(nextPages, "structure");
+    }
+    return nextPages;
+  }, [changePages, clearPendingTextFrom, pages]);
+
+  const handleElementInteraction = React.useCallback((elementId: string) => {
+    if (pendingTextId === elementId) {
+      setPendingTextId(undefined);
+      return;
+    }
+    discardPendingText();
+  }, [discardPendingText, pendingTextId]);
 
   const commitTurn = React.useCallback((targetIndex: number) => {
+    discardPendingText();
     setSelectedElementId(undefined);
     setCurrentIndex(targetIndex);
     setPendingTurn(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [translateX, turnDir]);
+  }, [discardPendingText, translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
     .enabled(pendingTurn === null)
@@ -165,7 +219,7 @@ export function BookCanvasEditor({
 
   const updateElement = (
     elementId: string,
-    patch: Parameters<typeof updateCanvasElement>[3],
+    patch: { x?: number; y?: number; width?: number; height?: number; rotation?: number; text?: string; color?: string; fontSize?: number; fontStyle?: string },
     reason: BookEditorChangeReason,
   ) => {
     changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);
@@ -173,14 +227,29 @@ export function BookCanvasEditor({
 
   const addSticker = (stickerId = getCanvasStickers(stickerCategory)[0]?.id ?? canvasStickers[0].id) => {
     const nextId = buildCanvasId("sticker");
-    changePages(addStickerToPage(pages, currentPage.id, nextId, stickerId), "structure");
+    changePages(addStickerToPage(clearPendingTextFrom(), currentPage.id, nextId, stickerId), "structure");
+    setSelectedElementId(nextId);
+  };
+
+  const addFrame = (frameId = canvasFrames[0]?.id) => {
+    if (!frameId) {
+      return;
+    }
+    const nextId = buildCanvasId("frame");
+    changePages(addFrameToPage(clearPendingTextFrom(), currentPage.id, nextId, frameId), "structure");
     setSelectedElementId(nextId);
   };
 
   const addText = () => {
     const nextId = buildCanvasId("text");
-    changePages(addTextToPage(pages, currentPage.id, nextId), "structure");
+    changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
+    setPendingTextId(nextId);
+  };
+
+  const pickBackground = (backgroundId: (typeof canvasBackgrounds)[number]["id"] | undefined) => {
+    changePages(setCanvasBackground(clearPendingTextFrom(), currentPage.id, backgroundId), "structure");
+    setSelectedElementId(undefined);
   };
 
   const isRightPage = currentIndex % 2 === 0;
@@ -190,11 +259,36 @@ export function BookCanvasEditor({
   return (
     <View style={styles.editor}>
       <View style={styles.editorTopbar}>
+        <View style={styles.undoRedoButtons}>
+          <Pressable
+            accessibilityLabel="撤销"
+            accessibilityRole="button"
+            disabled={!canUndo}
+            onPress={() => {
+              undo(pages);
+            }}
+            style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canUndo && styles.undoRedoTextDisabled]}>←</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="重做"
+            accessibilityRole="button"
+            disabled={!canRedo}
+            onPress={() => {
+              redo(pages);
+            }}
+            style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canRedo && styles.undoRedoTextDisabled]}>→</Text>
+          </Pressable>
+        </View>
         <Text style={styles.currentPageLabel}>第 {currentIndex + 1} / {pages.length} 页</Text>
         <Pressable
           accessibilityLabel="打开页面管理"
           accessibilityRole="button"
-          onPress={() => setManagerOpen(true)}
+          onPress={() => {
+            discardPendingText();
+            setManagerOpen(true);
+          }}
           style={styles.pageMenuButton}>
           <Text style={styles.pageMenuButtonText}>页面管理</Text>
         </Pressable>
@@ -202,9 +296,10 @@ export function BookCanvasEditor({
 
       {managerOpen ? (
         <PageManagerSheet
-          onChange={(nextPages) => changePages(nextPages, "structure")}
+          onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
           onClose={() => setManagerOpen(false)}
           onJumpToPage={(index) => {
+            discardPendingText();
             setSelectedElementId(undefined);
             setCurrentIndex(index);
           }}
@@ -226,9 +321,24 @@ export function BookCanvasEditor({
               <CanvasPage
                 height={pageHeight}
                 layout={currentPage.layout}
-                onPressBlank={() => setSelectedElementId(undefined)}
-                onSelectElement={setSelectedElementId}
-                onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
+                onInteractElement={handleElementInteraction}
+                onPressBlank={() => {
+                  discardPendingText();
+                  setSelectedElementId(undefined);
+                  setEditingElementId(undefined);
+                }}
+                onSelectElement={(id) => {
+                  // 双击选中
+                  setSelectedElementId(id);
+                  // 如果已选中同一个元素，再次点击进入编辑模式
+                  if (selectedElementId === id && currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                    setEditingElementId(id);
+                  }
+                }}
+                onTransformEnd={(elementId, patch) => {
+                  handleElementInteraction(elementId);
+                  updateElement(elementId, patch, "transform");
+                }}
                 pageSide={isRightPage ? "right" : "left"}
                 selectedElementId={selectedElementId}
                 width={pageWidth}
@@ -271,62 +381,215 @@ export function BookCanvasEditor({
         </GestureDetector>
       </View>
 
-      {selectedText ? (
-        <View style={styles.textEditor}>
-          <Text style={styles.sectionLabel}>文字</Text>
-          <TextInput
-            accessibilityLabel="编辑选中文字"
-            multiline
-            onChangeText={(text) => updateElement(selectedText.id, { text }, "text")}
-            style={styles.textInput}
-            value={selectedText.text}
+      {/* 文本编辑：选中后进入编辑模式时显示上下文菜单 + 文字输入 */}
+      {editingText ? (
+        <>
+          <View style={styles.textEditor}>
+            <Text style={styles.sectionLabel}>编辑文字</Text>
+            <TextInput
+              accessibilityLabel="编辑选中文字"
+              multiline
+              onChangeText={(text) => {
+                if (text !== editingText.text && pendingTextId === editingText.id) {
+                  setPendingTextId(undefined);
+                }
+                updateElement(editingText.id, { text }, "text");
+              }}
+              style={styles.textInput}
+              value={editingText.text}
+            />
+          </View>
+          <ElementContextMenu
+            element={editingText}
+            elementFrame={editingText ? {
+              x: editingText.x * pageWidth,
+              y: editingText.y * pageHeight,
+              width: editingText.width * pageWidth,
+              height: editingText.height * pageHeight,
+            } : null}
+            onChangeColor={(color) => updateElement(editingText?.id ?? "", { color }, "structure")}
+            onChangeFont={(fontStyle) => updateElement(editingText?.id ?? "", { fontStyle }, "structure")}
+            onChangeSize={(fontSize) => updateElement(editingText?.id ?? "", { fontSize }, "structure")}
+            onClose={() => setEditingElementId(undefined)}
+            visible={editingElementId !== undefined && editingText !== undefined}
           />
-        </View>
+        </>
       ) : null}
 
       <CanvasToolbar
         onAddSticker={addSticker}
+        onAddFrame={() => {
+          setAssetTrayMode("frame");
+          addFrame();
+        }}
         onAddText={addText}
+        onPickBackground={() => setAssetTrayMode("background")}
         onChangeLayer={(elementId, direction) => {
-          changePages(changeCanvasElementLayer(pages, currentPage.id, elementId, direction), "structure");
+          changePages(changeCanvasElementLayer(clearPendingTextFrom(), currentPage.id, elementId, direction), "structure");
         }}
         onDelete={(elementId) => {
-          changePages(deleteCanvasElement(pages, currentPage.id, elementId), "structure");
+          changePages(deleteCanvasElement(clearPendingTextFrom(), currentPage.id, elementId), "structure");
           setSelectedElementId(undefined);
         }}
-        onDone={() => setSelectedElementId(undefined)}
+        onDone={() => {
+          discardPendingText();
+          setSelectedElementId(undefined);
+        }}
         onDuplicate={(elementId) => {
           const nextId = buildCanvasId("copy");
-          changePages(duplicateCanvasElement(pages, currentPage.id, elementId, nextId), "structure");
+          changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
-        onUpdateElement={(elementId, patch) => updateElement(elementId, patch, "structure")}
+        onUpdateElement={(elementId, patch) => {
+          const nextPages = clearPendingTextFrom();
+          changePages(updateCanvasElement(nextPages, currentPage.id, elementId, patch), "structure");
+        }}
         selectedElement={selectedElement}
       />
 
       <View style={styles.stickerTray}>
-        <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
-          {canvasStickerCategories.map((category) => (
+        <View style={styles.assetModeRow}>
+          <SmallButton
+            active={assetTrayMode === "sticker"}
+            label="贴纸"
+            onPress={() => {
+              discardPendingText();
+              setAssetTrayMode("sticker");
+            }}
+          />
+          <SmallButton
+            active={assetTrayMode === "frame"}
+            label="相框"
+            onPress={() => {
+              discardPendingText();
+              setAssetTrayMode("frame");
+            }}
+          />
+          <SmallButton
+            active={assetTrayMode === "background"}
+            label="背景"
+            onPress={() => {
+              discardPendingText();
+              setAssetTrayMode("background");
+            }}
+          />
+          {currentPage.kind === "cover" ? (
             <SmallButton
-              active={category.id === stickerCategory}
-              key={category.id}
-              label={category.label}
-              onPress={() => setStickerCategory(category.id)}
+              active={assetTrayMode === "cover"}
+              label="封面"
+              onPress={() => {
+                discardPendingText();
+                setAssetTrayMode("cover");
+              }}
             />
-          ))}
-        </ScrollView>
-        <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
-          {getCanvasStickers(stickerCategory).map((sticker) => (
+          ) : null}
+        </View>
+        {assetTrayMode === "sticker" ? (
+          <>
+            <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
+              {canvasStickerCategories.map((category) => (
+                <SmallButton
+                  active={category.id === stickerCategory}
+                  key={category.id}
+                  label={category.label}
+                  onPress={() => {
+                    discardPendingText();
+                    setStickerCategory(category.id);
+                  }}
+                />
+              ))}
+            </ScrollView>
+            <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
+              {getCanvasStickers(stickerCategory).map((sticker) => (
+                <Pressable
+                  accessibilityLabel={`添加${sticker.label}`}
+                  accessibilityRole="button"
+                  key={sticker.id}
+                  onPress={() => addSticker(sticker.id)}
+                  style={styles.stickerChoice}>
+                  <Image contentFit="contain" source={sticker.source} style={styles.assetThumbnail} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        ) : assetTrayMode === "frame" ? (
+          <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
+            {canvasFrames.map((frame) => (
+              <Pressable
+                accessibilityLabel={`添加${frame.label}`}
+                accessibilityRole="button"
+                key={frame.id}
+                onPress={() => addFrame(frame.id)}
+                style={styles.frameChoice}>
+                <Image contentFit="contain" source={frame.source} style={styles.assetThumbnail} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : assetTrayMode === "cover" ? (
+          <View style={styles.coverTray}>
+            <ColorPicker
+              value={currentPage.coverColor ?? "#EFE2CF"}
+              onChange={(hex) => {
+                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, hex), "structure");
+              }}
+            />
+            <View style={styles.coverImageRow}>
+              <Pressable
+                accessibilityLabel="上传封面背景图"
+                accessibilityRole="button"
+                onPress={async () => {
+                  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (!permission.granted) {
+                    return;
+                  }
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    allowsMultipleSelection: false,
+                    mediaTypes: ["images"],
+                    quality: 0.8,
+                  });
+                  if (!result.canceled && result.assets[0]) {
+                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, result.assets[0].uri), "structure");
+                  }
+                }}
+                style={styles.coverUploadButton}
+              >
+                <Text style={styles.coverUploadText}>{currentPage.coverImage ? "更换背景图" : "上传背景图"}</Text>
+              </Pressable>
+              {currentPage.coverImage ? (
+                <Pressable
+                  accessibilityLabel="移除封面背景图"
+                  accessibilityRole="button"
+                  onPress={() => {
+                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, undefined), "structure");
+                  }}
+                  style={styles.coverRemoveImage}
+                >
+                  <Text style={styles.coverRemoveImageText}>移除背景图</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
             <Pressable
-              accessibilityLabel={`添加${sticker.label}`}
+              accessibilityLabel="移除背景"
               accessibilityRole="button"
-              key={sticker.id}
-              onPress={() => addSticker(sticker.id)}
-              style={styles.stickerChoice}>
-              <Text style={styles.stickerGlyph}>{sticker.glyph}</Text>
+              onPress={() => pickBackground(undefined)}
+              style={styles.backgroundChoice}>
+              <Text style={styles.clearBackgroundText}>无</Text>
             </Pressable>
-          ))}
-        </ScrollView>
+            {canvasBackgrounds.map((background) => (
+              <Pressable
+                accessibilityLabel={`选择${background.label}`}
+                accessibilityRole="button"
+                key={background.id}
+                onPress={() => pickBackground(background.id)}
+                style={styles.backgroundChoice}>
+                <Image contentFit="cover" source={background.source} style={styles.backgroundThumbnail} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
       </View>
     </View>
   );
@@ -375,6 +638,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 20,
+  },
+  undoRedoButtons: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  undoRedoBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  undoRedoBtnDisabled: {
+    opacity: 0.3,
+  },
+  undoRedoText: {
+    color: colors.accent,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  undoRedoTextDisabled: {
+    color: colors.muted,
   },
   currentPageLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
   bookStage: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 6 },
@@ -432,6 +715,7 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   stickerTray: { gap: 8 },
+  assetModeRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20 },
   categoryRow: { gap: 7, paddingHorizontal: 20 },
   stickerChoices: { gap: 8, paddingHorizontal: 20 },
   stickerChoice: {
@@ -444,5 +728,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 48,
   },
-  stickerGlyph: { fontSize: 24 },
+  frameChoice: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 64,
+    justifyContent: "center",
+    width: 64,
+  },
+  backgroundChoice: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 64,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 64,
+  },
+  assetThumbnail: { height: "92%", width: "92%" },
+  backgroundThumbnail: { height: "100%", width: "100%" },
+  clearBackgroundText: { color: colors.ink, fontSize: 18, fontWeight: "800" },
+  coverTray: { gap: 14, paddingHorizontal: 20 },
+  coverImageRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+  coverUploadButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  coverUploadText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700", textAlign: "center" },
+  coverRemoveImage: { alignItems: "center", paddingVertical: 6 },
+  coverRemoveImageText: { color: colors.danger, fontSize: 13, fontWeight: "700" },
 });
