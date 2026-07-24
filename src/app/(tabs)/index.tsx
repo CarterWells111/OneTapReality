@@ -6,6 +6,7 @@ import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, bodyFont, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
+import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
@@ -35,6 +36,18 @@ export default function MemoriesHomeScreen() {
   const exitMultiSelect = () => {
     setMultiSelect(false);
     setSelectedIds([]);
+  };
+
+  const shareSelected = () => {
+    if (selectedIds.length === 0) return;
+    const selected = memories.filter((m) => selectedIds.includes(m.id));
+    if (selected.length === 0) return;
+    // 取第一个选中的记忆做导出
+    const memory = selected[0];
+    showShareActionSheet({
+      pages: memory.pages,
+      title: memory.title,
+    });
   };
 
   const confirmDeleteSelected = () => {
@@ -108,6 +121,15 @@ export default function MemoriesHomeScreen() {
                   </Text>
                 </Pressable>
                 <Text style={styles.selectionCount}>已选 {selectedIds.length}</Text>
+                <Pressable
+                  accessibilityLabel="分享所选"
+                  accessibilityRole="button"
+                  disabled={selectedIds.length === 0}
+                  onPress={shareSelected}
+                  style={[styles.selectionAction, selectedIds.length === 0 && styles.disabledAction]}
+                >
+                  <Text style={[styles.selectionShareText, selectedIds.length === 0 && styles.disabledText]}>分享</Text>
+                </Pressable>
                 <Pressable
                   accessibilityLabel="删除所选"
                   accessibilityRole="button"
@@ -205,6 +227,7 @@ const styles = StyleSheet.create({
   selectionAction: { paddingHorizontal: 8, paddingVertical: 4 },
   selectionActionText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
   selectionDangerText: { color: colors.danger, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
+  selectionShareText: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
   selectionCancelText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   disabledAction: { opacity: 0.4 },
   disabledText: { opacity: 0.4 },
