@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../components/ui";
+import { PageCaptureProvider } from "../features/export/page-capture-provider";
 import { MemoriesProvider } from "../features/memories/memories-provider";
 import { ProfileProvider } from "../features/profile/profile-provider";
 import { appFontSources } from "../features/typography/fonts";
@@ -25,6 +26,7 @@ export default function RootLayout() {
         <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
           <ProfileProvider>
             <MemoriesProvider>
+              <PageCaptureProvider>
               <StatusBar style="dark" />
               <Stack
                 screenOptions={{
@@ -57,6 +59,7 @@ export default function RootLayout() {
               <Stack.Screen name="backend/index" options={{ title: "后端状态" }} />
               <Stack.Screen name="privacy/index" options={{ title: "数据与隐私" }} />
               </Stack>
+            </PageCaptureProvider>
             </MemoriesProvider>
           </ProfileProvider>
         </SQLiteProvider>

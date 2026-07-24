@@ -7,6 +7,7 @@ import {
   type ExportFormat,
   exportAsTralbumFormat,
 } from "./export-service";
+import { capturePagesAsImages } from "./page-capture-provider";
 import type { StoryPage } from "../../types/memory";
 
 type ShareTarget = {
@@ -17,7 +18,8 @@ type ShareTarget = {
 /**
  * 导出/分享 ActionSheet。
  *
- * 把导出选项（PDF/.tralbum）对接到底层的 expo 能力。
+ * PDF 导出通过逐页渲染截图 → data-URI → HTML → expo-print 实现，
+ * 保证边框、贴纸、背景和自定义字体 100% 还原。
  */
 
 const EXPORT_OPTIONS: { label: string; format: ExportFormat }[] = [
@@ -60,18 +62,42 @@ async function handleExport(format: ExportFormat, pages: StoryPage[], title: str
 }
 
 /**
- * 将每页内容渲染为 HTML div，再用 expo-print 合并为 PDF。
+ * PDF 导出策略：截图优先 + HTML 回退。
  *
- * 每页的 HTML 结构按优先级包含：
- *   1. layout.coverImage → 封面背景图
- *   2. layout 中的 image 元素 → <img> 标签
- *   3. layout.coverColor / backgroundId → 背景色
- *   4. headline + body → 文字内容
+ * 页面渲染逻辑：
+ *   - 有 layout → 用 CanvasPage 组件渲染并 captureRef 截图（保留边框/贴纸/背景/字体）
+ *   - 无 layout → 回退到纯 HTML 渲染（旧版纯文字页，如示例记忆）
  *
- * 纯文字页（无 layout 时）：直接渲染 headline + body。
+ * 尺寸选择：
+ *   阅读器和编辑器使用 360×480（3:4），取 3x scale → 1080×1440 输出。
+ *   expo-print 默认 72 PPI，按 A4 宽度 210mm (8.27in) ≈ 595pt，
+ *   嵌入 1080px 图片可按 100% 宽填满页面。
  */
+const PAGE_WIDTH = 360;
+const PAGE_HEIGHT = 480;
+
 async function exportPdf(pages: StoryPage[], title: string) {
-  const pageHtmls = pages.map(pageToHtml).filter(Boolean);
+  // 1. 逐页截图（有 layout 的页由 CanvasPage 渲染，无 layout 的返回 null）
+  let captured: (string | null)[] = [];
+  try {
+    captured = await capturePagesAsImages(pages, PAGE_WIDTH, PAGE_HEIGHT);
+  } catch (err) {
+    console.warn("[PDF] 截图流程失败，回退到纯 HTML 导出:", err);
+    // 截图失败 → 继续用纯 HTML 方案（全部 fallback）
+  }
+
+  // 2. 拼接 HTML：有截图的用截图，没截图的用 HTML
+  const pageHtmls = pages.map((page, i) => {
+    const dataUri = captured[i];
+    if (dataUri) {
+      // 截图成功 → 嵌入一页完整截图
+      return `<div class="snap-page">
+        <img class="snap-img" src="${dataUri}" alt="第 ${i + 1} 页" />
+      </div>`;
+    }
+    // 无截图 → 回退到 HTML 布局渲染
+    return pageToHtml(page);
+  }).filter(Boolean);
 
   if (pageHtmls.length === 0) {
     Alert.alert("无法导出", "当前旅行册没有可导出的内容。");
@@ -86,6 +112,18 @@ async function exportPdf(pages: StoryPage[], title: string) {
     @page { margin: 0; size: A4 portrait; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+    .snap-page {
+      page-break-after: always;
+      width: 100%;
+      position: relative;
+    }
+    .snap-page:last-child { page-break-after: auto; }
+    .snap-img {
+      width: 100%;
+      display: block;
+      object-fit: contain;
+    }
+    /* ── 回退样式（无 layout 的纯文字页） ── */
     .page {
       page-break-after: always;
       width: 100%;
@@ -163,21 +201,19 @@ async function exportPdf(pages: StoryPage[], title: string) {
   }
 }
 
-/** 将单页 StoryPage 转换为 HTML div。 */
+/** 将单页 StoryPage 转换为 HTML div（回退方案，用于无 layout 的页面）。 */
 function pageToHtml(page: StoryPage): string {
   const layout = page.layout;
   const isCover = page.kind === "cover";
 
-  // ---- 有 layout 的页面（画布编辑页） ----
+  // ---- 有 layout 的页面（画布编辑页）—— HTML 回退 ----
   if (layout) {
     const bgColor = layout.coverColor ?? "#EFE2CF";
     const bgImage = layout.coverImage;
 
-    // 收集 image 元素和 text 元素的绝对定位样式
     const images = layout.elements
       .filter((el) => el.type === "image" && el.uri)
       .map((el) => {
-        // 使用百分比定位（相对于父容器宽高）
         return `<img class="element-img" src="${escapeHtml(el.uri)}" style="left:${(el.x * 100).toFixed(1)}%;top:${(el.y * 100).toFixed(1)}%;width:${(el.width * 100).toFixed(1)}%;height:${(el.height * 100).toFixed(1)}%;" />`;
       })
       .join("\n");
