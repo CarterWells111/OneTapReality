@@ -1,13 +1,12 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { canvasFonts, canvasStickers } from "./canvas-assets";
 import { bodyFont } from "../../components/ui";
 import type { CanvasElement, CanvasTextElement } from "../../types/memory";
 
 type CanvasToolbarProps = {
   selectedElement?: CanvasElement;
   onAddText: () => void;
-  onAddSticker: (stickerId?: (typeof canvasStickers)[number]["id"]) => void;
+  onAddSticker: (stickerId?: string) => void;
   onAddFrame: () => void;
   onPickBackground: () => void;
   onUpdateElement: (id: string, patch: Partial<CanvasTextElement>) => void;

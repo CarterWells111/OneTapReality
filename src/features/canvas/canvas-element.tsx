@@ -5,7 +5,7 @@ import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
-import { SelectionHandles, type HandleDragCallback, type HandleDragEndCallback } from "./selection-handles";
+import { SelectionHandles } from "./selection-handles";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {

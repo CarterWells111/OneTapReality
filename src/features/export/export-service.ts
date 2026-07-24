@@ -1,10 +1,15 @@
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
-import * as MediaLibrary from "expo-media-library";
 import type { StoryPage } from "../../types/memory";
 
 /**
  * 导出服务：将手账页面导出为图片、PDF 或自定义 .tralbum 格式。
+ *
+ * PDF/分享/相册功能需要安装对应的 Expo 可选包：
+ * - expo-print
+ * - expo-sharing
+ * - expo-file-system
+ * - expo-media-library
+ *
+ * 如未安装，调用对应函数时会抛出友好错误。
  */
 
 export type ExportFormat = "png" | "pdf" | "tralbum";
@@ -17,20 +22,18 @@ export type PageExportResult = {
 
 /**
  * 将页面渲染为 PNG 图片（需要配合 ViewShot 或 Canvas 截图使用）。
- * 这里提供接口框架，实际截图由调用方通过 ref 获取。
  */
 export async function capturePageAsPng(
   _page: StoryPage,
   _pageIndex: number,
 ): Promise<PageExportResult> {
-  // 实际截图需要 ViewShot ref 或 Canvas API
-  // 这里提供框架供后续集成
   throw new Error("截图功能需要配合 ViewShot 组件使用");
 }
 
 /**
  * 将多张 PNG 图片合并为一个 PDF 文件。
  * 使用 expo-print 的 HTML → PDF 能力。
+ * 需要安装：expo-print, expo-file-system
  */
 export async function mergeImagesToPdf(
   imageUris: string[],
@@ -56,51 +59,61 @@ export async function mergeImagesToPdf(
 <body>${imagesHtml}</body>
 </html>`;
 
-  // expo-print 需要原生模块，在 Expo Go 中可用
-  const { printToFileAsync } = await import("expo-print");
-  const result = await printToFileAsync({
-    html,
-    base64: false,
-  });
+  try {
+    const expoPrint = require("expo-print");
+    const result = await expoPrint.printToFileAsync({ html, base64: false });
 
-  if (outputPath) {
-    await FileSystem.moveAsync({
-      from: result.uri,
-      to: outputPath,
-    });
-    return outputPath;
+    if (outputPath) {
+      const expoFs = require("expo-file-system");
+      await expoFs.moveAsync({ from: result.uri, to: outputPath });
+      return outputPath;
+    }
+
+    return result.uri;
+  } catch {
+    throw new Error("PDF 导出需要安装 expo-print 和 expo-file-system 包");
   }
-
-  return result.uri;
 }
 
 /**
- * 分享文件。
+ * 分享文件。需要安装 expo-sharing。
  */
 export async function shareFile(uri: string, mimeType?: string) {
-  const isAvailable = await Sharing.isAvailableAsync();
-  if (!isAvailable) {
-    throw new Error("当前设备不支持分享");
+  try {
+    const expoSharing = require("expo-sharing");
+    const isAvailable = await expoSharing.isAvailableAsync();
+    if (!isAvailable) {
+      throw new Error("当前设备不支持分享");
+    }
+    await expoSharing.shareAsync(uri, {
+      mimeType: mimeType ?? "application/octet-stream",
+      dialogTitle: "分享旅行手账",
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "当前设备不支持分享") throw err;
+    throw new Error("分享功能需要安装 expo-sharing 包");
   }
-  await Sharing.shareAsync(uri, {
-    mimeType: mimeType ?? "application/octet-stream",
-    dialogTitle: "分享旅行手账",
-  });
 }
 
 /**
- * 保存图片到相册。
+ * 保存图片到相册。需要安装 expo-media-library。
  */
 export async function saveImageToGallery(uri: string): Promise<void> {
-  const { status } = await MediaLibrary.requestPermissionsAsync();
-  if (status !== "granted") {
-    throw new Error("需要相册权限才能保存图片");
+  try {
+    const expoMedia = require("expo-media-library");
+    const { status } = await expoMedia.requestPermissionsAsync();
+    if (status !== "granted") {
+      throw new Error("需要相册权限才能保存图片");
+    }
+    await expoMedia.saveToLibraryAsync(uri);
+  } catch (err) {
+    if (err instanceof Error && err.message === "需要相册权限才能保存图片") throw err;
+    throw new Error("保存到相册需要安装 expo-media-library 包");
   }
-  await MediaLibrary.saveToLibraryAsync(uri);
 }
 
 /**
- * 导出为 .tralbum 自定义格式（JSON + base64 素材）。
+ * 导出为 .tralbum 自定义格式（纯 JSON，无外部依赖，完全离线可用）。
  */
 export function exportAsTralbumFormat(
   pages: StoryPage[],
@@ -117,8 +130,6 @@ export function exportAsTralbumFormat(
       headline: page.headline,
       body: page.body,
       layout: page.layout,
-      // 注意：photoUri 是本地路径，分享给他人后不可用
-      // 实际使用时需要转为 base64 或使用共享存储
     })),
   };
 
@@ -126,7 +137,7 @@ export function exportAsTralbumFormat(
 }
 
 /**
- * 解析 .tralbum 格式。
+ * 解析 .tralbum 格式（纯 JSON，无外部依赖）。
  */
 export function parseTralbumFormat(json: string): {
   version: string;

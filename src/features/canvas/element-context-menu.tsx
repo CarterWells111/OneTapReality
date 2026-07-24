@@ -1,6 +1,5 @@
 import * as React from "react";
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,11 +7,10 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { canvasFonts } from "./canvas-assets";
 import { ColorPicker } from "../../components/ColorPicker";
-import { colors } from "../../components/ui";
 import type { CanvasTextElement } from "../../types/memory";
 
 type ElementContextMenuProps = {
@@ -57,7 +55,7 @@ export function ElementContextMenu({
   onChangeColor,
   onClose,
 }: ElementContextMenuProps) {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const [mode, setMode] = React.useState<MenuMode>("main");
 
   // 切换模式时重置

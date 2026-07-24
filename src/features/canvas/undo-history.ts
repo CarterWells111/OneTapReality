@@ -17,54 +17,48 @@ type UndoHistoryState = {
 };
 
 export function useUndoHistory(onRestore: (pages: StoryPage[]) => void) {
-  const [state, setState] = React.useState<UndoHistoryState>({
+  const stateRef = React.useRef<UndoHistoryState>({
     undoStack: [],
     redoStack: [],
   });
 
-  const canUndo = state.undoStack.length > 0;
-  const canRedo = state.redoStack.length > 0;
+  const canUndo = stateRef.current.undoStack.length > 0;
+  const canRedo = stateRef.current.redoStack.length > 0;
 
   /** 在编辑操作前保存当前状态到撤销栈。 */
   const pushState = React.useCallback((pages: StoryPage[]) => {
-    setState((prev) => {
-      const newUndo = [...prev.undoStack, pages];
-      // 限制最大历史记录数
-      if (newUndo.length > MAX_HISTORY) {
-        newUndo.shift();
-      }
-      return {
-        undoStack: newUndo,
-        redoStack: [], // 新编辑操作清除重做栈
-      };
-    });
+    const prev = stateRef.current;
+    const newUndo = [...prev.undoStack, pages];
+    if (newUndo.length > MAX_HISTORY) {
+      newUndo.shift();
+    }
+    stateRef.current = {
+      undoStack: newUndo,
+      redoStack: [], // 新编辑操作清除重做栈
+    };
   }, []);
 
   /** 撤销：回到上一个状态。 */
   const undo = React.useCallback((currentPages: StoryPage[]) => {
-    setState((prev) => {
-      if (prev.undoStack.length === 0) return prev;
-      const newUndo = [...prev.undoStack];
-      const previous = newUndo.pop()!;
-      const newRedo = [...prev.redoStack, currentPages];
-      return { undoStack: newUndo, redoStack: newRedo };
-    });
-    setState((prev) => {
-      // 从 undoStack 顶部取出状态
-      return prev; // 由上面的 setState 处理
-    });
-  }, []);
+    const prev = stateRef.current;
+    if (prev.undoStack.length === 0) return;
+    const newUndo = [...prev.undoStack];
+    const previous = newUndo.pop()!;
+    const newRedo = [...prev.redoStack, currentPages];
+    stateRef.current = { undoStack: newUndo, redoStack: newRedo };
+    onRestore(previous);
+  }, [onRestore]);
 
   /** 重做：前进到下一个状态。 */
   const redo = React.useCallback((currentPages: StoryPage[]) => {
-    setState((prev) => {
-      if (prev.redoStack.length === 0) return prev;
-      const newRedo = [...prev.redoStack];
-      const next = newRedo.pop()!;
-      const newUndo = [...prev.undoStack, currentPages];
-      return { undoStack: newUndo, redoStack: newRedo };
-    });
-  }, []);
+    const prev = stateRef.current;
+    if (prev.redoStack.length === 0) return;
+    const newRedo = [...prev.redoStack];
+    const next = newRedo.pop()!;
+    const newUndo = [...prev.undoStack, currentPages];
+    stateRef.current = { undoStack: newUndo, redoStack: newRedo };
+    onRestore(next);
+  }, [onRestore]);
 
   return { canUndo, canRedo, pushState, undo, redo } as const;
 }

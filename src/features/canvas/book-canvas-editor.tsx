@@ -98,7 +98,6 @@ export function BookCanvasEditor({
   const editingElement = editingElementId
     ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
     : undefined;
-  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
   const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
@@ -266,8 +265,7 @@ export function BookCanvasEditor({
             accessibilityRole="button"
             disabled={!canUndo}
             onPress={() => {
-              const prev = undo(pages);
-              // undo returns the previous state via the onRestore callback
+              undo(pages);
             }}
             style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}>
             <Text style={[styles.undoRedoText, !canUndo && styles.undoRedoTextDisabled]}>←</Text>
