@@ -1,6 +1,7 @@
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { cityContent } from "../features/cities/city-content";
+import { headingFontFamily } from "../features/typography/fonts";
 import type { Memory } from "../types/memory";
 
 /** 书封面配色：以品牌米白纸感为主，见 docs/DECISIONS.md。 */
@@ -13,7 +14,7 @@ const bookColors = {
   meta: "#56708A",
 } as const;
 
-const serifFont = Platform.select({ android: "serif", default: "Georgia" });
+const serifFont = headingFontFamily;
 
 type MemoryBookCoverProps = {
   memory: Memory;

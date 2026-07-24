@@ -1,10 +1,12 @@
 import type { ImageRequireSource } from "react-native";
 
 export const displayFontFamily = "FontQu Smile";
+export const headingFontFamily = "ChaoHuaTitleA";
 export const bodyFontFamily = "ZhaohuaTypeWriter";
 
 export const appFontSources: Record<string, ImageRequireSource> = {
   [displayFontFamily]: require("../../../assets/fonts/XiMaiXiHuan.ttf"),
+  [headingFontFamily]: require("../../../assets/fonts/ChaoHuaTitleA.ttf"),
   [bodyFontFamily]: require("../../../assets/fonts/ChaoHuaTypewriter.ttf"),
 };
 

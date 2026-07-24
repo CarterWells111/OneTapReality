@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { Image, StyleSheet, type ImageSourcePropType } from "react-native";
 
 import { colors } from "../../components/ui";
+import { headingFontFamily } from "../../features/typography/fonts";
 
 type TabName = "memory" | "city" | "shop" | "profile";
 
@@ -31,13 +32,18 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.warmAccent,
         tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+        tabBarLabelStyle: {
+          fontFamily: headingFontFamily,
+          fontSize: 12,
+          fontWeight: "700",
+          marginTop: 2,
+        },
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: colors.line,
           borderTopWidth: 1,
-          height: 92,
-          paddingBottom: 12,
+          height: 96,
+          paddingBottom: 16,
           paddingTop: 7,
         },
       }}

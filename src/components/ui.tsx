@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { bodyFontFamily, displayFontFamily } from "../features/typography/fonts";
+import { bodyFontFamily, headingFontFamily } from "../features/typography/fonts";
 
 /**
  * OneTapReality 手账设计系统。
@@ -23,7 +23,7 @@ export const colors = {
 } as const;
 
 /** 标题与正文使用本地中文字体，营造手绘海报 / 打字机资料页气质。 */
-export const serifFont = displayFontFamily;
+export const serifFont = headingFontFamily;
 export const bodyFont = bodyFontFamily;
 
 export function AppButton({

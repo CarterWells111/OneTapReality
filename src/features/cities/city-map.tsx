@@ -1,11 +1,12 @@
 import * as React from "react";
-import { type LayoutChangeEvent, Pressable, Text, View } from "react-native";
+import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
-import Svg, { Circle, G, Path, Rect, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, G, Path } from "react-native-svg";
 import chinaMap from "@svg-maps/china";
 
 import { colors } from "../../components/ui";
+import { headingFontFamily } from "../typography/fonts";
 import type { City } from "../../types/memory";
 import { cityContent } from "./city-content";
 import { OfflineChinaMapAdapter, type CityMapFocus, type CityMapMarker } from "./city-map-adapter";
@@ -154,6 +155,8 @@ function resolveVisibleWorkspaceLabelCities(markers: readonly CityMapMarker[], v
   return markers.flatMap((marker, index) => models[index]?.showLabel ? [marker.city] : []);
 }
 
+export type { CityMapProps, CityMapVariant };
+
 function savedMemoryLabel(city: City, visitCount: number) {
   return `${cityContent[city].name}，已保存 ${visitCount} 册旅行记忆`;
 }
@@ -179,42 +182,25 @@ export function getCityMapTransform(viewport: WorkspaceViewport) {
   ];
 }
 
-function CityMapMarkerView({ city, interactive, marker, onCityPress, stat, visibleLabelCities }: {
-  readonly city: City;
-  readonly interactive: boolean;
-  readonly marker: CityMapMarker;
-  readonly onCityPress?: (city: City) => void;
-  readonly stat: CityStats;
-  readonly visibleLabelCities: readonly City[];
-}) {
-  const token = markerTokens[stat.intensity];
-  const coordinate = resolveChinaMapCoordinate(marker);
-
-  return (
-    <G accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" accessible onPress={interactive ? () => onCityPress?.(city) : undefined} testID={`city-map-marker-${city}-${stat.intensity}`}>
-      <Rect fill="transparent" height={markerTargetSvgSize} width={markerTargetSvgSize} x={coordinate.x - markerTargetSvgSize / 2} y={coordinate.y - markerTargetSvgSize / 2} testID={`city-map-marker-target-${city}-${stat.intensity}`} />
-      <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
-      {visibleLabelCities.includes(city) ? <SvgText fill={colors.ink} fontSize={markerLabelSvgFontSize} fontWeight="800" textAnchor="middle" x={coordinate.x} y={coordinate.y - markerLabelSvgOffsetY} testID={`city-map-label-${city}`}>{cityContent[city].name}</SvgText> : null}
-    </G>
-  );
-}
-
-function StaticCityMapMarkerView({ city, interactive, marker, onCityPress, stat }: {
-  readonly city: City;
-  readonly interactive: boolean;
-  readonly marker: CityMapMarker;
-  readonly onCityPress?: (city: City) => void;
-  readonly stat: CityStats;
-}) {
-  const token = markerTokens[stat.intensity];
-  const coordinate = resolveChinaMapCoordinate(marker);
-
-  return (
-    <G accessibilityLabel={savedMemoryLabel(city, stat.visitCount)} accessibilityRole="button" accessible onPress={interactive ? () => onCityPress?.(city) : undefined} testID={`city-map-marker-${city}-${stat.intensity}`}>
-      <Rect fill="transparent" height={markerTargetSvgSize} width={markerTargetSvgSize} x={coordinate.x - markerTargetSvgSize / 2} y={coordinate.y - markerTargetSvgSize / 2} testID={`city-map-marker-target-${city}-${stat.intensity}`} />
-      <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} testID={`city-map-marker-dot-${city}-${stat.intensity}`} />
-    </G>
-  );
+/**
+ * 标记点屏幕位置计算：在 overlay 渲染前先算好每个点对应的屏幕像素坐标。
+ */
+function computeMarkerScreenPositions(
+  markers: readonly CityMapMarker[],
+  viewport: WorkspaceViewport,
+  size: WorkspaceSize,
+): { x: number; y: number }[] {
+  if (size.width <= 0 || size.height <= 0) return markers.map(() => ({ x: 0, y: 0 }));
+  const contentFrame = resolveChinaMapContentFrame(size);
+  return markers.map((marker) => {
+    const coordinate = resolveChinaMapCoordinate(marker);
+    const baseX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
+    const baseY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
+    return {
+      x: (baseX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX,
+      y: (baseY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY,
+    };
+  });
 }
 
 function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }: CityMapProps) {
@@ -239,7 +225,13 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
         {adapter.markers.map((marker) => {
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-          return <StaticCityMapMarkerView city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} />;
+          const token = markerTokens[stat.intensity];
+          const coordinate = resolveChinaMapCoordinate(marker);
+          return (
+            <G key={city} testID={`city-map-marker-${city}-${stat.intensity}`}>
+              <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} />
+            </G>
+          );
         })}
       </Svg>
       {onMapPress ? (
@@ -257,6 +249,9 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
   );
 }
 
+const MARKER_DOT_SIZE = 8;
+const MARKER_LABEL_FONT_SIZE = 11;
+
 function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
@@ -271,9 +266,12 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
   const pinchStartScale = useSharedValue(initialViewport.scale);
   const mapWidth = useSharedValue(workspaceSize.width);
   const mapHeight = useSharedValue(workspaceSize.height);
+  const [viewportState, setViewportState] = React.useState<WorkspaceViewport>(initialViewport);
   const [visibleLabelCities, setVisibleLabelCities] = React.useState<readonly City[]>(() => resolveVisibleWorkspaceLabelCities(adapter.markers, initialViewport, workspaceSize));
-  const updateVisibleLabelCities = React.useCallback((viewport: WorkspaceViewport, size: WorkspaceSize) => {
-    setVisibleLabelCities(resolveVisibleWorkspaceLabelCities(adapter.markers, viewport, size));
+
+  const updateState = React.useCallback((next: WorkspaceViewport, size: WorkspaceSize) => {
+    setViewportState(next);
+    setVisibleLabelCities(resolveVisibleWorkspaceLabelCities(adapter.markers, next, size));
   }, [adapter]);
 
   React.useEffect(() => {
@@ -283,8 +281,8 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
     scale.value = nextViewport.scale;
-    updateVisibleLabelCities(nextViewport, workspaceSize);
-  }, [adapter, focus, initialCity, scale, translateX, translateY, updateVisibleLabelCities, variant, workspaceSize]);
+    updateState(nextViewport, workspaceSize);
+  }, [adapter, focus, initialCity, scale, translateX, translateY, updateState, variant, workspaceSize]);
 
   const onWorkspaceLayout = React.useCallback((event: LayoutChangeEvent) => {
     const { height, width } = event.nativeEvent.layout;
@@ -304,7 +302,7 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       const next = clampWorkspaceViewport({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateVisibleLabelCities)(next, { height: mapHeight.value, width: mapWidth.value });
+      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
     });
   const pinch = Gesture.Pinch().enabled(variant === "workspace")
     .onBegin(() => { pinchStartScale.value = scale.value; })
@@ -319,56 +317,102 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       scale.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateVisibleLabelCities)(next, { height: mapHeight.value, width: mapWidth.value });
+      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
     });
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: getCityMapTransform({ scale: scale.value, translateX: translateX.value, translateY: translateY.value }),
   }));
 
-  const map = (
-    <View accessibilityLabel={variant === "overview" ? "离线中国城市旅行地图概览" : "离线中国城市旅行地图工作区"} onLayout={variant === "workspace" ? onWorkspaceLayout : undefined} style={variant === "workspace" ? { backgroundColor: "#EEF2EE", borderRadius: 16, flex: 1, overflow: "hidden", width: "100%" } : { aspectRatio: 300 / 210, backgroundColor: "#EEF2EE", borderRadius: 20, overflow: "hidden" }} testID={variant === "workspace" ? "city-map-workspace" : undefined}>
-      <Animated.View testID={variant === "workspace" ? "city-map-workspace-canvas" : undefined} style={[{ flex: 1 }, animatedCanvasStyle]}>
-        <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
-          {chinaProvinces.map((province) => (
-            <Path
-              key={province.id}
-              d={province.path}
-              fill="#DDEBDD"
-              onPress={variant === "overview" ? onMapPress : undefined}
-              stroke={colors.accent}
-              strokeWidth={0.8}
-              testID={`china-province-${province.id}`}
-            />
-          ))}
-          <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
-          {adapter.markers.map((marker) => {
-          const { city } = marker;
-          const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-          return (
-            <CityMapMarkerView city={city} interactive={interactive} key={city} marker={marker} onCityPress={onCityPress} stat={stat} visibleLabelCities={visibleLabelCities} />
-          );
-          })}
-        </Svg>
-      </Animated.View>
-      {variant === "overview" && onMapPress ? (
-        <Pressable
-          accessibilityLabel="全屏查看中国地图"
-          accessibilityRole="button"
-          onPress={onMapPress}
-          style={({ pressed }) => ({ backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: 16, borderWidth: 1, bottom: 12, opacity: pressed ? 0.82 : 1, paddingHorizontal: 12, paddingVertical: 8, position: "absolute", right: 12 })}
-        >
-          <Text selectable style={{ color: colors.accent, fontSize: 13, fontWeight: "800" }}>全屏查看</Text>
-        </Pressable>
-      ) : null}
-      <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
-    </View>
+  const markerScreenPositions = React.useMemo(
+    () => computeMarkerScreenPositions(adapter.markers, viewportState, workspaceSize),
+    [adapter, viewportState, workspaceSize],
   );
-  return <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>{map}</GestureDetector>;
+
+  return (
+    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
+      <View accessibilityLabel="离线中国城市旅行地图工作区" onLayout={onWorkspaceLayout} style={{ backgroundColor: "#EEF2EE", borderRadius: 16, flex: 1, overflow: "hidden", width: "100%" }} testID="city-map-workspace">
+        {/* 省份地图层：缩放跟随视口 */}
+        <Animated.View pointerEvents="none" testID="city-map-workspace-canvas" style={[StyleSheet.absoluteFill, animatedCanvasStyle]}>
+          <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
+            {chinaProvinces.map((province) => (
+              <Path
+                key={province.id}
+                d={province.path}
+                fill="#DDEBDD"
+                stroke={colors.accent}
+                strokeWidth={0.8}
+                testID={`china-province-${province.id}`}
+              />
+            ))}
+            <Path d={taiwanInsetPath} fill="#DDEBDD" stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
+          </Svg>
+        </Animated.View>
+        {/* 标记点层：绝对定位，不缩放 */}
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {markerScreenPositions.map((pos, i) => {
+            const marker = adapter.markers[i];
+            if (!marker) return null;
+            const { city } = marker;
+            const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
+            const token = markerTokens[stat.intensity];
+            const showLabel = visibleLabelCities.includes(city);
+            const onScreen = pos.x + MARKER_DOT_SIZE >= 0 && pos.x - MARKER_DOT_SIZE <= workspaceSize.width
+              && pos.y + MARKER_DOT_SIZE >= 0 && pos.y - MARKER_DOT_SIZE <= workspaceSize.height + 20;
+            if (!onScreen && !showLabel) return null;
+            return (
+              <Pressable
+                accessibilityLabel={savedMemoryLabel(city, stat.visitCount)}
+                accessibilityRole="button"
+                key={city}
+                onPress={interactive ? () => onCityPress?.(city) : undefined}
+                style={({ pressed }) => [{
+                  alignItems: "center",
+                  height: 44,
+                  justifyContent: "center",
+                  left: pos.x - 22,
+                  opacity: pressed ? 0.82 : 1,
+                  position: "absolute",
+                  top: pos.y - 22,
+                  width: 44,
+                }]}
+                testID={`city-map-marker-${city}-${stat.intensity}`}
+              >
+                <View style={{
+                  backgroundColor: token.fill,
+                  borderColor: token.border,
+                  borderRadius: MARKER_DOT_SIZE / 2,
+                  borderWidth: 1.5,
+                  height: MARKER_DOT_SIZE,
+                  width: MARKER_DOT_SIZE,
+                }} />
+                {showLabel ? (
+                  <Text
+                    style={{
+                      color: colors.ink,
+                      fontFamily: headingFontFamily,
+                      fontSize: MARKER_LABEL_FONT_SIZE,
+                      fontWeight: "800",
+                      position: "absolute",
+                      textAlign: "center",
+                      top: -MARKER_LABEL_FONT_SIZE - 4,
+                      width: 88,
+                    }}
+                    testID={`city-map-label-${city}`}
+                  >
+                    {cityContent[city].name}
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
+      </View>
+    </GestureDetector>
+  );
 }
 
 export function CityMap(props: CityMapProps) {
   return props.variant === "overview" ? <OverviewCityMap {...props} /> : <WorkspaceCityMap {...props} />;
 }
-
-export type { CityMapProps, CityMapVariant };
