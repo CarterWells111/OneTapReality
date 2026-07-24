@@ -44,6 +44,7 @@ import {
 } from "./editor-pages";
 import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
+import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
 import { canvasEditorFontSources } from "../typography/fonts";
@@ -79,6 +80,9 @@ export function BookCanvasEditor({
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
+  const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
+    onPagesChange(restoredPages, "structure");
+  });
 
   React.useEffect(() => {
     if (currentIndex >= pages.length) {
@@ -98,8 +102,11 @@ export function BookCanvasEditor({
   const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
+    if (reason === "structure" || reason === "transform") {
+      pushState(pages);
+    }
     onPagesChange(nextPages, reason);
-  }, [onPagesChange]);
+  }, [onPagesChange, pages, pushState]);
 
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
     if (!pendingTextId || !currentPage) {
@@ -253,6 +260,29 @@ export function BookCanvasEditor({
   return (
     <View style={styles.editor}>
       <View style={styles.editorTopbar}>
+        <View style={styles.undoRedoButtons}>
+          <Pressable
+            accessibilityLabel="撤销"
+            accessibilityRole="button"
+            disabled={!canUndo}
+            onPress={() => {
+              const prev = undo(pages);
+              // undo returns the previous state via the onRestore callback
+            }}
+            style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canUndo && styles.undoRedoTextDisabled]}>←</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="重做"
+            accessibilityRole="button"
+            disabled={!canRedo}
+            onPress={() => {
+              redo(pages);
+            }}
+            style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}>
+            <Text style={[styles.undoRedoText, !canRedo && styles.undoRedoTextDisabled]}>→</Text>
+          </Pressable>
+        </View>
         <Text style={styles.currentPageLabel}>第 {currentIndex + 1} / {pages.length} 页</Text>
         <Pressable
           accessibilityLabel="打开页面管理"
@@ -610,6 +640,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 20,
+  },
+  undoRedoButtons: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  undoRedoBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  undoRedoBtnDisabled: {
+    opacity: 0.3,
+  },
+  undoRedoText: {
+    color: colors.accent,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  undoRedoTextDisabled: {
+    color: colors.muted,
   },
   currentPageLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
   bookStage: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 6 },
