@@ -14,20 +14,20 @@ type CanvasToolbarProps = {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onDone?: () => void;
-  /** 撤销/重做（由父组件传入） */
-  canUndo?: boolean;
-  canRedo?: boolean;
-  onUndo?: () => void;
-  onRedo?: () => void;
+  /** 字体/字号/颜色面板回调（仅在选中文字元素时可用） */
+  onFont?: () => void;
+  onSize?: () => void;
+  onColor?: () => void;
 };
 
 /**
  * 画布编辑器工具栏。
  *
- * 第一行：添加文字（左） | 撤销/重做（右）
- * 第二行（选中元素时出现）：前移 | 后移 | 复制 | 删除 | 完成
+ * 单行布局：
+ *   左侧：添加文字 | 字体 | 字号 | 颜色
+ *   右侧（选中元素时出现）：前移 | 后移 | 复制 | 删除
  *
- * 添加贴纸/相框/背景已移至底部素材托盘。
+ * 撤销/重做已移至页面指示器行（编辑器顶栏）。
  */
 export function CanvasToolbar({
   selectedElement,
@@ -39,47 +39,115 @@ export function CanvasToolbar({
   onChangeLayer,
   onDuplicate,
   onDelete,
-  onDone,
-  canUndo = false,
-  canRedo = false,
-  onUndo,
-  onRedo,
+  onDone: _onDone,
+  onFont,
+  onSize,
+  onColor,
 }: CanvasToolbarProps) {
   const selectedId = selectedElement?.id;
+  const isTextSelected = selectedElement?.type === "text";
 
   return (
     <View style={styles.shell}>
-      {/* 第一行：添加文字 + 撤销/重做 */}
       <View style={styles.row}>
-        <ToolbarButton active label="添加文字" onPress={onAddText} />
-        <View style={styles.spacer} />
-        <View style={styles.undoRedoButtons}>
-          <ToolbarButton
-            disabled={!canUndo}
-            label="撤销"
-            onPress={() => onUndo?.()}
-          />
-          <ToolbarButton
-            disabled={!canRedo}
-            label="重做"
-            onPress={() => onRedo?.()}
-          />
+        {/* 左侧：添加文字 + 文字格式 */}
+        <View style={styles.leftGroup}>
+          <ToolbarButton active label="添加文字" onPress={onAddText} />
+          {isTextSelected ? (
+            <>
+              <ToolbarButton label="字体" onPress={() => onFont?.()} />
+              <ToolbarButton label="字号" onPress={() => onSize?.()} />
+              <ToolbarButton label="颜色" onPress={() => onColor?.()} />
+            </>
+          ) : null}
         </View>
-      </View>
 
-      {/* 第二行：元素操作（仅在选中元素时显示） */}
-      {selectedId ? (
-        <View style={styles.row}>
-          <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
-          <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
-          <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
-          <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
-          {onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
-        </View>
-      ) : null}
+        {/* 右侧：元素操作（仅在选中元素时显示） */}
+        {selectedId ? (
+          <View style={styles.rightGroup}>
+            <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
+            <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
+            <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
+            <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
+
+/**
+ * 撤销/重做按钮对 —— 放置在编辑器顶栏左侧。
+ */
+export function UndoRedoButtons({
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+}: {
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}) {
+  return (
+    <View style={undoRedoStyles.row}>
+      <UndoRedoButton
+        disabled={!canUndo}
+        label="↩"
+        onPress={() => onUndo?.()}
+      />
+      <UndoRedoButton
+        disabled={!canRedo}
+        label="↪"
+        onPress={() => onRedo?.()}
+      />
+    </View>
+  );
+}
+
+function UndoRedoButton({
+  disabled = false,
+  label,
+  onPress,
+}: {
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        undoRedoStyles.button,
+        disabled && undoRedoStyles.disabled,
+      ]}>
+      <Text style={[
+        undoRedoStyles.text,
+        disabled && undoRedoStyles.disabledText,
+      ]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const undoRedoStyles = StyleSheet.create({
+  row: { flexDirection: "row", gap: 4 },
+  button: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: "#D9DED7",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  text: { color: "#1C2C28", fontSize: 15, fontWeight: "700" },
+  disabled: { opacity: 0.25 },
+  disabledText: {},
+});
 
 function ToolbarButton({
   active = false,
@@ -119,19 +187,16 @@ function ToolbarButton({
 }
 
 const styles = StyleSheet.create({
-  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, gap: 8, paddingVertical: 8 },
+  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, paddingVertical: 8 },
   row: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8,
+    gap: 6,
+    justifyContent: "space-between",
     paddingHorizontal: 20,
   },
-  spacer: { flex: 1 },
-  undoRedoButtons: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-  },
+  leftGroup: { alignItems: "center", flexDirection: "row", gap: 6 },
+  rightGroup: { alignItems: "center", flexDirection: "row", gap: 6 },
   button: {
     backgroundColor: "#FFFFFF",
     borderColor: "#D9DED7",

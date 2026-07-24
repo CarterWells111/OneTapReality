@@ -28,7 +28,7 @@ import {
   type CanvasStickerCategory,
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
-import { CanvasToolbar } from "./canvas-toolbar";
+import { CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
   addStickerToPage,
@@ -76,6 +76,7 @@ export function BookCanvasEditor({
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
+  const [contextMenuMode, setContextMenuMode] = React.useState<"font" | "size" | "color">("font"); // 上下文菜单初始面板
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
@@ -260,6 +261,15 @@ export function BookCanvasEditor({
     <View style={styles.editor}>
       <View style={styles.editorTopbar}>
         <View style={styles.pageIndicatorRow}>
+          {/* 左侧：撤销/重做 */}
+          <UndoRedoButtons
+            canRedo={canRedo}
+            canUndo={canUndo}
+            onRedo={() => redo(pages)}
+            onUndo={() => undo(pages)}
+          />
+          <View style={styles.topbarSpacer} />
+          {/* 右侧：页面指示器 + 页面管理 */}
           <Text style={styles.pageIndicatorText}>第 {currentIndex + 1} / {pages.length} 页</Text>
           <Pressable
             accessibilityLabel="打开页面管理"
@@ -391,14 +401,13 @@ export function BookCanvasEditor({
             onChangeFont={(fontStyle) => updateElement(editingText?.id ?? "", { fontStyle }, "structure")}
             onChangeSize={(fontSize) => updateElement(editingText?.id ?? "", { fontSize }, "structure")}
             onClose={() => setEditingElementId(undefined)}
+            initialMode={contextMenuMode}
             visible={editingElementId !== undefined && editingText !== undefined}
           />
         </>
       ) : null}
 
       <CanvasToolbar
-        canRedo={canRedo}
-        canUndo={canUndo}
         onAddFrame={() => {
           setAssetTrayMode("frame");
           addFrame();
@@ -407,6 +416,12 @@ export function BookCanvasEditor({
         onAddText={addText}
         onChangeLayer={(elementId, direction) => {
           changePages(changeCanvasElementLayer(clearPendingTextFrom(), currentPage.id, elementId, direction), "structure");
+        }}
+        onColor={() => {
+          if (selectedElement?.type === "text") {
+            setContextMenuMode("color");
+            setEditingElementId(selectedElement.id);
+          }
         }}
         onDelete={(elementId) => {
           changePages(deleteCanvasElement(clearPendingTextFrom(), currentPage.id, elementId), "structure");
@@ -421,9 +436,19 @@ export function BookCanvasEditor({
           changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
+        onFont={() => {
+          if (selectedElement?.type === "text") {
+            setContextMenuMode("font");
+            setEditingElementId(selectedElement.id);
+          }
+        }}
         onPickBackground={() => setAssetTrayMode("background")}
-        onRedo={() => redo(pages)}
-        onUndo={() => undo(pages)}
+        onSize={() => {
+          if (selectedElement?.type === "text") {
+            setContextMenuMode("size");
+            setEditingElementId(selectedElement.id);
+          }
+        }}
         onUpdateElement={(elementId, patch) => {
           const nextPages = clearPendingTextFrom();
           changePages(updateCanvasElement(nextPages, currentPage.id, elementId, patch), "structure");
@@ -619,9 +644,10 @@ const styles = StyleSheet.create({
   editor: { gap: 12 },
   editorTopbar: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
   },
+  topbarSpacer: { flex: 1 },
   pageIndicatorRow: {
     alignItems: "center",
     flexDirection: "row",

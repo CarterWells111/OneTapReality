@@ -21,6 +21,8 @@ type ElementContextMenuProps = {
   onChangeSize: (fontSize: number) => void;
   onChangeColor: (color: string) => void;
   onClose: () => void;
+  /** 初始面板模式。工具栏按钮可传入对应模式直达目标面板。 */
+  initialMode?: MenuMode;
 };
 
 const fontSizes = [12, 14, 16, 18, 20, 22, 24, 28, 34] as const;
@@ -43,7 +45,7 @@ const presetColors = [
 type MenuMode = "main" | "font" | "size" | "color";
 
 /**
- * Apple 风格浮动上下文菜单。
+ * Apple 风格浮动上下文菜单 — 白底黑字。
  * 显示在选中文字元素上方，提供字体/字号/颜色快速切换。
  */
 export function ElementContextMenu({
@@ -54,9 +56,10 @@ export function ElementContextMenu({
   onChangeSize,
   onChangeColor,
   onClose,
+  initialMode,
 }: ElementContextMenuProps) {
   const { width: windowWidth } = useWindowDimensions();
-  const [mode, setMode] = React.useState<MenuMode>("main");
+  const [mode, setMode] = React.useState<MenuMode>(initialMode ?? "main");
 
   // 切换模式时重置
   React.useEffect(() => {
@@ -64,6 +67,13 @@ export function ElementContextMenu({
       setMode("main");
     }
   }, [visible]);
+
+  // 当 visible 变为 true 时，应用 initialMode
+  React.useEffect(() => {
+    if (visible && initialMode) {
+      setMode(initialMode);
+    }
+  }, [visible, initialMode]);
 
   if (!visible || !elementFrame) {
     return null;
@@ -224,7 +234,7 @@ function MenuButton({
   return (
     <Pressable onPress={onPress} style={styles.menuButton}>
       <View style={styles.menuButtonLeft}>
-        <View style={[styles.menuIcon, iconColor ? { backgroundColor: iconColor + "20" } : undefined]}>
+        <View style={[styles.menuIcon, iconColor ? { backgroundColor: iconColor + "18" } : undefined]}>
           <Text style={[styles.menuIconText, iconColor ? { color: iconColor } : undefined]}>{icon}</Text>
         </View>
         <Text style={styles.menuLabel}>{label}</Text>
@@ -247,13 +257,13 @@ function MenuDivider() {
 
 const styles = StyleSheet.create({
   menuContainer: {
-    backgroundColor: "rgba(28, 28, 30, 0.96)",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     paddingVertical: 4,
     position: "absolute",
     shadowColor: "#000",
     shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
     zIndex: 20000,
   },
@@ -275,19 +285,19 @@ const styles = StyleSheet.create({
   },
   menuIcon: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(0,0,0,0.06)",
     borderRadius: 10,
     height: 32,
     justifyContent: "center",
     width: 32,
   },
   menuIconText: {
-    color: "#FFFFFF",
+    color: "#1C2C28",
     fontSize: 16,
     fontWeight: "700",
   },
   menuLabel: {
-    color: "#FFFFFF",
+    color: "#1C2C28",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -297,16 +307,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   menuPreviewText: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(0,0,0,0.45)",
     fontSize: 15,
   },
   menuChevron: {
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(0,0,0,0.25)",
     fontSize: 20,
     fontWeight: "300",
   },
   divider: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(0,0,0,0.08)",
     height: StyleSheet.hairlineWidth,
     marginLeft: 60,
   },
@@ -321,7 +331,7 @@ const styles = StyleSheet.create({
   },
   modeHeader: {
     alignItems: "center",
-    borderBottomColor: "rgba(255,255,255,0.1)",
+    borderBottomColor: "rgba(0,0,0,0.08)",
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -334,12 +344,12 @@ const styles = StyleSheet.create({
     width: 60,
   },
   backText: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(0,0,0,0.45)",
     fontSize: 14,
     fontWeight: "600",
   },
   modeTitle: {
-    color: "#FFFFFF",
+    color: "#1C2C28",
     fontSize: 15,
     fontWeight: "700",
   },
@@ -357,17 +367,17 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   listItemActive: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(0,0,0,0.05)",
   },
   listItemText: {
-    color: "#FFFFFF",
+    color: "#1C2C28",
     fontSize: 16,
   },
   listItemTextActive: {
     fontWeight: "700",
   },
   checkmark: {
-    color: "#FFFFFF",
+    color: "#B76545",
     fontSize: 16,
     fontWeight: "800",
   },
@@ -380,17 +390,17 @@ const styles = StyleSheet.create({
   },
   sizeItem: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(0,0,0,0.04)",
     borderRadius: 12,
     height: 48,
     justifyContent: "center",
     width: 60,
   },
   sizeItemActive: {
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(0,0,0,0.1)",
   },
   sizeItemText: {
-    color: "#FFFFFF",
+    color: "#1C2C28",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -403,7 +413,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   presetLabel: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(0,0,0,0.45)",
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 8,
@@ -423,7 +433,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   presetSwatchActive: {
-    borderColor: "#FFFFFF",
+    borderColor: "#1C2C28",
     borderWidth: 2.5,
   },
   presetCheck: {
