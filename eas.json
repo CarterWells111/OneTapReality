@@ -16,5 +16,12 @@
         "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6794186067"
+      }
+    }
   }
 }
