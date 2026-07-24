@@ -1,17 +1,15 @@
 import { useRouter } from "expo-router";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as React from "react";
 
 import { MemoryBookCover } from "../../components/memory-book-cover";
-import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
+import { AppButton, bodyFont, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
   const { memories, isReady, deleteMemory } = useMemories();
-  const insets = useSafeAreaInsets();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -63,7 +61,7 @@ export default function MemoriesHomeScreen() {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
+      contentContainerStyle={styles.content}
       style={styles.screen}
     >
       <PaperCard tone="paper" style={styles.hero}>
@@ -180,15 +178,15 @@ export default function MemoriesHomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { backgroundColor: colors.background },
-  content: { gap: 22, padding: 20, paddingBottom: 36 },
+  content: { gap: 22, padding: 20, paddingTop: 12, paddingBottom: 36 },
   hero: { gap: 10 },
   title: { color: colors.ink, fontFamily: serifFont, fontSize: 26, fontWeight: "800", marginTop: 2 },
   rule: { backgroundColor: colors.warmAccent, borderRadius: 2, height: 3, width: 36 },
   heroHeadline: { color: colors.warmAccent, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
-  subtitle: { color: colors.muted, fontSize: 15, lineHeight: 23 },
+  subtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 15, lineHeight: 23 },
   heroActions: { marginTop: 4 },
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
-  heroLinkText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
+  heroLinkText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
   bookGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 16 },
   selectionBar: {
     alignItems: "center",
@@ -202,16 +200,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  selectionCount: { color: colors.ink, flex: 1, fontSize: 14, fontWeight: "800" },
+  selectionCount: { color: colors.ink, flex: 1, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
   selectionAction: { paddingHorizontal: 8, paddingVertical: 4 },
-  selectionActionText: { color: colors.accent, fontSize: 14, fontWeight: "800" },
-  selectionDangerText: { color: colors.danger, fontSize: 14, fontWeight: "800" },
-  selectionCancelText: { color: colors.muted, fontSize: 14, fontWeight: "700" },
+  selectionActionText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
+  selectionDangerText: { color: colors.danger, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
+  selectionCancelText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   disabledAction: { opacity: 0.4 },
   disabledText: { opacity: 0.4 },
   emptyCard: { gap: 12 },
   emptyTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "700" },
-  mutedText: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  mutedText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
   shopCard: {
     alignItems: "center",
     backgroundColor: colors.paper,
@@ -225,10 +223,10 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   shopCopy: { flex: 1, gap: 4 },
-  shopEyebrow: { color: colors.warmAccent, fontSize: 12.5, fontWeight: "800", letterSpacing: 0.5 },
+  shopEyebrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800", letterSpacing: 0.5 },
   shopTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
-  shopMeta: { color: colors.muted, fontSize: 14, lineHeight: 21 },
-  shopArrow: { color: colors.warmAccent, fontSize: 24, fontWeight: "800" },
-  footer: { color: colors.muted, fontSize: 12.5, textAlign: "center" },
+  shopMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
+  shopArrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 24, fontWeight: "800" },
+  footer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, textAlign: "center" },
   pressed: { opacity: 0.85 },
 });

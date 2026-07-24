@@ -1,9 +1,8 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { bodyFont, colors, ScreenTitle, Section, serifFont } from "../../components/ui";
+import { bodyFont, colors, ScreenTitle, serifFont } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { demoCatalog, type CatalogSku, type SkuKind } from "../../features/commerce/catalog/catalog";
 import { computeDemoQuote, demoQuoteDisclaimer } from "../../features/commerce/catalog/pricing";
@@ -21,8 +20,8 @@ const kindGlyphs: Record<SkuKind, string> = {
 
 export default function ShopScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [activeTier, setActiveTier] = useState<"special" | "basic">("special");
   const specialSkus = demoCatalog.filter((sku) => getSkuTier(sku) === "special");
   const basicSkus = demoCatalog.filter((sku) => getSkuTier(sku) === "basic");
 
@@ -49,20 +48,23 @@ export default function ShopScreen() {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]}
+      contentContainerStyle={styles.content}
       style={styles.screen}
     >
-      <View style={styles.titleRow}>
-        <ScreenTitle title="商店" caption="CITY KEEPSAKES" />
-        <Pressable
-          accessibilityLabel="打开购物袋"
-          accessibilityRole="button"
-          onPress={() => router.push("/shop/orders")}
-          style={({ pressed }) => [styles.bagButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.bagIcon}>袋</Text>
-        </Pressable>
-      </View>
+      <ScreenTitle
+        title="商店"
+        caption="CITY KEEPSAKES"
+        right={
+          <Pressable
+            accessibilityLabel="打开购物袋"
+            accessibilityRole="button"
+            onPress={() => router.push("/shop/orders")}
+            style={({ pressed }) => [styles.bagButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.bagIcon}>袋</Text>
+          </Pressable>
+        }
+      />
 
       <View style={styles.hero}>
         <View style={styles.heroSketch}>
@@ -74,33 +76,49 @@ export default function ShopScreen() {
         </Text>
       </View>
 
-      <Section title="特殊款" caption="CITY EDITIONS">
-        <View style={styles.grid}>
-          {specialSkus.map((sku) => (
-            <SkuGridCard
-              key={sku.id}
-              favorited={isFavoriteSku(favoriteIds, sku.id)}
-              sku={sku}
-              onPress={() => openSku(sku.id)}
-              onToggleFavorite={() => void onToggleFavorite(sku.id)}
-            />
-          ))}
-        </View>
-      </Section>
+      {/* 特殊款 / 基础款 左右切换 */}
+      <View style={styles.tierToggle}>
+        <Pressable
+          accessibilityLabel="查看特殊款"
+          accessibilityRole="button"
+          accessibilityState={{ selected: activeTier === "special" }}
+          onPress={() => setActiveTier("special")}
+          style={[styles.tierTab, activeTier === "special" ? styles.tierTabActive : styles.tierTabInactive]}
+        >
+          <Text style={[styles.tierTitle, activeTier === "special" && styles.tierTitleActive]}>
+            特殊款
+          </Text>
+          <Text style={[styles.tierCaption, activeTier === "special" && styles.tierCaptionActive]}>
+            CITY EDITIONS
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="查看基础款"
+          accessibilityRole="button"
+          accessibilityState={{ selected: activeTier === "basic" }}
+          onPress={() => setActiveTier("basic")}
+          style={[styles.tierTab, activeTier === "basic" ? styles.tierTabActive : styles.tierTabInactive]}
+        >
+          <Text style={[styles.tierTitle, activeTier === "basic" && styles.tierTitleActive]}>
+            基础款
+          </Text>
+          <Text style={[styles.tierCaption, activeTier === "basic" && styles.tierCaptionActive]}>
+            EVERYDAY
+          </Text>
+        </Pressable>
+      </View>
 
-      <Section title="基础款" caption="EVERYDAY">
-        <View style={styles.grid}>
-          {basicSkus.map((sku) => (
-            <SkuGridCard
-              key={sku.id}
-              favorited={isFavoriteSku(favoriteIds, sku.id)}
-              sku={sku}
-              onPress={() => openSku(sku.id)}
-              onToggleFavorite={() => void onToggleFavorite(sku.id)}
-            />
-          ))}
-        </View>
-      </Section>
+      <View style={styles.grid}>
+        {(activeTier === "special" ? specialSkus : basicSkus).map((sku) => (
+          <SkuGridCard
+            key={sku.id}
+            favorited={isFavoriteSku(favoriteIds, sku.id)}
+            sku={sku}
+            onPress={() => openSku(sku.id)}
+            onToggleFavorite={() => void onToggleFavorite(sku.id)}
+          />
+        ))}
+      </View>
 
       <Text selectable style={styles.disclaimer}>{demoQuoteDisclaimer}</Text>
       <Text selectable style={styles.physicalGoods}>
@@ -173,8 +191,7 @@ function SkuGridCard({
 
 const styles = StyleSheet.create({
   screen: { backgroundColor: colors.background },
-  content: { gap: 24, padding: 20, paddingBottom: 36 },
-  titleRow: { alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" },
+  content: { gap: 24, padding: 20, paddingTop: 12, paddingBottom: 36 },
   bagButton: {
     alignItems: "center",
     borderColor: colors.ink,
@@ -182,7 +199,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     height: 42,
     justifyContent: "center",
-    marginTop: 2,
     width: 42,
   },
   bagIcon: { color: colors.accent, fontFamily: serifFont, fontSize: 18 },
@@ -204,6 +220,25 @@ const styles = StyleSheet.create({
   heroSketchText: { color: colors.ink, fontFamily: serifFont, fontSize: 22 },
   heroSketchLine: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
   heroCopy: { color: colors.ink, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 22 },
+  tierToggle: {
+    borderRadius: 12,
+    borderColor: colors.ink,
+    borderWidth: 1.3,
+    flexDirection: "row",
+    overflow: "hidden",
+  },
+  tierTab: {
+    alignItems: "center",
+    flex: 1,
+    gap: 4,
+    paddingVertical: 14,
+  },
+  tierTabActive: { backgroundColor: colors.accent },
+  tierTabInactive: { backgroundColor: colors.background },
+  tierTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 19 },
+  tierTitleActive: { color: colors.background },
+  tierCaption: { color: colors.muted, fontFamily: bodyFont, fontSize: 11, letterSpacing: 1.5 },
+  tierCaptionActive: { color: colors.accentSoft },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 14 },
   card: {
     backgroundColor: colors.background,

@@ -20,7 +20,8 @@ describe("FullscreenCityMapScreen", () => {
     expect(headerStyle).toMatchObject({ paddingBottom: 8, paddingTop: 18 });
     expect(screen.getByTestId("fullscreen-city-map-screen").props.edges).toMatchObject({ top: "additive" });
     expect(screen.getByTestId("fullscreen-city-map-close")).toBeTruthy();
-    expect(closeStyle).toMatchObject({ height: 44, width: 44 });
+    // close button style is a function (pressed state); validate first array element
+    expect(Array.isArray(closeStyle) ? closeStyle[0] : closeStyle).toMatchObject({ height: 44, width: 44 });
     expect(viewportStyle).toMatchObject({ flex: 1, padding: 4 });
     expect(workspaceStyle).toMatchObject({ flex: 1, width: "100%" });
     expect(workspaceStyle.aspectRatio).toBeUndefined();

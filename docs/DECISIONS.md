@@ -1,5 +1,17 @@
 # 决策记录
 
+## 2026-07-24：离线中国地图多城市足迹打卡与搜索
+
+全屏离线中国地图新增三大能力：城市足迹打卡弹窗、搜索跳转、视觉设计统一化。本轮不引入网络、地图 SDK、定位、账户、支付、分析、真实 NFC 或客户端秘密。
+
+- **配色全局风格化**：Overview 和 Workspace 地图将硬编码的省份底色（`#EEF2EE`、`#DDEBDD`）替换为全局色板 `colors.paper`（`#EFE2CF`）与 `colors.accentSoft`（`#EFE2CF`），描边使用 `colors.accent`（`#B56B52`），背景使用 `colors.accentSoft`。
+- **标记点同步延迟修复**：将 Workspace 中的标记点从 `View` + React state（`viewportState`）改为 `Animated.View` + `useAnimatedStyle`，直接在 UI 线程通过 shared values（`translateX`/`translateY`/`scale`）计算屏幕坐标，消除手势期间标记点滞后于地图 SVG 的延迟问题。
+- **标记点 hit area 动态缩放**：按压区域现在随 `contentFrame.scale * viewport.scale` 动态调整（最小 44px），放大多倍后也能精确点击。
+- **台湾标记补全**：新增 `taiwanInsetCenter` 坐标常量与 `taiwanCities` 集合，台北标记在 overview 和 workspace 中均正确显示于台湾插画中心位置。
+- **城市搜索定位**：全屏地图顶部新增搜索栏，输入城市中文名或英文 slug 即可匹配；选择后通过 `withTiming` 动画将地图视口平滑跳转至该城市焦点并放大。
+- **城市足迹打卡弹窗**：从 `地图/` 文件夹导入 10 张 PNG 至 `assets/city-checkin/`，缓存为 Metro require 注册表。10 座城市（北京、上海、杭州、西安、成都、拉萨、广州、南京、昆明、哈尔滨）点击标记时弹出 `CityCheckinModal`，以对应城市图片为底图，叠加打卡光点（已打卡/待探索双色）、图例、城市宣传语和足迹计数。弹窗采用全局字体（朝华标题 A + 朝华打字机）和纸感色板。
+- 原始 `地图/` 文件夹已在导入完成后删除。
+
 ## 2026-07-24: Shop detail and shopping bag concept style
 
 - The shop uses the fixed concept palette only: `#B56B52`, `#56708A`, `#EFE2CF`, `#F7F2EA`, `#2F2A26`, and `#D8CFC4`.
