@@ -1,10 +1,10 @@
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import * as React from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
-import { AppButton, colors, Section } from "../../components/ui";
+import { AppButton, bodyFont, colors, Section } from "../../components/ui";
 import {
   maxBioLength,
   normalizeBio,
@@ -82,8 +82,15 @@ export default function SettingsScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.avatarSection}>
-        <ProfileAvatar avatarUri={draft.avatarUri} nickname={draft.nickname} size={96} />
-        <Text selectable style={styles.helper}>头像与昵称用于个人展示。</Text>
+        <Pressable
+          accessibilityLabel="点击更换头像"
+          accessibilityRole="button"
+          onPress={() => void selectAvatar()}
+          style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}
+        >
+          <ProfileAvatar avatarUri={draft.avatarUri} nickname={draft.nickname} size={96} />
+        </Pressable>
+        <Text selectable style={styles.avatarHint}>点击头像更换照片</Text>
       </View>
 
       <Section title="个人资料">
@@ -104,10 +111,6 @@ export default function SettingsScreen() {
           style={styles.input}
           value={draft.bio ?? ""}
         />
-        <View style={styles.actions}>
-          <AppButton label="选择头像" onPress={() => void selectAvatar()} tone="secondary" />
-          <AppButton label="移除头像" onPress={() => setDraft((current) => (current ? { ...current, avatarUri: null } : current))} tone="secondary" />
-        </View>
       </Section>
 
       {error ? <Text selectable style={styles.error}>{error}</Text> : null}
@@ -133,8 +136,10 @@ const styles = StyleSheet.create({
   content: { gap: 22, padding: 20 },
   loading: { padding: 20 },
   avatarSection: { alignItems: "center", gap: 10 },
-  helper: { color: colors.muted, lineHeight: 21, textAlign: "center" },
-  label: { color: colors.ink, fontSize: 15, fontWeight: "700" },
+  avatarButton: { borderRadius: 48 },
+  avatarHint: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 21 },
+  helper: { color: colors.muted, fontFamily: bodyFont, lineHeight: 21, textAlign: "center" },
+  label: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, fontWeight: "700" },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -145,8 +150,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     paddingHorizontal: 14,
   },
-  actions: { gap: 10 },
-  error: { color: colors.danger, lineHeight: 21 },
+  error: { color: colors.danger, fontFamily: bodyFont, lineHeight: 21 },
   privacyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -155,5 +159,6 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
   },
-  privacyTitle: { color: colors.ink, fontSize: 16, fontWeight: "800" },
+  privacyTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 16, fontWeight: "800" },
+  pressed: { opacity: 0.82 },
 });
