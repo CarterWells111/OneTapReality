@@ -37,7 +37,8 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 /**
  * 根据手势结束后的绝对位置和尺寸计算元素新状态。
  * 元素允许越界（部分超出画布），保留最小尺寸防止消失。
- * 对于文字元素，同步缩放 fontSize。
+ * 对于文字元素，仅在双指捏合/旋转等整体缩放操作时同步 fontSize；
+ * 角落手柄拖拽（cornerResize）只改变文本框尺寸，不改变字体大小。
  */
 export function calculateCanvasTransformFromAbsolute(
   element: CanvasElementModel,
@@ -47,6 +48,7 @@ export function calculateCanvasTransformFromAbsolute(
   absoluteHeight: number,
   absoluteRotation: number,
   canvasDimensions: CanvasDimensions,
+  cornerResize = false,
 ): ElementPatch {
   const { width: canvasWidth, height: canvasHeight } = canvasDimensions;
   const width = clamp(absoluteWidth / canvasWidth, 0.03, 0.95);
@@ -54,7 +56,8 @@ export function calculateCanvasTransformFromAbsolute(
   const x = clamp(absoluteX / canvasWidth, -0.8, 0.8);
   const y = clamp(absoluteY / canvasHeight, -0.8, 0.8);
   const patch: ElementPatch = { x, y, width, height, rotation: absoluteRotation };
-  if (element.type === "text") {
+  // 角落拖拽不改变字体大小：只拉伸文本框，文字在框内自然重排
+  if (element.type === "text" && !cornerResize) {
     const scaleRatio = absoluteWidth / (element.width * canvasWidth);
     if (Math.abs(scaleRatio - 1) > 0.005) {
       patch.fontSize = Math.max(8, Math.round((element.fontSize ?? 16) * scaleRatio));
@@ -110,12 +113,15 @@ export function CanvasElement({
   const posY = useSharedValue(element.y * canvasHeight);
   const elemW = useSharedValue(element.width * canvasWidth);
   const elemH = useSharedValue(element.height * canvasHeight);
+  // 手势缩放因子（共享值），确保捏合时手柄跟随
   const gestureScale = useSharedValue(1);
   const gestureRotation = useSharedValue(0);
   const activeGestureCount = useSharedValue(0);
   const panStarted = useSharedValue(false);
   const pinchStarted = useSharedValue(false);
   const rotationStarted = useSharedValue(false);
+  // 标记当前是否是角落手柄拖拽（用于区分角落缩放和双指捏合）
+  const cornerResize = useSharedValue(false);
 
   // 手势开始时记录起始位置，用于增量平移
   const panStartX = useSharedValue(0);
@@ -142,6 +148,7 @@ export function CanvasElement({
     onTransformEnd?.(element.id, calculateCanvasTransformFromAbsolute(
       element, absoluteX, absoluteY, absoluteWidth, absoluteHeight, absoluteRotation,
       { width: canvasWidth, height: canvasHeight },
+      cornerResize.value,
     ));
   };
 
@@ -262,45 +269,17 @@ export function CanvasElement({
         {/* 选中时显示四角拖拽手柄 */}
         {isSelected ? (
           <SelectionHandles
-            height={element.height * canvasHeight}
-            left={0}
-            onHandleDrag={(corner, dx, dy) => {
-              // 根据拖动的角调整元素位置和尺寸
-              const newX = element.x * canvasWidth;
-              const newY = element.y * canvasHeight;
-              const newW = element.width * canvasWidth;
-              const newH = element.height * canvasHeight;
-              let patch: Partial<{ x: number; y: number; width: number; height: number }> = {};
-              const minSize = 20; // 最小像素尺寸
-              switch (corner) {
-                case "top-left":
-                  patch = { x: newX + dx, y: newY + dy, width: Math.max(minSize, newW - dx), height: Math.max(minSize, newH - dy) };
-                  break;
-                case "top-right":
-                  patch = { y: newY + dy, width: Math.max(minSize, newW + dx), height: Math.max(minSize, newH - dy) };
-                  break;
-                case "bottom-left":
-                  patch = { x: newX + dx, width: Math.max(minSize, newW - dx), height: Math.max(minSize, newH + dy) };
-                  break;
-                case "bottom-right":
-                  patch = { width: Math.max(minSize, newW + dx), height: Math.max(minSize, newH + dy) };
-                  break;
-              }
-              if (patch.x !== undefined || patch.y !== undefined || patch.width !== undefined || patch.height !== undefined) {
-                // 实时更新共享值（不经过 React state）
-                if (patch.x !== undefined) posX.value = patch.x;
-                if (patch.y !== undefined) posY.value = patch.y;
-                if (patch.width !== undefined) elemW.value = patch.width;
-                if (patch.height !== undefined) elemH.value = patch.height;
-              }
-            }}
+            elemH={elemH}
+            elemW={elemW}
+            gestureScale={gestureScale}
             onHandleDragEnd={() => {
               // 拖拽结束，提交变换
+              cornerResize.value = true;
               commitTransform(posX.value, posY.value, elemW.value * gestureScale.value, elemH.value * gestureScale.value, element.rotation + gestureRotation.value);
+              cornerResize.value = false;
             }}
-            rotationDeg={element.rotation * (180 / Math.PI)}
-            top={0}
-            width={element.width * canvasWidth}
+            posX={posX}
+            posY={posY}
           />
         ) : null}
       </Animated.View>
