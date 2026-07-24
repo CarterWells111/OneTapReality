@@ -140,6 +140,47 @@ describe("BookCanvasEditor", () => {
     );
   });
 
+  it("removes untouched default text when the user starts another action", () => {
+    const screen = render(<EditorHarness />);
+
+    fireEvent.press(screen.getByText("添加文字"));
+    expect(screen.getByText("点击编辑文字")).toBeTruthy();
+
+    fireEvent.press(screen.getByText("旅行"));
+
+    expect(screen.queryByText("点击编辑文字")).toBeNull();
+  });
+
+  it("keeps default text after its contents change", () => {
+    const screen = render(<EditorHarness />);
+
+    fireEvent.press(screen.getByText("添加文字"));
+    fireEvent.changeText(screen.getByLabelText("编辑选中文字"), "在山路上遇见日落");
+    fireEvent.press(screen.getByText("旅行"));
+
+    expect(screen.getByText("在山路上遇见日落")).toBeTruthy();
+  });
+
+  it("keeps default text after the user presses its canvas element", () => {
+    const screen = render(<EditorHarness />);
+
+    fireEvent.press(screen.getByText("添加文字"));
+    fireEvent.press(screen.getByText("点击编辑文字"));
+    fireEvent.press(screen.getByText("旅行"));
+
+    expect(screen.getByText("点击编辑文字")).toBeTruthy();
+  });
+
+  it("does not confirm default text when its input only receives focus", () => {
+    const screen = render(<EditorHarness />);
+
+    fireEvent.press(screen.getByText("添加文字"));
+    fireEvent(screen.getByLabelText("编辑选中文字"), "focus");
+    fireEvent.press(screen.getByText("旅行"));
+
+    expect(screen.queryByText("点击编辑文字")).toBeNull();
+  });
+
   it("opens the page manager overlay from the toolbar", () => {
     const screen = render(<EditorHarness />);
 

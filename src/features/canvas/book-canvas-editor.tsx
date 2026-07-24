@@ -61,6 +61,7 @@ export function BookCanvasEditor({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [managerOpen, setManagerOpen] = React.useState(false);
 
@@ -81,7 +82,35 @@ export function BookCanvasEditor({
     onPagesChange(nextPages, reason);
   }, [onPagesChange]);
 
+  const clearPendingTextFrom = (sourcePages: StoryPage[] = pages) => {
+    if (!pendingTextId || !currentPage) {
+      return sourcePages;
+    }
+    setPendingTextId(undefined);
+    if (selectedElementId === pendingTextId) {
+      setSelectedElementId(undefined);
+    }
+    return deleteCanvasElement(sourcePages, currentPage.id, pendingTextId);
+  };
+
+  const discardPendingText = () => {
+    const nextPages = clearPendingTextFrom();
+    if (nextPages !== pages) {
+      changePages(nextPages, "structure");
+    }
+    return nextPages;
+  };
+
+  const handleElementInteraction = (elementId: string) => {
+    if (pendingTextId === elementId) {
+      setPendingTextId(undefined);
+      return;
+    }
+    discardPendingText();
+  };
+
   const commitTurn = React.useCallback((targetIndex: number) => {
+    discardPendingText();
     setSelectedElementId(undefined);
     setCurrentIndex(targetIndex);
     setPendingTurn(null);
@@ -173,14 +202,15 @@ export function BookCanvasEditor({
 
   const addSticker = (stickerId = getCanvasStickers(stickerCategory)[0]?.id ?? canvasStickers[0].id) => {
     const nextId = buildCanvasId("sticker");
-    changePages(addStickerToPage(pages, currentPage.id, nextId, stickerId), "structure");
+    changePages(addStickerToPage(clearPendingTextFrom(), currentPage.id, nextId, stickerId), "structure");
     setSelectedElementId(nextId);
   };
 
   const addText = () => {
     const nextId = buildCanvasId("text");
-    changePages(addTextToPage(pages, currentPage.id, nextId), "structure");
+    changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
+    setPendingTextId(nextId);
   };
 
   const isRightPage = currentIndex % 2 === 0;
@@ -194,7 +224,10 @@ export function BookCanvasEditor({
         <Pressable
           accessibilityLabel="打开页面管理"
           accessibilityRole="button"
-          onPress={() => setManagerOpen(true)}
+          onPress={() => {
+            discardPendingText();
+            setManagerOpen(true);
+          }}
           style={styles.pageMenuButton}>
           <Text style={styles.pageMenuButtonText}>页面管理</Text>
         </Pressable>
@@ -202,9 +235,10 @@ export function BookCanvasEditor({
 
       {managerOpen ? (
         <PageManagerSheet
-          onChange={(nextPages) => changePages(nextPages, "structure")}
+          onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
           onClose={() => setManagerOpen(false)}
           onJumpToPage={(index) => {
+            discardPendingText();
             setSelectedElementId(undefined);
             setCurrentIndex(index);
           }}
@@ -226,9 +260,16 @@ export function BookCanvasEditor({
               <CanvasPage
                 height={pageHeight}
                 layout={currentPage.layout}
-                onPressBlank={() => setSelectedElementId(undefined)}
+                onInteractElement={handleElementInteraction}
+                onPressBlank={() => {
+                  discardPendingText();
+                  setSelectedElementId(undefined);
+                }}
                 onSelectElement={setSelectedElementId}
-                onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
+                onTransformEnd={(elementId, patch) => {
+                  handleElementInteraction(elementId);
+                  updateElement(elementId, patch, "transform");
+                }}
                 pageSide={isRightPage ? "right" : "left"}
                 selectedElementId={selectedElementId}
                 width={pageWidth}
@@ -277,7 +318,12 @@ export function BookCanvasEditor({
           <TextInput
             accessibilityLabel="编辑选中文字"
             multiline
-            onChangeText={(text) => updateElement(selectedText.id, { text }, "text")}
+            onChangeText={(text) => {
+              if (text !== selectedText.text && pendingTextId === selectedText.id) {
+                setPendingTextId(undefined);
+              }
+              updateElement(selectedText.id, { text }, "text");
+            }}
             style={styles.textInput}
             value={selectedText.text}
           />
@@ -288,19 +334,25 @@ export function BookCanvasEditor({
         onAddSticker={addSticker}
         onAddText={addText}
         onChangeLayer={(elementId, direction) => {
-          changePages(changeCanvasElementLayer(pages, currentPage.id, elementId, direction), "structure");
+          changePages(changeCanvasElementLayer(clearPendingTextFrom(), currentPage.id, elementId, direction), "structure");
         }}
         onDelete={(elementId) => {
-          changePages(deleteCanvasElement(pages, currentPage.id, elementId), "structure");
+          changePages(deleteCanvasElement(clearPendingTextFrom(), currentPage.id, elementId), "structure");
           setSelectedElementId(undefined);
         }}
-        onDone={() => setSelectedElementId(undefined)}
+        onDone={() => {
+          discardPendingText();
+          setSelectedElementId(undefined);
+        }}
         onDuplicate={(elementId) => {
           const nextId = buildCanvasId("copy");
-          changePages(duplicateCanvasElement(pages, currentPage.id, elementId, nextId), "structure");
+          changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
-        onUpdateElement={(elementId, patch) => updateElement(elementId, patch, "structure")}
+        onUpdateElement={(elementId, patch) => {
+          const nextPages = clearPendingTextFrom();
+          changePages(updateCanvasElement(nextPages, currentPage.id, elementId, patch), "structure");
+        }}
         selectedElement={selectedElement}
       />
 
@@ -311,7 +363,10 @@ export function BookCanvasEditor({
               active={category.id === stickerCategory}
               key={category.id}
               label={category.label}
-              onPress={() => setStickerCategory(category.id)}
+              onPress={() => {
+                discardPendingText();
+                setStickerCategory(category.id);
+              }}
             />
           ))}
         </ScrollView>

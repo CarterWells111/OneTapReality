@@ -18,6 +18,7 @@ type CanvasElementProps = {
   interactive: boolean;
   isSelected: boolean;
   selectionContext: string | undefined;
+  onInteract?: (id: string) => void;
   onSelect: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
 };
@@ -49,6 +50,14 @@ export function finalizeCanvasGesture(started: boolean, activeGestureCount: numb
   return { activeGestureCount: nextCount, shouldCommit: nextCount === 0 };
 }
 
+export function calculateStickerTextStyle(
+  element: Pick<CanvasElementModel, "width" | "height">,
+  { width: canvasWidth, height: canvasHeight }: CanvasDimensions,
+) {
+  const scale = Math.min(element.width * canvasWidth, element.height * canvasHeight) / (canvasWidth * 0.14);
+  return { fontSize: 34 * scale, lineHeight: 40 * scale };
+}
+
 export function CanvasElement({
   canvasHeight,
   canvasWidth,
@@ -56,6 +65,7 @@ export function CanvasElement({
   interactive,
   isSelected,
   selectionContext,
+  onInteract,
   onSelect,
   onTransformEnd,
 }: CanvasElementProps) {
@@ -82,10 +92,13 @@ export function CanvasElement({
     ));
   };
 
+  const acknowledgeInteraction = () => onInteract?.(element.id);
+
   const beginGesture = (started: typeof panStarted) => {
     "worklet";
     started.value = true;
     activeGestureCount.value += 1;
+    runOnJS(acknowledgeInteraction)();
   };
 
   const finalizeGesture = (started: typeof panStarted) => {
@@ -152,7 +165,7 @@ export function CanvasElement({
     transform: [{ rotate: `${element.rotation}rad` }],
   };
 
-  const content = <ElementContent element={element} />;
+  const content = <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} />;
   if (!interactive) {
     return (
       <View
@@ -170,6 +183,7 @@ export function CanvasElement({
           accessibilityRole="button"
           accessibilityHint="双击以选中并编辑"
           onPress={() => {
+            acknowledgeInteraction();
             const now = Date.now();
             if (lastPressAt.current !== null && now - lastPressAt.current <= 320) {
               lastPressAt.current = null;
@@ -187,13 +201,21 @@ export function CanvasElement({
   );
 }
 
-function ElementContent({ element }: { element: CanvasElementModel }) {
+function ElementContent({
+  canvasHeight,
+  canvasWidth,
+  element,
+}: {
+  canvasHeight: number;
+  canvasWidth: number;
+  element: CanvasElementModel;
+}) {
   if (element.type === "image") {
     return <Image contentFit="cover" source={element.uri} style={styles.image} testID={`canvas-image-${element.id}`} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
-    return <Text style={styles.sticker}>{sticker?.glyph ?? "✦"}</Text>;
+    return <Text style={[styles.sticker, calculateStickerTextStyle(element, { width: canvasWidth, height: canvasHeight })]}>{sticker?.glyph ?? "✦"}</Text>;
   }
   const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
   return <Text style={[styles.text, { color: element.color, fontFamily: font?.family }]}>{element.text}</Text>;

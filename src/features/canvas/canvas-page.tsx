@@ -12,6 +12,7 @@ type CanvasPageProps = {
   layout: CanvasLayout;
   selectedElementId?: string;
   onPressBlank?: () => void;
+  onInteractElement?: (id: string) => void;
   onSelectElement?: (id: string) => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
   interactive?: boolean;
@@ -25,6 +26,7 @@ export function CanvasPage({
   layout,
   selectedElementId,
   onPressBlank,
+  onInteractElement,
   onSelectElement = () => undefined,
   onTransformEnd,
   interactive = true,
@@ -57,6 +59,7 @@ export function CanvasPage({
           interactive={interactive}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
+          onInteract={onInteractElement}
           selectionContext={selectedElementId}
           onSelect={onSelectElement}
           onTransformEnd={interactive ? onTransformEnd : undefined}
