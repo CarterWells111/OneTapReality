@@ -259,9 +259,6 @@ export default function DraftReviewScreen() {
           <Text selectable style={styles.hint}>
             横滑翻页；双击组件后可拖动、缩放或旋转。
           </Text>
-          <Text selectable style={styles.aiDisclaimer}>
-            AI 辅助生成的内容可能存在偏差，请在保存前核对。
-          </Text>
 
           <BookCanvasEditor
             onPagesChange={changePages}
@@ -272,6 +269,9 @@ export default function DraftReviewScreen() {
             onRetry={() => queueRef.current?.retry()}
             state={autosaveState}
           />
+          <Text selectable style={styles.aiDisclaimer}>
+            AI 辅助生成的内容可能存在偏差，请在保存前校对。
+          </Text>
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
         </ScrollView>
 

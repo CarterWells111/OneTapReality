@@ -259,39 +259,19 @@ export function BookCanvasEditor({
   return (
     <View style={styles.editor}>
       <View style={styles.editorTopbar}>
-        <View style={styles.undoRedoButtons}>
+        <View style={styles.pageIndicatorRow}>
+          <Text style={styles.pageIndicatorText}>第 {currentIndex + 1} / {pages.length} 页</Text>
           <Pressable
-            accessibilityLabel="撤销"
+            accessibilityLabel="打开页面管理"
             accessibilityRole="button"
-            disabled={!canUndo}
             onPress={() => {
-              undo(pages);
+              discardPendingText();
+              setManagerOpen(true);
             }}
-            style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}>
-            <Text style={[styles.undoRedoText, !canUndo && styles.undoRedoTextDisabled]}>←</Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="重做"
-            accessibilityRole="button"
-            disabled={!canRedo}
-            onPress={() => {
-              redo(pages);
-            }}
-            style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}>
-            <Text style={[styles.undoRedoText, !canRedo && styles.undoRedoTextDisabled]}>→</Text>
+            style={styles.pageMenuButton}>
+            <Text style={styles.pageMenuButtonText}>页面管理</Text>
           </Pressable>
         </View>
-        <Text style={styles.currentPageLabel}>第 {currentIndex + 1} / {pages.length} 页</Text>
-        <Pressable
-          accessibilityLabel="打开页面管理"
-          accessibilityRole="button"
-          onPress={() => {
-            discardPendingText();
-            setManagerOpen(true);
-          }}
-          style={styles.pageMenuButton}>
-          <Text style={styles.pageMenuButtonText}>页面管理</Text>
-        </Pressable>
       </View>
 
       {managerOpen ? (
@@ -417,13 +397,14 @@ export function BookCanvasEditor({
       ) : null}
 
       <CanvasToolbar
-        onAddSticker={addSticker}
+        canRedo={canRedo}
+        canUndo={canUndo}
         onAddFrame={() => {
           setAssetTrayMode("frame");
           addFrame();
         }}
+        onAddSticker={addSticker}
         onAddText={addText}
-        onPickBackground={() => setAssetTrayMode("background")}
         onChangeLayer={(elementId, direction) => {
           changePages(changeCanvasElementLayer(clearPendingTextFrom(), currentPage.id, elementId, direction), "structure");
         }}
@@ -440,6 +421,9 @@ export function BookCanvasEditor({
           changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
+        onPickBackground={() => setAssetTrayMode("background")}
+        onRedo={() => redo(pages)}
+        onUndo={() => undo(pages)}
         onUpdateElement={(elementId, patch) => {
           const nextPages = clearPendingTextFrom();
           changePages(updateCanvasElement(nextPages, currentPage.id, elementId, patch), "structure");
@@ -634,32 +618,16 @@ function SmallButton({
 const styles = StyleSheet.create({
   editor: { gap: 12 },
   editorTopbar: {
-    alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     paddingHorizontal: 20,
   },
-  undoRedoButtons: {
+  pageIndicatorRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 4,
+    gap: 10,
   },
-  undoRedoBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  undoRedoBtnDisabled: {
-    opacity: 0.3,
-  },
-  undoRedoText: {
-    color: colors.accent,
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  undoRedoTextDisabled: {
-    color: colors.muted,
-  },
-  currentPageLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
+  pageIndicatorText: { color: colors.ink, fontSize: 13, fontWeight: "800" },
   bookStage: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 6 },
   pageShadow: {
     backgroundColor: "#FFFDF7",
@@ -686,8 +654,13 @@ const styles = StyleSheet.create({
     right: 0,
   },
   pageLayer: { left: 0, position: "absolute", top: 0 },
-  pageMenuButton: { paddingHorizontal: 8, paddingVertical: 6 },
-  pageMenuButtonText: { color: colors.accent, fontSize: 13, fontWeight: "800" },
+  pageMenuButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  pageMenuButtonText: { color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" },
   sectionLabel: { color: colors.ink, fontSize: 13, fontWeight: "800" },
   smallButton: {
     backgroundColor: colors.surface,
