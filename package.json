@@ -3,13 +3,13 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "engines": {
-    "node": ">=20.19.0",
+    "node": ">=20.19.4",
     "npm": ">=10.8.2"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=20.19.0",
+      "version": ">=20.19.4",
       "onFail": "error"
     },
     "packageManager": {

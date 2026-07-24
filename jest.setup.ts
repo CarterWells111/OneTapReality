@@ -1,7 +1,5 @@
 import "react-native-gesture-handler/jestSetup";
 
-import "react-native-gesture-handler/jestSetup";
-
 jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
 
 // Global mock: useSafeAreaInsets returns zero insets in tests without SafeAreaProvider

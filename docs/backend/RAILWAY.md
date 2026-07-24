@@ -9,7 +9,7 @@ Railway 托管 Expo API Routes 的 Node server 和同项目 PostgreSQL；现有 
 - `npm run db:migrate`：在发布新版本前应用 Drizzle migration。
 - `npm run start:server`：启动 Expo Server 的 Express adapter。
 - `/api/health`：Railway 健康检查路径。
-- Node.js：`>=20.19.0`。
+- Node.js：`>=20.19.4`。
 
 ## 第一次配置
 
@@ -77,6 +77,7 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 ## 常见失败
 
+- 构建在 `npm ci` 时以 `EUSAGE` 失败：`package.json` 与 `package-lock.json` 不同步；同步 lockfile 后从干净状态重新运行 `npm ci`。
 - `/api/health` 返回 `503 database_unavailable`：检查 API Service 的 `DATABASE_URL` 是否为 PostgreSQL 引用变量，以及 PostgreSQL Service 是否在线。
 - 日志提示 relation 不存在：检查 pre-deploy 是否执行 `npm run db:migrate`，不要手工修改已应用 migration。
 - 构建成功但健康检查超时：不要固定 `PORT`；服务必须使用 Railway 注入值。

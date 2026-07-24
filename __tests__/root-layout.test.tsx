@@ -1,10 +1,12 @@
 import { render, within } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
-  const Stack = ({ children }: { children: React.ReactNode }) => <View testID="stack">{children}</View>;
-  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string; presentation?: string } }) => (
-    <View testID={`screen-${name}`} title={options?.title} options={options} />
-  );
+  const Stack = function Stack({ children }: { children: React.ReactNode }) {
+    return <View testID="stack">{children}</View>;
+  };
+  Stack.Screen = function StackScreen({ name, options }: { name: string; options?: { title?: string; presentation?: string } }) {
+    return <View testID={`screen-${name}`} title={options?.title} options={options} />;
+  };
   return { Stack };
 });
 jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
@@ -55,6 +57,12 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+  });
+
+  it("registers the unvisited cities browser with its Chinese title", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-cities/unvisited").props.title).toBe("未打卡城市");
   });
 
   it("registers the native fullscreen city map as a full-screen modal", async () => {
