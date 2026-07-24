@@ -108,7 +108,7 @@ describe("DraftReviewScreen", () => {
     const screen = render(<DraftReviewScreen />);
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("添加心意"));
+    fireEvent.press(screen.getByLabelText("添加贴纸 1-01"));
     await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledTimes(1));
     fireEvent.press(screen.getByText("保留草稿"));
     expect(mockSaveDraft).not.toHaveBeenCalled();
@@ -135,7 +135,7 @@ describe("DraftReviewScreen", () => {
     jest.useRealTimers();
 
     mockUpdateDraftPages.mockRejectedValueOnce(new Error("write failed"));
-    fireEvent.press(screen.getByLabelText("添加相机"));
+    fireEvent.press(screen.getByLabelText("添加贴纸 1-01"));
     await waitFor(() => expect(screen.getByText("保存失败·重试")).toBeTruthy());
     mockUpdateDraftPages.mockResolvedValue(undefined);
     fireEvent.press(screen.getByText("保存失败·重试"));

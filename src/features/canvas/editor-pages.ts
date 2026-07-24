@@ -1,10 +1,12 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout } from "./canvas-layout";
-import type { CanvasElement, CanvasStickerId, StoryPage } from "../../types/memory";
+import { bodyFontFamily } from "../typography/fonts";
+import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasStickerId, StoryPage } from "../../types/memory";
 
 export type CanvasElementPatch = {
   color?: string;
-  fontStyle?: "system" | "avenir" | "georgia";
+  fontSize?: number;
+  fontStyle?: string;
   height?: number;
   rotation?: number;
   text?: string;
@@ -121,8 +123,9 @@ export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
           id,
           type: "text",
           text: "点击编辑文字",
-          fontStyle: "avenir",
+          fontStyle: bodyFontFamily,
           color: "#1C2C28",
+          fontSize: 18,
           x: 0.12,
           y: 0.45,
           width: 0.72,
@@ -148,12 +151,50 @@ export function addStickerToPage(pages: StoryPage[], pageId: string, id: string,
           stickerId,
           x: 0.72,
           y: 0.78,
-          width: 0.14,
-          height: 0.14,
+          width: 0.2,
+          height: 0.2,
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
       ],
+    },
+  }));
+}
+
+export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, frameId: CanvasFrameId) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: {
+      aspectRatio: 1,
+      elements: [
+        ...page.layout!.elements,
+        {
+          id,
+          type: "frame",
+          frameId,
+          x: 0.04,
+          y: 0.04,
+          width: 0.92,
+          height: 0.92,
+          rotation: 0,
+          zIndex: maxLayer(page.layout!.elements) + 1,
+        },
+      ],
+    },
+  }));
+}
+
+export function setCanvasBackground(
+  pages: StoryPage[],
+  pageId: string,
+  backgroundId: CanvasBackgroundId | undefined,
+) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: {
+      aspectRatio: 1,
+      ...(backgroundId ? { backgroundId } : {}),
+      elements: page.layout!.elements,
     },
   }));
 }

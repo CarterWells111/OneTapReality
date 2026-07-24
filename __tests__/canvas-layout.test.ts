@@ -19,8 +19,8 @@ describe("canvas layout", () => {
     const layout = normalizeLayout({
       aspectRatio: 1,
       elements: [
-        { id: "same", type: "text", x: -1, y: 2, width: 3, height: 0, rotation: 0, zIndex: 1, text: "One", fontStyle: "system", color: "#000000" },
-        { id: "same", type: "sticker", x: 0.5, y: 0.5, width: 0.2, height: 0.2, rotation: 0, zIndex: 2, stickerId: "heart" },
+        { id: "same", type: "text", x: -1, y: 2, width: 3, height: 0, rotation: 0, zIndex: 1, text: "One", fontStyle: "system", color: "#000000", fontSize: 16 },
+        { id: "same", type: "sticker", x: 0.5, y: 0.5, width: 0.2, height: 0.2, rotation: 0, zIndex: 2, stickerId: "sticker1-01" },
       ],
     });
 
