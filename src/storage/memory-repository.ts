@@ -3,8 +3,8 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { createLegacyLayout, normalizeLayout } from "../features/canvas/canvas-layout";
 import type { CanvasLayout, Memory, MemoryStatus, StoryPage } from "../types/memory";
 
-type MemoryRow = Omit<Memory, "photoUris" | "pages" | "status"> & {
-  status: MemoryStatus;
+type MemoryRow = Omit<Memory, "photoUris" | "pages"> & {
+  status?: MemoryStatus;
 };
 type PhotoRow = { uri: string };
 type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string | null; layout_json: string | null };
@@ -110,8 +110,9 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
 
 export async function listMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
-    "saved"
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status IS NULL OR (status <> ? AND status <> ?) ORDER BY updatedAt DESC",
+    "draft",
+    "discarded"
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
@@ -121,7 +122,7 @@ export async function getMemory(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND (status IS NULL OR status = ?)",
     id,
     "saved"
   );

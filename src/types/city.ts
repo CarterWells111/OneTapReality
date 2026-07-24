@@ -123,6 +123,7 @@ export const cityRegistry = Object.freeze([
   location("guangzhou", "广州", "province-capital", "广东省", 0.68, 0.80),
   location("nanning", "南宁", "autonomous-region-capital", "广西壮族自治区", 0.58, 0.82),
   location("shenzhen", "深圳", "legacy-city", "广东省", 0.71, 0.84),
+  location("hongkong", "香港", "legacy-city", "香港特别行政区", 0.74, 0.9),
   location("suzhou", "苏州", "legacy-city", "江苏省", 0.78, 0.61),
   location("haikou", "海口", "province-capital", "海南省", 0.54, 0.91),
 ] as const);

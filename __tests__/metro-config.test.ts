@@ -6,7 +6,7 @@ describe("Metro configuration", () => {
     const target = join(process.cwd(), ".worktrees", "feature", "node_modules", "expo");
     const output = execFileSync(
       process.execPath,
-      ["-e", `const config = require('./metro.config'); process.stdout.write(JSON.stringify([config.resolver.blockList.test(${JSON.stringify(target)}), config.resolver.blockList.test('.worktrees/feature/node_modules/expo')]));`],
+      ["-e", `const config = require('./metro.config'); process.stdout.write(JSON.stringify([config.resolver.blockList.test(${JSON.stringify(target)}), config.resolver.blockList.test(${JSON.stringify(activeProjectDependency)})]));`],
       { cwd: process.cwd(), encoding: "utf8" },
     );
 
