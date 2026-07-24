@@ -39,13 +39,7 @@ export function MemoryBookCover({
       <Pressable
         accessibilityLabel={`打开旅行册 ${memory.title}`}
         accessibilityRole="button"
-        onPress={() => {
-          if (multiSelect && onLongPress) {
-            onLongPress();
-          } else {
-            onPress();
-          }
-        }}
+        onPress={onPress}
         onLongPress={() => {
           if (!multiSelect && onLongPress) {
             onLongPress();
