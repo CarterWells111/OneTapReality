@@ -4,6 +4,13 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "development": {
+      "autoIncrement": true,
+      "developmentClient": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
@@ -14,6 +21,19 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+      }
+    }
+    }
+  },
+  "submit": {
+    "development": {
+      "ios": {
+        "ascAppId": "6794186067"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "6794186067"
       }
     }
   }
