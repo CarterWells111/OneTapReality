@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "OneTapReality｜一触如初",
-    "slug": "travel-memory-demo",
+    "slug": "travel-memory-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/onetapreality-icon.png",
-    "scheme": "lvyidemo",
+    "scheme": "luyi",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"

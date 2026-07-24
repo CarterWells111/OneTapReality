@@ -72,7 +72,7 @@ export default function FeedbackScreen() {
           <Text selectable style={styles.successMark}>✓</Text>
           <Text selectable style={styles.successTitle}>反馈已记录，谢谢你</Text>
           <Text selectable style={styles.subtitle}>
-            反馈只保存在这台设备上，用于改进现场演示。
+            感谢你的反馈，这能帮助我们做得更好。
           </Text>
           <AppButton label="导出 / 分享全部反馈" tone="secondary" onPress={() => void share()} />
           <AppButton label="返回" onPress={() => router.back()} />
@@ -90,7 +90,7 @@ export default function FeedbackScreen() {
       <View style={styles.hero}>
         <Text selectable style={styles.title}>意见反馈</Text>
         <Text selectable style={styles.subtitle}>
-          全部选填，写多少都可以。反馈只保存在这台设备上。
+          全部选填，写多少都可以。
         </Text>
       </View>
 

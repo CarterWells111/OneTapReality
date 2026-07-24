@@ -74,7 +74,7 @@ export default function SettingsScreen() {
   if (!isProfileReady || !draft) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.loading}>
-        <Text selectable style={styles.helper}>正在读取本机资料…</Text>
+        <Text selectable style={styles.helper}>正在读取资料…</Text>
       </ScrollView>
     );
   }
@@ -83,7 +83,7 @@ export default function SettingsScreen() {
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.avatarSection}>
         <ProfileAvatar avatarUri={draft.avatarUri} nickname={draft.nickname} size={96} />
-        <Text selectable style={styles.helper}>头像与昵称只保存在这台设备上。</Text>
+        <Text selectable style={styles.helper}>头像与昵称用于个人展示。</Text>
       </View>
 
       <Section title="个人资料">
@@ -112,16 +112,16 @@ export default function SettingsScreen() {
 
       {error ? <Text selectable style={styles.error}>{error}</Text> : null}
 
-      <Section title="本机数据与隐私">
+      <Section title="数据与隐私">
         <View style={styles.privacyCard}>
           <Text selectable style={styles.privacyTitle}>资料不会同步到云端</Text>
-          <Text selectable style={styles.helper}>昵称与头像 URI 仅保存于本机；选择照片不会上传或分享。</Text>
+          <Text selectable style={styles.helper}>昵称与头像用于个人展示；选择照片不会上传或分享。</Text>
         </View>
       </Section>
 
-      <Section title="后端实验">
-        <Text selectable style={styles.helper}>仅手动检查接口能力，不会同步本地旅行册或上传照片。</Text>
-        <AppButton label="打开后端实验" onPress={() => router.push("/backend")} tone="secondary" />
+      <Section title="后端状态">
+        <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
+        <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
       </Section>
 
       <AppButton disabled={isSaving} label={isSaving ? "正在保存资料…" : "保存资料"} onPress={() => void saveProfile()} />

@@ -169,6 +169,6 @@ describe("SettingsScreen", () => {
     fireEvent.press(screen.getByText("移除头像"));
 
     await waitFor(() => expect(screen.getByLabelText("小林的头像").props.source).toBeUndefined());
-    expect(screen.getByText("本机数据与隐私")).toBeTruthy();
+    expect(screen.getByText("数据与隐私")).toBeTruthy();
   });
 });

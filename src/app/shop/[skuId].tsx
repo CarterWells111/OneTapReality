@@ -109,7 +109,7 @@ function SkuDetail({ sku }: { sku: CatalogSku }) {
           <Text selectable style={styles.savedMark}>✓</Text>
           <Text selectable style={styles.savedTitle}>已加入购物袋</Text>
           <Text selectable style={styles.savedCopy}>
-            {sku.name}已经放好了。购物袋只保存在这台设备上，方便你继续演示。
+            {sku.name}已经放好了，去看看购物袋吧。
           </Text>
           <AppButton label="查看购物袋" onPress={() => router.replace("/shop/orders")} />
           <AppButton label="继续逛商店" tone="secondary" onPress={() => router.back()} />
@@ -262,6 +262,7 @@ function SkuDetail({ sku }: { sku: CatalogSku }) {
       </View>
       <AppButton label="加入购物袋" onPress={() => void onSave()} />
       <Text selectable style={styles.disclaimer}>{demoQuoteDisclaimer}</Text>
+      <Text selectable style={styles.physicalGoods}>所有商品为实体手作纪念品，含配送与门店自取服务。</Text>
     </ScrollView>
   );
 }
@@ -426,6 +427,7 @@ const styles = StyleSheet.create({
   totalLabel: { color: colors.ink, fontFamily: serifFont, fontSize: 20 },
   totalPrice: { color: colors.accent, fontFamily: serifFont, fontSize: 24 },
   disclaimer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
+  physicalGoods: { color: colors.muted, fontFamily: bodyFont, fontSize: 11.5, lineHeight: 16, textAlign: "center" },
   missing: { flex: 1, gap: 14, justifyContent: "center", padding: 24 },
   missingTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 22, textAlign: "center" },
   savedScreen: { flex: 1, justifyContent: "center", padding: 24 },

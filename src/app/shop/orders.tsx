@@ -44,7 +44,7 @@ export default function ShopOrdersScreen() {
   };
 
   const confirmClear = () => {
-    Alert.alert("清空购物袋", "将删除这台设备上保存的全部订购意向，且无法恢复。", [
+    Alert.alert("清空购物袋", "将删除全部订购意向，且无法恢复。", [
       { text: "取消", style: "cancel" },
       {
         text: "清空",
@@ -62,14 +62,14 @@ export default function ShopOrdersScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
-        <ScreenTitle title="购物袋" caption="LOCAL BAG" />
+        <ScreenTitle title="购物袋" caption="SHOPPING BAG" />
         <Text selectable style={styles.countText}>
           {intents.length} 件商品
         </Text>
       </View>
 
       {!isReady ? (
-        <Text selectable style={styles.mutedText}>正在读取本机购物袋...</Text>
+        <Text selectable style={styles.mutedText}>正在读取购物袋...</Text>
       ) : intents.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text selectable style={styles.emptyTitle}>购物袋还是空的</Text>
@@ -90,7 +90,7 @@ export default function ShopOrdersScreen() {
             <View style={styles.tape} />
             <Text selectable style={styles.couponTitle}>优惠券</Text>
             <Text selectable style={styles.couponLine}>手写旅行日记 减 {formatCny(summary.discount)}</Text>
-            <Text selectable style={styles.couponSmall}>有效期至本地演示结束</Text>
+            <Text selectable style={styles.couponSmall}>有效期至活动结束</Text>
             <Text style={styles.chevron}>›</Text>
           </View>
 
@@ -109,7 +109,7 @@ export default function ShopOrdersScreen() {
             <SummaryRow label="合计" value={formatCny(summary.total)} tone="accent" large />
           </View>
 
-          <AppButton label="去结算（演示）" onPress={() => void share()} />
+          <AppButton label="导出订单" onPress={() => void share()} />
           <View style={styles.actions}>
             <Pressable accessibilityRole="button" onPress={() => void share()} style={styles.textAction}>
               <Text selectable style={styles.textActionLabel}>导出购物袋文本</Text>

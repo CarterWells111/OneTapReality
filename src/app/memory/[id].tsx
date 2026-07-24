@@ -68,7 +68,7 @@ export default function MemoryDetailScreen() {
           <View>
             <Text selectable style={styles.coverMeta}>{city.name} · {memory.travelDate}</Text>
             <Text selectable style={styles.coverMeta}>
-              {isSample ? "杭州示例旅行册" : `${memory.photoUris.length} 张本地照片`}
+              {isSample ? "杭州 · 示例" : `${memory.photoUris.length} 张照片`}
             </Text>
           </View>
         </View>

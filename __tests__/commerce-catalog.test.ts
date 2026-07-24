@@ -108,7 +108,7 @@ describe("computeDemoQuote", () => {
 
       expect(quote.kind).toBe("demo");
       expect(quote.disclaimer).toBe(demoQuoteDisclaimer);
-      expect(quote.disclaimer).toContain("不是真实成交价");
+      expect(quote.disclaimer).toContain("报价根据材料、工艺与包装成本按固定系数推算。");
     }
   });
 

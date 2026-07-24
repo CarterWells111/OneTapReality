@@ -73,7 +73,7 @@ describe("ProfileScreen", () => {
     await fireEvent.press(screen.getByText("去过的城市"));
     await fireEvent.press(screen.getByText("回收站"));
     await fireEvent.press(screen.getByText("意见反馈"));
-    await fireEvent.press(screen.getByText("本机数据与隐私声明"));
+    await fireEvent.press(screen.getByText("数据与隐私"));
 
     expect(mockPush).toHaveBeenNthCalledWith(1, "/shop/orders");
     expect(mockPush).toHaveBeenNthCalledWith(2, "/shop/favorites");
@@ -89,7 +89,7 @@ describe("ProfileScreen", () => {
 
     const screen = render(<ProfileScreen />);
 
-    expect(screen.getByText("正在读取本地记忆…")).toBeTruthy();
+    expect(screen.getByText("正在读取记忆…")).toBeTruthy();
     expect(screen.queryByText("我的订单")).toBeNull();
   });
 });

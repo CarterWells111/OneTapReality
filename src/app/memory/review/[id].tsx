@@ -257,7 +257,10 @@ export default function DraftReviewScreen() {
           </View>
 
           <Text selectable style={styles.hint}>
-            横滑翻页；双击组件后可拖动、缩放或旋转。所有内容只保存在本机。
+            横滑翻页；双击组件后可拖动、缩放或旋转。
+          </Text>
+          <Text selectable style={styles.aiDisclaimer}>
+            AI 辅助生成的内容可能存在偏差，请在保存前核对。
           </Text>
 
           <BookCanvasEditor
@@ -324,6 +327,7 @@ const styles = StyleSheet.create({
   metadata: { color: colors.muted, fontSize: 13 },
   pageCount: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   hint: { color: colors.muted, fontSize: 13, lineHeight: 19, paddingHorizontal: 20 },
+  aiDisclaimer: { color: colors.muted, fontSize: 12, lineHeight: 17, paddingHorizontal: 20, textAlign: "center" },
   saveStatus: { alignItems: "center", minHeight: 28, justifyContent: "center" },
   saved: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   saveError: { color: colors.danger, fontSize: 13, fontWeight: "800" },

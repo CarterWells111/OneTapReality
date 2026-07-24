@@ -133,7 +133,7 @@ export default function NewMemoryScreen() {
       <PaperCard tone="paper" style={styles.intro}>
         <Tag label="开始新的一册" />
         <Text selectable style={styles.introText}>
-          翻开一页空白的旅行册。你选择的照片只在这台设备上使用，本版会生成固定的本地旅行册草稿，之后可随时修改。
+          翻开一页空白的旅行册。选择照片后即可生成草稿，之后可随时修改。
         </Text>
       </PaperCard>
 

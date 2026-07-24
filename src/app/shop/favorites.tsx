@@ -50,11 +50,11 @@ export default function ShopFavoritesScreen() {
         <Text selectable style={styles.title}>
           我的收藏{isReady ? ` · ${favoriteSkus.length} 件` : ""}
         </Text>
-        <Text selectable style={styles.subtitle}>收藏只保存在这台设备上。</Text>
+        <Text selectable style={styles.subtitle}>保存你喜欢的纪念品。</Text>
       </View>
 
       {!isReady ? (
-        <Text selectable style={styles.subtitle}>正在读取本机记录…</Text>
+        <Text selectable style={styles.subtitle}>正在读取收藏…</Text>
       ) : favoriteSkus.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text selectable style={styles.emptyTitle}>还没有收藏的纪念品</Text>
@@ -84,7 +84,7 @@ export default function ShopFavoritesScreen() {
                   <View style={styles.cardBody}>
                     <Text numberOfLines={1} selectable style={styles.cardTitle}>{sku.name}</Text>
                     <Text numberOfLines={1} selectable style={styles.cardMeta}>
-                      {city ? `${city.name}限定` : "通用款"} · {formatCny(quote.amount)} 起
+                      {city ? `${city.name}系列` : "通用款"} · {formatCny(quote.amount)} 起
                     </Text>
                   </View>
                   <Pressable

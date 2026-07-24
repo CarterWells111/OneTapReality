@@ -21,9 +21,9 @@ export default function NfcDemoScreen() {
         <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{result.message}</Text>
       </View>
       <View style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 10, padding: 18 }}>
-        <Text selectable style={{ color: colors.ink, fontWeight: "700" }}>Expo Go 模拟模式</Text>
+        <Text selectable style={{ color: colors.ink, fontWeight: "700" }}>城市钥匙</Text>
         <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
-          当前按钮模拟读取城市钥匙。Expo Go 不支持真实第三方 NFC 扫描；下一阶段会使用 Development Build 和 NTAG213 标签。
+          已读取该城市的记忆钥匙，可查看对应的城市收藏。
         </Text>
       </View>
       <AppButton label="查看城市收藏" tone="secondary" onPress={() => router.replace({ pathname: "/city/[city]", params: { city: result.city } })} />

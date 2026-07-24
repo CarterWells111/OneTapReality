@@ -22,7 +22,7 @@ const listEntries: ListEntry[] = [
   { key: "cities", title: "去过的城市", href: "/cities" },
   { key: "recycle-bin", title: "回收站", href: "/recycle-bin" },
   { key: "feedback", title: "意见反馈", href: "/feedback" },
-  { key: "privacy", title: "本机数据与隐私声明", href: "/privacy" },
+  { key: "privacy", title: "数据与隐私", href: "/privacy" },
 ];
 
 function SettingsGlyph() {
@@ -51,7 +51,7 @@ export default function ProfileScreen() {
         contentContainerStyle={[styles.loading, { paddingTop: insets.top + 12 }]}
         style={styles.screen}
       >
-        <Text selectable style={styles.bio}>正在读取本地记忆…</Text>
+        <Text selectable style={styles.bio}>正在读取记忆…</Text>
       </ScrollView>
     );
   }

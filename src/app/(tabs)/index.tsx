@@ -25,7 +25,7 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.heroHeadline}>把旅程留成一册</Text>
         <Text selectable style={styles.subtitle}>让每一次触碰，都回到故事最初的地方。</Text>
         <Text selectable style={styles.subtitle}>
-          选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。
+          选择照片，开启一册专属你们的旅行记忆。
         </Text>
         <View style={styles.heroActions}>
           <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
@@ -44,7 +44,7 @@ export default function MemoriesHomeScreen() {
         caption="MY TRAVEL ALBUMS"
       >
         {!isReady ? (
-          <Text selectable style={styles.mutedText}>正在读取本地记忆…</Text>
+          <Text selectable style={styles.mutedText}>正在读取记忆…</Text>
         ) : memories.length > 0 ? (
           <View style={styles.bookGrid}>
             {memories.map((memory) => (
@@ -75,13 +75,13 @@ export default function MemoriesHomeScreen() {
           <Text selectable style={styles.shopEyebrow}>纪念品商店</Text>
           <Text selectable style={styles.shopTitle}>把回忆做成实物</Text>
           <Text selectable style={styles.shopMeta}>
-            城市限定纪念钥匙、打印旅行册，可选样式、可刻字。
+            城市系列纪念钥匙、打印旅行册，可选样式、可刻字。
           </Text>
         </View>
         <Text selectable style={styles.shopArrow}>→</Text>
       </Pressable>
 
-      <Text selectable style={styles.footer}>每一册和每一张照片，都只保存在这台设备上。</Text>
+      <Text selectable style={styles.footer}>每一册旅行记忆，都是独一无二的故事。</Text>
     </ScrollView>
   );
 }

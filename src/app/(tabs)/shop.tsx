@@ -70,7 +70,7 @@ export default function ShopScreen() {
           <Text selectable style={styles.heroSketchLine}>花签 · 小册 · 城市坠 · 贴纸包</Text>
         </View>
         <Text selectable style={styles.heroCopy}>
-          挑一件手作纪念品，选择款式与包装，先放入购物袋。这里只收集订购意向，不产生真实支付。
+          挑一件手作纪念品，选择款式与包装，放入购物袋。
         </Text>
       </View>
 
@@ -103,6 +103,9 @@ export default function ShopScreen() {
       </Section>
 
       <Text selectable style={styles.disclaimer}>{demoQuoteDisclaimer}</Text>
+      <Text selectable style={styles.physicalGoods}>
+        所有商品为实体手作纪念品，含配送与门店自取服务。
+      </Text>
     </ScrollView>
   );
 }
@@ -160,7 +163,7 @@ function SkuGridCard({
       <View style={styles.cardBody}>
         <Text numberOfLines={2} selectable style={styles.cardTitle}>{sku.name}</Text>
         <Text numberOfLines={1} selectable style={styles.cardMeta}>
-          {city ? `${city.name}限定` : "通用款"} · {sku.craft.process}
+          {city ? `${city.name}系列` : "通用款"} · {sku.craft.process}
         </Text>
         <Text selectable style={styles.cardPrice}>{formatCny(quote.amount)} <Text style={styles.cardFrom}>起</Text></Text>
       </View>
@@ -240,5 +243,6 @@ const styles = StyleSheet.create({
   cardPrice: { color: colors.accent, fontFamily: serifFont, fontSize: 18 },
   cardFrom: { color: colors.ink, fontFamily: bodyFont, fontSize: 11 },
   disclaimer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, lineHeight: 18, textAlign: "center" },
+  physicalGoods: { color: colors.muted, fontFamily: bodyFont, fontSize: 11.5, lineHeight: 16, textAlign: "center" },
   pressed: { opacity: 0.78 },
 });

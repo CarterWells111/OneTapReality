@@ -50,7 +50,7 @@ describe("RootLayout", () => {
   it("registers the native privacy declaration route", async () => {
     const screen = await render(<RootLayout />);
 
-    expect(screen.getByTestId("screen-privacy/index").props.title).toBe("本机数据与隐私声明");
+    expect(screen.getByTestId("screen-privacy/index").props.title).toBe("数据与隐私");
   });
 
   it("registers the city collection management route", async () => {

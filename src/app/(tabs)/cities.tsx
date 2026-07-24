@@ -31,7 +31,7 @@ export default function CitiesScreen() {
         <PaperCard tone="paper" style={styles.mapCard}>
           <Tag label="足迹总览" />
           <Text selectable style={styles.mapNote}>
-            每一册本地保存的旅行记忆，都会在这张离线地图上，往你的收藏册里落下一枚城市印章。
+            每一册旅行记忆，都会在这张地图上，往你的收藏册里落下一枚城市印章。
           </Text>
           <CityMap
             stats={cityStats}

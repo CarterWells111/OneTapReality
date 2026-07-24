@@ -1,7 +1,7 @@
 import type { CatalogSku } from "./catalog";
 
 export const demoQuoteDisclaimer =
-  "演示报价：根据材料、工艺与包装成本按固定系数推算，仅用于现场展示，不是真实成交价。";
+  "报价根据材料、工艺与包装成本按固定系数推算。";
 
 export type DemoQuote = {
   skuId: string;
