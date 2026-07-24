@@ -152,7 +152,7 @@ export function CanvasElement({
     transform: [{ rotate: `${element.rotation}rad` }],
   };
 
-  const content = <ElementContent element={element} />;
+  const content = <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} />;
   if (!interactive) {
     return (
       <View
@@ -187,13 +187,29 @@ export function CanvasElement({
   );
 }
 
-function ElementContent({ element }: { element: CanvasElementModel }) {
+function ElementContent({
+  canvasHeight,
+  canvasWidth,
+  element,
+}: {
+  canvasHeight: number;
+  canvasWidth: number;
+  element: CanvasElementModel;
+}) {
   if (element.type === "image") {
     return <Image contentFit="cover" source={element.uri} style={styles.image} testID={`canvas-image-${element.id}`} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
-    return <Text style={styles.sticker}>{sticker?.glyph ?? "✦"}</Text>;
+    const scale = Math.min(element.width * canvasWidth, element.height * canvasHeight) / (canvasWidth * 0.14);
+    return (
+      <Text style={[
+        styles.sticker,
+        { fontSize: 34 * scale, lineHeight: 40 * scale },
+      ]}>
+        {sticker?.glyph ?? "✦"}
+      </Text>
+    );
   }
   const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
   return <Text style={[styles.text, { color: element.color, fontFamily: font?.family }]}>{element.text}</Text>;
