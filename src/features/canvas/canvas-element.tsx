@@ -1,6 +1,11 @@
 import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from "react-native-reanimated";
 import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -122,6 +127,8 @@ export function CanvasElement({
   const rotationStarted = useSharedValue(false);
   // 标记当前是否是角落手柄拖拽（用于区分角落缩放和双指捏合）
   const cornerResize = useSharedValue(false);
+  // 文字实时缩放因子：捏合时同步驱动 fontSize，实现所见即所得
+  const fontScale = useSharedValue(1);
 
   // 手势开始时记录起始位置，用于增量平移
   const panStartX = useSharedValue(0);
@@ -137,8 +144,9 @@ export function CanvasElement({
     elemH.value = element.height * canvasHeight;
     gestureScale.value = 1;
     gestureRotation.value = 0;
+    fontScale.value = 1;
   }, [element.x, element.y, element.width, element.height, element.rotation,
-      canvasWidth, canvasHeight, posX, posY, elemW, elemH, gestureScale, gestureRotation, activeGestureCount]);
+      canvasWidth, canvasHeight, posX, posY, elemW, elemH, gestureScale, gestureRotation, fontScale, activeGestureCount]);
 
   const commitTransform = (
     absoluteX: number, absoluteY: number,
@@ -202,6 +210,8 @@ export function CanvasElement({
     .onBegin(() => beginGesture(pinchStarted))
     .onUpdate((event) => {
       gestureScale.value = event.scale;
+      // 实时驱动文字缩放，实现所见即所得的预览
+      fontScale.value = event.scale;
     })
     .onFinalize(() => finalizeGesture(pinchStarted));
 
@@ -234,7 +244,7 @@ export function CanvasElement({
     transform: [{ rotate: `${element.rotation}rad` }],
   };
 
-  const content = <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} />;
+  const content = <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} fontScale={fontScale} />;
 
   if (!interactive) {
     return (
@@ -264,7 +274,7 @@ export function CanvasElement({
           }}
           style={[styles.element, isSelected && styles.selected]}
           testID={`canvas-element-${element.id}`}>
-          {content}
+          <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} fontScale={fontScale} />
         </Pressable>
         {/* 选中时显示四角拖拽手柄 */}
         {isSelected ? (
@@ -291,10 +301,12 @@ function ElementContent({
   canvasHeight,
   canvasWidth,
   element,
+  fontScale,
 }: {
   canvasHeight: number;
   canvasWidth: number;
   element: CanvasElementModel;
+  fontScale?: SharedValue<number>;
 }) {
   if (element.type === "image") {
     return <Image contentFit="cover" source={element.uri} style={styles.image} testID={`canvas-image-${element.id}`} />;
@@ -315,18 +327,47 @@ function ElementContent({
   }
   const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
   return (
-    <Text
+    <AnimatedText
+      color={element.color}
+      fontFamily={font?.family}
+      fontScale={fontScale}
+      fontSize={element.fontSize}
+      text={element.text}
+    />
+  );
+}
+
+/**
+ * 文字元素组件 —— 使用共享值驱动的 fontSize，实现缩放时的实时预览。
+ * 通过 useAnimatedStyle 返回 fontSize 样式，在 UI 线程直接驱动。
+ */
+function AnimatedText({
+  color,
+  fontFamily,
+  fontSize,
+  fontScale,
+  text,
+}: {
+  color: string;
+  fontFamily?: string;
+  fontSize: number;
+  fontScale?: SharedValue<number>;
+  text: string;
+}) {
+  const animatedTextStyle = useAnimatedStyle(() => ({
+    fontSize: fontSize * (fontScale?.value ?? 1),
+    lineHeight: Math.round(fontSize * (fontScale?.value ?? 1) * 1.28),
+  }));
+
+  return (
+    <Animated.Text
       style={[
         styles.text,
-        {
-          color: element.color,
-          fontFamily: font?.family,
-          fontSize: element.fontSize,
-          lineHeight: Math.round(element.fontSize * 1.28),
-        },
+        { color, fontFamily },
+        animatedTextStyle,
       ]}>
-      {element.text}
-    </Text>
+      {text}
+    </Animated.Text>
   );
 }
 
