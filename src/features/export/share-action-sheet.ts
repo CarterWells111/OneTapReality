@@ -112,28 +112,24 @@ async function exportPdf(pages: StoryPage[], title: string) {
     @page { margin: 0; size: A4 portrait; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+    /* ── 截图页：精确 A4 物理尺寸，无 flex/居中，image 顶部对齐 ── */
     .snap-page {
       page-break-after: always;
-      width: 100%;
-      height: 100vh;
+      width: 210mm;
+      height: 297mm;
       overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       background: #FFFFFF;
     }
     .snap-page:last-child { page-break-after: auto; }
     .snap-img {
       width: 100%;
       display: block;
-      object-fit: contain;
-      max-height: 100vh;
     }
     /* ── 回退样式（无 layout 的纯文字页） ── */
     .page {
       page-break-after: always;
-      width: 100%;
-      height: 100vh;
+      width: 210mm;
+      height: 297mm;
       overflow: hidden;
       position: relative;
     }
