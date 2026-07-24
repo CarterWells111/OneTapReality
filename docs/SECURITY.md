@@ -10,3 +10,10 @@ SQL 写入必须使用参数绑定。不得将私密配置、个人照片或访�
 
 Railway API Service 只保存 PostgreSQL 引用变量 `DATABASE_URL` 与 `DEVICE_TOKEN_PEPPER` 等服务端变量，并通过 Railway 私有网络访问同项目的数据库。`EXPO_PUBLIC_API_ORIGIN` 只能包含公开 HTTPS origin，会进入客户端 bundle；不得把数据库 URL、pepper 或其他秘密放入任何 `EXPO_PUBLIC_` 变量。`server.cjs` 监听 Railway 注入的 `PORT`，并关闭 Express 的 `x-powered-by` 响应头。
 
+# NFC gift shared albums
+
+NFC tags contain only `https://onetapreality.com/gift/<high-entropy-token>`. Provision them using `node scripts/provision-gifts.cjs <count>` from a restricted operations environment; it emits each write URL once and stores only a peppered token hash.
+
+Railway must supply `DATABASE_URL`, `GIFT_TOKEN_PEPPER`, `GIFT_AUTH_PEPPER`, `RESEND_API_KEY`, `GIFT_EMAIL_FROM`, and the four `R2_*` variables in [`.env.example`](../.env.example). None may be exposed through `EXPO_PUBLIC_` variables or app configuration. The R2 bucket is private; clients receive only short-lived signed upload/read URLs after server-side authorization.
+
+Before production release, deploy `/.well-known/apple-app-site-association` with the actual Apple Team ID and `/.well-known/assetlinks.json` with the release keystore SHA-256. These values cannot safely be guessed in source control; the release owner must add them to the domain deployment.

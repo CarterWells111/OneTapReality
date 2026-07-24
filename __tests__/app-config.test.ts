@@ -1,9 +1,9 @@
-import { withRouterOrigin } from "../app.config";
+const { withRouterOrigin } = require("../app.config");
 
 describe("Expo Router production origin", () => {
   const baseConfig = {
     name: "OneTapReality",
-    slug: "travel-memory-demo",
+    slug: "onetapreality",
     plugins: ["expo-router", "expo-sqlite"],
   };
 
@@ -35,5 +35,36 @@ describe("Expo Router production origin", () => {
     expect(imageNames).toContain("onetapreality-icon.png");
     expect(imageNames).not.toContain("expo-symbol 2.svg");
     expect(fs.existsSync(path.resolve(__dirname, "..", "assets/expo.icon/Assets/onetapreality-icon.png"))).toBe(true);
+  });
+
+  it("registers the production gift link for both native platforms", () => {
+    const expoConfig = require("../app.json").expo;
+
+    expect(expoConfig.ios.bundleIdentifier).toBe("com.onetapreality.app");
+    expect(expoConfig.ios.associatedDomains).toContain("applinks:onetapreality.com");
+    expect(expoConfig.android.package).toBe("com.onetapreality.app");
+    expect(expoConfig.android.intentFilters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/gift" })]) }),
+      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/activate" })]) }),
+    ]));
+  });
+
+  it("configures the NFC native module without opting out of the New Architecture", () => {
+    const expoConfig = require("../app.json").expo;
+
+    expect(expoConfig.plugins).toContainEqual([
+      "react-native-nfc-manager",
+      {
+        nfcPermission: expect.any(String),
+        includeNdefEntitlement: true,
+      },
+    ]);
+    expect(expoConfig.newArchEnabled).not.toBe(false);
+  });
+
+  it("uses OneTapReality as the package identifier", () => {
+    const packageConfig = require("../package.json");
+
+    expect(packageConfig.name).toBe("onetapreality");
   });
 });

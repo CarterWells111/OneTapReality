@@ -8,6 +8,34 @@
       "when": 1784773142166,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784870000000,
+      "tag": "0001_nfc_gifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784871000000,
+      "tag": "0002_gift_email_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784872000000,
+      "tag": "0003_gift_album_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784873000000,
+      "tag": "0004_gift_cards",
+      "breakpoints": true
     }
   ]
 }
