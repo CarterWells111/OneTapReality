@@ -132,11 +132,6 @@ function SkuDetail({ sku }: { sku: CatalogSku }) {
 
       <View style={styles.gallery}>
         <ProductVisual sku={sku} visual={visual} />
-        <View style={styles.dots}>
-          <View style={[styles.dot, styles.dotActive]} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-        </View>
       </View>
 
       <View style={styles.nameRow}>
@@ -157,14 +152,6 @@ function SkuDetail({ sku }: { sku: CatalogSku }) {
         <View style={styles.roundAction}>
           <Text style={styles.roundActionText}>↥</Text>
         </View>
-      </View>
-
-      <View style={styles.thumbnails}>
-        {[0, 1, 2].map((index) => (
-          <View key={index} style={[styles.thumbnail, index === 0 && styles.thumbnailActive]}>
-            <ProductVisual compact sku={sku} visual={visual} />
-          </View>
-        ))}
       </View>
 
       <Text selectable style={styles.description}>
@@ -333,7 +320,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     paddingBottom: 4,
   },
-  gallery: { alignItems: "center", gap: 12 },
+  gallery: { alignItems: "center" },
   visualBox: {
     alignItems: "center",
     aspectRatio: 1.32,
@@ -351,9 +338,6 @@ const styles = StyleSheet.create({
   visualGlyph: { color: colors.ink, fontFamily: serifFont, fontSize: 82 },
   visualGlyphCompact: { fontSize: 26 },
   visualCaption: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
-  dots: { flexDirection: "row", gap: 7 },
-  dot: { backgroundColor: colors.line, borderRadius: 4, height: 8, width: 8 },
-  dotActive: { backgroundColor: colors.accent },
   nameRow: { alignItems: "flex-start", flexDirection: "row", gap: 12 },
   nameBlock: { flex: 1, gap: 6 },
   productName: { color: colors.ink, fontFamily: serifFont, fontSize: 26, lineHeight: 34 },
@@ -361,15 +345,6 @@ const styles = StyleSheet.create({
   roundAction: { alignItems: "center", height: 36, justifyContent: "center", width: 36 },
   roundActionText: { color: colors.ink, fontFamily: serifFont, fontSize: 26 },
   activeActionText: { color: colors.accent },
-  thumbnails: { flexDirection: "row", gap: 12 },
-  thumbnail: {
-    borderColor: colors.line,
-    borderRadius: 5,
-    borderWidth: 1,
-    flex: 1,
-    padding: 3,
-  },
-  thumbnailActive: { borderColor: colors.accent },
   description: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, lineHeight: 25 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   chip: {

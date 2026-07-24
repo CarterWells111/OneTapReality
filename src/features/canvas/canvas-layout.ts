@@ -9,6 +9,8 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   return {
     aspectRatio: 1,
     ...(layout.backgroundId ? { backgroundId: layout.backgroundId } : {}),
+    ...(layout.coverColor ? { coverColor: layout.coverColor } : {}),
+    ...(layout.coverImage ? { coverImage: layout.coverImage } : {}),
     elements: layout.elements.map((element) => {
       const occurrence = (ids.get(element.id) ?? 0) + 1;
       ids.set(element.id, occurrence);

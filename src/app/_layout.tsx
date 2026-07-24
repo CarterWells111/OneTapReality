@@ -46,7 +46,7 @@ export default function RootLayout() {
               <Stack.Screen name="city/[city]/manage" options={{ title: "Manage city collection" }} />
               <Stack.Screen name="city-map/index" options={{ headerShown: false, presentation: "fullScreenModal" }} />
               <Stack.Screen name="nfc-demo/[city]" options={{ title: "城市钥匙" }} />
-              <Stack.Screen name="shop/[skuId]" options={{ title: "商品详情" }} />
+              <Stack.Screen name="shop/[skuId]" options={{ headerShown: false }} />
               <Stack.Screen name="shop/orders" options={{ title: "购物袋" }} />
               <Stack.Screen name="shop/favorites" options={{ title: "我的收藏" }} />
               <Stack.Screen name="recycle-bin/index" options={{ title: "回收站" }} />

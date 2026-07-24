@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useFonts } from "expo-font";
+import * as ImagePicker from "expo-image-picker";
 import {
   Pressable,
   ScrollView,
@@ -36,6 +37,8 @@ import {
   deleteCanvasElement,
   duplicateCanvasElement,
   setCanvasBackground,
+  setCanvasCoverColor,
+  setCanvasCoverImage,
   updateCanvasElement,
 } from "./editor-pages";
 import { PageManagerSheet } from "./page-manager-sheet";
@@ -71,7 +74,7 @@ export function BookCanvasEditor({
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
-  const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background">("sticker");
+  const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -410,6 +413,16 @@ export function BookCanvasEditor({
               setAssetTrayMode("background");
             }}
           />
+          {currentPage.kind === "cover" ? (
+            <SmallButton
+              active={assetTrayMode === "cover"}
+              label="封面"
+              onPress={() => {
+                discardPendingText();
+                setAssetTrayMode("cover");
+              }}
+            />
+          ) : null}
         </View>
         {assetTrayMode === "sticker" ? (
           <>
@@ -452,6 +465,70 @@ export function BookCanvasEditor({
               </Pressable>
             ))}
           </ScrollView>
+        ) : assetTrayMode === "cover" ? (
+          <View style={styles.coverTray}>
+            <View style={styles.coverColorGrid}>
+              {["#EFE2CF","#F6D8C7","#E9C4A3","#D9E3D0","#BFD8E2","#E7D2E6","#D8CFC4","#C7B79C","#F2D7D5","#D5D0E8","#C5D5CB","#D4C5B2","#E8C5C5","#C5D3E8","#E2D5C5","#C8C5E0","#D5E8C5","#C5E5E8","#F5F0E1","#E1E8F5"].map((color) => (
+                <Pressable
+                  accessibilityLabel={`封面颜色 ${color}`}
+                  accessibilityRole="button"
+                  key={color}
+                  onPress={() => {
+                    changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, color), "structure");
+                  }}
+                  style={[styles.coverColorSwatch, { backgroundColor: color }, currentPage.coverColor === color && styles.coverColorSwatchSelected]}
+                />
+              ))}
+            </View>
+            <View style={styles.coverCustomRow}>
+              <TextInput
+                accessibilityLabel="自定义颜色值"
+                autoCapitalize="none"
+                maxLength={7}
+                onChangeText={(text) => {
+                  const clean = text.startsWith("#") ? text : `#${text}`;
+                  changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, clean), "structure");
+                }}
+                placeholder="#C5B9A5"
+                placeholderTextColor={colors.muted}
+                style={styles.coverHexInput}
+                value={currentPage.coverColor ?? ""}
+              />
+              <Pressable
+                accessibilityLabel="上传封面背景图"
+                accessibilityRole="button"
+                onPress={async () => {
+                  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (!permission.granted) {
+                    return;
+                  }
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    allowsMultipleSelection: false,
+                    mediaTypes: ["images"],
+                    quality: 0.8,
+                  });
+                  if (!result.canceled && result.assets[0]) {
+                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, result.assets[0].uri), "structure");
+                  }
+                }}
+                style={styles.coverUploadButton}
+              >
+                <Text style={styles.coverUploadText}>上传背景图</Text>
+              </Pressable>
+            </View>
+            {currentPage.coverImage ? (
+              <Pressable
+                accessibilityLabel="移除封面背景图"
+                accessibilityRole="button"
+                onPress={() => {
+                  changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, undefined), "structure");
+                }}
+                style={styles.coverRemoveImage}
+              >
+                <Text style={styles.coverRemoveImageText}>移除背景图</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : (
           <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
             <Pressable
@@ -615,4 +692,35 @@ const styles = StyleSheet.create({
   assetThumbnail: { height: "92%", width: "92%" },
   backgroundThumbnail: { height: "100%", width: "100%" },
   clearBackgroundText: { color: colors.ink, fontSize: 18, fontWeight: "800" },
+  coverTray: { gap: 10, paddingHorizontal: 20 },
+  coverColorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  coverColorSwatch: {
+    borderColor: colors.line,
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 36,
+    width: 36,
+  },
+  coverColorSwatchSelected: { borderColor: colors.ink, borderWidth: 3 },
+  coverCustomRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  coverHexInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.ink,
+    flex: 1,
+    fontSize: 14,
+    minHeight: 38,
+    paddingHorizontal: 10,
+  },
+  coverUploadButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  coverUploadText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  coverRemoveImage: { alignItems: "center" },
+  coverRemoveImageText: { color: colors.danger, fontSize: 13, fontWeight: "700" },
 });
