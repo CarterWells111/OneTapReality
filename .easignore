@@ -1,0 +1,53 @@
+# EAS uses this file instead of .gitignore when creating cloud build archives.
+
+# Dependencies and linked development workspaces
+/.worktrees
+/.worktrees/**
+/node_modules
+/node_modules/**
+/.pnpm-store
+/.pnpm-store/**
+.claude/worktrees/
+.superpowers/
+
+# Expo and generated output
+.expo/
+.expo-export/
+dist/
+web-build/
+expo-env.d.ts
+
+# Local credentials and build artifacts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+expo-metro*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+.env*.local
+.data/*
+!.data/
+!.data/.gitkeep
+*.tsbuildinfo
+
+# Separately deployed web assets and local release collateral
+website/
+output/
+app-store-previews/
+assets/slides-fixed/
+assets/slides-logo/
+assets/social/
+OneReality_logo_EFE2CF.png
+pnpm-lock.yaml
+pnpm-workspace.yaml
