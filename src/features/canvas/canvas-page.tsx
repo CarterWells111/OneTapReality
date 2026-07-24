@@ -17,6 +17,11 @@ type ElementPatch = {
 
 type CanvasPageProps = {
   displayAspectRatio?: number;
+  /**
+   * 去掉圆角与描边，让背景/元素铺满整个矩形。
+   * 用于 PDF 截图导出——否则截图四角是透明的，PDF 里会露出白色圆角缺口。
+   */
+  flatEdges?: boolean;
   height?: number;
   layout: CanvasLayout;
   selectedElementId?: string;
@@ -31,6 +36,7 @@ type CanvasPageProps = {
 
 export function CanvasPage({
   displayAspectRatio = 1,
+  flatEdges = false,
   height,
   layout,
   selectedElementId,
@@ -71,6 +77,7 @@ export function CanvasPage({
         pageSide === "left" && styles.leftPage,
         hasCoverBackground && { backgroundColor: coverSolidColor ?? "#EFE2CF" },
         { height: canvasHeight, width: canvasWidth },
+        flatEdges && styles.flatEdges,
       ]}
       testID="album-canvas">
       {background ? (
@@ -118,6 +125,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  // 导出截图用：四角方正、无描边，避免 PDF 中出现白色圆角缺口
+  flatEdges: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderRadius: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderWidth: 0,
   },
   rightPage: {
     borderBottomLeftRadius: 2,

@@ -236,11 +236,14 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
             ref={pageRef}
             collapsable={false}
             style={{
+              backgroundColor: "#FFFFFF",
               width: task.current!.pageWidth,
               height: task.current!.pageHeight,
+              overflow: "hidden",
             }}
           >
             <CanvasPage
+              flatEdges
               height={task.current!.pageHeight}
               interactive={false}
               layout={currentPage.layout}
