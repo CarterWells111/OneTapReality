@@ -17,74 +17,49 @@ type CanvasToolbarProps = {
   onDone?: () => void;
 };
 
-const colors = [
-  { label: "墨黑", value: "#1C2C28" },
-  { label: "深绿", value: "#1C5A4C" },
-  { label: "暖红", value: "#A44736" },
-  { label: "纸蓝", value: "#56708A" },
-  { label: "铅灰", value: "#6B6B63" },
-] as const;
-
-const fontSizes = [12, 16, 18, 22, 28, 34] as const;
-
+/**
+ * 画布编辑器工具栏。
+ *
+ * 两行布局：
+ * - 第一行（始终显示）：添加文字 | 添加贴纸 | 添加相框 | 选择背景
+ * - 第二行（选中元素时出现）：前移 | 后移 | 复制 | 删除 | 完成
+ *
+ * 字体/字号/颜色已移至 ElementContextMenu。
+ */
 export function CanvasToolbar({
   selectedElement,
   onAddText,
   onAddSticker,
   onAddFrame,
   onPickBackground,
-  onUpdateElement,
+  onUpdateElement: _onUpdateElement,
   onChangeLayer,
   onDuplicate,
   onDelete,
   onDone,
 }: CanvasToolbarProps) {
   const selectedId = selectedElement?.id;
-  const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
 
   return (
     <View style={styles.shell}>
+      {/* 第一行：添加操作 */}
       <ScrollView contentContainerStyle={styles.row} horizontal showsHorizontalScrollIndicator={false}>
-        <ToolbarButton label="添加文字" onPress={onAddText} />
+        <ToolbarButton active label="添加文字" onPress={onAddText} />
         <ToolbarButton label="添加贴纸" onPress={() => onAddSticker()} />
         <ToolbarButton label="添加相框" onPress={onAddFrame} />
         <ToolbarButton label="选择背景" onPress={onPickBackground} />
-        {selectedText
-          ? fontSizes.map((fontSize) => (
-              <ToolbarButton
-                active={selectedText.fontSize === fontSize}
-                key={fontSize}
-                label={`${fontSize}`}
-                onPress={() => onUpdateElement(selectedText.id, { fontSize })}
-              />
-            ))
-          : null}
-        {selectedText
-          ? canvasFonts.map((font) => (
-              <ToolbarButton
-                active={selectedText.fontStyle === font.id}
-                key={font.id}
-                label={font.label}
-                onPress={() => onUpdateElement(selectedText.id, { fontStyle: font.id })}
-              />
-            ))
-          : null}
-        {selectedText
-          ? colors.map((color) => (
-              <ToolbarButton
-                active={selectedText.color === color.value}
-                key={color.value}
-                label={color.label}
-                onPress={() => onUpdateElement(selectedText.id, { color: color.value })}
-              />
-            ))
-          : null}
-        {selectedId ? <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} /> : null}
-        {selectedId ? <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} /> : null}
-        {selectedId ? <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} /> : null}
-        {selectedId ? <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} /> : null}
-        {selectedId && onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
       </ScrollView>
+
+      {/* 第二行：元素操作（仅在选中元素时显示） */}
+      {selectedId ? (
+        <ScrollView contentContainerStyle={styles.row} horizontal showsHorizontalScrollIndicator={false}>
+          <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
+          <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
+          <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
+          <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
+          {onDone ? <ToolbarButton active label="完成" onPress={onDone} /> : null}
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
@@ -111,7 +86,7 @@ function ToolbarButton({
 }
 
 const styles = StyleSheet.create({
-  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, paddingVertical: 10 },
+  shell: { borderTopColor: "#E1E6DF", borderTopWidth: 1, gap: 8, paddingVertical: 8 },
   row: { alignItems: "center", gap: 8, paddingHorizontal: 20 },
   button: {
     backgroundColor: "#FFFFFF",
