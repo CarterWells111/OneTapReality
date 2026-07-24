@@ -5,6 +5,8 @@ import type { CanvasLayout, Memory, MemoryStatus, StoryPage } from "../types/mem
 
 type MemoryRow = Omit<Memory, "photoUris" | "pages"> & {
   status?: MemoryStatus;
+  coverColor?: string | null;
+  coverImage?: string | null;
 };
 type PhotoRow = { uri: string };
 type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string | null; layout_json: string | null };
@@ -65,6 +67,9 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   if (!columns.some((column) => column.name === "coverColor")) {
     await db.execAsync("ALTER TABLE memories ADD COLUMN coverColor TEXT");
   }
+  if (!columns.some((column) => column.name === "coverImage")) {
+    await db.execAsync("ALTER TABLE memories ADD COLUMN coverImage TEXT");
+  }
   const pageColumns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(story_pages)");
   if (!pageColumns.some((column) => column.name === "layout_json")) {
     await db.execAsync("ALTER TABLE story_pages ADD COLUMN layout_json TEXT");
@@ -110,7 +115,7 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
 
 export async function listMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status IS NULL OR (status <> ? AND status <> ?) ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE status IS NULL OR (status <> ? AND status <> ?) ORDER BY updatedAt DESC",
     "draft",
     "discarded"
   );
@@ -122,7 +127,7 @@ export async function getMemory(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND (status IS NULL OR status = ?)",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE id = ? AND (status IS NULL OR status = ?)",
     id,
     "saved"
   );
@@ -134,7 +139,7 @@ export async function getDraft(
   id: string
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
     id,
     "draft"
   );
@@ -144,7 +149,7 @@ export async function getDraft(
 /** 回收站：列出已丢弃的本机记忆，最近更新在前。 */
 export async function listDiscardedMemories(db: SQLiteDatabase): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
     "discarded"
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
@@ -180,7 +185,7 @@ async function insertMemory(
 ) {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt, coverColor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt, coverColor, coverImage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       memory.id,
       memory.title,
       memory.city,
@@ -188,7 +193,8 @@ async function insertMemory(
       status,
       memory.createdAt,
       memory.updatedAt,
-      memory.coverColor ?? null
+      memory.coverColor ?? null,
+      memory.coverImage ?? null
     );
 
     for (const [position, uri] of memory.photoUris.entries()) {

@@ -37,6 +37,7 @@ export class DemoDraftGenerator implements DraftGenerator {
       headline: input.title,
       body: `${input.travelDate} · ${cityPhrases[input.city]}`,
       coverColor,
+      coverImage: input.coverImage,
     });
 
     // 每张照片独立一页

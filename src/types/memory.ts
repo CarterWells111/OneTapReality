@@ -13,6 +13,8 @@ export type MemoryDraftInput = {
   photoUris: string[];
   /** 封面颜色（十六进制）。为空时回退到城市默认色。 */
   coverColor?: string;
+  /** 封面自定义背景图 URI。为空时显示纯色封面。 */
+  coverImage?: string;
 };
 
 export type StoryPage = {

@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { cityContent } from "../features/cities/city-content";
 import { headingFontFamily } from "../features/typography/fonts";
@@ -33,6 +33,7 @@ export function MemoryBookCover({
   onLongPress,
 }: MemoryBookCoverProps) {
   const city = cityContent[memory.city];
+  const showCoverImage = !!memory.coverImage;
 
   return (
     <View style={styles.bookSlot}>
@@ -53,21 +54,26 @@ export function MemoryBookCover({
         }}
         style={({ pressed }) => [
           styles.book,
-          memory.coverColor ? { backgroundColor: memory.coverColor } : null,
+          !showCoverImage && memory.coverColor ? { backgroundColor: memory.coverColor } : null,
+          !showCoverImage && !memory.coverColor ? { backgroundColor: bookColors.cover } : null,
           pressed && styles.pressed,
         ]}
       >
+        {/* 封面自定义背景图 */}
+        {showCoverImage ? (
+          <Image source={{ uri: memory.coverImage }} style={styles.coverImage} />
+        ) : null}
         <View style={styles.spine}>
           <View style={styles.spineEdge} />
         </View>
-        <View style={styles.coverBody}>
+        <View style={[styles.coverBody, showCoverImage && styles.coverBodyOverlay]}>
           <View style={styles.titleBlock}>
-            <Text numberOfLines={3} selectable style={styles.title}>{memory.title}</Text>
-            <View style={styles.accentLine} />
+            <Text numberOfLines={3} selectable style={[styles.title, showCoverImage && styles.titleOnImage]}>{memory.title}</Text>
+            <View style={[styles.accentLine, showCoverImage && styles.accentLineOnImage]} />
           </View>
           <View>
-            <Text numberOfLines={1} selectable style={styles.meta}>{city.name} · {memory.travelDate}</Text>
-            <Text selectable style={styles.meta}>{memory.photoUris.length} 张照片</Text>
+            <Text numberOfLines={1} selectable style={[styles.meta, showCoverImage && styles.metaOnImage]}>{city.name} · {memory.travelDate}</Text>
+            <Text selectable style={[styles.meta, showCoverImage && styles.metaOnImage]}>{memory.photoUris.length} 张照片</Text>
           </View>
         </View>
       </Pressable>
@@ -85,12 +91,14 @@ const styles = StyleSheet.create({
   bookSlot: { width: "48.5%" },
   book: {
     aspectRatio: 3 / 4,
-    backgroundColor: bookColors.cover,
     borderBottomRightRadius: 10,
     borderTopRightRadius: 10,
     flexDirection: "row",
     overflow: "hidden",
     width: "100%",
+  },
+  coverImage: {
+    ...StyleSheet.absoluteFillObject,
   },
   spine: { backgroundColor: bookColors.spine, flexDirection: "row", width: 9 },
   spineEdge: { backgroundColor: bookColors.spineEdge, marginLeft: "auto", width: 1.5 },
@@ -101,6 +109,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 16,
   },
+  coverBodyOverlay: {
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
   titleBlock: { gap: 8 },
   title: {
     color: bookColors.ink,
@@ -109,8 +120,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 23,
   },
+  titleOnImage: { color: "#FFFFFF" },
   accentLine: { backgroundColor: bookColors.accentLine, height: 2, width: 26 },
+  accentLineOnImage: { backgroundColor: "rgba(255,255,255,0.7)" },
   meta: { color: bookColors.meta, fontSize: 11.5, lineHeight: 17 },
+  metaOnImage: { color: "rgba(255,255,255,0.85)" },
   pressed: { opacity: 0.85 },
   checkCircle: {
     alignItems: "center",
