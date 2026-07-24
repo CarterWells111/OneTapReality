@@ -1,4 +1,6 @@
 export * from "./city-map-adapter";
+export * from "./city-checkin-guide";
+export * from "./map-checkin-assets";
 export * from "./city-map";
 export * from "./city-stats";
 export * from "./city-unlocks";

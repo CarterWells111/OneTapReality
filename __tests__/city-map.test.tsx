@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 import { readFileSync } from "node:fs";
+import { StyleSheet } from "react-native";
 
 import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
 
@@ -8,6 +9,13 @@ const stats: CityStats[] = [
   { city: "shanghai", visitCount: 0, unlocked: false, isVisited: false, intensity: "none" },
   { city: "shenzhen", visitCount: 4, unlocked: true, isVisited: true, intensity: "strong" },
 ];
+
+function expectSvgColor(value: unknown, hex: string) {
+  expect(value).toMatchObject({
+    payload: Number.parseInt(`ff${hex.slice(1)}`, 16),
+    type: 0,
+  });
+}
 
 describe("CityMap", () => {
   it("renders every local marker with its saved-memory count and visit-intensity token", async () => {
@@ -29,6 +37,29 @@ describe("CityMap", () => {
     expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
     expect(screen.getByTestId("china-province-taiwan-inset")).toBeTruthy();
     expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
+  });
+
+  it("uses the fixed concept palette for map land, province lines, and visit markers", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+    const provinceProps = screen.getAllByTestId(/^china-province-/)[0]?.props;
+
+    expectSvgColor(provinceProps.fill, "#EFE2CF");
+    expectSvgColor(provinceProps.stroke, "#56708A");
+    expectSvgColor(screen.getByTestId("city-map-marker-dot-hangzhou-medium").props.fill, "#D8CFC4");
+    expectSvgColor(screen.getByTestId("city-map-marker-dot-hangzhou-medium").props.stroke, "#B56B52");
+    expectSvgColor(screen.getByTestId("city-map-marker-dot-shenzhen-strong").props.fill, "#B56B52");
+    expectSvgColor(screen.getByTestId("city-map-marker-dot-shenzhen-strong").props.stroke, "#2F2A26");
+  });
+
+  it("draws a hand-drawn journey route across the featured check-in cities", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+
+    expect(screen.getByTestId("city-map-journey-route").props).toMatchObject({
+      fill: null,
+      strokeDasharray: ["8", "7"],
+    });
+    expect(screen.getByTestId("city-map-journey-dot-beijing")).toBeTruthy();
+    expect(screen.getByTestId("city-map-journey-dot-guangzhou")).toBeTruthy();
   });
 
   it("projects every local marker into the China SVG viewBox rather than the outer map container", () => {
@@ -58,17 +89,16 @@ describe("CityMap", () => {
     });
   });
 
-  it("renders provinces, markers, and labels inside one undistorted China SVG", async () => {
+  it("renders workspace markers and labels at fixed readable sizes over the scaled China SVG", async () => {
     const screen = await render(<CityMap initialCity="hangzhou" stats={stats} variant="workspace" />);
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
-    const dot = screen.getByTestId("city-map-marker-dot-jinan-none").props;
-    const label = screen.getByTestId("city-map-label-jinan").props;
-    expect(label.x).toEqual([dot.cx]);
-    expect(label.y[0]).toBeGreaterThan(dot.cy - 45);
-    expect(label.y[0]).toBeLessThan(dot.cy);
-    expect(dot.r).toBeLessThanOrEqual(12);
-    expect(dot.strokeWidth).toBeLessThanOrEqual(6);
+    const dotStyle = StyleSheet.flatten(screen.getByTestId("city-map-marker-dot-jinan-none").props.style);
+    const labelStyle = StyleSheet.flatten(screen.getByTestId("city-map-label-taiyuan").props.style);
+    expect(dotStyle.width).toBe(6);
+    expect(dotStyle.height).toBe(6);
+    expect(labelStyle.fontSize).toBe(12);
+    expect(labelStyle.fontFamily).toBe("ChaoHuaTitleA");
   });
 
   it("calls the city callback when an interactive marker is pressed", async () => {
@@ -76,6 +106,31 @@ describe("CityMap", () => {
     const screen = await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={onCityPress} />);
 
     fireEvent.press(screen.getByLabelText("杭州，已保存 2 册旅行记忆"));
+
+    expect(onCityPress).toHaveBeenCalledWith("hangzhou");
+  });
+
+  it("opens a city check-in popup before routing when the popup interaction is enabled", async () => {
+    const onCityPress = jest.fn();
+    const screen = await render(<CityMap stats={stats} variant="overview" interactive showCityCheckinPopup onCityPress={onCityPress} />);
+
+    fireEvent.press(screen.getByLabelText("杭州，已保存 2 册旅行记忆"));
+
+    expect(onCityPress).not.toHaveBeenCalled();
+    expect(screen.getByTestId("city-checkin-popup-hangzhou")).toBeTruthy();
+    expect(screen.getByTestId("city-checkin-asset-hangzhou")).toBeTruthy();
+    expect(screen.getByText("西湖留白线")).toBeTruthy();
+    expect(screen.getAllByText("断桥").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId("city-checkin-spot-light-hangzhou-0")).toBeTruthy();
+    expect(screen.getByTestId("city-checkin-spot-light-hangzhou-1")).toBeTruthy();
+    expect(screen.getByTestId("city-checkin-spot-light-hangzhou-2")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("city-checkin-spot-light-hangzhou-1"));
+
+    expect(screen.getAllByText("三潭印月").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("月色水印")).toBeTruthy();
+
+    fireEvent.press(screen.getByText("进入档案"));
 
     expect(onCityPress).toHaveBeenCalledWith("hangzhou");
   });
@@ -135,9 +190,9 @@ describe("CityMap", () => {
     const visibleModels = resolveWorkspaceMarkerModels([markers[0]], { scale: 1.8, translateX: 100, translateY: 0 }, size);
 
     expect(hiddenModels.every((model) => !model.showLabel)).toBe(true);
-    expect(visibleModels[0]?.dotSize).toBeCloseTo(14.4);
-    expect(visibleModels[0]?.fontSize).toBeCloseTo(19.8);
-    expect(visibleModels[0]?.pressSize).toBeCloseTo(79.2);
+    expect(visibleModels[0]?.dotSize).toBe(6);
+    expect(visibleModels[0]?.fontSize).toBe(12);
+    expect(visibleModels[0]?.pressSize).toBe(44);
     expect(visibleModels[0]?.showLabel).toBe(true);
   });
 

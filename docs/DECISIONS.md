@@ -1,5 +1,18 @@
 # 决策记录
 
+## 2026-07-24：城市打卡地图弹窗与六色地图风格
+
+本次在新分支 `feature/map-city-checkin` 中继续只调整本地离线地图呈现与交互，不新增网络、地图 SDK、定位、账号、分析、支付、真实 AI、真实 NFC、远程素材或持久化字段。
+
+- 全局大标题 / 页面标题 / 城市名等显示文字统一使用本地 `assets/fonts/ChaoHuaTitleA.ttf`（来自 `AdventureX/字体/中文/朝华标题_猫啃网.zip`），正文、小字、Tab 文本和输入仍统一使用朝华打字机 `assets/fonts/ChaoHuaTypewriter.ttf`。画布新增文字默认朝华打字机不变，旧画布自动布局中的大标题改用朝华标题。
+- `CityMap` 的省级地图底色、轮廓线、城市标记、全屏入口和弹窗全部收敛到固定全局色板：`#B56B52`、`#56708A`、`#EFE2CF`、`#F7F2EA`、`#2F2A26`、`#D8CFC4`。
+- 城市 Tab 和全屏地图启用“点城市先展示打卡地图弹窗”的交互；默认 `CityMap` marker 点击回调保持不变，避免影响既有测试和其它页面。
+- 新增 `city-checkin-guide.ts` 作为本地静态城市打卡内容：每座城市包含一条专属路线、三个热门打卡点和本地 SVG 线描图标，仅随代码打包展示。
+- 从本机 `AdventureX/UI/地图打卡点/` 导入 10 张城市打卡插画合集，去除烘焙棋盘格后生成真正透明底的 `assets/map-checkins/` PNG，并通过静态 require 注册给 Metro 打包。
+- 地图 SVG 新增一条砖红手绘足迹路线，连接北京、西安、成都、武汉、长沙、上海、杭州、苏州、深圳和广州，用于靠近版本 1 概念图的足迹线地图氛围。
+- 全屏地图的城市点与城市名称改为独立覆盖层：缩放和平移时只跟随地理位置移动，视觉尺寸不随地图缩放改变；城市点缩小为 6px，城市名称固定使用朝华标题。
+- 弹窗内的“进入档案”继续复用既有 Expo Router 城市详情路由，不新增数据写入或后台行为。
+
 ## 2026-07-24: Shop detail and shopping bag concept style
 
 - The shop uses the fixed concept palette only: `#B56B52`, `#56708A`, `#EFE2CF`, `#F7F2EA`, `#2F2A26`, and `#D8CFC4`.

@@ -1,4 +1,7 @@
 import {
+  cityCheckinGuides,
+  getMapCheckinAsset,
+  mapCheckinAssetCities,
   OfflineChinaMapAdapter,
   getCityStats,
 } from "../src/features/cities";
@@ -72,6 +75,41 @@ describe("city map domain data", () => {
     });
     expect(adapter.initialFocus).toEqual({ center: { x: 0.62, y: 0.53 }, zoom: 1 });
     expect(serialized).not.toMatch(/https?:|www\./i);
+  });
+
+  it("provides a local check-in route and three icon spots for every mapped city", () => {
+    expect(Object.keys(cityCheckinGuides).sort()).toEqual([...cities].sort());
+    expect(JSON.stringify(cityCheckinGuides)).not.toMatch(/https?:|www\./i);
+
+    for (const city of cities) {
+      expect(cityCheckinGuides[city].routeName).toEqual(expect.any(String));
+      expect(cityCheckinGuides[city].routeHint).toEqual(expect.any(String));
+      expect(cityCheckinGuides[city].spots).toHaveLength(3);
+      for (const spot of cityCheckinGuides[city].spots) {
+        expect(spot.name).toEqual(expect.any(String));
+        expect(spot.note).toEqual(expect.any(String));
+        expect(spot.icon).toEqual(expect.any(String));
+      }
+    }
+  });
+
+  it("registers local transparent map check-in artwork for the imported city sheets", () => {
+    expect([...mapCheckinAssetCities].sort()).toEqual([
+      "beijing",
+      "changsha",
+      "chengdu",
+      "guangzhou",
+      "hangzhou",
+      "shanghai",
+      "shenzhen",
+      "suzhou",
+      "wuhan",
+      "xian",
+    ]);
+
+    for (const city of mapCheckinAssetCities) {
+      expect(getMapCheckinAsset(city)?.source).toBeTruthy();
+    }
   });
 
   it("does not let consumer mutation alter map data exposed by another adapter", () => {

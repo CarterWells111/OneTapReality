@@ -33,14 +33,14 @@ export const canvasEditorFontSources: Record<string, ImageRequireSource> = {
 
 export const canvasFontOptions: readonly { id: string; label: string; family: string }[] = [
   { id: bodyFontFamily, label: "朝华打字机", family: bodyFontFamily },
-  { id: "XiMaiXiHuan", label: "喜脉喜欢", family: displayFontFamily },
+  { id: "ChaoHuaTitleA", label: "朝华标题 A", family: displayFontFamily },
+  { id: "XiMaiXiHuan", label: "喜脉喜欢", family: "XiMaiXiHuan" },
   { id: "PFFanHuTu", label: "频凡胡涂", family: "PFFanHuTu" },
   { id: "CraftMincho", label: "クラフト明朝", family: "CraftMincho" },
   { id: "YouYouYiSong", label: "又又意宋", family: "YouYouYiSong" },
   { id: "PingFangXingChen", label: "平方星辰", family: "PingFangXingChen" },
   { id: "PingFangLangYa", label: "琅琊体", family: "PingFangLangYa" },
   { id: "PingFangFeiYang", label: "飞扬体", family: "PingFangFeiYang" },
-  { id: "ChaoHuaTitleA", label: "朝华标题 A", family: "ChaoHuaTitleA" },
   { id: "ChaoHuaTitleB", label: "朝华标题 B", family: "ChaoHuaTitleB" },
   { id: "MaoKenZhuYuan", label: "猫啃珠圆", family: "MaoKenZhuYuan" },
   { id: "FusionPixel10Mono", label: "缝合像素", family: "FusionPixel10Mono" },

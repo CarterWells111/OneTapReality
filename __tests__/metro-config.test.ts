@@ -4,6 +4,7 @@ import { join } from "node:path";
 describe("Metro configuration", () => {
   it("does not crawl absolute linked worktrees", () => {
     const target = join(process.cwd(), ".worktrees", "feature", "node_modules", "expo");
+    const activeProjectDependency = join(process.cwd(), "node_modules", "expo");
     const output = execFileSync(
       process.execPath,
       ["-e", `const config = require('./metro.config'); process.stdout.write(JSON.stringify([config.resolver.blockList.test(${JSON.stringify(target)}), config.resolver.blockList.test(${JSON.stringify(activeProjectDependency)})]));`],

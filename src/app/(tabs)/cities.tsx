@@ -37,6 +37,7 @@ export default function CitiesScreen() {
             stats={cityStats}
             variant="overview"
             interactive
+            showCityCheckinPopup
             onCityPress={goToCity}
             onMapPress={() => router.push("/city-map")}
           />

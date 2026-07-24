@@ -25,7 +25,7 @@ export default function FullscreenCityMapScreen() {
         </Pressable>
       </View>
       <View style={{ flex: 1, padding: 4 }} testID="fullscreen-city-map-viewport">
-        <CityMap stats={cityStats} variant="workspace" interactive onCityPress={goToCity} />
+        <CityMap stats={cityStats} variant="workspace" interactive showCityCheckinPopup onCityPress={goToCity} />
       </View>
     </SafeAreaView>
   );

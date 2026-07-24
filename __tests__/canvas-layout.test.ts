@@ -13,6 +13,8 @@ describe("canvas layout", () => {
 
     expect(layout.aspectRatio).toBe(1);
     expect(layout.elements.map((element) => element.type)).toEqual(["image", "text", "text"]);
+    expect(layout.elements[1]).toMatchObject({ fontStyle: "ChaoHuaTitleA", fontSize: 22 });
+    expect(layout.elements[2]).toMatchObject({ fontStyle: "ZhaohuaTypeWriter", fontSize: 16 });
   });
 
   it("clamps layout bounds and assigns unique element IDs", () => {
