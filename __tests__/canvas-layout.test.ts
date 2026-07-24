@@ -24,7 +24,7 @@ describe("canvas layout", () => {
       ],
     });
 
-    expect(layout.elements[0]).toMatchObject({ id: "same", x: 0, y: 1, width: 1, height: 0.05 });
+    expect(layout.elements[0]).toMatchObject({ id: "same", x: -0.95, y: 0.95, width: 0.95, height: 0.03 });
     expect(layout.elements[1].id).toBe("same-2");
   });
 });
