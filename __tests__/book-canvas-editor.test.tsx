@@ -129,11 +129,31 @@ describe("BookCanvasEditor", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
 
-    fireEvent.press(screen.getByText("旅行"));
-    fireEvent.press(screen.getByLabelText("添加相机"));
+    fireEvent.press(screen.getByText("贴纸 2"));
+    fireEvent.press(screen.getByLabelText("添加贴纸 2-01"));
 
-    expect(screen.getAllByText("📷")).toHaveLength(2);
+    const latestPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[] | undefined;
+    expect(latestPages?.[0].layout?.elements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
+      ]),
+    );
     expect(screen.getByText("完成")).toBeTruthy();
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.any(Array),
+      "structure",
+    );
+  });
+
+  it("sets a background on the current page from the asset tray", () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+
+    fireEvent.press(screen.getByText("背景"));
+    fireEvent.press(screen.getByLabelText("选择背景 01"));
+
+    const latestPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[] | undefined;
+    expect(latestPages?.[0].layout?.backgroundId).toBe("background-01");
     expect(onChange).toHaveBeenLastCalledWith(
       expect.any(Array),
       "structure",

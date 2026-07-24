@@ -7,6 +7,7 @@ jest.mock("expo-router", () => {
   );
   return { Stack };
 });
+jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
 jest.mock("expo-sqlite", () => {
   const { View } = require("react-native");
   return { SQLiteProvider: ({ children }: { children: React.ReactNode }) => <View testID="sqlite-provider">{children}</View> };

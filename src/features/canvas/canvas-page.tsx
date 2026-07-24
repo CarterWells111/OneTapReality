@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 
+import { canvasBackgrounds } from "./canvas-assets";
 import { CanvasElement } from "./canvas-element";
 import { colors } from "../../components/ui";
 import type { CanvasElement as CanvasElementModel, CanvasLayout } from "../../types/memory";
@@ -36,6 +38,7 @@ export function CanvasPage({
   const canvasHeight = height ?? canvasWidth / displayAspectRatio;
   const elements = [...layout.elements].sort((left, right) => left.zIndex - right.zIndex);
   const canPressBlank = interactive && onPressBlank !== undefined;
+  const background = canvasBackgrounds.find((asset) => asset.id === layout.backgroundId);
 
   return (
     <Pressable
@@ -49,6 +52,15 @@ export function CanvasPage({
         { height: canvasHeight, width: canvasWidth },
       ]}
       testID="album-canvas">
+      {background ? (
+        <Image
+          contentFit="cover"
+          pointerEvents="none"
+          source={background.source}
+          style={StyleSheet.absoluteFill}
+          testID={`canvas-background-${background.id}`}
+        />
+      ) : null}
       {elements.map((element) => (
         <CanvasElement
           canvasHeight={canvasHeight}

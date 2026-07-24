@@ -25,20 +25,10 @@ export type StoryPage = {
   layout?: CanvasLayout;
 };
 
-export type CanvasFontStyle = "system" | "avenir" | "georgia";
-export type CanvasStickerId =
-  | "heart"
-  | "sparkles"
-  | "camera"
-  | "suitcase"
-  | "map"
-  | "pin"
-  | "coffee"
-  | "flower"
-  | "ticket"
-  | "sun"
-  | "moon"
-  | "love-letter";
+export type CanvasFontStyle = string;
+export type CanvasStickerId = string;
+export type CanvasFrameId = string;
+export type CanvasBackgroundId = string;
 
 type CanvasElementBase = {
   id: string;
@@ -60,6 +50,7 @@ export type CanvasTextElement = CanvasElementBase & {
   text: string;
   fontStyle: CanvasFontStyle;
   color: string;
+  fontSize: number;
 };
 
 export type CanvasStickerElement = CanvasElementBase & {
@@ -67,13 +58,20 @@ export type CanvasStickerElement = CanvasElementBase & {
   stickerId: CanvasStickerId;
 };
 
+export type CanvasFrameElement = CanvasElementBase & {
+  type: "frame";
+  frameId: CanvasFrameId;
+};
+
 export type CanvasElement =
   | CanvasImageElement
   | CanvasTextElement
-  | CanvasStickerElement;
+  | CanvasStickerElement
+  | CanvasFrameElement;
 
 export type CanvasLayout = {
   aspectRatio: 1;
+  backgroundId?: CanvasBackgroundId;
   elements: CanvasElement[];
 };
 

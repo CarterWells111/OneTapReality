@@ -1,5 +1,28 @@
 # 决策记录
 
+## 2026-07-24: Shop detail and shopping bag concept style
+
+- The shop uses the fixed concept palette only: `#B56B52`, `#56708A`, `#EFE2CF`, `#F7F2EA`, `#2F2A26`, and `#D8CFC4`.
+- Product cards now open a local product detail route with gallery, style, package, engraving, quantity, price feedback, and “add to shopping bag” controls.
+- The shopping bag remains a local demo order-intent list, not payment or checkout. The page now uses hand-drawn paper cards, coupon/address/summary blocks, and a demo checkout action that exports the bag text.
+
+## 2026-07-24：本地字体与手账编辑素材
+
+本次继续只在新分支 `ui-version2-homepage` 中调整本地呈现和编辑体验，不改 `main`，不新增网络、账号、支付、真实 AI、真实 NFC、分析或远程素材依赖。
+
+- 从本机 `AdventureX/字体/中文/` 解出中文字体到 `assets/fonts/`。应用主标题使用油茶馓子体，正文和输入默认使用朝华打字机，以靠近参考图的手绘海报与打字机排版氛围。
+- 底部 TabBar 的版本 2 图标尺寸从 28×28 放大到 56×56，并加高 tabbar，避免图标和文字挤压。
+- 画布编辑器新增文字字号、字色、字体选择；新增文字默认朝华打字机，并保留除油茶馓子体和朝华打字机之外的本地字体作为可选字体。
+- 从本机 `素材库/sticker1..4/` 导入 80 张贴纸，按 4 个文件夹分组；从 `素材库/frame1..2/` 导入 40 张相框，新增“添加相框”入口。贴纸和相框都作为本地静态图片打包。
+
+## 2026-07-24：底部 TabBar 版本 2 本地 UI
+
+本次只在新分支 `ui-version2-homepage` 中调整首页视觉呈现，不改 `main`，不新增网络、账号、支付、真实 AI、真实 NFC、分析或远程素材依赖。
+
+- 从本机 `AdventureX/UI/版本2/` 选取第 2、3、4、5 张 PNG，抠除棋盘格底纹后生成真正透明底的 `assets/tab-icons/` 图标。
+- 底部 TabBar `src/app/(tabs)/_layout.tsx` 将“记忆 / 城市 / 商店 / 我的”四个 SVG 图标替换为版本 2 本地图片。
+- 首页误放的 UI 预览区已移除；既有旅行册列表、创建入口、商店入口和本机数据生命周期保持不变。
+
 ## 2026-07-23：城市市花纪念挂坠商品新增
 
 本次在商品目录中新增「城市市花纪念挂坠」品类（`souvenir-pendant`），10 座城市的普通版与特殊版共 20 个 SKU。不新增支付、账号、网络、真实 AI 或真实 NFC。
@@ -195,3 +218,17 @@
 - 点击组件内部、书页外工具栏、贴纸栏、页码或页面管理区域不会触发取消选中。
 - 由 `CanvasPage` 的书页底层点击回调处理，不使用坐标碰撞检测；保持现有双击选中、组件手势和横滑翻页语义。
 - 取消选中只改变本地 UI 状态，不修改页面数据，也不触发自动保存。
+
+## 2026-07-24：本地透明素材与页面背景
+
+- 贴纸和相框继续作为可拖拽画布元素保存；导入时将素材中烘焙的浅灰/白色透明预览网格转为真实 alpha 通道，避免在 App 内出现棋盘底。
+- 背景素材来自本地 `素材库/background`，作为 `CanvasLayout.backgroundId` 保存在当前页 layout 上，并由 `CanvasPage` 铺在所有元素最底层。
+- 背景不是可拖拽元素，不占用 zIndex；用户可在素材栏切换到“背景”模式选择或移除当前页背景。
+
+## 2026-07-24：版本1概念图风格与素材性能
+
+- 查看 `产品概念图/版本1` 的 20 张参考图后，仅调整字体、颜色、线条和资源体积，不改变现有页面布局、导航结构或画布交互。
+- 主标题字体改为喜脉喜欢体；正文与默认添加文字使用朝华打字机的真实 family `ZhaohuaTypeWriter`，并减少自定义中文字体上的粗体权重，避免 iOS/Expo 因字重不匹配回退系统字体。
+- App 启动只加载主标题和正文两种字体；画布字体列表中的其他本地字体延后到编辑器中后台加载。
+- 贴纸缩至 512px 以内、相框缩至 720px 以内并保留透明 PNG；背景缩至 720px 以内并改用压缩 JPG，降低 Expo Go 加载和打包成本。
+- 全局风格采用版本1概念图的米纸底、砖橙主色、细墨线和轻手账质感，保留现有信息密度与页面结构。

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { bodyFontFamily, displayFontFamily } from "../features/typography/fonts";
 
 /**
  * OneTapReality 手账设计系统。
@@ -9,20 +10,21 @@ import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewS
  */
 export const colors = {
   background: "#F7F2EA",
-  surface: "#FBF7EF",
+  surface: "#F7F2EA",
   paper: "#EFE2CF",
-  paperEdge: "#E4D6C1",
+  paperEdge: "#D8CFC4",
   ink: "#2F2A26",
-  muted: "#6E6154",
+  muted: "#56708A",
   line: "#D8CFC4",
-  accent: "#56708A",
+  accent: "#B56B52",
   warmAccent: "#B56B52",
-  accentSoft: "#FFF2CF",
-  danger: "#A33A33",
+  accentSoft: "#EFE2CF",
+  danger: "#B56B52",
 } as const;
 
-/** 标题用衬线字体，营造旧书 / 手账感；正文仍用系统字体保证清晰。 */
-export const serifFont = Platform.select({ android: "serif", default: "Georgia" });
+/** 标题与正文使用本地中文字体，营造手绘海报 / 打字机资料页气质。 */
+export const serifFont = displayFontFamily;
+export const bodyFont = bodyFontFamily;
 
 export function AppButton({
   label,
@@ -41,11 +43,11 @@ export function AppButton({
       : tone === "warm"
         ? colors.warmAccent
         : tone === "danger"
-          ? "#F8E4E2"
+          ? colors.paper
           : colors.accentSoft;
   const textColor =
     tone === "primary" || tone === "warm"
-      ? "#FFFFFF"
+      ? colors.background
       : tone === "danger"
         ? colors.danger
         : colors.accent;
@@ -65,7 +67,7 @@ export function AppButton({
         paddingHorizontal: 18,
       })}
     >
-      <Text selectable style={{ color: textColor, fontSize: 16, fontWeight: "700" }}>
+      <Text selectable style={{ color: textColor, fontFamily: bodyFont, fontSize: 16 }}>
         {label}
       </Text>
     </Pressable>
@@ -163,12 +165,12 @@ export function Tag({ label, tone = "warm" }: { label: string; tone?: "warm" | "
 }
 
 const styles = StyleSheet.create({
-  sectionTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 19, fontWeight: "700" },
-  sectionCaption: { color: colors.warmAccent, fontSize: 11, fontWeight: "700", letterSpacing: 1.5 },
+  sectionTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 19 },
+  sectionCaption: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 11, letterSpacing: 1.5 },
   screenTitleRow: { alignItems: "flex-start", flexDirection: "row", gap: 12 },
   screenTitleCopy: { flex: 1 },
-  screenTitleText: { color: colors.ink, fontFamily: serifFont, fontSize: 30, fontWeight: "800" },
-  screenTitleCaption: { color: colors.warmAccent, fontSize: 12, fontWeight: "700", letterSpacing: 2, marginTop: 2 },
+  screenTitleText: { color: colors.ink, fontFamily: serifFont, fontSize: 30 },
+  screenTitleCaption: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12, letterSpacing: 2, marginTop: 2 },
   screenTitleRule: { backgroundColor: colors.warmAccent, borderRadius: 2, height: 3, marginTop: 8, width: 34 },
   screenTitleRight: { paddingTop: 4 },
   paperCard: {
@@ -187,5 +189,5 @@ const styles = StyleSheet.create({
   tag: { alignSelf: "flex-start", borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3 },
   tagWarm: { backgroundColor: "rgba(181, 107, 82, 0.08)", borderColor: colors.warmAccent },
   tagBlue: { backgroundColor: "rgba(86, 112, 138, 0.08)", borderColor: colors.accent },
-  tagText: { fontSize: 12, fontWeight: "800" },
+  tagText: { fontFamily: bodyFont, fontSize: 12 },
 });

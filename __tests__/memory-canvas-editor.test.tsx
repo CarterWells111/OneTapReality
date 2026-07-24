@@ -87,7 +87,7 @@ describe("canvas page editing model", () => {
 
   it("keeps text and sticker edits in the selected page layout", () => {
     const withText = addTextToPage(legacyPages, "cover-1", "text-1");
-    const withSticker = addStickerToPage(withText, "cover-1", "sticker-1", "heart");
+    const withSticker = addStickerToPage(withText, "cover-1", "sticker-1", "sticker1-01");
     const updated = updateCanvasElement(withSticker, "cover-1", "text-1", { color: "#A44736" });
     const duplicated = duplicateCanvasElement(updated, "cover-1", "text-1", "text-2");
 
@@ -95,7 +95,7 @@ describe("canvas page editing model", () => {
       expect.arrayContaining([expect.objectContaining({ id: "text-1", color: "#A44736" })]),
     );
     expect(duplicated[0].layout?.elements).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "sticker-1", stickerId: "heart" })]),
+      expect.arrayContaining([expect.objectContaining({ id: "sticker-1", stickerId: "sticker1-01" })]),
     );
     expect(duplicated[0].layout?.elements.find((element) => element.id === "text-2")).toEqual(
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),

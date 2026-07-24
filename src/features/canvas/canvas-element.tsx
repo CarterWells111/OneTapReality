@@ -4,7 +4,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-nativ
 import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { canvasFonts, canvasStickers } from "./canvas-assets";
+import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = Pick<CanvasElementModel, "x" | "y" | "width" | "height" | "rotation">;
@@ -193,17 +193,40 @@ function ElementContent({ element }: { element: CanvasElementModel }) {
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
-    return <Text style={styles.sticker}>{sticker?.glyph ?? "✦"}</Text>;
+    return sticker ? (
+      <Image contentFit="contain" source={sticker.source} style={styles.image} testID={`canvas-sticker-${element.id}`} />
+    ) : (
+      <Text style={styles.stickerFallback}>✦</Text>
+    );
+  }
+  if (element.type === "frame") {
+    const frame = canvasFrames.find((candidate) => candidate.id === element.frameId);
+    return frame ? (
+      <Image contentFit="contain" source={frame.source} style={styles.image} testID={`canvas-frame-${element.id}`} />
+    ) : null;
   }
   const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
-  return <Text style={[styles.text, { color: element.color, fontFamily: font?.family }]}>{element.text}</Text>;
+  return (
+    <Text
+      style={[
+        styles.text,
+        {
+          color: element.color,
+          fontFamily: font?.family,
+          fontSize: element.fontSize,
+          lineHeight: Math.round(element.fontSize * 1.28),
+        },
+      ]}>
+      {element.text}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create({
   positioned: { position: "absolute" },
   element: { flex: 1, borderColor: "transparent", borderRadius: 8, overflow: "hidden" },
-  selected: { borderColor: "#1C5A4C", borderWidth: 2 },
+  selected: { borderColor: "#B76545", borderWidth: 2 },
   image: { flex: 1, width: "100%" },
-  text: { fontSize: 16, lineHeight: 22, paddingHorizontal: 4, paddingVertical: 2 },
-  sticker: { fontSize: 34, lineHeight: 40, textAlign: "center" },
+  text: { paddingHorizontal: 4, paddingVertical: 2 },
+  stickerFallback: { fontSize: 34, lineHeight: 40, textAlign: "center" },
 });

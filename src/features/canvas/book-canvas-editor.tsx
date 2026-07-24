@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useFonts } from "expo-font";
 import {
   Pressable,
   ScrollView,
@@ -8,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -17,6 +19,8 @@ import Animated, {
 } from "react-native-reanimated";
 
 import {
+  canvasBackgrounds,
+  canvasFrames,
   canvasStickerCategories,
   canvasStickers,
   getCanvasStickers,
@@ -27,14 +31,17 @@ import { CanvasToolbar } from "./canvas-toolbar";
 import {
   addStickerToPage,
   addTextToPage,
+  addFrameToPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
+  setCanvasBackground,
   updateCanvasElement,
 } from "./editor-pages";
 import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { colors } from "../../components/ui";
+import { canvasEditorFontSources } from "../typography/fonts";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
@@ -52,6 +59,7 @@ export function BookCanvasEditor({
   onPagesChange,
   pages,
 }: BookCanvasEditorProps) {
+  useFonts(canvasEditorFontSources);
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
   const pageHeight = pageWidth * 4 / 3;
@@ -62,6 +70,7 @@ export function BookCanvasEditor({
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
+  const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -177,10 +186,24 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
   };
 
+  const addFrame = (frameId = canvasFrames[0]?.id) => {
+    if (!frameId) {
+      return;
+    }
+    const nextId = buildCanvasId("frame");
+    changePages(addFrameToPage(pages, currentPage.id, nextId, frameId), "structure");
+    setSelectedElementId(nextId);
+  };
+
   const addText = () => {
     const nextId = buildCanvasId("text");
     changePages(addTextToPage(pages, currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
+  };
+
+  const pickBackground = (backgroundId: (typeof canvasBackgrounds)[number]["id"] | undefined) => {
+    changePages(setCanvasBackground(pages, currentPage.id, backgroundId), "structure");
+    setSelectedElementId(undefined);
   };
 
   const isRightPage = currentIndex % 2 === 0;
@@ -226,6 +249,7 @@ export function BookCanvasEditor({
               <CanvasPage
                 height={pageHeight}
                 layout={currentPage.layout}
+                onPressBlank={() => setSelectedElementId(undefined)}
                 onSelectElement={setSelectedElementId}
                 onTransformEnd={(elementId, patch) => updateElement(elementId, patch, "transform")}
                 pageSide={isRightPage ? "right" : "left"}
@@ -285,7 +309,12 @@ export function BookCanvasEditor({
 
       <CanvasToolbar
         onAddSticker={addSticker}
+        onAddFrame={() => {
+          setAssetTrayMode("frame");
+          addFrame();
+        }}
         onAddText={addText}
+        onPickBackground={() => setAssetTrayMode("background")}
         onChangeLayer={(elementId, direction) => {
           changePages(changeCanvasElementLayer(pages, currentPage.id, elementId, direction), "structure");
         }}
@@ -304,28 +333,82 @@ export function BookCanvasEditor({
       />
 
       <View style={styles.stickerTray}>
-        <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
-          {canvasStickerCategories.map((category) => (
-            <SmallButton
-              active={category.id === stickerCategory}
-              key={category.id}
-              label={category.label}
-              onPress={() => setStickerCategory(category.id)}
-            />
-          ))}
-        </ScrollView>
-        <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
-          {getCanvasStickers(stickerCategory).map((sticker) => (
+        <View style={styles.assetModeRow}>
+          <SmallButton
+            active={assetTrayMode === "sticker"}
+            label="贴纸"
+            onPress={() => setAssetTrayMode("sticker")}
+          />
+          <SmallButton
+            active={assetTrayMode === "frame"}
+            label="相框"
+            onPress={() => setAssetTrayMode("frame")}
+          />
+          <SmallButton
+            active={assetTrayMode === "background"}
+            label="背景"
+            onPress={() => setAssetTrayMode("background")}
+          />
+        </View>
+        {assetTrayMode === "sticker" ? (
+          <>
+            <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
+              {canvasStickerCategories.map((category) => (
+                <SmallButton
+                  active={category.id === stickerCategory}
+                  key={category.id}
+                  label={category.label}
+                  onPress={() => setStickerCategory(category.id)}
+                />
+              ))}
+            </ScrollView>
+            <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
+              {getCanvasStickers(stickerCategory).map((sticker) => (
+                <Pressable
+                  accessibilityLabel={`添加${sticker.label}`}
+                  accessibilityRole="button"
+                  key={sticker.id}
+                  onPress={() => addSticker(sticker.id)}
+                  style={styles.stickerChoice}>
+                  <Image contentFit="contain" source={sticker.source} style={styles.assetThumbnail} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        ) : assetTrayMode === "frame" ? (
+          <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
+            {canvasFrames.map((frame) => (
+              <Pressable
+                accessibilityLabel={`添加${frame.label}`}
+                accessibilityRole="button"
+                key={frame.id}
+                onPress={() => addFrame(frame.id)}
+                style={styles.frameChoice}>
+                <Image contentFit="contain" source={frame.source} style={styles.assetThumbnail} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.stickerChoices} horizontal showsHorizontalScrollIndicator={false}>
             <Pressable
-              accessibilityLabel={`添加${sticker.label}`}
+              accessibilityLabel="移除背景"
               accessibilityRole="button"
-              key={sticker.id}
-              onPress={() => addSticker(sticker.id)}
-              style={styles.stickerChoice}>
-              <Text style={styles.stickerGlyph}>{sticker.glyph}</Text>
+              onPress={() => pickBackground(undefined)}
+              style={styles.backgroundChoice}>
+              <Text style={styles.clearBackgroundText}>无</Text>
             </Pressable>
-          ))}
-        </ScrollView>
+            {canvasBackgrounds.map((background) => (
+              <Pressable
+                accessibilityLabel={`选择${background.label}`}
+                accessibilityRole="button"
+                key={background.id}
+                onPress={() => pickBackground(background.id)}
+                style={styles.backgroundChoice}>
+                <Image contentFit="cover" source={background.source} style={styles.backgroundThumbnail} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
       </View>
     </View>
   );
@@ -431,6 +514,7 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   stickerTray: { gap: 8 },
+  assetModeRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20 },
   categoryRow: { gap: 7, paddingHorizontal: 20 },
   stickerChoices: { gap: 8, paddingHorizontal: 20 },
   stickerChoice: {
@@ -443,5 +527,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 48,
   },
-  stickerGlyph: { fontSize: 24 },
+  frameChoice: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 64,
+    justifyContent: "center",
+    width: 64,
+  },
+  backgroundChoice: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 64,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 64,
+  },
+  assetThumbnail: { height: "92%", width: "92%" },
+  backgroundThumbnail: { height: "100%", width: "100%" },
+  clearBackgroundText: { color: colors.ink, fontSize: 18, fontWeight: "800" },
 });
