@@ -29,6 +29,7 @@ import {
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
 import { CanvasToolbar } from "./canvas-toolbar";
+import { ElementContextMenu } from "./element-context-menu";
 import {
   addStickerToPage,
   addTextToPage,
@@ -73,6 +74,7 @@ export function BookCanvasEditor({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
@@ -89,7 +91,11 @@ export function BookCanvasEditor({
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
+  const editingElement = editingElementId
+    ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
+    : undefined;
   const selectedText = selectedElement?.type === "text" ? selectedElement : undefined;
+  const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
     onPagesChange(nextPages, reason);
@@ -291,8 +297,16 @@ export function BookCanvasEditor({
                 onPressBlank={() => {
                   discardPendingText();
                   setSelectedElementId(undefined);
+                  setEditingElementId(undefined);
                 }}
-                onSelectElement={setSelectedElementId}
+                onSelectElement={(id) => {
+                  // 双击选中
+                  setSelectedElementId(id);
+                  // 如果已选中同一个元素，再次点击进入编辑模式
+                  if (selectedElementId === id && currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                    setEditingElementId(id);
+                  }
+                }}
                 onTransformEnd={(elementId, patch) => {
                   handleElementInteraction(elementId);
                   updateElement(elementId, patch, "transform");
@@ -339,22 +353,39 @@ export function BookCanvasEditor({
         </GestureDetector>
       </View>
 
-      {selectedText ? (
-        <View style={styles.textEditor}>
-          <Text style={styles.sectionLabel}>文字</Text>
-          <TextInput
-            accessibilityLabel="编辑选中文字"
-            multiline
-            onChangeText={(text) => {
-              if (text !== selectedText.text && pendingTextId === selectedText.id) {
-                setPendingTextId(undefined);
-              }
-              updateElement(selectedText.id, { text }, "text");
-            }}
-            style={styles.textInput}
-            value={selectedText.text}
+      {/* 文本编辑：选中后进入编辑模式时显示上下文菜单 + 文字输入 */}
+      {editingText ? (
+        <>
+          <View style={styles.textEditor}>
+            <Text style={styles.sectionLabel}>编辑文字</Text>
+            <TextInput
+              accessibilityLabel="编辑选中文字"
+              multiline
+              onChangeText={(text) => {
+                if (text !== editingText.text && pendingTextId === editingText.id) {
+                  setPendingTextId(undefined);
+                }
+                updateElement(editingText.id, { text }, "text");
+              }}
+              style={styles.textInput}
+              value={editingText.text}
+            />
+          </View>
+          <ElementContextMenu
+            element={editingText}
+            elementFrame={editingText ? {
+              x: editingText.x * pageWidth,
+              y: editingText.y * pageHeight,
+              width: editingText.width * pageWidth,
+              height: editingText.height * pageHeight,
+            } : null}
+            onChangeColor={(color) => updateElement(editingText?.id ?? "", { color }, "structure")}
+            onChangeFont={(fontStyle) => updateElement(editingText?.id ?? "", { fontStyle }, "structure")}
+            onChangeSize={(fontSize) => updateElement(editingText?.id ?? "", { fontSize }, "structure")}
+            onClose={() => setEditingElementId(undefined)}
+            visible={editingElementId !== undefined && editingText !== undefined}
           />
-        </View>
+        </>
       ) : null}
 
       <CanvasToolbar
