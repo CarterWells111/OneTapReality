@@ -23,15 +23,14 @@ type CanvasToolbarProps = {
 /**
  * 画布编辑器工具栏。
  *
- * 单行布局：
- *   左侧：添加文字 | 字体 | 字号 | 颜色
- *   右侧（选中元素时出现）：前移 | 后移 | 复制 | 删除
+ * 单行布局（全部左对齐）：
+ *   字体 | 字号 | 颜色（仅文字元素选中时） | 前移 | 后移 | 复制 | 删除（任何元素选中时）
  *
- * 撤销/重做已移至页面指示器行（编辑器顶栏）。
+ * "添加文字"已移至编辑器顶栏右侧；撤销/重做已移至顶栏左侧。
  */
 export function CanvasToolbar({
   selectedElement,
-  onAddText,
+  onAddText: _onAddText,
   onAddSticker: _onAddSticker,
   onAddFrame: _onAddFrame,
   onPickBackground: _onPickBackground,
@@ -46,35 +45,58 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   const selectedId = selectedElement?.id;
   const isTextSelected = selectedElement?.type === "text";
+  const hasSelection = selectedId !== undefined;
+
+  if (!hasSelection && !isTextSelected) {
+    return null;
+  }
 
   return (
     <View style={styles.shell}>
       <View style={styles.row}>
-        {/* 左侧：添加文字 + 文字格式 */}
-        <View style={styles.leftGroup}>
-          <ToolbarButton active label="添加文字" onPress={onAddText} />
-          {isTextSelected ? (
-            <>
-              <ToolbarButton label="字体" onPress={() => onFont?.()} />
-              <ToolbarButton label="字号" onPress={() => onSize?.()} />
-              <ToolbarButton label="颜色" onPress={() => onColor?.()} />
-            </>
-          ) : null}
-        </View>
-
-        {/* 右侧：元素操作（仅在选中元素时显示） */}
-        {selectedId ? (
-          <View style={styles.rightGroup}>
+        {isTextSelected ? (
+          <>
+            <ToolbarButton label="字体" onPress={() => onFont?.()} />
+            <ToolbarButton label="字号" onPress={() => onSize?.()} />
+            <ToolbarButton label="颜色" onPress={() => onColor?.()} />
+          </>
+        ) : null}
+        {hasSelection ? (
+          <>
             <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
             <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
             <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
             <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
-          </View>
+          </>
         ) : null}
       </View>
     </View>
   );
 }
+
+/** 独立的"添加文字"按钮，放在顶栏使用 */
+export function AddTextButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={addTextStyles.button}>
+      <Text style={addTextStyles.text}>添加文字</Text>
+    </Pressable>
+  );
+}
+
+const addTextStyles = StyleSheet.create({
+  button: {
+    backgroundColor: "#F7E2BF",
+    borderColor: "#B76545",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  text: { color: "#B76545", fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800" },
+});
 
 /**
  * 撤销/重做按钮对 —— 放置在编辑器顶栏左侧。
@@ -191,12 +213,11 @@ const styles = StyleSheet.create({
   row: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     paddingHorizontal: 20,
   },
-  leftGroup: { alignItems: "center", flexDirection: "row", gap: 6 },
-  rightGroup: { alignItems: "center", flexDirection: "row", gap: 6 },
   button: {
     backgroundColor: "#FFFFFF",
     borderColor: "#D9DED7",

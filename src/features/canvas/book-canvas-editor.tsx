@@ -28,7 +28,7 @@ import {
   type CanvasStickerCategory,
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
-import { CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
+import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
   addStickerToPage,
@@ -269,7 +269,8 @@ export function BookCanvasEditor({
             onUndo={() => undo(pages)}
           />
           <View style={styles.topbarSpacer} />
-          {/* 右侧：页面指示器 + 页面管理 */}
+          {/* 右侧：页面指示器 + 页面管理 + 添加文字 */}
+          <AddTextButton onPress={addText} />
           <Text style={styles.pageIndicatorText}>第 {currentIndex + 1} / {pages.length} 页</Text>
           <Pressable
             accessibilityLabel="打开页面管理"
