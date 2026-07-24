@@ -15,14 +15,22 @@ describe("backend PostgreSQL migrations", () => {
         select table_name
         from information_schema.tables
         where table_schema = 'public'
-          and table_name in ('devices', 'memories', 'memory_pages')
+          and table_name in ('devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions')
         order by table_name
       `);
 
       expect(result.rows.map((row) => row.table_name)).toEqual([
         "devices",
+        "gift_email_codes",
+        "gift_members",
+        "gift_publish_sessions",
+        "gift_sessions",
+        "gifts",
         "memories",
         "memory_pages",
+        "shared_album_media",
+        "shared_album_pages",
+        "shared_albums",
       ]);
     } finally {
       await close();

@@ -1,10 +1,11 @@
-import type { ConfigContext, ExpoConfig } from "expo/config";
-
-function normalizeOrigin(origin: string): string {
+// @ts-nocheck
+// EAS CLI loads this .ts file as CommonJS during project initialization.
+// Keep it valid JavaScript so both EAS and Expo CLI can evaluate it.
+function normalizeOrigin(origin) {
   return origin.replace(/\/+$/u, "");
 }
 
-export function withRouterOrigin<T extends Partial<ExpoConfig>>(config: T, origin?: string): T {
+function withRouterOrigin(config, origin) {
   if (!origin) return config;
 
   const normalizedOrigin = normalizeOrigin(origin);
@@ -17,8 +18,8 @@ export function withRouterOrigin<T extends Partial<ExpoConfig>>(config: T, origi
       }
       return plugin;
     }),
-  } as T;
+  };
 }
 
-export default ({ config }: ConfigContext): ExpoConfig =>
-  withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN) as ExpoConfig;
+module.exports = ({ config }) => withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN);
+module.exports.withRouterOrigin = withRouterOrigin;

@@ -37,6 +37,8 @@ export default function RootLayout() {
                 }}
               >
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="gifts/index" options={{ title: "我的纪念品" }} />
+              <Stack.Screen name="gift/[token]" options={{ title: "NFC 纪念礼品" }} />
               <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
               <Stack.Screen name="memory/review/[id]" options={{ title: "确认草稿" }} />
               <Stack.Screen name="memory/[id]" options={{ title: "旅行册" }} />

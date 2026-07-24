@@ -10,6 +10,33 @@
 - **AI 免责声明下移**：AI 辅助生成提示从编辑器上方移至自动保存状态下方，使编辑界面不被提示文字遮挡。
 - 本次不新增网络、支付、账号、真实 AI、真实 NFC、依赖或数据库字段。
 
+## 2026-07-24：OneTapReality 标识统一
+
+产品名称、Expo slug、URI scheme、npm 包名、测试预期及当前发布配置统一使用 `OneTapReality` / `onetapreality`；后续工作不得再引入 `travel-memory` 标识。
+
+这是发布前的重命名，不迁移本地演示数据。已在 Expo 创建的 `travel-memory-demo` EAS 项目属于外部状态，发布前须在 Expo 控制台手动重命名或替换；本决定不改变 `com.onetapreality.app`、数据库、服务端数据或秘密。
+
+历史计划与历史决策保留原始用词，作为审计记录。
+
+## 2026-07-24：OneTapReality 1.1.0 NFC TestFlight beta
+
+第二个 TestFlight beta 的显示版本为 `1.1.0`，包含 NFC 礼品初始化、共享相册和礼品访问控制。iOS build number 由 EAS remote version source 管理，并在 production build 时自动递增，避免与已上传的 TestFlight build number 冲突。继续使用 `com.onetapreality.app` 和已关联的 `@onereality/onetapreality` EAS 项目；本次不直接发布到 App Store。
+
+## 2026-07-24：NFC 礼品共享相册
+
+实体礼品写入唯一的 `https://onetapreality.com/gift/<token>`，由 iOS Universal Links 和 Android App Links 打开应用；应用不读取或写入 NFC 标签本身。礼品 token 在服务端仅以带 pepper 的哈希保存，交付前由受限批量脚本生成、登记并导出写入清单。
+
+- 首位通过邮箱验证码的人认领礼品并成为不可转让的管理者；访问名单总数（含管理者）严格为 1 至 3 个邮箱。受邀人可只读访问，未授权邮箱不获得相册元数据。
+- 相册以管理者明确发布的快照共享。页面、照片和访问名单使用 Railway PostgreSQL 与 Cloudflare R2 私有桶保存；照片仅通过短期签名 URL 上传或读取，R2、Resend、数据库及 token 密钥只放服务端环境变量。
+- Resend 从已验证的 `support@onetapreality.com` 发送一次性验证码。登录会话为 30 天，客户端只在 SecureStore 保存 bearer token，服务器只保存哈希。
+- 管理者可改绑相册、发布更新、调整名单或永久停用礼品；停用会删除共享数据并使物理标签永久不可重新认领。
+- 此功能新增真实网络、邮箱账号、云端媒体和真实 NFC 链接范围；隐私政策、支持页和应用内声明必须同步反映这些事实，客户端不得包含秘密。
+
+## 2026-07-24：开发者 NFC 管理台与统一空卡
+
+空白实体卡统一写入 `https://onetapreality.com/activate`，该入口只向 `GIFT_ADMIN_EMAILS` 白名单中已验证邮箱开放。开发者在原生 Development Build 或生产 App 内将当前卡重写为唯一 `https://onetapreality.com/gift/<token>`；Expo Go 不提供写卡能力。系统不读取或保存 NFC 芯片 UID，而是为成功初始化的卡生成短卡号和可选备注。
+
+初始化先创建最长 15 分钟的预留；只有原生写入并读取验证成功后，礼品才转为可认领状态。过期预留自动作废且不得认领；已初始化、已认领或已绑定的卡均禁止覆盖或转移。管理操作保留服务端审计记录，所有管理员密钥、白名单和清理密钥仅存 Railway 服务端环境变量。
 ## 2026-07-24：离线中国地图多城市足迹打卡与搜索
 
 全屏离线中国地图新增三大能力：城市足迹打卡弹窗、搜索跳转、视觉设计统一化。本轮不引入网络、地图 SDK、定位、账户、支付、分析、真实 NFC 或客户端秘密。

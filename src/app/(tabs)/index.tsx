@@ -75,6 +75,7 @@ export default function MemoriesHomeScreen() {
         </Text>
         <View style={styles.heroActions}>
           <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
+          <AppButton label="我的纪念品" tone="secondary" onPress={() => router.push("/gifts")} />
         </View>
         <Pressable
           accessibilityRole="button"

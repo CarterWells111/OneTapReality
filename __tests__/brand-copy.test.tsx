@@ -30,7 +30,7 @@ describe("OneTapReality brand copy", () => {
 
     expect(screen.getByText("OneTapReality｜一触如初")).toBeTruthy();
     expect(screen.getByText("让每一次触碰，都回到故事最初的地方。")).toBeTruthy();
-    expect(screen.getByText("选择照片，开启一册专属你们的旅行记忆。")).toBeTruthy();
+    expect(screen.getByText("选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。")).toBeTruthy();
   });
 
   it("keeps the OneTapReality slogan as the default profile bio", async () => {
@@ -39,15 +39,16 @@ describe("OneTapReality brand copy", () => {
     expect(screen.getByText("让每一次触碰，都回到故事最初的地方。")).toBeTruthy();
   });
 
-  it("keeps compatibility identifiers while updating app display configuration", () => {
+  it("uses OneTapReality identifiers in app configuration", () => {
     const expo = require("../app.json").expo;
 
-    expect(expo.name).toBe("OneTapReality｜一触如初");
-    expect(expo.slug).toBe("travel-memory-app");
-    expect(expo.scheme).toBe("luyi");
+    expect(expo.name).toBe("OneTapReality");
+    expect(expo.version).toBe("1.1.0");
+    expect(expo.slug).toBe("onetapreality");
+    expect(expo.scheme).toBe("onetapreality");
     expect(expo.android.adaptiveIcon.backgroundColor).toBe("#F7F2EA");
     const imagePickerPlugin = expo.plugins.find((plugin: unknown) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
-    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("允许一触如初访问你选择的照片，以便制作旅行纪念册。");
+    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Allow OneTapReality to access your selected photos to create albums.");
     expect(expo.plugins).toContainEqual(
       expect.arrayContaining([
         "expo-splash-screen",

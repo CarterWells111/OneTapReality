@@ -1,11 +1,19 @@
 {
   "cli": {
-    "version": ">= 16.0.1"
+    "version": ">=16.0.1",
+    "appVersionSource": "remote"
   },
   "build": {
-    "production": {
+    "preview": {
+      "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://onetapserver-production.up.railway.app"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
       }
     }
   }

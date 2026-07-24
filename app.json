@@ -1,16 +1,30 @@
 {
   "expo": {
-    "name": "OneTapReality｜一触如初",
-    "slug": "travel-memory-app",
-    "version": "1.0.0",
+    "name": "OneTapReality",
+    "slug": "onetapreality",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/onetapreality-icon.png",
-    "scheme": "luyi",
+    "scheme": "onetapreality",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.onetapreality.app",
+      "associatedDomains": ["applinks:onetapreality.com"]
     },
     "android": {
+      "package": "com.onetapreality.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "onetapreality.com", "pathPrefix": "/gift" },
+            { "scheme": "https", "host": "onetapreality.com", "pathPrefix": "/activate" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#F7F2EA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -28,7 +42,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "允许一触如初访问你选择的照片，以便制作旅行纪念册。"
+          "photosPermission": "Allow OneTapReality to access your selected photos to create albums."
         }
       ],
       "expo-sqlite",
@@ -40,11 +54,25 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Allow OneTapReality to read and write NFC gift cards.",
+          "includeNdefEntitlement": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "12831d3a-34cb-49a1-9efa-6bfd26afef7c"
+      }
+    },
+    "owner": "onereality"
   }
 }
