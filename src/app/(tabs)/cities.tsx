@@ -45,10 +45,10 @@ export default function CitiesScreen() {
           也可从这份档案里，翻看每座城市已经收进册子的旅行记忆。
         </Text>
         <View style={styles.list}>
-          {cityStats.map((stat) => {
+          {cityStats.filter((stat) => stat.isVisited).map((stat) => {
             const { city } = stat;
             const item = cityContent[city];
-            const visitState = stat.isVisited ? `已保存 ${stat.visitCount} 册旅行记忆` : "尚未保存旅行记忆";
+            const visitState = `已保存 ${stat.visitCount} 册旅行记忆`;
             return (
               <Pressable
                 key={city}
@@ -65,8 +65,8 @@ export default function CitiesScreen() {
                   <Text selectable style={styles.cityChevron}>›</Text>
                 </View>
                 <View style={styles.stateRow}>
-                  <View style={[styles.stampDot, !stat.isVisited && styles.stampDotMuted]} />
-                  <Text selectable style={[styles.cityState, stat.isVisited && styles.cityStateVisited]}>
+                  <View style={styles.stampDot} />
+                  <Text selectable style={[styles.cityState, styles.cityStateVisited]}>
                     {visitState}
                   </Text>
                 </View>
@@ -74,6 +74,17 @@ export default function CitiesScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/cities/unvisited")}
+            style={({ pressed }) => [styles.moreCitiesCard, pressed && styles.pressed]}
+          >
+            <View style={styles.cityHeader}>
+              <Text selectable style={styles.moreCitiesTitle}>查看更多城市</Text>
+              <Text selectable style={styles.cityChevron}>›</Text>
+            </View>
+            <Text selectable style={styles.moreCitiesSubtitle}>下一段旅行，正等着被写进你的城市档案。</Text>
+          </Pressable>
         </View>
       </Section>
     </ScrollView>
@@ -100,9 +111,11 @@ const styles = StyleSheet.create({
   cityChevron: { color: colors.ink, fontSize: 22, opacity: 0.5 },
   stateRow: { alignItems: "center", flexDirection: "row", gap: 7 },
   stampDot: { backgroundColor: colors.warmAccent, borderRadius: 5, height: 9, width: 9 },
-  stampDotMuted: { backgroundColor: colors.muted, opacity: 0.5 },
   cityState: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   cityStateVisited: { color: colors.warmAccent },
   citySubtitle: { color: colors.muted, fontSize: 13.5, lineHeight: 20 },
+  moreCitiesCard: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderRadius: 18, borderStyle: "dashed", borderWidth: 1, gap: 8, minHeight: 84, padding: 18 },
+  moreCitiesTitle: { color: colors.accent, fontFamily: serifFont, fontSize: 19, fontWeight: "800" },
+  moreCitiesSubtitle: { color: colors.muted, fontSize: 13.5, lineHeight: 20 },
   pressed: { opacity: 0.85 },
 });

@@ -33,6 +33,7 @@ export default function RootLayout() {
               <Stack.Screen name="memory/[id]" options={{ title: "旅行册" }} />
               <Stack.Screen name="memory/[id]/edit" options={{ title: "编辑旅行册" }} />
               <Stack.Screen name="city/[city]" options={{ title: "城市收藏" }} />
+              <Stack.Screen name="cities/unvisited" options={{ title: "未打卡城市" }} />
               <Stack.Screen name="city/[city]/manage" options={{ title: "Manage city collection" }} />
               <Stack.Screen name="city-map/index" options={{ headerShown: false, presentation: "fullScreenModal" }} />
               <Stack.Screen name="nfc-demo/[city]" options={{ title: "模拟碰一碰" }} />
