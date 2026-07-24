@@ -6,8 +6,8 @@ import * as Print from "expo-print";
 import {
   type ExportFormat,
   exportAsTralbumFormat,
-} from "../features/export/export-service";
-import type { StoryPage } from "../types/memory";
+} from "./export-service";
+import type { StoryPage } from "../../types/memory";
 
 type ShareTarget = {
   pages: StoryPage[];
