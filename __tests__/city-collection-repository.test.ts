@@ -13,7 +13,7 @@ type MemoryRow = {
   title: string;
   city: "hangzhou" | "shanghai" | "shenzhen";
   travelDate: string;
-  status: "draft" | "saved" | "discarded";
+  status?: "draft" | "saved" | "discarded";
   createdAt: string;
   updatedAt: string;
 };
@@ -45,6 +45,9 @@ function createDatabase(options: {
           .sort((left, right) => left.position - right.position) as T[];
       }
       if (statement.includes("FROM memories")) {
+        if (parameters[0] === "draft" && parameters[1] === "discarded") {
+          return memories.filter((row) => row.status !== "draft" && row.status !== "discarded") as T[];
+        }
         return memories.filter((row) => row.status === parameters[0]) as T[];
       }
       return [] as T[];
@@ -75,7 +78,12 @@ function createDatabase(options: {
       }
       if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("SELECT memories.id")) {
         const [, updatedAt, memoryId, city, status] = parameters;
-        const memory = memories.find((row) => row.id === memoryId && row.city === city && row.status === status);
+        const allowsLegacyStatus = statement.includes("status IS NULL OR status = ?");
+        const memory = memories.find((row) =>
+          row.id === memoryId &&
+          row.city === city &&
+          (allowsLegacyStatus ? (row.status === undefined || row.status === status) : row.status === status)
+        );
         if (memory) {
           const existing = arrangements.find((row) => row.memory_id === memory.id);
           if (existing) {
@@ -147,6 +155,24 @@ describe("city collection repository", () => {
     });
   });
 
+  it("keeps legacy memories without a status in the resolved city collection", async () => {
+    const { database } = createDatabase({
+      memories: [
+        { ...baseMemory, id: "legacy", city: "hangzhou", updatedAt: "2026-07-23T10:00:00.000Z" },
+        { ...baseMemory, id: "saved", city: "hangzhou", status: "saved", updatedAt: "2026-07-22T10:00:00.000Z" },
+        { ...baseMemory, id: "draft", city: "hangzhou", status: "draft", updatedAt: "2026-07-24T10:00:00.000Z" },
+      ],
+      arrangements: [
+        { memory_id: "legacy", city: "hangzhou", position: 0, is_featured: 1, updated_at: "2026-07-23T10:00:00.000Z" },
+      ],
+    });
+
+    await expect(resolveCityCollection(database, "hangzhou")).resolves.toMatchObject({
+      memories: [{ id: "legacy" }, { id: "saved" }],
+      featuredMemory: { id: "legacy" },
+    });
+  });
+
   it("resolves saved memories by manual arrangement, appends new memories, and falls back from stale features", async () => {
     const { database } = createDatabase({
       memories: [
@@ -189,6 +215,32 @@ describe("city collection repository", () => {
       memories: [{ id: "second" }, { id: "first" }],
       featuredMemory: { id: "first" },
     });
+  });
+
+  it("can feature a legacy memory without a status", async () => {
+    const fixture = createDatabase({
+      memories: [{ ...baseMemory, id: "legacy-feature", city: "shenzhen", updatedAt: "2026-07-20T10:00:00.000Z" }],
+    });
+
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "legacy-feature", "2026-07-22T10:01:00.000Z");
+
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([
+      { memoryId: "legacy-feature", city: "shenzhen", position: 0, isFeatured: true, updatedAt: "2026-07-22T10:01:00.000Z" },
+    ]);
+  });
+
+  it("does not feature draft or discarded memories", async () => {
+    const fixture = createDatabase({
+      memories: [
+        { ...baseMemory, id: "draft-feature", city: "shenzhen", status: "draft", updatedAt: "2026-07-20T10:00:00.000Z" },
+        { ...baseMemory, id: "discarded-feature", city: "shenzhen", status: "discarded", updatedAt: "2026-07-20T10:00:00.000Z" },
+      ],
+    });
+
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "draft-feature", "2026-07-22T10:01:00.000Z");
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "discarded-feature", "2026-07-22T10:02:00.000Z");
+
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([]);
   });
 
   it("silently filters foreign, draft, and discarded IDs while preserving a full valid city order", async () => {

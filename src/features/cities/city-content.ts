@@ -7,6 +7,7 @@ const existingContent: Partial<Record<City, ExistingCityContent>> = {
   hangzhou: { name: "杭州", subtitle: "把西湖边的慢时光收进册页", souvenir: "西湖莲影纪念钥匙", color: "#DDEBDD" },
   shanghai: { name: "上海", subtitle: "把城市灯光留在两个人的夜晚", souvenir: "外滩天际线纪念钥匙", color: "#F3E1D8" },
   shenzhen: { name: "深圳", subtitle: "把海风和新鲜感装进下一次出发", souvenir: "海湾科技线纪念钥匙", color: "#DDEBF4" },
+  hongkong: { name: "香港", subtitle: "把维港的晚风和霓虹收进下一页", souvenir: "维港叮叮车纪念", color: "#F3E1D8" },
   luoyang: { name: "洛阳", subtitle: "把千年的花开花落收进手心", souvenir: "洛·天香坠·唐三彩", color: "#F5E6D3" },
   suzhou: { name: "苏州", subtitle: "把江南的紫藤烟雨留在襟前", souvenir: "苏·紫藤坠·苏绣", color: "#E8E0F0" },
 };
@@ -45,6 +46,7 @@ const discoverySlogans: Record<City, string> = {
   guangzhou: "在早茶的蒸汽里醒来，把岭南的鲜活尝个遍。",
   nanning: "沿着绿城的树影前行，收下一段柔软的南方时光。",
   shenzhen: "去海边等一场日落，把敢出发的心留在这里。",
+  hongkong: "坐上叮叮车穿过海风，把维港夜色收进下一册旅行记忆。",
   suzhou: "穿过园林的月洞门，让一场细雨把江南写进心里。",
   haikou: "踩着椰影去看海，把岛上的慢日子带回日常。",
 };
