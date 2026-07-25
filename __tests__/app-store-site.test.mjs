@@ -72,12 +72,14 @@ test("serves Android Digital Asset Links for the production package", () => {
   assert.match(buildScript, /__ANDROID_ASSET_LINKS__/);
 });
 
-test("uses release-ready public wording without pre-launch or purchase language", () => {
+test("uses release-ready public wording without pre-launch or purchase calls to action", () => {
   const content = [readWebsiteFile("index.html"), readWebsiteFile("support/index.html"), readWebsiteFile("privacy/index.html")].join("\n");
 
-  for (const term of ["本地", "本机", "购买", "内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟", "订购", "支付"]) {
+  for (const term of ["本地", "本机", "内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟"]) {
     assert.doesNotMatch(content, new RegExp(term, "i"));
   }
+
+  assert.doesNotMatch(content, /(?:立即|现在|马上|前往).{0,8}(?:购买|订购|支付)/i);
 
   assert.match(content, /你的设备/);
   assert.match(content, /照片不会上传或共享/);
@@ -201,4 +203,29 @@ test("presents the complete product introduction as an accessible screenshot car
   assert.match(marketing, /aria-label="下一页"/);
   assert.match(marketing, /aria-live="polite"/);
   assert.doesNotMatch(carousel, /\bfetch\s*\(/);
+});
+
+test("keeps the imported product story local while retaining every source visual", () => {
+  const marketing = readWebsiteFile("index.html");
+  const manifest = JSON.parse(readWebsiteFile("assets/product-introduction/manifest.json"));
+
+  assert.match(marketing, /<section[^>]+id="product-introduction"/);
+  assert.match(marketing, /Product Overview 产品概述/);
+  assert.match(marketing, /City Watercolor Illustrations 城市水彩插画/);
+  assert.match(marketing, /Footprint Map · City Light Points 足迹地图/);
+  assert.match(marketing, /NFC Cultural Creative Products NFC文创纪念品/);
+  assert.match(marketing, /UI Design/);
+  assert.match(marketing, /Product & Souvenir Posters 宣传海报展示/);
+  assert.match(marketing, /Cooperation & Vision 未来合作与愿景/);
+
+  for (const asset of manifest.assets) {
+    assert.match(
+      marketing,
+      new RegExp(`assets/product-introduction/${asset.file.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`),
+      `Expected ${asset.id} to be used from the local product-introduction asset directory`,
+    );
+  }
+
+  assert.doesNotMatch(marketing, /data:image\//i);
+  assert.doesNotMatch(marketing, /https?:\/\//i);
 });
