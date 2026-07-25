@@ -1,4 +1,4 @@
-import { fireEvent, render, userEvent } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
 
 import {
@@ -47,81 +47,100 @@ function EditorHarness({
 }
 
 describe("BookCanvasEditor", () => {
-  it("uses double press selection and exposes Done", () => {
+  it("uses double press selection and opens the text editor", () => {
     const screen = render(<EditorHarness />);
-    const firstText = screen.getByText("第一页");
+    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+    const nowSpy = jest.spyOn(Date, "now");
 
-    fireEvent.press(firstText);
-    expect(screen.queryByText("完成")).toBeNull();
-    fireEvent.press(firstText);
-    expect(screen.getByText("完成")).toBeTruthy();
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+    try {
+      fireEvent.press(firstElement);
+      expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
+      fireEvent.press(firstElement);
+      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
     const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
-    await user.press(firstElement);
-    await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
+    try {
+      fireEvent.press(firstElement);
+      now += 100;
+      fireEvent.press(firstElement);
+      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
 
-    await user.press(screen.getByTestId("album-canvas"));
-    expect(screen.queryByText("完成")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
+      fireEvent.press(screen.getByTestId("album-canvas"));
+      expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
 
-    await user.press(firstElement);
-    await user.press(firstElement);
-    await user.press(firstElement);
-
-    expect(screen.getByText("完成")).toBeTruthy();
-    expect(onChange).not.toHaveBeenCalled();
+      now += 500;
+      fireEvent.press(firstElement);
+      now += 100;
+      fireEvent.press(firstElement);
+      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("does not reuse a component press across blank deselection", async () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
     const firstElement = screen.getByTestId("canvas-element-page-1:headline");
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
-    await user.press(firstElement);
-    await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
+    try {
+      fireEvent.press(firstElement);
+      now += 100;
+      fireEvent.press(firstElement);
+      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
 
-    await user.press(firstElement);
-    await user.press(screen.getByTestId("album-canvas"));
-    await user.press(firstElement);
+      now += 100;
+      fireEvent.press(firstElement);
+      fireEvent.press(screen.getByTestId("album-canvas"));
+      now += 100;
+      fireEvent.press(firstElement);
 
-    expect(screen.queryByText("完成")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("does not reuse an unselected component press after another component is deselected", async () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
     const headline = screen.getByTestId("canvas-element-page-1:headline");
     const body = screen.getByTestId("canvas-element-page-1:body");
     let now = 1_000;
     const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
     try {
-      await user.press(headline);
+      fireEvent.press(headline);
       now += 100;
-      await user.press(headline);
-      expect(screen.getByText("完成")).toBeTruthy();
+      fireEvent.press(headline);
+      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
 
       now = 2_000;
-      await user.press(body);
-      await user.press(screen.getByTestId("album-canvas"));
+      fireEvent.press(body);
+      fireEvent.press(screen.getByTestId("album-canvas"));
       now += 100;
-      await user.press(body);
+      fireEvent.press(body);
     } finally {
       nowSpy.mockRestore();
     }
 
-    expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -138,7 +157,7 @@ describe("BookCanvasEditor", () => {
         expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
       ]),
     );
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("前移")).toBeTruthy();
     expect(onChange).toHaveBeenLastCalledWith(
       expect.any(Array),
       "structure",

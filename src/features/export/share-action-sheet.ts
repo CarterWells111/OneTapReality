@@ -8,7 +8,7 @@ import {
   exportAsTralbumFormat,
 } from "./export-service";
 import { capturePagesAsImages } from "./page-capture-provider";
-import type { StoryPage } from "../../types/memory";
+import type { CanvasImageElement, CanvasTextElement, StoryPage } from "../../types/memory";
 
 type ShareTarget = {
   pages: StoryPage[];
@@ -253,14 +253,14 @@ function pageToHtml(page: StoryPage): string {
     const bgImage = layout.coverImage;
 
     const images = layout.elements
-      .filter((el) => el.type === "image" && el.uri)
+      .filter((el): el is CanvasImageElement => el.type === "image" && Boolean(el.uri))
       .map((el) => {
         return `<img class="element-img" src="${escapeHtml(el.uri)}" style="left:${(el.x * 100).toFixed(1)}%;top:${(el.y * 100).toFixed(1)}%;width:${(el.width * 100).toFixed(1)}%;height:${(el.height * 100).toFixed(1)}%;" />`;
       })
       .join("\n");
 
     const texts = layout.elements
-      .filter((el) => el.type === "text" && el.text)
+      .filter((el): el is CanvasTextElement => el.type === "text" && Boolean(el.text))
       .map((el) => {
         const fontSize = el.fontSize ?? 16;
         return `<div class="element-text" style="left:${(el.x * 100).toFixed(1)}%;top:${(el.y * 100).toFixed(1)}%;width:${(el.width * 100).toFixed(1)}%;font-size:${fontSize}px;color:${escapeHtml(el.color ?? "#1C2C28")};">${escapeHtml(el.text)}</div>`;

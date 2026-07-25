@@ -62,6 +62,7 @@ export default function MemoryDetailScreen() {
     <>
       <Stack.Screen options={{ headerRight }} />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+        <Text selectable style={styles.memoryTitle}>{memory.title}</Text>
         <View style={styles.summaryRow}>
           <Tag label={isSample ? "示例 · 扉页" : "扉页"} />
           <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
@@ -78,6 +79,7 @@ export default function MemoryDetailScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: 18, padding: 20 },
+  memoryTitle: { color: colors.ink, fontSize: 28, fontWeight: "800", lineHeight: 36 },
   headerActions: { flexDirection: "row", gap: 2 },
   summaryRow: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" },
   summaryMeta: { color: colors.muted, fontSize: 13, fontWeight: "700" },

@@ -126,6 +126,7 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     const t = task.current;
     if (!t) return;
+    const activeTask = t;
 
     const page = t.pages[t.index];
 
@@ -171,20 +172,20 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
       }
     };
 
-    const advance = () => {
-      const nextIndex = t.index + 1;
-      if (nextIndex >= t.pages.length) {
+    function advance() {
+      const nextIndex = activeTask.index + 1;
+      if (nextIndex >= activeTask.pages.length) {
         // 全部完成
-        const finalResults = [...t.results];
-        t.resolve(finalResults);
+        const finalResults = [...activeTask.results];
+        activeTask.resolve(finalResults);
         busy.current = false;
         task.current = null;
         setProgress(null);
       } else {
-        t.index = nextIndex;
-        setProgress({ current: nextIndex, total: t.pages.length });
+        activeTask.index = nextIndex;
+        setProgress({ current: nextIndex, total: activeTask.pages.length });
       }
-    };
+    }
 
     captureCurrent();
 

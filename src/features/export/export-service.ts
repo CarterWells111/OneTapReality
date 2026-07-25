@@ -1,4 +1,8 @@
 import type { StoryPage } from "../../types/memory";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 /**
  * 导出服务：将手账页面导出为图片、PDF 或自定义 .tralbum 格式。
@@ -60,12 +64,10 @@ export async function mergeImagesToPdf(
 </html>`;
 
   try {
-    const expoPrint = require("expo-print");
-    const result = await expoPrint.printToFileAsync({ html, base64: false });
+    const result = await Print.printToFileAsync({ html, base64: false });
 
     if (outputPath) {
-      const expoFs = require("expo-file-system");
-      await expoFs.moveAsync({ from: result.uri, to: outputPath });
+      await FileSystem.moveAsync({ from: result.uri, to: outputPath });
       return outputPath;
     }
 
@@ -80,12 +82,11 @@ export async function mergeImagesToPdf(
  */
 export async function shareFile(uri: string, mimeType?: string) {
   try {
-    const expoSharing = require("expo-sharing");
-    const isAvailable = await expoSharing.isAvailableAsync();
+    const isAvailable = await Sharing.isAvailableAsync();
     if (!isAvailable) {
       throw new Error("当前设备不支持分享");
     }
-    await expoSharing.shareAsync(uri, {
+    await Sharing.shareAsync(uri, {
       mimeType: mimeType ?? "application/octet-stream",
       dialogTitle: "分享旅行手账",
     });
@@ -100,12 +101,11 @@ export async function shareFile(uri: string, mimeType?: string) {
  */
 export async function saveImageToGallery(uri: string): Promise<void> {
   try {
-    const expoMedia = require("expo-media-library");
-    const { status } = await expoMedia.requestPermissionsAsync();
+    const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== "granted") {
       throw new Error("需要相册权限才能保存图片");
     }
-    await expoMedia.saveToLibraryAsync(uri);
+    await MediaLibrary.saveToLibraryAsync(uri);
   } catch (err) {
     if (err instanceof Error && err.message === "需要相册权限才能保存图片") throw err;
     throw new Error("保存到相册需要安装 expo-media-library 包");
