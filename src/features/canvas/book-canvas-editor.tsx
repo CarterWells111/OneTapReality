@@ -101,7 +101,6 @@ export function BookCanvasEditor({
   const editingElement = editingElementId
     ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
     : undefined;
-  const editingText = showEditInput && editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
     if (reason === "structure" || reason === "transform") {
@@ -410,13 +409,16 @@ export function BookCanvasEditor({
             multiline
             onChangeText={(text) => {
               const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
-              if (el && text !== el.text && pendingTextId === editingElement.id) {
+              if (el?.type === "text" && text !== el.text && pendingTextId === editingElement.id) {
                 setPendingTextId(undefined);
               }
               updateElement(editingElement.id, { text }, "text");
             }}
             style={styles.textInput}
-            value={currentPage?.layout?.elements.find((el) => el.id === editingElement.id)?.text ?? ""}
+            value={(() => {
+              const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
+              return el?.type === "text" ? el.text : "";
+            })()}
           />
         </View>
       ) : null}

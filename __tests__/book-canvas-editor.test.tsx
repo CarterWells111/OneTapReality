@@ -47,7 +47,7 @@ function EditorHarness({
 }
 
 describe("BookCanvasEditor", () => {
-  it("uses double press selection and opens the text editor", () => {
+  it("uses double press selection and opens the text editor via edit button", () => {
     const screen = render(<EditorHarness />);
     const firstElement = screen.getByTestId("canvas-element-page-1:headline");
     const nowSpy = jest.spyOn(Date, "now");
@@ -56,14 +56,20 @@ describe("BookCanvasEditor", () => {
     try {
       fireEvent.press(firstElement);
       expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
+      // Double-tap selects the element
       fireEvent.press(firstElement);
+      // The toolbar '编辑' button should now be visible
+      expect(screen.queryByText("编辑")).toBeTruthy();
+      // Text editor only opens after clicking the '编辑' button
+      expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
+      fireEvent.press(screen.getByText("编辑"));
       expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
     } finally {
       nowSpy.mockRestore();
     }
   });
 
-  it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
+  it("deselects on a blank page press, requires edit button to re-edit", async () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
     const firstElement = screen.getByTestId("canvas-element-page-1:headline");
@@ -71,19 +77,24 @@ describe("BookCanvasEditor", () => {
     const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
     try {
+      // Select and edit
       fireEvent.press(firstElement);
       now += 100;
       fireEvent.press(firstElement);
+      fireEvent.press(screen.getByText("编辑"));
       expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
 
+      // Blank press closes editor
       fireEvent.press(screen.getByTestId("album-canvas"));
       expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
       expect(onChange).not.toHaveBeenCalled();
 
+      // Re-select and re-edit
       now += 500;
       fireEvent.press(firstElement);
       now += 100;
       fireEvent.press(firstElement);
+      fireEvent.press(screen.getByText("编辑"));
       expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
       expect(onChange).not.toHaveBeenCalled();
     } finally {
@@ -99,15 +110,18 @@ describe("BookCanvasEditor", () => {
     const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
     try {
+      // Select, edit, blank-press to deselect
       fireEvent.press(firstElement);
       now += 100;
       fireEvent.press(firstElement);
+      fireEvent.press(screen.getByText("编辑"));
       expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
 
       now += 100;
       fireEvent.press(firstElement);
       fireEvent.press(screen.getByTestId("album-canvas"));
       now += 100;
+      // A single press after deselect should not re-open editor
       fireEvent.press(firstElement);
 
       expect(screen.queryByLabelText("编辑选中文字")).toBeNull();
@@ -129,7 +143,7 @@ describe("BookCanvasEditor", () => {
       fireEvent.press(headline);
       now += 100;
       fireEvent.press(headline);
-      expect(screen.getByLabelText("编辑选中文字")).toBeTruthy();
+      fireEvent.press(screen.getByText("编辑"));
 
       now = 2_000;
       fireEvent.press(body);
@@ -157,7 +171,7 @@ describe("BookCanvasEditor", () => {
         expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
       ]),
     );
-    expect(screen.getByText("前移")).toBeTruthy();
+    expect(screen.getByText("复制")).toBeTruthy();
     expect(onChange).toHaveBeenLastCalledWith(
       expect.any(Array),
       "structure",
