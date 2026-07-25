@@ -1,0 +1,293 @@
+{
+  "source": "OneTapReality_2（压缩）(1).html",
+  "assets": [
+    {
+      "id": "brand-logo",
+      "file": "brand-logo.png",
+      "alt": "OneTapReality",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "hero-logo",
+      "file": "hero-logo.png",
+      "alt": "OneTapReality 一触如初",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "album-editor",
+      "file": "album-editor.jpg",
+      "alt": "纪念册编辑界面",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "city-map",
+      "file": "city-map.jpg",
+      "alt": "城市页面",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "hangzhou",
+      "file": "hangzhou.png",
+      "alt": "杭州",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "beijing",
+      "file": "beijing.png",
+      "alt": "北京",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "shanghai",
+      "file": "shanghai.png",
+      "alt": "上海",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "nanjing",
+      "file": "nanjing.png",
+      "alt": "南京",
+      "mimeType": "image/png"
+    },
+    {
+      "id": "footprint-map-1",
+      "file": "footprint-map-1.jpg",
+      "alt": "足迹地图1",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "footprint-map-2",
+      "file": "footprint-map-2.jpg",
+      "alt": "足迹地图2",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "footprint-map-3",
+      "file": "footprint-map-3.jpg",
+      "alt": "足迹地图3",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "shop",
+      "file": "shop.jpg",
+      "alt": "商店页面",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "beijing-magnolia",
+      "file": "beijing-magnolia.jpg",
+      "alt": "北京玉兰花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "fuzhou-jasmine",
+      "file": "fuzhou-jasmine.jpg",
+      "alt": "福州茉莉花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "hangzhou-lotus",
+      "file": "hangzhou-lotus.jpg",
+      "alt": "杭州荷花花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "kunming-camellia",
+      "file": "kunming-camellia.jpg",
+      "alt": "昆明山茶花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "xiamen-bougainvillea",
+      "file": "xiamen-bougainvillea.jpg",
+      "alt": "厦门三角梅花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "nanjing-plum",
+      "file": "nanjing-plum.jpg",
+      "alt": "南京梅花花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "shanghai-magnolia",
+      "file": "shanghai-magnolia.jpg",
+      "alt": "上海白玉兰花束",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "city-flower-set",
+      "file": "city-flower-set.jpg",
+      "alt": "城市特色花束全套",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "profile",
+      "file": "profile.jpg",
+      "alt": "我的页面",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "ui-memory",
+      "file": "ui-memory.jpg",
+      "alt": "记忆",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "ui-city",
+      "file": "ui-city.jpg",
+      "alt": "城市",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "ui-shop",
+      "file": "ui-shop.jpg",
+      "alt": "商店",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "ui-profile",
+      "file": "ui-profile.jpg",
+      "alt": "我的",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-1",
+      "file": "sticker-1.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-2",
+      "file": "sticker-2.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-3",
+      "file": "sticker-3.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-4",
+      "file": "sticker-4.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-5",
+      "file": "sticker-5.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-6",
+      "file": "sticker-6.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-7",
+      "file": "sticker-7.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "sticker-8",
+      "file": "sticker-8.jpg",
+      "alt": "贴纸",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "frame-1",
+      "file": "frame-1.jpg",
+      "alt": "相框",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "frame-2",
+      "file": "frame-2.jpg",
+      "alt": "相框",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "frame-3",
+      "file": "frame-3.jpg",
+      "alt": "相框",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "frame-4",
+      "file": "frame-4.jpg",
+      "alt": "相框",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "background-1",
+      "file": "background-1.jpg",
+      "alt": "背景",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "background-2",
+      "file": "background-2.jpg",
+      "alt": "背景",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "background-3",
+      "file": "background-3.jpg",
+      "alt": "背景",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "background-4",
+      "file": "background-4.jpg",
+      "alt": "背景",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "product-poster-1",
+      "file": "product-poster-1.jpg",
+      "alt": "产品海报1",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "product-poster-2",
+      "file": "product-poster-2.jpg",
+      "alt": "产品海报2",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "product-poster-3",
+      "file": "product-poster-3.jpg",
+      "alt": "产品海报3",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "souvenir-poster",
+      "file": "souvenir-poster.jpg",
+      "alt": "纪念品海报",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "souvenir-card-poster",
+      "file": "souvenir-card-poster.jpg",
+      "alt": "纪念品卡片海报",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "tourism-cooperation-poster",
+      "file": "tourism-cooperation-poster.jpg",
+      "alt": "文旅合作海报",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "id": "closing-logo",
+      "file": "closing-logo.png",
+      "alt": "OneTapReality",
+      "mimeType": "image/png"
+    }
+  ]
+}

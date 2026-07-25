@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const websiteRoot = join(process.cwd(), "website");
@@ -91,6 +93,61 @@ test("uses restrained homepage motion and honors reduced-motion preferences", ()
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /scroll-behavior: auto/);
   assert.match(styles, /animation: none !important/);
+});
+
+test("imports inline product images into deterministic local assets and a manifest", async () => {
+  const importerPath = join(websiteRoot, "scripts", "import-product-introduction.mjs");
+  assert.equal(
+    existsSync(importerPath),
+    true,
+    "The product introduction requires website/scripts/import-product-introduction.mjs",
+  );
+
+  const { importProductIntroduction } = await import(pathToFileURL(importerPath).href);
+  const fixtureDirectory = mkdtempSync(join(tmpdir(), "onetapreality-product-assets-"));
+  const sourcePath = join(fixtureDirectory, "source.html");
+  const outputDirectory = join(fixtureDirectory, "assets");
+  const manifestPath = join(outputDirectory, "manifest.json");
+
+  writeFileSync(
+    sourcePath,
+    [
+      '<img alt="Brand logo" src="data:image/png;base64,AQID">',
+      '<img src="data:image/jpeg;base64,BAUG" alt="City scene">',
+    ].join("\n"),
+  );
+
+  try {
+    const manifest = importProductIntroduction({
+      sourcePath,
+      outputDirectory,
+      manifestPath,
+      descriptors: [
+        { id: "brand-logo", fileName: "brand-logo.png", alt: "Brand logo" },
+        { id: "city-scene", fileName: "city-scene.jpg", alt: "City scene" },
+      ],
+    });
+
+    assert.deepEqual(manifest.assets, [
+      {
+        id: "brand-logo",
+        file: "brand-logo.png",
+        alt: "Brand logo",
+        mimeType: "image/png",
+      },
+      {
+        id: "city-scene",
+        file: "city-scene.jpg",
+        alt: "City scene",
+        mimeType: "image/jpeg",
+      },
+    ]);
+    assert.deepEqual([...readFileSync(join(outputDirectory, "brand-logo.png"))], [1, 2, 3]);
+    assert.deepEqual([...readFileSync(join(outputDirectory, "city-scene.jpg"))], [4, 5, 6]);
+    assert.deepEqual(JSON.parse(readFileSync(manifestPath, "utf8")), manifest);
+  } finally {
+    rmSync(fixtureDirectory, { recursive: true, force: true });
+  }
 });
 
 test("presents the complete product introduction as an accessible screenshot carousel", () => {
