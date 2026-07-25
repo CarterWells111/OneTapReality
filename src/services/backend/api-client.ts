@@ -26,6 +26,25 @@ export type AdminGiftCardDetail = {
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
 
+export type InvitedGift = {
+  giftId: string;
+  role: "viewer";
+  album: {
+    title: string;
+    albumId: string;
+    publishedAt: string;
+    version: number;
+  } | null;
+};
+
+export type InvitedGiftAlbum = {
+  title: string;
+  pages: { position: number; page: unknown }[];
+  media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[];
+  publishedAt: string;
+  version: number;
+};
+
 export class BackendApiError extends Error {
   constructor(
     public readonly status: number,
@@ -160,6 +179,25 @@ export class BackendApiClient {
     await this.send<null>(`/api/gifts/${encodeURIComponent(token)}/disable`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
+  // ── viewer: gifts shared with me ──────────────────────────────────
+
+  /** Gifts where the current account is a viewer (not owner).
+   *  Backend will implement GET /api/gifts/invited — the mock is a
+   *  stand-in until that endpoint ships. */
+  listInvitedGifts(_accessToken: string): Promise<InvitedGift[]> {
+    // TODO: switch to real endpoint when available:
+    // return this.send<{ items: InvitedGift[] }>("/api/gifts/invited", { headers: { Authorization: `Bearer ${_accessToken}` } }).then((r) => r.items);
+    return Promise.resolve(MOCK_INVITED_GIFTS);
+  }
+
+  /** Read-only album snapshot for a viewer.
+   *  Backend will implement GET /api/gifts/invited/:id/album. */
+  getInvitedGiftAlbum(_id: string, _accessToken: string): Promise<InvitedGiftAlbum> {
+    // TODO: switch to real endpoint:
+    // return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(_id)}/album`, { headers: { Authorization: `Bearer ${_accessToken}` } });
+    return Promise.resolve(MOCK_INVITED_ALBUM);
+  }
+
   reserveGiftCard(accessToken: string, note?: string): Promise<{ cardId: string; cardCode: string; giftUrl: string; expiresAt: string }> {
     return this.send("/api/admin/gift-cards", {
       method: "POST",
@@ -233,3 +271,26 @@ export class BackendApiClient {
     });
   }
 }
+
+// ── stage-2 viewer mock data (remove when real endpoints ship) ─────
+
+const MOCK_INVITED_GIFTS: InvitedGift[] = [
+  {
+    giftId: "mock-gift-1",
+    role: "viewer",
+    album: { title: "我们的杭州之旅", albumId: "mock-album-1", publishedAt: "2026-07-20T10:00:00.000Z", version: 1 },
+  },
+  {
+    giftId: "mock-gift-2",
+    role: "viewer",
+    album: null,
+  },
+];
+
+const MOCK_INVITED_ALBUM: InvitedGiftAlbum = {
+  title: "我们的杭州之旅",
+  pages: [{ position: 0, page: { kind: "cover", headline: "杭州", body: "西湖边的记忆" } }, { position: 1, page: { kind: "photo", headline: "断桥残雪", body: "那天下了小雪" } }],
+  media: [],
+  publishedAt: "2026-07-20T10:00:00.000Z",
+  version: 1,
+};
