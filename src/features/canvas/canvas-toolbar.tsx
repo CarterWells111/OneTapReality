@@ -14,6 +14,8 @@ type CanvasToolbarProps = {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onDone?: () => void;
+  /** 编辑按钮回调 —— 手动触发编辑文字模式 */
+  onEdit?: () => void;
   /** 字体/字号/颜色面板回调（仅在选中文字元素时可用） */
   onFont?: () => void;
   onSize?: () => void;
@@ -23,10 +25,13 @@ type CanvasToolbarProps = {
 /**
  * 画布编辑器工具栏。
  *
- * 单行布局（全部左对齐）：
- *   字体 | 字号 | 颜色（仅文字元素选中时） | 前移 | 后移 | 复制 | 删除（任何元素选中时）
+ * 两行布局：
+ *   第一行（仅文字元素）：编辑 | 字体 | 字号 | 颜色 | 前移 | 后移
+ *   第二行（所有选中元素）：复制 | 删除
  *
  * "添加文字"已移至编辑器顶栏右侧；撤销/重做已移至顶栏左侧。
+ * "编辑文字"改为手动触发：选中文字元素后默认不显示编辑输入框，
+ * 用户点击「编辑」按钮后才进入文字编辑模式。
  */
 export function CanvasToolbar({
   selectedElement,
@@ -39,6 +44,7 @@ export function CanvasToolbar({
   onDuplicate,
   onDelete,
   onDone: _onDone,
+  onEdit,
   onFont,
   onSize,
   onColor,
@@ -47,29 +53,28 @@ export function CanvasToolbar({
   const isTextSelected = selectedElement?.type === "text";
   const hasSelection = selectedId !== undefined;
 
-  if (!hasSelection && !isTextSelected) {
+  if (!hasSelection) {
     return null;
   }
 
   return (
     <View style={styles.shell}>
-      <View style={styles.row}>
-        {isTextSelected ? (
-          <>
-            <ToolbarButton label="字体" onPress={() => onFont?.()} />
-            <ToolbarButton label="字号" onPress={() => onSize?.()} />
-            <ToolbarButton label="颜色" onPress={() => onColor?.()} />
-          </>
-        ) : null}
-        {hasSelection ? (
-          <>
-            <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
-            <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
-            <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
-            <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
-          </>
-        ) : null}
-      </View>
+      {isTextSelected ? (
+        <View style={styles.row}>
+          <ToolbarButton label="编辑" onPress={() => onEdit?.()} />
+          <ToolbarButton label="字体" onPress={() => onFont?.()} />
+          <ToolbarButton label="字号" onPress={() => onSize?.()} />
+          <ToolbarButton label="颜色" onPress={() => onColor?.()} />
+          <ToolbarButton label="前移" onPress={() => onChangeLayer(selectedId, "forward")} />
+          <ToolbarButton label="后移" onPress={() => onChangeLayer(selectedId, "backward")} />
+        </View>
+      ) : null}
+      {hasSelection ? (
+        <View style={styles.row}>
+          <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
+          <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
+        </View>
+      ) : null}
     </View>
   );
 }

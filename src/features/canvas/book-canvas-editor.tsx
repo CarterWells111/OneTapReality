@@ -462,6 +462,13 @@ export function BookCanvasEditor({
           changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
+        onEdit={() => {
+          // 手动触发文字编辑模式：显示 TextInput 输入框与上下文菜单
+          if (selectedElement?.type === "text") {
+            setContextMenuMode("main");
+            setEditingElementId(selectedElement.id);
+          }
+        }}
         onFont={() => {
           if (selectedElement?.type === "text") {
             setContextMenuMode("font");
