@@ -64,7 +64,7 @@ describe("DraftReviewScreen", () => {
     mockUpdateDraftPages.mockResolvedValue(undefined);
   });
 
-  it("saves a loaded draft and returns straight to the home tab", async () => {
+  it("saves a loaded draft and opens its completed memory", async () => {
     const screen = render(<DraftReviewScreen />);
 
     await waitFor(() => {
@@ -76,7 +76,7 @@ describe("DraftReviewScreen", () => {
 
     await waitFor(() => {
       expect(mockSaveDraft).toHaveBeenCalledWith("draft-1");
-      expect(mockReplace).toHaveBeenCalledWith("/");
+      expect(mockReplace).toHaveBeenCalledWith({ pathname: "/memory/[id]", params: { id: "draft-1" } });
     });
   });
 
@@ -115,7 +115,7 @@ describe("DraftReviewScreen", () => {
 
     await act(async () => finishWrite());
     await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledWith("draft-1"));
-    expect(mockReplace).toHaveBeenCalledWith("/");
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/memory/[id]", params: { id: "draft-1" } });
   });
 
   it("debounces text writes by 400ms and retries a failed latest snapshot", async () => {
