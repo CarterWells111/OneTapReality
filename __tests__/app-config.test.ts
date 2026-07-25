@@ -62,6 +62,18 @@ describe("Expo Router production origin", () => {
     expect(expoConfig.newArchEnabled).not.toBe(false);
   });
 
+  it("declares clear iOS permissions for saving exports to the photo library", () => {
+    const expoConfig = require("../app.json").expo;
+
+    expect(expoConfig.plugins).toContainEqual([
+      "expo-media-library",
+      {
+        photosPermission: expect.stringContaining("photos"),
+        savePhotosPermission: expect.stringContaining("save"),
+      },
+    ]);
+  });
+
   it("uses OneTapReality as the package identifier", () => {
     const packageConfig = require("../package.json");
 

@@ -61,6 +61,13 @@
           "photosPermission": "Allow OneTapReality to access your selected photos to create albums."
         }
       ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow OneTapReality to access your photos when selecting album images.",
+          "savePhotosPermission": "Allow OneTapReality to save exported album images to your photo library."
+        }
+      ],
       "expo-sqlite",
       [
         "expo-splash-screen",
