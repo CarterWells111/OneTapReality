@@ -212,12 +212,37 @@ test("keeps the imported product story local while retaining every source visual
 
   assert.match(marketing, /<section[^>]+id="product-introduction"/);
   assert.match(marketing, /Product Overview 产品概述/);
+  assert.match(marketing, /记录 · 打卡/);
+  assert.match(marketing, /创作 · 纪念册/);
+  assert.match(marketing, /触碰 · 回溯/);
   assert.match(marketing, /City Watercolor Illustrations 城市水彩插画/);
   assert.match(marketing, /Footprint Map · City Light Points 足迹地图/);
   assert.match(marketing, /NFC Cultural Creative Products NFC文创纪念品/);
   assert.match(marketing, /UI Design/);
   assert.match(marketing, /Product & Souvenir Posters 宣传海报展示/);
   assert.match(marketing, /Cooperation & Vision 未来合作与愿景/);
+  assert.match(marketing, /四个人，四座城，一个共同的念头：让远方的记忆，触手可及。/);
+  assert.match(marketing, /Leo/);
+  assert.match(marketing, /刷子/);
+  assert.match(marketing, /大虚/);
+  assert.match(marketing, /三皇子/);
+  assert.match(marketing, /纪念品设计与制造/);
+  assert.match(marketing, /提升用户交互流畅度与自由度/);
+  assert.match(marketing, /把“能看”变成“好看”/);
+  assert.match(marketing, /目前任务：<\/span>联网/);
+
+  for (const heading of [
+    "City · Map & Archives 城市页面",
+    "Footprint Map · City Light Points 足迹地图",
+    "My · Archive & Settings 我的页面",
+    "Stickers · Frames · Backgrounds 素材装饰库",
+  ]) {
+    assert.match(
+      marketing,
+      new RegExp(`${heading.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}[\\s\\S]{0,800}未来规划 / 概念展示`),
+      `${heading} must be described as a future concept rather than a current feature`,
+    );
+  }
 
   for (const asset of manifest.assets) {
     assert.match(
