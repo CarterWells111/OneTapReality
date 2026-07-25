@@ -109,6 +109,8 @@ export default function GiftManagementScreen() {
     })() },
   ]);
 
+  if (!session) return null;
+
   return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
     <ScreenTitle title="礼品管理" caption="OWNER ONLY" />
     <Text selectable style={styles.message}>{message}</Text>
@@ -179,6 +181,7 @@ export default function GiftManagementScreen() {
 
     <AppButton disabled={busy} label="永久停用礼品" tone="danger" onPress={disable} />
   </ScrollView>;
+}
 
 const styles = StyleSheet.create({
   content: { gap: 22, padding: 20, paddingBottom: 40 },
@@ -205,4 +208,3 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
 });
-}
