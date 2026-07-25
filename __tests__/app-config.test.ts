@@ -68,6 +68,16 @@ describe("Expo Router production origin", () => {
     expect(packageConfig.name).toBe("onetapreality");
   });
 
+  it("keeps native export packages compatible with Expo SDK 54", () => {
+    const packageConfig = require("../package.json");
+
+    expect(packageConfig.dependencies).toEqual(expect.objectContaining({
+      "expo-print": "~15.0.8",
+      "expo-sharing": "~14.0.8",
+      "react-native-view-shot": "4.0.3",
+    }));
+  });
+
   it("provides an internal Android development client profile for NFC device testing", () => {
     const easConfig = require("../eas.json");
 
