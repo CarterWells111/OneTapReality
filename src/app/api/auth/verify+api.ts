@@ -8,7 +8,7 @@ import { ApiError, errorResponse } from "../../../server/http/errors";
 export async function POST(request: Request): Promise<Response> {
   try {
     const { email: rawEmail, code } = await request.json() as { email?: string; code?: string };
-    if (typeof rawEmail !== "string" || !/^\d{6}$/u.test(code ?? "")) throw new ApiError(400, "validation_failed", "Email and six digit code are required");
+    if (typeof rawEmail !== "string" || typeof code !== "string" || !/^\d{6}$/u.test(code)) throw new ApiError(400, "validation_failed", "Email and six digit code are required");
     const pepper = process.env.GIFT_AUTH_PEPPER;
     if (!pepper) throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
     const email = normalizeGiftEmail(rawEmail);

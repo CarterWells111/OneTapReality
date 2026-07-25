@@ -147,7 +147,6 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
         <ScrollView contentContainerStyle={styles.gridContent}>
           <View style={styles.grid}>
             {pages.map((page, index) => {
-              // index 已过滤封面页，实际位置 = index + 1
               const actualIndex = index;
               const pageNumber = actualIndex + 1;
               const isSelected = selectedIds.includes(page.id);

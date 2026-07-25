@@ -92,8 +92,11 @@ describe("CityMap", () => {
 
   it("keeps every overview marker accessible while labels remain hidden at the low overview zoom", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
-    expect(screen.getByTestId("city-map-marker-target-hangzhou-medium")).toBeTruthy();
-    expect(screen.getByTestId("city-map-marker-target-shanghai-none")).toBeTruthy();
+    const hangzhouTarget = screen.getByTestId("city-map-marker-target-hangzhou-medium").props;
+    const shanghaiTarget = screen.getByTestId("city-map-marker-target-shanghai-none").props;
+
+    expect(hangzhouTarget.accessibilityRole).toBe("button");
+    expect(shanghaiTarget.accessibilityRole).toBe("button");
     expect(screen.queryByText("杭州 · 2 册")).toBeNull();
     expect(screen.queryByText("上海 · 0 册")).toBeNull();
     expect(screen.getByTestId("city-map-marker-beijing-none")).toBeTruthy();

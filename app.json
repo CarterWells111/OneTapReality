@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.onetapreality.app",
+      "bundleIdentifier": "com.onereality.onetapreality",
       "associatedDomains": [
         "applinks:onetapreality.com"
       ],
@@ -61,6 +61,13 @@
           "photosPermission": "Allow OneTapReality to access your selected photos to create albums."
         }
       ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow OneTapReality to access your photos when selecting album images.",
+          "savePhotosPermission": "Allow OneTapReality to save exported album images to your photo library."
+        }
+      ],
       "expo-sqlite",
       [
         "expo-splash-screen",
@@ -75,7 +82,7 @@
         "react-native-nfc-manager",
         {
           "nfcPermission": "Allow OneTapReality to read and write NFC gift cards.",
-          "includeNdefEntitlement": true
+          "includeNdefEntitlement": false
         }
       ]
     ],

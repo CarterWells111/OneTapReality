@@ -269,6 +269,7 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 
 - 在首次云部署前取消 Turso/libSQL 后端方案，改用与 API Service 位于同一 Railway Project 的 PostgreSQL Service；App 本地 `expo-sqlite` 及 `luyi.db` 保持不变。
 - API Service 只读取 Railway 引用变量 `DATABASE_URL=${{Postgres.DATABASE_URL}}`，通过私有网络连接；继续由 `DEVICE_TOKEN_PEPPER` 保护匿名 bearer token hash，不向客户端暴露数据库凭据。
+- Railway 的共享仓库配置在 pre-deploy 阶段仅当服务端变量 `RUN_DB_MIGRATIONS=true` 时运行 Drizzle migration。API Service 设置该变量；短生命周期的维护 Cron 不设置该变量，也不取得 `DATABASE_URL`。
 - 服务端使用 Drizzle PostgreSQL schema 与 `node-postgres`；repository 测试和 migration 测试使用内存 PostgreSQL 模拟器，不连接生产数据库。
 - Turso 尚未创建且不存在云端生产数据，因此本次允许将尚未部署的 `drizzle/0000_initial.sql` 与 meta 重建为 PostgreSQL baseline，不迁移本地 `.data/backend.db`。该 baseline 部署后恢复“已应用 migration 不可修改”的规则。
 - 云端 API 契约、设备隔离、硬删除与外键级联行为保持不变；不新增账号、自动同步、照片上传、支付、分析、真实 AI、CI 或客户端秘密。
@@ -322,3 +323,9 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 - `/city/[city]` 采用本地纸本旅行手账式档案布局：城市名、地区、既有宣传语、相册数量与本地插画/线描主视觉；不请求远程图片或新增依赖。
 - 已保存（及兼容的旧版）旅行记忆可在页内作为精选与展开列表浏览，草稿和已丢弃记忆不计入；创建、管理及记忆详情继续复用既有本地路由。
 - 本次仅调整客户端展示和交互，不引入网络服务、登录、支付、分析、真实 NFC 或客户端秘密。
+
+## 2026-07-25：沿用现有 TestFlight 应用标识与 TAG-only NFC entitlement
+
+- App Store Connect 应用 `6794186067` 已固定绑定 `com.onereality.onetapreality`。为保留现有 TestFlight 应用、测试组和历史构建，iOS `bundleIdentifier` 恢复为该值；Android package 继续使用 `com.onetapreality.app`。
+- iOS 26 SDK 不再接受 `com.apple.developer.nfc.readersession.formats` 中的 `NDEF` 值。`react-native-nfc-manager` 配置改为 `includeNdefEntitlement: false`，使原生构建只声明 Apple 当前支持的 `TAG` 值，同时继续通过 Core NFC 读写 NDEF 标签。
+- 生产 AASA 的 `appID` 必须同步为 `YVJ6GJG87B.com.onereality.onetapreality`；Android `assetlinks.json` 不变。
