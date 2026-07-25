@@ -174,21 +174,9 @@ export function ElementContextMenu({
           </View>
         );
       default:
-        return (
-          <View style={styles.mainMenu}>
-            <MenuButton icon="𝔸" label="字体" onPress={() => setMode("font")} preview={canvasFonts.find((f) => f.id === element.fontStyle)?.label} />
-            <MenuDivider />
-            <MenuButton icon="↓" label="字号" onPress={() => setMode("size")} preview={`${element.fontSize}`} />
-            <MenuDivider />
-            <MenuButton
-              icon="●"
-              iconColor={element.color}
-              label="颜色"
-              onPress={() => setMode("color")}
-              preview={<View style={[styles.colorPreview, { backgroundColor: element.color }]} />}
-            />
-          </View>
-        );
+        // 工具栏按钮直接导航到 font/size/color 子面板，
+        // main 面板在正常流程中不再可达。
+        return null;
     }
   };
 
