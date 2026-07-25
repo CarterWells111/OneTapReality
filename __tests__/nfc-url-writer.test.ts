@@ -6,6 +6,47 @@ import {
 
 const giftUrl = "https://onetapreality.com/gift/test-token";
 
+jest.mock("react-native-nfc-manager", () => {
+  class PrototypeNfcManager {
+    readonly startMock = jest.fn().mockResolvedValue(true);
+    readonly requestTechnologyMock = jest.fn().mockResolvedValue(undefined);
+    readonly cancelTechnologyRequestMock = jest.fn().mockResolvedValue(undefined);
+    readonly getTagMock = jest.fn().mockResolvedValue(null);
+    readonly writeNdefMessageMock = jest.fn().mockResolvedValue(undefined);
+
+    start() {
+      return this.startMock();
+    }
+
+    requestTechnology(technology: unknown) {
+      return this.requestTechnologyMock(technology);
+    }
+
+    cancelTechnologyRequest() {
+      return this.cancelTechnologyRequestMock();
+    }
+
+    getTag() {
+      return this.getTagMock();
+    }
+
+    get ndefHandler() {
+      return { writeNdefMessage: this.writeNdefMessageMock };
+    }
+  }
+
+  return {
+    __esModule: true,
+    default: new PrototypeNfcManager(),
+    Ndef: {
+      uriRecord: jest.fn().mockReturnValue([99]),
+      encodeMessage: jest.fn().mockReturnValue([7, 8, 9]),
+      uri: { decodePayload: jest.fn() },
+    },
+    NfcTech: { Ndef: "ndef" },
+  };
+});
+
 function createNativeModule(): NativeNfcModule & {
   start: jest.Mock;
   requestTechnology: jest.Mock;
@@ -46,6 +87,28 @@ function createNativeModule(): NativeNfcModule & {
 }
 
 describe("NFC URL writer", () => {
+  it("preserves prototype-based methods from the production native manager", async () => {
+    const imported = jest.requireMock("react-native-nfc-manager") as {
+      default: {
+        startMock: jest.Mock;
+        requestTechnologyMock: jest.Mock;
+        cancelTechnologyRequestMock: jest.Mock;
+        writeNdefMessageMock: jest.Mock;
+      };
+    };
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+    });
+
+    await writer.writeHttpsUrl(giftUrl);
+
+    expect(imported.default.startMock).toHaveBeenCalledTimes(1);
+    expect(imported.default.requestTechnologyMock).toHaveBeenCalledWith("ndef");
+    expect(imported.default.writeNdefMessageMock).toHaveBeenCalledWith([7, 8, 9]);
+    expect(imported.default.cancelTechnologyRequestMock).toHaveBeenCalledTimes(1);
+  });
+
   it("loads native NFC only when writing and writes an HTTPS NDEF URI", async () => {
     const native = createNativeModule();
     const loadNativeModule = jest.fn().mockResolvedValue(native);

@@ -65,11 +65,10 @@ function defaultNativeModuleLoader(): Promise<NativeNfcModule> {
   };
   const manager = imported.default ?? imported;
 
-  return Promise.resolve({
-    ...manager,
+  return Promise.resolve(Object.assign(manager, {
     ndef: imported.Ndef,
     nfcTech: imported.NfcTech,
-  } as NativeNfcModule);
+  }) as NativeNfcModule);
 }
 
 function defaultIsExpoGo() {
