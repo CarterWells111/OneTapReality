@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, bodyFont, colors, Section } from "../../components/ui";
+import { useAuth } from "../../features/auth/auth-provider";
 import {
   maxBioLength,
   normalizeBio,
@@ -16,6 +17,7 @@ import { useProfile } from "../../features/profile/profile-provider";
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile, isProfileReady, updateProfile } = useProfile();
+  const { forgetRememberedEmail, isAuthReady, rememberedEmail } = useAuth();
   const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -119,6 +121,22 @@ export default function SettingsScreen() {
         <View style={styles.privacyCard}>
           <Text selectable style={styles.privacyTitle}>资料不会同步到云端</Text>
           <Text selectable style={styles.helper}>昵称与头像用于个人展示；选择照片不会上传或分享。</Text>
+        </View>
+      </Section>
+
+      <Section title="登录记忆">
+        <View style={styles.privacyCard}>
+          <Text selectable style={styles.privacyTitle}>最近使用的邮箱</Text>
+          <Text selectable style={styles.helper}>
+            {!isAuthReady ? "正在读取登录记忆…" : rememberedEmail ?? "当前设备没有记住邮箱。"}
+          </Text>
+          {isAuthReady && rememberedEmail ? (
+            <AppButton
+              label="清除已记住邮箱"
+              tone="secondary"
+              onPress={() => void forgetRememberedEmail().catch(() => setError("无法清除已记住邮箱，请重试。"))}
+            />
+          ) : null}
         </View>
       </Section>
 

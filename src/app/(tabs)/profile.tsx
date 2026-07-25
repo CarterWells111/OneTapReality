@@ -1,9 +1,11 @@
 import { useRouter, type Href } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as React from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
-import { bodyFont, colors, PaperCard, ScreenTitle, serifFont, SketchDivider } from "../../components/ui";
+import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, serifFont, SketchDivider } from "../../components/ui";
+import { useAuth } from "../../features/auth/auth-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { DEFAULT_BIO } from "../../features/profile/local-profile";
 import { useProfile } from "../../features/profile/profile-provider";
@@ -30,6 +32,9 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { memories, isReady } = useMemories();
   const { profile, isProfileReady } = useProfile();
+  const { isAuthReady, signOut, switchAccount, user } = useAuth();
+  const [accountBusy, setAccountBusy] = React.useState(false);
+  const [accountError, setAccountError] = React.useState<string | null>(null);
   const summary = getProfileSummary(memories);
 
   if (!isReady || !isProfileReady) {
@@ -44,6 +49,38 @@ export default function ProfileScreen() {
     );
   }
 
+  const changeAccount = async () => {
+    if (accountBusy) return;
+    setAccountBusy(true);
+    setAccountError(null);
+    try {
+      await switchAccount();
+      router.push("/login?returnTo=/(tabs)/profile");
+    } catch {
+      setAccountError("无法切换账号，请重试。");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const confirmSignOut = () => {
+    Alert.alert("退出登录？", "本机旅行册、头像和昵称会继续保留。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "退出登录",
+        style: "destructive",
+        onPress: () => {
+          if (accountBusy) return;
+          setAccountBusy(true);
+          setAccountError(null);
+          void signOut()
+            .catch(() => setAccountError("无法退出登录，请重试。"))
+            .finally(() => setAccountBusy(false));
+        },
+      },
+    ]);
+  };
+
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -51,6 +88,29 @@ export default function ProfileScreen() {
       style={styles.screen}
     >
       <ScreenTitle title="我的" caption="MY ARCHIVE" />
+
+      <PaperCard tone="paper" style={styles.accountCard}>
+        <View style={styles.accountCopy}>
+          <Text selectable style={styles.accountTitle}>
+            {!isAuthReady ? "正在读取账户…" : user ? "OneTapReality 账户" : "登录 OneTapReality"}
+          </Text>
+          <Text selectable style={styles.accountEmail}>
+            {!isAuthReady
+              ? "正在检查本机保存的登录状态。"
+              : user?.email ?? "登录后可认领和管理 NFC 纪念品。"}
+          </Text>
+          {user?.isAdmin ? <Text selectable style={styles.adminBadge}>开发者管理员</Text> : null}
+          {accountError ? <Text selectable style={styles.accountError}>{accountError}</Text> : null}
+        </View>
+        {!isAuthReady ? null : user ? (
+          <View style={styles.accountActions}>
+            <AppButton disabled={accountBusy} label="切换账号" tone="secondary" onPress={() => void changeAccount()} />
+            <AppButton disabled={accountBusy} label="退出登录" tone="danger" onPress={confirmSignOut} />
+          </View>
+        ) : (
+          <AppButton label="登录 / 注册" onPress={() => router.push("/login?returnTo=/(tabs)/profile")} />
+        )}
+      </PaperCard>
 
       <Pressable
         accessibilityLabel="打开设置"
@@ -138,6 +198,13 @@ const styles = StyleSheet.create({
   loadingText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14 },
   content: { gap: 18, padding: 20, paddingTop: 12, paddingBottom: 36 },
   hero: { alignItems: "center", flexDirection: "row", gap: 14, minHeight: 104 },
+  accountCard: { gap: 14 },
+  accountCopy: { gap: 5 },
+  accountTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
+  accountEmail: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
+  adminBadge: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800" },
+  accountError: { color: colors.danger, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
+  accountActions: { gap: 10 },
   heroCopy: { flex: 1, gap: 5 },
   nickname: { color: colors.ink, fontFamily: serifFont, fontSize: 22, fontWeight: "800" },
   bio: { color: colors.muted, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 20 },

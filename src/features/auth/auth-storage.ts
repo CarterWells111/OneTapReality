@@ -2,10 +2,11 @@ import * as SecureStore from "expo-secure-store";
 
 import type { AuthenticatedAccountSession } from "../../services/backend/api-client";
 
-const key = "onetapreality.auth-session.v1";
+const sessionKey = "onetapreality.auth-session.v1";
+const rememberedEmailKey = "onetapreality.remembered-email.v1";
 
 export async function loadAuthSession(): Promise<AuthenticatedAccountSession | null> {
-  const value = await SecureStore.getItemAsync(key);
+  const value = await SecureStore.getItemAsync(sessionKey);
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as Partial<AuthenticatedAccountSession>;
@@ -16,9 +17,22 @@ export async function loadAuthSession(): Promise<AuthenticatedAccountSession | n
 }
 
 export function saveAuthSession(session: AuthenticatedAccountSession): Promise<void> {
-  return SecureStore.setItemAsync(key, JSON.stringify(session));
+  return SecureStore.setItemAsync(sessionKey, JSON.stringify(session));
 }
 
 export function clearAuthSession(): Promise<void> {
-  return SecureStore.deleteItemAsync(key);
+  return SecureStore.deleteItemAsync(sessionKey);
+}
+
+export async function loadRememberedEmail(): Promise<string | null> {
+  const value = await SecureStore.getItemAsync(rememberedEmailKey);
+  return value?.trim().toLowerCase() || null;
+}
+
+export function saveRememberedEmail(email: string): Promise<void> {
+  return SecureStore.setItemAsync(rememberedEmailKey, email.trim().toLowerCase());
+}
+
+export function clearRememberedEmail(): Promise<void> {
+  return SecureStore.deleteItemAsync(rememberedEmailKey);
 }

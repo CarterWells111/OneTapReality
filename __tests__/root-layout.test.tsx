@@ -31,6 +31,10 @@ jest.mock("../src/features/profile/profile-provider", () => {
   const { View } = require("react-native");
   return { ProfileProvider: ({ children }: { children: React.ReactNode }) => <View testID="profile-provider">{children}</View> };
 });
+jest.mock("../src/features/auth/auth-provider", () => {
+  const { View } = require("react-native");
+  return { AuthProvider: ({ children }: { children: React.ReactNode }) => <View testID="auth-provider">{children}</View> };
+});
 jest.mock("../src/storage/memory-repository", () => ({ migrateDbIfNeeded: jest.fn() }));
 
 import RootLayout from "../src/app/_layout";
@@ -40,6 +44,7 @@ describe("RootLayout", () => {
     const screen = await render(<RootLayout />);
 
     expect(screen.getByTestId("safe-area-provider")).toBeTruthy();
+    expect(screen.getByTestId("auth-provider")).toBeTruthy();
     expect(
       within(screen.getByTestId("profile-provider")).getByTestId(
         "memories-provider",
