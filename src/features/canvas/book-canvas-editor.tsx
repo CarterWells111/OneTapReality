@@ -321,8 +321,11 @@ export function BookCanvasEditor({
                   setEditingElementId(undefined);
                 }}
                 onSelectElement={(id) => {
-                  // 双击选中。文字元素会立即打开编辑器；否则用户需要再双击一次才
-                  // 能编辑，既不符合提示文案，也会让键盘操作多出不必要的步骤。
+                  // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
+                  // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
+                  if (pendingTextId !== undefined && id !== pendingTextId) {
+                    setPendingTextId(undefined);
+                  }
                   setSelectedElementId(id);
                   if (currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
                     setContextMenuMode("main");
