@@ -11,13 +11,13 @@ describe("canvas layout", () => {
       photoUri: "file://west-lake.jpg",
     });
 
-    expect(layout.aspectRatio).toBe(1);
+    expect(layout.aspectRatio).toBe(0.75);
     expect(layout.elements.map((element) => element.type)).toEqual(["image", "text", "text"]);
   });
 
   it("clamps layout bounds and assigns unique element IDs", () => {
     const layout = normalizeLayout({
-      aspectRatio: 1,
+      aspectRatio: 0.75,
       elements: [
         { id: "same", type: "text", x: -1, y: 2, width: 3, height: 0, rotation: 0, zIndex: 1, text: "One", fontStyle: "system", color: "#000000", fontSize: 16 },
         { id: "same", type: "sticker", x: 0.5, y: 0.5, width: 0.2, height: 0.2, rotation: 0, zIndex: 2, stickerId: "sticker1-01" },
