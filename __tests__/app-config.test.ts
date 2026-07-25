@@ -67,4 +67,17 @@ describe("Expo Router production origin", () => {
 
     expect(packageConfig.name).toBe("onetapreality");
   });
+
+  it("provides an internal Android development client profile for NFC device testing", () => {
+    const easConfig = require("../eas.json");
+
+    expect(easConfig.build["development-android"]).toEqual(expect.objectContaining({
+      developmentClient: true,
+      distribution: "internal",
+      env: expect.objectContaining({
+        EXPO_PUBLIC_API_ORIGIN: "https://api.onetapreality.com",
+      }),
+      android: expect.objectContaining({ buildType: "apk" }),
+    }));
+  });
 });
