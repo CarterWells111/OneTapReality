@@ -176,6 +176,7 @@ test("presents the complete product introduction as an accessible screenshot car
 
   assert.match(marketing, /id="product-introduction"/);
   assert.match(marketing, /data-product-carousel/);
+  assert.match(marketing, /role="region"[^>]*aria-label="OneTapReality 产品页面"/);
   assert.match(marketing, /data-carousel-previous/);
   assert.match(marketing, /data-carousel-next/);
   assert.match(marketing, /data-carousel-live/);
