@@ -76,7 +76,8 @@ export type CanvasElement =
   | CanvasFrameElement;
 
 export type CanvasLayout = {
-  aspectRatio: 1;
+  /** 画布宽高比，3:4 竖版（宽度:高度） */
+  aspectRatio: number;
   backgroundId?: CanvasBackgroundId;
   /** 封面专用：纯色背景（十六进制） */
   coverColor?: string;

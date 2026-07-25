@@ -24,5 +24,5 @@ export function createPhotoLayout(photoUris: string[]): CanvasLayout {
     const [x, y, width, height] = positions[index];
     return { id: `image-${index + 1}`, type: "image", uri, x, y, width, height, rotation: 0, zIndex: index + 1 };
   });
-  return { aspectRatio: 1, elements };
+  return { aspectRatio: 3 / 4, elements };
 }

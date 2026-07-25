@@ -7,7 +7,7 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
   return {
-    aspectRatio: 1,
+    aspectRatio: 3 / 4,
     ...(layout.backgroundId ? { backgroundId: layout.backgroundId } : {}),
     ...(layout.coverColor ? { coverColor: layout.coverColor } : {}),
     ...(layout.coverImage ? { coverImage: layout.coverImage } : {}),
@@ -45,7 +45,7 @@ export function createLegacyLayout(page: Omit<StoryPage, "layout">): CanvasLayou
     { id: `${page.id}:body`, type: "text", text: page.body, fontStyle: bodyFontFamily, color: "#69756E", fontSize: 16, x: 0.1, y: page.photoUri ? 0.78 : 0.42, width: 0.8, height: 0.14, rotation: 0, zIndex: 3 }
   );
   return {
-    aspectRatio: 1,
+    aspectRatio: 3 / 4,
     elements,
     ...(page.kind === "cover" && page.coverColor ? { coverColor: page.coverColor } : {}),
     ...(page.kind === "cover" && page.coverImage ? { coverImage: page.coverImage } : {}),

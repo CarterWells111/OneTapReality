@@ -36,7 +36,7 @@ export type CloudStickerElement = CloudCanvasElementBase & {
 export type CloudCanvasElement = CloudImageElement | CloudTextElement | CloudStickerElement;
 
 export type CloudCanvasLayout = {
-  aspectRatio: 1;
+  aspectRatio: number;
   elements: CloudCanvasElement[];
 };
 

@@ -69,7 +69,7 @@ export function BookCanvasEditor({
   useFonts(canvasEditorFontSources);
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
-  const pageHeight = pageWidth;
+  const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
   const pagePanBlocked = useSharedValue(false);

@@ -35,7 +35,7 @@ type CanvasPageProps = {
 };
 
 export function CanvasPage({
-  displayAspectRatio = 1,
+  displayAspectRatio = 3 / 4,
   flatEdges = false,
   height,
   layout,
