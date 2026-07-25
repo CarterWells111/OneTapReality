@@ -158,7 +158,7 @@ export function ElementContextMenu({
                     key={color}
                     onPress={() => {
                       onChangeColor(color);
-                      setMode("main");
+                      onClose();
                     }}
                     style={[styles.presetSwatch, { backgroundColor: color }, element.color === color && styles.presetSwatchActive]}>
                     {element.color === color ? <Text style={styles.presetCheck}>✓</Text> : null}
