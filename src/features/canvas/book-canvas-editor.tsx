@@ -264,9 +264,8 @@ export function BookCanvasEditor({
     const nextId = buildCanvasId("text");
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
-    setContextMenuMode("main");
-    setEditingElementId(nextId);
-    setShowEditInput(true);
+    // 不再自动打开编辑输入框：用户需点击工具栏「编辑」按钮手动触发
+    setShowEditInput(false);
     setPendingTextId(nextId);
   };
 
@@ -456,6 +455,7 @@ export function BookCanvasEditor({
           if (selectedElement?.type === "text") {
             setContextMenuMode("color");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onDelete={(elementId) => {
@@ -484,6 +484,7 @@ export function BookCanvasEditor({
           if (selectedElement?.type === "text") {
             setContextMenuMode("font");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onPickBackground={() => setAssetTrayMode("background")}
@@ -491,6 +492,7 @@ export function BookCanvasEditor({
           if (selectedElement?.type === "text") {
             setContextMenuMode("size");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onUpdateElement={(elementId, patch) => {

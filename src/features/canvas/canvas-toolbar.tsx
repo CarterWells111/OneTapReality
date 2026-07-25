@@ -26,12 +26,12 @@ type CanvasToolbarProps = {
  * 画布编辑器工具栏。
  *
  * 两行布局：
- *   第一行（仅文字元素）：编辑 | 字体 | 字号 | 颜色 | 前移 | 后移
- *   第二行（所有选中元素）：复制 | 删除
+ *   第一行（仅文字元素）：字体 | 字号 | 颜色 | 前移 | 后移
+ *   第二行（所有选中元素）：编辑 | 复制 | 删除
  *
  * "添加文字"已移至编辑器顶栏右侧；撤销/重做已移至顶栏左侧。
- * "编辑文字"改为手动触发：选中文字元素后默认不显示编辑输入框，
- * 用户点击「编辑」按钮后才进入文字编辑模式。
+ * "编辑文字"点击后弹出文字输入框；不点则不出现输入框。
+ * 字体/字号/颜色按钮点击后打开对应面板，且不会触发文字编辑输入框。
  */
 export function CanvasToolbar({
   selectedElement,
@@ -61,7 +61,6 @@ export function CanvasToolbar({
     <View style={styles.shell}>
       {isTextSelected ? (
         <View style={styles.row}>
-          <ToolbarButton label="编辑" onPress={() => onEdit?.()} />
           <ToolbarButton label="字体" onPress={() => onFont?.()} />
           <ToolbarButton label="字号" onPress={() => onSize?.()} />
           <ToolbarButton label="颜色" onPress={() => onColor?.()} />
@@ -71,6 +70,9 @@ export function CanvasToolbar({
       ) : null}
       {hasSelection ? (
         <View style={styles.row}>
+          {isTextSelected ? (
+            <ToolbarButton label="编辑" onPress={() => onEdit?.()} />
+          ) : null}
           <ToolbarButton label="复制" onPress={() => onDuplicate(selectedId)} />
           <ToolbarButton destructive label="删除" onPress={() => onDelete(selectedId)} />
         </View>
