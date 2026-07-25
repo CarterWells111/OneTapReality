@@ -124,6 +124,26 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
   return normalizePositions(next);
 }
 
+export function addImageToPage(pages: StoryPage[], pageId: string, id: string, uri: string) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: preserveLayoutMeta(page, [
+        ...page.layout!.elements,
+        {
+          id,
+          type: "image",
+          uri,
+          x: 0.1,
+          y: 0.1,
+          width: 0.8,
+          height: 0.8,
+          rotation: 0,
+          zIndex: maxLayer(page.layout!.elements) + 1,
+        },
+      ]),
+  }));
+}
+
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,

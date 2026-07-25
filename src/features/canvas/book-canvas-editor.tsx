@@ -31,6 +31,7 @@ import { CanvasPage } from "./canvas-page";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
+  addImageToPage,
   addStickerToPage,
   addTextToPage,
   addFrameToPage,
@@ -239,6 +240,24 @@ export function BookCanvasEditor({
     const nextId = buildCanvasId("frame");
     changePages(addFrameToPage(clearPendingTextFrom(), currentPage.id, nextId, frameId), "structure");
     setSelectedElementId(nextId);
+  };
+
+  const addPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: false,
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const uri = result.assets[0].uri;
+      const nextId = buildCanvasId("image");
+      changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
+      setSelectedElementId(nextId);
+    }
   };
 
   const addText = () => {
@@ -503,6 +522,11 @@ export function BookCanvasEditor({
         {assetTrayMode === "sticker" ? (
           <>
             <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
+              <SmallButton
+                active={false}
+                label="📷 添加照片"
+                onPress={addPhoto}
+              />
               {canvasStickerCategories.map((category) => (
                 <SmallButton
                   active={category.id === stickerCategory}
