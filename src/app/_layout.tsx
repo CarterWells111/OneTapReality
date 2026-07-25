@@ -15,8 +15,11 @@ import { appFontSources } from "../features/typography/fonts";
 import { migrateDbIfNeeded } from "../storage/memory-repository";
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts(appFontSources);
-  if (!fontsLoaded) {
+  const [fontsLoaded, fontError] = useFonts(appFontSources);
+  if (fontError) {
+    console.error("[RootLayout] 字体加载失败：", fontError);
+  }
+  if (!fontsLoaded && !fontError) {
     return null;
   }
   configureDefaultTypography();

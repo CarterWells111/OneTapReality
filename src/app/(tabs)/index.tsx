@@ -10,7 +10,7 @@ import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, isReady, deleteMemory } = useMemories();
+  const { memories, isReady, discardMemory } = useMemories();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -62,7 +62,7 @@ export default function MemoriesHomeScreen() {
           style: "destructive",
           onPress: async () => {
             for (const id of selectedIds) {
-              await deleteMemory(id);
+              await discardMemory(id);
             }
             exitMultiSelect();
           },
@@ -86,6 +86,7 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>
           选择照片，开启一册专属你们的旅行记忆。
         </Text>
+        <Text selectable style={styles.subtitle}>选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。</Text>
         <View style={styles.heroActions}>
           <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
           <AppButton label="我的纪念品" tone="secondary" onPress={() => router.push("/gifts")} />

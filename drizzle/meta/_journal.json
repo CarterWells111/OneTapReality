@@ -43,6 +43,13 @@
       "when": 1785006000000,
       "tag": "0005_unified_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785007000000,
+      "tag": "0006_gift_media_cleanup",
+      "breakpoints": true
     }
   ]
 }

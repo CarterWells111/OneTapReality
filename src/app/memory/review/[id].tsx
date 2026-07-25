@@ -153,7 +153,7 @@ export default function DraftReviewScreen() {
     try {
       await flushAutosave();
       await saveDraft(id);
-      router.replace("/");
+      router.replace({ pathname: "/memory/[id]", params: { id } });
     } catch {
       setError("仍有内容未能自动保存，请重试后再保留草稿。");
     } finally {

@@ -14,7 +14,7 @@ export async function POST(request: Request): Promise<Response> {
     const email = normalizeGiftEmail(rawEmail);
     const now = new Date().toISOString();
     const db = getServerDatabase();
-    if (!await consumeAuthEmailCode(db, email, await hashAccessToken(code, pepper), now)) throw new ApiError(401, "invalid_code", "Verification code is invalid or expired");
+    if (!await consumeAuthEmailCode(db, email, await hashAccessToken(code!, pepper), now)) throw new ApiError(401, "invalid_code", "Verification code is invalid or expired");
     const user = await createOrGetUserByEmail(db, email, now);
     const accessToken = createAccessToken();
     await createAuthSession(db, { id: crypto.randomUUID(), userId: user.id, tokenHash: await hashAccessToken(accessToken, pepper), createdAt: now, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() });
