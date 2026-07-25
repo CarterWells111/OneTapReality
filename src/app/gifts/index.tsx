@@ -8,7 +8,7 @@ import { BackendApiClient } from "../../services/backend/api-client";
 
 export default function MyGiftsScreen() {
   const router = useRouter();
-  const { isAuthReady, session, signOut } = useAuth();
+  const { isAuthReady, session } = useAuth();
   const [message, setMessage] = React.useState("正在读取你的纪念品…");
   const [items, setItems] = React.useState<{ id: string; status: string; claimedAt: string | null }[]>([]);
   const client = React.useMemo(() => new BackendApiClient(), []);
@@ -23,6 +23,6 @@ export default function MyGiftsScreen() {
     <ScreenTitle title="我的纪念品" caption="MY NFC GIFTS" />
     <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{message}</Text>
     {items.map((item) => <PaperCard key={item.id} tone="paper" style={{ gap: 8 }}><Text selectable style={{ color: colors.ink, fontWeight: "800" }}>已认领礼品</Text><Text selectable style={{ color: colors.muted }}>可管理相册、访问邮箱和手动发布更新。</Text><AppButton label="管理礼品" onPress={() => router.push(`/gifts/${item.id}` as never)} /></PaperCard>)}
-    {session ? <><AppButton label="刷新" onPress={() => void load()} /><AppButton label="退出登录" tone="secondary" onPress={() => void signOut()} /></> : <AppButton label="登录" onPress={() => router.push("/login?returnTo=/gifts" as never)} />}
+    {session ? <AppButton label="刷新" onPress={() => void load()} /> : <AppButton label="登录" onPress={() => router.push("/login?returnTo=/gifts" as never)} />}
   </ScrollView>;
 }

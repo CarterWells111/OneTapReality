@@ -21,6 +21,6 @@ describe("gift NFC entry", () => {
 
   it("sends a native visitor to unified login before claiming", async () => {
     render(<GiftEntry token="gift-token" platform="native" />);
-    await waitFor(() => expect(screen.getByText("登录后认领礼品")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("登录后绑定此纪念品")).toBeTruthy());
   });
 });
