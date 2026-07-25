@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as React from "react";
-import { Alert, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { AppButton, colors, PaperCard, ScreenTitle } from "../../components/ui";
+import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { BackendApiClient } from "../../services/backend/api-client";
@@ -109,11 +109,100 @@ export default function GiftManagementScreen() {
     })() },
   ]);
 
-  return <ScrollView contentContainerStyle={{ gap: 14, padding: 20 }} style={{ backgroundColor: colors.background }}>
+  return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
     <ScreenTitle title="礼品管理" caption="OWNER ONLY" />
-    <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{message}</Text>
-    <PaperCard tone="paper" style={{ gap: 10 }}><Text style={{ color: colors.ink, fontWeight: "800" }}>共享相册</Text><Text style={{ color: colors.muted }}>{album ? `当前：${album.title}（版本 ${album.version}）` : "尚未发布共享相册"}</Text><AppButton label="新建本地旅行册" tone="secondary" onPress={() => router.push("/memory/new" as never)} />{memories.filter((memory) => memory.status !== "discarded").map((memory) => <AppButton key={memory.id} label={selectedMemoryId === memory.id ? `已选择：${memory.title}` : memory.title} tone={selectedMemoryId === memory.id ? "warm" : "secondary"} onPress={() => setSelectedMemoryId(memory.id)} />)}<AppButton disabled={busy} label={album ? "更新共享相册" : "发布共享相册"} onPress={() => void publish()} /></PaperCard>
-    <PaperCard tone="paper" style={{ gap: 10 }}><Text style={{ color: colors.ink, fontWeight: "800" }}>访问邮箱（最多 3 个，含管理者）</Text>{members.map((member) => <View key={member.email} style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}><Text style={{ color: colors.muted }}>{member.email} · {member.role === "owner" ? "管理者" : "只读"}</Text>{member.role === "viewer" ? <AppButton disabled={busy} label="移除" tone="secondary" onPress={() => void remove(member.email)} /> : null}</View>)}<TextInput accessibilityLabel="邀请邮箱" autoCapitalize="none" keyboardType="email-address" onChangeText={setInviteEmail} placeholder="邀请只读访问邮箱" style={{ borderBottomColor: colors.line, borderBottomWidth: 1, color: colors.ink, padding: 10 }} value={inviteEmail} /><AppButton disabled={busy || members.length >= 3} label="添加访问邮箱" onPress={() => void invite()} /></PaperCard>
-    <AppButton disabled={busy} label="永久停用礼品" tone="secondary" onPress={disable} />
+    <Text selectable style={styles.message}>{message}</Text>
+
+    <Section title="共享相册" caption="SHARED ALBUM">
+      <PaperCard tone="surface" style={{ gap: 10 }}>
+        <View style={styles.albumStatus}>
+          {album ? (
+            <>
+              <Text style={styles.albumTitle}>{album.title}</Text>
+              <Text style={styles.albumMeta}>版本 {album.version}</Text>
+            </>
+          ) : (
+            <Text style={styles.hint}>尚未发布共享相册。选择一册本地旅行册后发布。</Text>
+          )}
+        </View>
+        <AppButton label="新建本地旅行册" tone="secondary" onPress={() => router.push("/memory/new" as never)} />
+        {memories.filter((memory) => memory.status !== "discarded").map((memory) => (
+          <AppButton
+            key={memory.id}
+            label={selectedMemoryId === memory.id ? `已选择：${memory.title}` : memory.title}
+            tone={selectedMemoryId === memory.id ? "warm" : "secondary"}
+            onPress={() => setSelectedMemoryId(memory.id)}
+          />
+        ))}
+        <AppButton
+          disabled={busy || !selectedMemory}
+          label={album ? "更新共享相册" : "发布共享相册"}
+          onPress={() => void publish()}
+        />
+      </PaperCard>
+    </Section>
+
+    <Section title="访问成员" caption={`${members.length} / 3`}>
+      <PaperCard tone="surface" style={{ gap: 10 }}>
+        {members.map((member) => (
+          <View key={member.email} style={styles.memberRow}>
+            <View style={styles.memberInfo}>
+              <Text style={styles.memberEmail}>{member.email}</Text>
+              <Text style={styles.memberRole}>
+                {member.role === "owner" ? "管理者" : "只读访问"}
+              </Text>
+            </View>
+            {member.role === "viewer" ? (
+              <AppButton disabled={busy} label="移除" tone="secondary" onPress={() => void remove(member.email)} />
+            ) : null}
+          </View>
+        ))}
+        {members.length < 3 ? (
+          <View style={styles.inviteRow}>
+            <TextInput
+              accessibilityLabel="邀请邮箱"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              onChangeText={setInviteEmail}
+              placeholder="邀请只读访问邮箱"
+              placeholderTextColor={colors.muted}
+              style={styles.inviteInput}
+              value={inviteEmail}
+            />
+            <AppButton disabled={busy || !inviteEmail.trim()} label="添加" onPress={() => void invite()} />
+          </View>
+        ) : (
+          <Text style={styles.hint}>已达到最多 3 个访问邮箱。</Text>
+        )}
+      </PaperCard>
+    </Section>
+
+    <AppButton disabled={busy} label="永久停用礼品" tone="danger" onPress={disable} />
   </ScrollView>;
+
+const styles = StyleSheet.create({
+  content: { gap: 22, padding: 20, paddingBottom: 40 },
+  message: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 22 },
+  albumStatus: { gap: 4 },
+  albumTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
+  albumMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
+  hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 22, textAlign: "center" },
+  memberRow: { alignItems: "center", borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 },
+  memberInfo: { flex: 1, gap: 2 },
+  memberEmail: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "600" },
+  memberRole: { color: colors.muted, fontFamily: bodyFont, fontSize: 12 },
+  inviteRow: { flexDirection: "row", gap: 10, paddingTop: 8 },
+  inviteInput: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.ink,
+    flex: 1,
+    fontFamily: bodyFont,
+    fontSize: 15,
+    minHeight: 44,
+    paddingHorizontal: 14,
+  },
+});
 }
