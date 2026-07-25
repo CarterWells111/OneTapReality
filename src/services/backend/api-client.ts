@@ -23,6 +23,8 @@ export type AdminGiftCardDetail = {
   card: AdminGiftCard & { expiresAt: string | null };
   events: { id: string; kind: string; actorEmail: string; metadata: unknown; createdAt: string }[];
 };
+export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
+export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
 
 export class BackendApiError extends Error {
   constructor(
@@ -70,12 +72,20 @@ export class BackendApiClient {
     return this.send<CapabilitiesResponse>("/api/capabilities");
   }
 
-  requestGiftEmailCode(email: string): Promise<{ email: string }> {
-    return this.send("/api/gift-auth/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+  requestAuthEmailCode(email: string): Promise<{ email: string }> {
+    return this.send("/api/auth/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
   }
 
-  verifyGiftEmailCode(email: string, code: string): Promise<{ accessToken: string; email: string }> {
-    return this.send("/api/gift-auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }) });
+  verifyAuthEmailCode(email: string, code: string): Promise<AuthenticatedAccountSession> {
+    return this.send("/api/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, code }) });
+  }
+
+  getCurrentAuthUser(accessToken: string): Promise<AuthenticatedAccountUser> {
+    return this.send<{ user: AuthenticatedAccountUser }>("/api/auth/me", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.user);
+  }
+
+  async logoutAuthSession(accessToken: string): Promise<void> {
+    await this.send<null>("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
   claimGift(token: string, accessToken: string): Promise<{ id: string; status: "bound"; ownerEmail: string }> {

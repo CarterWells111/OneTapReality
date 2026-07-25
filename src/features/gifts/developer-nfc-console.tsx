@@ -1,14 +1,16 @@
 import * as React from "react";
+import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, ScreenTitle, Tag } from "../../components/ui";
 import { BackendApiClient, BackendApiError, type AdminGiftCard, type AdminGiftCardDetail } from "../../services/backend/api-client";
-import { loadGiftSession, saveGiftSession, type GiftSession } from "../../services/gifts/gift-credentials";
 import { clearPendingGiftCard, loadPendingGiftCard, savePendingGiftCard, type PendingGiftCard } from "../../services/gifts/gift-card-pending";
 import { createNfcUrlWriter, type NfcUrlWriter } from "../../services/nfc/nfc-url-writer";
+import { useAuth } from "../auth/auth-provider";
 
 const activationUrl = "https://onetapreality.com/activate";
-type ConsoleClient = Pick<BackendApiClient, "requestGiftEmailCode" | "verifyGiftEmailCode" | "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
+type ConsoleClient = Pick<BackendApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
+type AccountSession = { accessToken: string };
 type AccessState = "checking" | "signedOut" | "noAccess" | "ready";
 
 function canRetire(card: AdminGiftCard) {
@@ -20,23 +22,21 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWriter }: { client?: ConsoleClient; writer?: NfcUrlWriter }) {
+  const router = useRouter();
+  const { isAuthReady, session } = useAuth();
   const client = React.useMemo(() => injectedClient ?? new BackendApiClient(), [injectedClient]);
   const writer = React.useMemo(() => injectedWriter ?? createNfcUrlWriter(), [injectedWriter]);
-  const [session, setSession] = React.useState<GiftSession | null>(null);
   const [access, setAccess] = React.useState<AccessState>("checking");
   const [cards, setCards] = React.useState<AdminGiftCard[]>([]);
   const [detail, setDetail] = React.useState<AdminGiftCardDetail | null>(null);
   const [pending, setPending] = React.useState<PendingGiftCard | null>(null);
-  const [email, setEmail] = React.useState("");
-  const [code, setCode] = React.useState("");
-  const [codeSent, setCodeSent] = React.useState(false);
   const [note, setNote] = React.useState("");
   const [stateFilter, setStateFilter] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [message, setMessage] = React.useState("Checking developer access...");
   const [busy, setBusy] = React.useState(false);
 
-  const loadCards = React.useCallback(async (activeSession: GiftSession, filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string }) => {
+  const loadCards = React.useCallback(async (activeSession: AccountSession, filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string }) => {
     try {
       setCards(await client.listAdminGiftCards(activeSession.accessToken, filters));
       setAccess("ready");
@@ -54,7 +54,7 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     }
   }, [client]);
 
-  const recoverPending = React.useCallback(async (activeSession: GiftSession) => {
+  const recoverPending = React.useCallback(async (activeSession: AccountSession) => {
     const saved = await loadPendingGiftCard();
     if (!saved) return;
     try {
@@ -71,43 +71,15 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
   }, [client]);
 
   React.useEffect(() => {
-    let active = true;
-    void loadGiftSession().then((saved) => {
-      if (!active) return;
-      if (!saved) {
-        setAccess("signedOut");
-        setMessage("Verify a developer allow-list email to continue.");
-        return;
-      }
-      setSession(saved);
-      setEmail(saved.email);
-      void loadCards(saved);
-      void recoverPending(saved);
-    });
-    return () => { active = false; };
-  }, [loadCards, recoverPending]);
-
-  const sendCode = async () => {
-    try {
-      setBusy(true);
-      const result = await client.requestGiftEmailCode(email);
-      setEmail(result.email);
-      setCodeSent(true);
-      setMessage("Verification code sent. Check your email.");
-    } catch (error) { setMessage(errorMessage(error, "Unable to send the verification code.")); }
-    finally { setBusy(false); }
-  };
-
-  const verifySession = async () => {
-    try {
-      setBusy(true);
-      const verified = await client.verifyGiftEmailCode(email, code);
-      await saveGiftSession(verified);
-      setSession(verified);
-      await loadCards(verified);
-    } catch (error) { setMessage(errorMessage(error, "Email verification failed.")); }
-    finally { setBusy(false); }
-  };
+    if (!isAuthReady) return;
+    if (!session) {
+      setAccess("signedOut");
+      setMessage("Sign in with a developer allow-list email to continue.");
+      return;
+    }
+    void loadCards(session);
+    void recoverPending(session);
+  }, [isAuthReady, loadCards, recoverPending, session]);
 
   const prepareBlankCard = async () => {
     try {
@@ -192,7 +164,7 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     setBusy(false);
   };
 
-  if (access === "signedOut") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text><TextInput accessibilityLabel="Developer email" autoCapitalize="none" keyboardType="email-address" onChangeText={setEmail} placeholder="developer@example.com" style={styles.input} value={email} />{codeSent ? <View style={styles.card}><TextInput accessibilityLabel="Verification code" keyboardType="number-pad" maxLength={6} onChangeText={setCode} placeholder="6-digit code" style={styles.input} value={code} /><AppButton disabled={busy} label="Verify developer email" onPress={() => void verifySession()} /></View> : <AppButton disabled={busy} label="Send verification code" onPress={() => void sendCode()} />}</PaperCard></ScrollView>;
+  if (access === "signedOut") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text><AppButton disabled={busy} label="Sign in" onPress={() => router.push("/login?returnTo=/activate" as never)} /></PaperCard></ScrollView>;
 
   if (access === "checking" || access === "noAccess") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text>{access === "checking" ? <AppButton disabled={busy} label="Retry" onPress={() => void retryOrFilter()} /> : null}</PaperCard></ScrollView>;
 

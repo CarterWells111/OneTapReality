@@ -15,6 +15,46 @@ export const devices = pgTable(
   (table) => [uniqueIndex("devices_installation_id_unique").on(table.installationId), index("devices_token_hash_idx").on(table.tokenHash)],
 );
 
+/** Canonical passwordless account identity. Email is stored normalized by the auth repository. */
+export const users = pgTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    createdAt: text("created_at").notNull(),
+    lastAuthenticatedAt: text("last_authenticated_at").notNull(),
+  },
+  (table) => [uniqueIndex("users_email_unique").on(table.email)],
+);
+
+/** Short-lived, one-time email verification codes; plaintext codes are never persisted. */
+export const authEmailCodes = pgTable(
+  "auth_email_codes",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("auth_email_codes_email_created_idx").on(table.email, table.createdAt)],
+);
+
+/** Thirty-day bearer-token sessions. Only a peppered hash of the token is persisted. */
+export const authSessions = pgTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("auth_sessions_token_hash_unique").on(table.tokenHash), index("auth_sessions_user_idx").on(table.userId)],
+);
+
 export const memories = pgTable(
   "memories",
   {
@@ -190,6 +230,9 @@ export const giftPublishSessions = pgTable(
 );
 
 export type DeviceRow = typeof devices.$inferSelect;
+export type UserRow = typeof users.$inferSelect;
+export type AuthEmailCodeRow = typeof authEmailCodes.$inferSelect;
+export type AuthSessionRow = typeof authSessions.$inferSelect;
 export type MemoryRow = typeof memories.$inferSelect;
 export type MemoryPageRow = typeof memoryPages.$inferSelect;
 export type GiftRow = typeof gifts.$inferSelect;

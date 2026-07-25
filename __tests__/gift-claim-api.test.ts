@@ -1,6 +1,7 @@
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 jest.mock("../src/server/auth/device-auth", () => ({ hashAccessToken: jest.fn(async (value: string) => `hash:${value}`), extractBearerToken: jest.fn(() => "session-token") }));
-jest.mock("../src/server/gifts/repository", () => ({ getGiftSessionEmail: jest.fn(async () => "owner@example.com"), claimGiftByTokenHash: jest.fn(async () => ({ id: "gift-1", status: "bound", ownerEmail: "owner@example.com" })) }));
+jest.mock("../src/server/auth/repository", () => ({ getAuthenticatedUserByTokenHash: jest.fn(async () => ({ id: "user-1", email: "owner@example.com" })) }));
+jest.mock("../src/server/gifts/repository", () => ({ claimGiftByTokenHash: jest.fn(async () => ({ id: "gift-1", status: "bound", ownerEmail: "owner@example.com" })) }));
 
 import { POST } from "../src/app/api/gifts/[token]/claim+api";
 

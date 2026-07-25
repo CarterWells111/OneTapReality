@@ -1,5 +1,5 @@
 jest.mock("../src/server/gifts/email-auth", () => ({ createGiftEmailCode: jest.fn(async () => ({ email: "owner@example.com", code: "123456", codeHash: "code-hash", expiresAt: "2026-07-24T00:05:00.000Z" })) }));
-jest.mock("../src/server/gifts/repository", () => ({ createGiftEmailCode: jest.fn(async () => undefined), isGiftEmailCodeRateLimited: jest.fn(async () => false) }));
+jest.mock("../src/server/auth/repository", () => ({ createAuthEmailCode: jest.fn(async () => undefined), isAuthEmailCodeRateLimited: jest.fn(async () => false) }));
 jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificationEmail: jest.fn(async () => undefined) }));
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 

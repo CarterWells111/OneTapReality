@@ -2,6 +2,15 @@ import { render, screen } from "@testing-library/react-native";
 
 import { GiftEntry } from "../src/features/gifts/gift-entry";
 
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: jest.fn(() => ({
+    isAuthReady: true,
+    session: null,
+    requestCode: jest.fn(),
+    verifyCode: jest.fn(),
+  })),
+}));
+
 describe("gift NFC entry", () => {
   it("shows an install-only fallback on the web", () => {
     render(<GiftEntry token="gift-token" platform="web" />);

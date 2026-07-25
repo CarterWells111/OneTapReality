@@ -3,7 +3,7 @@ import { Image, ScrollView, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, ScreenTitle } from "../../components/ui";
 import { BackendApiClient } from "../../services/backend/api-client";
-import { loadGiftSession, saveGiftSession } from "../../services/gifts/gift-credentials";
+import { useAuth } from "../auth/auth-provider";
 
 const copy = {
   appOnly: "\u8bf7\u5728 App \u4e2d\u6253\u5f00\u793c\u54c1",
@@ -25,6 +25,7 @@ function NativeGiftEntry({ token }: { token: string }) {
   const [status, setStatus] = React.useState(copy.verifyToClaim);
   const [photos, setPhotos] = React.useState<string[]>([]);
   const client = React.useMemo(() => new BackendApiClient(), []);
+  const { isAuthReady, session, requestCode: requestAccountCode, verifyCode: verifyAccountCode } = useAuth();
 
   const openExistingGift = React.useCallback(async (accessToken: string) => {
     const access = await client.getGiftAccess(token, accessToken);
@@ -40,23 +41,20 @@ function NativeGiftEntry({ token }: { token: string }) {
 
   React.useEffect(() => {
     let active = true;
-    void loadGiftSession().then(async (session) => {
-      if (!session) return;
-      try { if (active) await openExistingGift(session.accessToken); } catch { if (active) setStatus("\u8bf7\u9a8c\u8bc1\u90ae\u7bb1\u540e\u8bbf\u95ee\u6b64\u793c\u54c1\u3002"); }
-    });
+    if (!isAuthReady || !session) return;
+    void openExistingGift(session.accessToken).catch(() => { if (active) setStatus("\u8bf7\u9a8c\u8bc1\u90ae\u7bb1\u540e\u8bbf\u95ee\u6b64\u793c\u54c1\u3002"); });
     return () => { active = false; };
-  }, [openExistingGift]);
+  }, [isAuthReady, openExistingGift, session]);
 
   const requestCode = async () => {
-    try { const result = await client.requestGiftEmailCode(email); setEmail(result.email); setSent(true); setStatus("\u9a8c\u8bc1\u7801\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u90ae\u7bb1\u3002"); }
+    try { const result = await requestAccountCode(email); setEmail(result.email); setSent(true); setStatus("\u9a8c\u8bc1\u7801\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u90ae\u7bb1\u3002"); }
     catch { setStatus("\u6682\u65f6\u65e0\u6cd5\u53d1\u9001\u9a8c\u8bc1\u7801\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5\u3002"); }
   };
   const verify = async () => {
     try {
-      const session = await client.verifyGiftEmailCode(email, code);
-      await saveGiftSession(session);
-      try { await client.claimGift(token, session.accessToken); } catch { /* Previously claimed gifts continue through the access check. */ }
-      await openExistingGift(session.accessToken);
+      const verified = await verifyAccountCode(email, code);
+      try { await client.claimGift(token, verified.accessToken); } catch { /* Previously claimed gifts continue through the access check. */ }
+      await openExistingGift(verified.accessToken);
     } catch (error) { setStatus(error instanceof Error && error.message ? error.message : "\u9a8c\u8bc1\u5931\u8d25\u6216\u7f51\u7edc\u6682\u4e0d\u53ef\u7528\u3002"); }
   };
 

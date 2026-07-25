@@ -8,6 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../components/ui";
 import { PageCaptureProvider } from "../features/export/page-capture-provider";
+import { AuthProvider } from "../features/auth/auth-provider";
 import { MemoriesProvider } from "../features/memories/memories-provider";
 import { ProfileProvider } from "../features/profile/profile-provider";
 import { appFontSources } from "../features/typography/fonts";
@@ -24,6 +25,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
+          <AuthProvider>
           <ProfileProvider>
             <MemoriesProvider>
               <PageCaptureProvider>
@@ -39,6 +41,7 @@ export default function RootLayout() {
                 }}
               >
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="login" options={{ title: "登录" }} />
               <Stack.Screen name="gifts/index" options={{ title: "我的纪念品" }} />
               <Stack.Screen name="gift/[token]" options={{ title: "NFC 纪念礼品" }} />
               <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
@@ -62,6 +65,7 @@ export default function RootLayout() {
             </PageCaptureProvider>
             </MemoriesProvider>
           </ProfileProvider>
+          </AuthProvider>
         </SQLiteProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

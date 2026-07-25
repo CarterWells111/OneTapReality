@@ -42,9 +42,17 @@ describe("backend client", () => {
     expect(resolveBackendRequestUrl("/api/health", undefined)).toBe("/api/health");
   });
 
-  it("verifies a gift email code and returns its session", async () => {
-    jest.spyOn(global, "fetch").mockResolvedValue(new Response(JSON.stringify({ accessToken: "gift-token", email: "owner@example.com" }), { status: 201 }));
-    await expect(new BackendApiClient().verifyGiftEmailCode("owner@example.com", "123456")).resolves.toEqual({ accessToken: "gift-token", email: "owner@example.com" });
+  it("authenticates an account and reads the current server-derived role", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ email: "owner@example.com" }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "account-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ user: { id: "user-1", email: "owner@example.com", isAdmin: false } }), { status: 200 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.requestAuthEmailCode("owner@example.com")).resolves.toEqual({ email: "owner@example.com" });
+    await expect(client.verifyAuthEmailCode("owner@example.com", "123456")).resolves.toEqual(expect.objectContaining({ accessToken: "account-token" }));
+    await expect(client.getCurrentAuthUser("account-token")).resolves.toEqual({ id: "user-1", email: "owner@example.com", isAdmin: false });
+    expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/auth/request", "/api/auth/verify", "/api/auth/me"]);
   });
 
   it("reserves a developer gift card with the gift session bearer token", async () => {

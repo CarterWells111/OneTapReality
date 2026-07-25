@@ -1,12 +1,16 @@
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({ database: true })) }));
 jest.mock("../src/server/gifts/repository", () => ({
   expireGiftCardReservations: jest.fn(async () => 0),
-  getGiftSessionEmail: jest.fn(async () => null),
   listGiftCards: jest.fn(async () => [{ id: "private-card" }]),
 }));
+jest.mock("../src/server/gifts/session-auth", () => {
+  const { ApiError } = jest.requireActual("../src/server/http/errors");
+  return { requireGiftSessionEmail: jest.fn(async () => { throw new ApiError(401, "unauthorized", "Expired"); }) };
+});
 
 import { GET } from "../src/app/api/admin/gift-cards+api";
-import { getGiftSessionEmail, listGiftCards } from "../src/server/gifts/repository";
+import { listGiftCards } from "../src/server/gifts/repository";
+import { requireGiftSessionEmail } from "../src/server/gifts/session-auth";
 
 describe("admin gift card API authorization", () => {
   beforeEach(() => {
@@ -26,12 +30,12 @@ describe("admin gift card API authorization", () => {
     const response = await GET(new Request("http://localhost/api/admin/gift-cards", { headers: { Authorization: "Bearer expired" } }));
 
     expect(response.status).toBe(401);
-    expect(getGiftSessionEmail).toHaveBeenCalled();
+    expect(requireGiftSessionEmail).toHaveBeenCalled();
     expect(listGiftCards).not.toHaveBeenCalled();
   });
 
   it("enforces GIFT_ADMIN_EMAILS for an otherwise valid session without querying inventory", async () => {
-    (getGiftSessionEmail as jest.Mock).mockResolvedValueOnce("other@example.com");
+    (requireGiftSessionEmail as jest.Mock).mockResolvedValueOnce("other@example.com");
 
     const response = await GET(new Request("http://localhost/api/admin/gift-cards", { headers: { Authorization: "Bearer valid" } }));
 

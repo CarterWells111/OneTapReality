@@ -36,6 +36,13 @@
       "when": 1784873000000,
       "tag": "0004_gift_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785006000000,
+      "tag": "0005_unified_accounts",
+      "breakpoints": true
     }
   ]
 }
