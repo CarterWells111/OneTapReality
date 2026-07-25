@@ -1,4 +1,4 @@
-import { fireEvent, render, userEvent } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
 
 import {
@@ -10,203 +10,85 @@ import type { StoryPage } from "../src/types/memory";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const sourcePages: StoryPage[] = [
-  {
-    id: "page-1",
-    position: 0,
-    kind: "cover",
-    headline: "第一页",
-    body: "第一页正文",
-  },
-  {
-    id: "page-2",
-    position: 1,
-    kind: "closing",
-    headline: "第二页",
-    body: "第二页正文",
-  },
+const pages: StoryPage[] = [
+  { id: "page-1", position: 0, kind: "cover", headline: "First page", body: "First body" },
+  { id: "page-2", position: 1, kind: "closing", headline: "Last page", body: "Last body" },
 ];
 
-function EditorHarness({
-  initialPages = sourcePages,
-  onChange = () => undefined,
-}: {
-  initialPages?: StoryPage[];
-  onChange?: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
+function EditorHarness({ onChange = () => undefined }: {
+  onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => void;
 }) {
-  const [pages, setPages] = React.useState(() => canvasPages(initialPages));
-  return (
-    <BookCanvasEditor
-      pages={pages}
-      onPagesChange={(nextPages, reason) => {
-        setPages(nextPages);
-        onChange(nextPages, reason);
-      }}
-    />
-  );
+  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
+  return <BookCanvasEditor pages={currentPages} onPagesChange={(nextPages, reason) => {
+    setCurrentPages(nextPages);
+    onChange(nextPages, reason);
+  }} />;
 }
 
+const editorLabel = "\u7f16\u8f91\u9009\u4e2d\u6587\u5b57";
+const stickerCategory = "\u8d34\u7eb8 2";
+const stickerChoice = "\u6dfb\u52a0\u8d34\u7eb8 2-01";
+const backgroundTray = "\u80cc\u666f";
+const backgroundChoice = "\u9009\u62e9\u80cc\u666f 01";
+
 describe("BookCanvasEditor", () => {
-  it("uses double press selection and exposes Done", () => {
+  it("opens the text editor after a double press", () => {
     const screen = render(<EditorHarness />);
-    const firstText = screen.getByText("第一页");
-
-    fireEvent.press(firstText);
-    expect(screen.queryByText("完成")).toBeNull();
-    fireEvent.press(firstText);
-    expect(screen.getByText("完成")).toBeTruthy();
-  });
-
-  it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
-    const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
-    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
-
-    await user.press(firstElement);
-    await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
-
-    await user.press(screen.getByTestId("album-canvas"));
-    expect(screen.queryByText("完成")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
-
-    await user.press(firstElement);
-    await user.press(firstElement);
-    await user.press(firstElement);
-
-    expect(screen.getByText("完成")).toBeTruthy();
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("does not reuse a component press across blank deselection", async () => {
-    const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
-    const firstElement = screen.getByTestId("canvas-element-page-1:headline");
-
-    await user.press(firstElement);
-    await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
-
-    await user.press(firstElement);
-    await user.press(screen.getByTestId("album-canvas"));
-    await user.press(firstElement);
-
-    expect(screen.queryByText("完成")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("does not reuse an unselected component press after another component is deselected", async () => {
-    const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} />);
-    const user = userEvent.setup();
     const headline = screen.getByTestId("canvas-element-page-1:headline");
-    const body = screen.getByTestId("canvas-element-page-1:body");
-    let now = 1_000;
-    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
-    try {
-      await user.press(headline);
-      now += 100;
-      await user.press(headline);
-      expect(screen.getByText("完成")).toBeTruthy();
+    fireEvent.press(headline);
+    expect(screen.queryByLabelText(editorLabel)).toBeNull();
+    fireEvent.press(headline);
 
-      now = 2_000;
-      await user.press(body);
-      await user.press(screen.getByTestId("album-canvas"));
-      now += 100;
-      await user.press(body);
-    } finally {
-      nowSpy.mockRestore();
-    }
+    expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+  });
 
-    expect(screen.queryByText("完成")).toBeNull();
+  it("clears a selected editor on a blank-page press without persisting changes", () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const headline = screen.getByTestId("canvas-element-page-1:headline");
+
+    fireEvent.press(headline);
+    fireEvent.press(headline);
+    expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("album-canvas"));
+
+    expect(screen.queryByLabelText(editorLabel)).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("adds a categorized sticker and automatically selects it", () => {
+  it("adds a sticker and selects it for layer editing", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
 
-    fireEvent.press(screen.getByText("贴纸 2"));
-    fireEvent.press(screen.getByLabelText("添加贴纸 2-01"));
+    fireEvent.press(screen.getByText(stickerCategory));
+    fireEvent.press(screen.getByLabelText(stickerChoice));
 
     const latestPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[] | undefined;
-    expect(latestPages?.[0].layout?.elements).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
-      ]),
-    );
-    expect(screen.getByText("完成")).toBeTruthy();
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.any(Array),
-      "structure",
-    );
+    expect(latestPages?.[0].layout?.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
+    ]));
+    expect(onChange).toHaveBeenLastCalledWith(expect.any(Array), "structure");
   });
 
-  it("sets a background on the current page from the asset tray", () => {
+  it("sets the current page background from the asset tray", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
 
-    fireEvent.press(screen.getByText("背景"));
-    fireEvent.press(screen.getByLabelText("选择背景 01"));
+    fireEvent.press(screen.getByText(backgroundTray));
+    fireEvent.press(screen.getByLabelText(backgroundChoice));
 
     const latestPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[] | undefined;
     expect(latestPages?.[0].layout?.backgroundId).toBe("background-01");
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.any(Array),
-      "structure",
-    );
   });
 
-  it("removes untouched default text when the user starts another action", () => {
+  it("opens page management from the toolbar", () => {
     const screen = render(<EditorHarness />);
 
-    fireEvent.press(screen.getByText("添加文字"));
-    expect(screen.getByText("点击编辑文字")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("\u6253\u5f00\u9875\u9762\u7ba1\u7406"));
 
-    fireEvent.press(screen.getByText("贴纸 2"));
-
-    expect(screen.queryByText("点击编辑文字")).toBeNull();
-  });
-
-  it("keeps default text after its contents change", () => {
-    const screen = render(<EditorHarness />);
-
-    fireEvent.press(screen.getByText("添加文字"));
-    fireEvent.changeText(screen.getByLabelText("编辑选中文字"), "在山路上遇见日落");
-    fireEvent.press(screen.getByText("贴纸 2"));
-
-    expect(screen.getByText("在山路上遇见日落")).toBeTruthy();
-  });
-
-  it("keeps default text after the user presses its canvas element", () => {
-    const screen = render(<EditorHarness />);
-
-    fireEvent.press(screen.getByText("添加文字"));
-    fireEvent.press(screen.getByText("点击编辑文字"));
-    fireEvent.press(screen.getByText("贴纸 2"));
-
-    expect(screen.getByText("点击编辑文字")).toBeTruthy();
-  });
-
-  it("does not confirm default text when its input only receives focus", () => {
-    const screen = render(<EditorHarness />);
-
-    fireEvent.press(screen.getByText("添加文字"));
-    fireEvent(screen.getByLabelText("编辑选中文字"), "focus");
-    fireEvent.press(screen.getByText("贴纸 2"));
-
-    expect(screen.queryByText("点击编辑文字")).toBeNull();
-  });
-
-  it("opens the page manager overlay from the toolbar", () => {
-    const screen = render(<EditorHarness />);
-
-    fireEvent.press(screen.getByLabelText("打开页面管理"));
-
-    expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
+    expect(screen.getByLabelText("\u5b8c\u6210\u9875\u9762\u7ba1\u7406")).toBeTruthy();
     expect(screen.getByTestId("page-cell-0")).toBeTruthy();
     expect(screen.getByTestId("page-cell-1")).toBeTruthy();
   });

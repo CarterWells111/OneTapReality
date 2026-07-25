@@ -248,6 +248,7 @@
 
 - 在首次云部署前取消 Turso/libSQL 后端方案，改用与 API Service 位于同一 Railway Project 的 PostgreSQL Service；App 本地 `expo-sqlite` 及 `luyi.db` 保持不变。
 - API Service 只读取 Railway 引用变量 `DATABASE_URL=${{Postgres.DATABASE_URL}}`，通过私有网络连接；继续由 `DEVICE_TOKEN_PEPPER` 保护匿名 bearer token hash，不向客户端暴露数据库凭据。
+- Railway 的共享仓库配置在 pre-deploy 阶段仅当服务端变量 `RUN_DB_MIGRATIONS=true` 时运行 Drizzle migration。API Service 设置该变量；短生命周期的维护 Cron 不设置该变量，也不取得 `DATABASE_URL`。
 - 服务端使用 Drizzle PostgreSQL schema 与 `node-postgres`；repository 测试和 migration 测试使用内存 PostgreSQL 模拟器，不连接生产数据库。
 - Turso 尚未创建且不存在云端生产数据，因此本次允许将尚未部署的 `drizzle/0000_initial.sql` 与 meta 重建为 PostgreSQL baseline，不迁移本地 `.data/backend.db`。该 baseline 部署后恢复“已应用 migration 不可修改”的规则。
 - 云端 API 契约、设备隔离、硬删除与外键级联行为保持不变；不新增账号、自动同步、照片上传、支付、分析、真实 AI、CI 或客户端秘密。

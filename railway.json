@@ -4,7 +4,7 @@
     "buildCommand": "npm run build:server"
   },
   "deploy": {
-    "preDeployCommand": "npm run db:migrate",
+    "preDeployCommand": "node scripts/railway-predeploy.cjs",
     "startCommand": "npm run start:server",
     "healthcheckPath": "/api/health",
     "restartPolicyType": "ON_FAILURE",
