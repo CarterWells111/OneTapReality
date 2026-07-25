@@ -125,6 +125,8 @@ describe("DraftReviewScreen", () => {
 
     fireEvent.press(screen.getByTestId("canvas-element-cover-1:headline"));
     fireEvent.press(screen.getByTestId("canvas-element-cover-1:headline"));
+    // 需要点击「编辑」按钮手动进入编辑模式
+    fireEvent.press(screen.getByText("编辑"));
     fireEvent.changeText(screen.getByLabelText("编辑选中文字"), "新的标题");
     expect(mockUpdateDraftPages).not.toHaveBeenCalled();
 
