@@ -18,7 +18,16 @@ function canRetire(card: AdminGiftCard) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  if (error instanceof Error && error.message) return error.message;
+  const nativeErrorName = typeof error === "object" && error
+    ? (error as { constructor?: { name?: string } }).constructor?.name
+    : undefined;
+  if (nativeErrorName === "Timeout") return "NFC scan timed out. Tap again and hold the card against the top of the phone until verification finishes.";
+  if (nativeErrorName === "UserCancel") return "NFC scanning was cancelled. Tap the action again when the card is ready.";
+  if (nativeErrorName === "TagNotWritable") return "This NFC card is read-only and cannot be initialized.";
+  if (nativeErrorName === "TagSizeTooSmall") return "This NFC card does not have enough capacity for the gift URL.";
+  if (nativeErrorName === "SystemBusy") return "The iPhone NFC reader is still busy. Wait a moment and retry.";
+  return fallback;
 }
 
 export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWriter }: { client?: ConsoleClient; writer?: NfcUrlWriter }) {
@@ -84,15 +93,9 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
   const prepareBlankCard = async () => {
     try {
       setBusy(true);
-      const current = await writer.readHttpsUrl();
-      if (current) {
-        setMessage("This card already contains a URL and will not be overwritten.");
-        return;
-      }
-      await writer.writeHttpsUrl(activationUrl);
-      if (!await writer.verifyHttpsUrl(activationUrl)) throw new Error("Read-back verification failed.");
+      await writer.replaceHttpsUrl(null, activationUrl);
       setMessage("Blank card is ready. It now opens the developer activation screen.");
-    } catch (error) { setMessage(errorMessage(error, "Unable to write the blank card. Expo Go cannot write NFC cards; use a Development Build or production app.")); }
+    } catch (error) { setMessage(errorMessage(error, "Unable to prepare this NFC card. Keep it against the top of the phone and retry.")); }
     finally { setBusy(false); }
   };
 
@@ -100,25 +103,34 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     if (!session || pending) return;
     try {
       setBusy(true);
-      if (await writer.readHttpsUrl() !== activationUrl) {
-        setMessage("This card is not prepared for activation and will not be overwritten.");
-        return;
-      }
       const reservation = await client.reserveGiftCard(session.accessToken, note);
       await savePendingGiftCard(reservation);
       setPending(reservation);
-      await writer.writeHttpsUrl(reservation.giftUrl);
-      if (!await writer.verifyHttpsUrl(reservation.giftUrl)) {
-        setMessage("Write was not confirmed. The gift remains inactive; retry before the reservation expires.");
-        return;
+      try {
+        setCards(await client.listAdminGiftCards(session.accessToken));
+      } catch {
+        // The saved reservation remains retryable even if the inventory refresh fails.
       }
+      await writePending(reservation);
+    } catch (error) {
+      setMessage(`Unable to reserve this gift card. ${errorMessage(error, "Check the network and retry.")}`.trim());
+    } finally { setBusy(false); }
+  };
+
+  const writePending = async (reservation = pending) => {
+    if (!session || !reservation || reservation.writeVerified) return;
+    try {
+      setBusy(true);
+      await writer.replaceHttpsUrl(activationUrl, reservation.giftUrl);
       const verifiedReservation = { ...reservation, writeVerified: true };
       await savePendingGiftCard(verifiedReservation);
       setPending(verifiedReservation);
       await activatePending(verifiedReservation);
     } catch (error) {
-      setMessage(`Write or activation failed. The gift remains inactive; retry before the reservation expires.${error instanceof Error && error.message ? ` ${error.message}` : ""}`);
-    } finally { setBusy(false); }
+      setMessage(`NFC write failed. The initializing record is saved for 15 minutes. ${errorMessage(error, "Keep the card against the top of the phone and retry.")}`.trim());
+    } finally {
+      setBusy(false);
+    }
   };
 
   const activatePending = async (reservation = pending) => {
@@ -173,10 +185,11 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     <Text style={styles.message}>{message}</Text>
     <PaperCard tone="paper" style={styles.card}>
       <Text style={styles.heading}>Initialize NFC cards</Text>
-      <Text style={styles.hint}>Expo Go cannot write cards. Use a Development Build or production app.</Text>
+      <Text style={styles.hint}>Each action uses one NFC scan. After tapping, hold the card against the top of the phone until verification finishes.</Text>
       <AppButton disabled={busy || Boolean(pending)} label="Prepare blank card" onPress={() => void prepareBlankCard()} />
       <TextInput accessibilityLabel="Card note" onChangeText={setNote} placeholder="Optional batch, order, or note" style={styles.input} value={note} />
       <AppButton disabled={busy || Boolean(pending)} label="Initialize current blank card" tone="warm" onPress={() => void initializeCard()} />
+      {pending && !pending.writeVerified ? <AppButton disabled={busy} label="Retry NFC write" tone="warm" onPress={() => void writePending()} /> : null}
       {pending?.writeVerified ? <AppButton disabled={busy} label="Retry activation" tone="warm" onPress={() => void activatePending()} /> : null}
     </PaperCard>
     <PaperCard style={styles.card}>

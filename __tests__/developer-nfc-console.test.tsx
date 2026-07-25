@@ -24,6 +24,10 @@ const activeCard = {
   id: "card-1", code: "CARD-001", state: "active" as const, note: "July batch", giftId: "gift-1", giftStatus: "unclaimed",
   createdAt: "2026-07-24T00:00:00.000Z", activatedAt: "2026-07-24T00:01:00.000Z", retiredAt: null,
 };
+const initializingCard = {
+  id: "card-2", code: "CARD-002", state: "initializing" as const, note: "New batch", giftId: "gift-2", giftStatus: "initializing",
+  createdAt: "2026-07-24T00:02:00.000Z", activatedAt: null, retiredAt: null,
+};
 
 function createClient() {
   return {
@@ -51,75 +55,83 @@ describe("developer NFC console", () => {
 
   it("writes, verifies, and only then activates a reserved unique gift card", async () => {
     const client = createClient();
-    const writer: NfcUrlWriter = {
-      writeHttpsUrl: jest.fn().mockResolvedValue(undefined),
-      verifyHttpsUrl: jest.fn().mockResolvedValue(true),
-      readHttpsUrl: jest.fn().mockResolvedValue("https://onetapreality.com/activate"),
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
       cancel: jest.fn().mockResolvedValue(undefined),
-    };
+    } as unknown as NfcUrlWriter;
     render(<DeveloperNfcConsole client={client as never} writer={writer} />);
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
     fireEvent.changeText(screen.getByLabelText("Card note"), "New batch");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
-    await waitFor(() => expect(writer.writeHttpsUrl).toHaveBeenCalledWith("https://onetapreality.com/gift/unique-token"));
-    expect(writer.verifyHttpsUrl).toHaveBeenCalledWith("https://onetapreality.com/gift/unique-token");
+    await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledWith(
+      "https://onetapreality.com/activate",
+      "https://onetapreality.com/gift/unique-token",
+    ));
     expect(client.activateAdminGiftCard).toHaveBeenCalledWith("session", "card-2");
   });
 
-  it("does not activate a reservation when NFC verification fails", async () => {
+  it("shows an initializing reservation and retry action when the single NFC session fails", async () => {
     const client = createClient();
-    const writer: NfcUrlWriter = {
-      writeHttpsUrl: jest.fn().mockResolvedValue(undefined),
-      verifyHttpsUrl: jest.fn().mockResolvedValue(false),
-      readHttpsUrl: jest.fn().mockResolvedValue("https://onetapreality.com/activate"),
+    client.listAdminGiftCards
+      .mockResolvedValueOnce([activeCard])
+      .mockResolvedValue([activeCard, initializingCard]);
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockRejectedValue(new Error("Tag is not writable")),
       cancel: jest.fn().mockResolvedValue(undefined),
-    };
+    } as unknown as NfcUrlWriter;
     render(<DeveloperNfcConsole client={client as never} writer={writer} />);
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
-    await waitFor(() => expect(screen.getByText("Write was not confirmed. The gift remains inactive; retry before the reservation expires.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("CARD-002")).toBeTruthy());
+    expect(screen.getByText("Retry NFC write")).toBeTruthy();
     expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
   });
 
   it("refuses to initialize a card that is not the shared activation URL", async () => {
     const client = createClient();
-    const writer: NfcUrlWriter = {
-      writeHttpsUrl: jest.fn(), verifyHttpsUrl: jest.fn(), readHttpsUrl: jest.fn().mockResolvedValue("https://other.example/gift/existing"), cancel: jest.fn(),
-    };
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockRejectedValue(new Error("This card does not contain the expected activation URL. It was not changed.")),
+      cancel: jest.fn(),
+    } as unknown as NfcUrlWriter;
     render(<DeveloperNfcConsole client={client as never} writer={writer} />);
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
-    await waitFor(() => expect(screen.getByText("This card is not prepared for activation and will not be overwritten.")).toBeTruthy());
-    expect(client.reserveGiftCard).not.toHaveBeenCalled();
-    expect(writer.writeHttpsUrl).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/does not contain the expected activation URL/)).toBeTruthy());
+    expect(client.reserveGiftCard).toHaveBeenCalledTimes(1);
+    expect(writer.replaceHttpsUrl).toHaveBeenCalledWith(
+      "https://onetapreality.com/activate",
+      "https://onetapreality.com/gift/unique-token",
+    );
   });
 
   it("refuses to prepare a card that already has a URL", async () => {
     const client = createClient();
-    const writer: NfcUrlWriter = {
-      writeHttpsUrl: jest.fn(), verifyHttpsUrl: jest.fn(), readHttpsUrl: jest.fn().mockResolvedValue("https://other.example/existing"), cancel: jest.fn(),
-    };
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockRejectedValue(new Error("This card already contains a URL and was not changed.")),
+      cancel: jest.fn(),
+    } as unknown as NfcUrlWriter;
     render(<DeveloperNfcConsole client={client as never} writer={writer} />);
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
     fireEvent.press(screen.getByText("Prepare blank card"));
 
-    await waitFor(() => expect(screen.getByText("This card already contains a URL and will not be overwritten.")).toBeTruthy());
-    expect(writer.writeHttpsUrl).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("This card already contains a URL and was not changed.")).toBeTruthy());
+    expect(writer.replaceHttpsUrl).toHaveBeenCalledWith(null, "https://onetapreality.com/activate");
   });
 
   it("keeps the exact reservation and retries activation without creating or writing another card", async () => {
     const client = createClient();
     client.activateAdminGiftCard.mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValueOnce({ activated: true });
-    const writer: NfcUrlWriter = {
-      writeHttpsUrl: jest.fn().mockResolvedValue(undefined), verifyHttpsUrl: jest.fn().mockResolvedValue(true), readHttpsUrl: jest.fn().mockResolvedValue("https://onetapreality.com/activate"), cancel: jest.fn(),
-    };
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
+    } as unknown as NfcUrlWriter;
     render(<DeveloperNfcConsole client={client as never} writer={writer} />);
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
@@ -130,7 +142,7 @@ describe("developer NFC console", () => {
 
     await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(2));
     expect(client.reserveGiftCard).toHaveBeenCalledTimes(1);
-    expect(writer.writeHttpsUrl).toHaveBeenCalledTimes(1);
+    expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1);
     expect(clearPendingGiftCard).toHaveBeenCalledTimes(1);
   });
 });
