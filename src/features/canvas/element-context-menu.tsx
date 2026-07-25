@@ -200,43 +200,6 @@ export function ElementContextMenu({
   );
 }
 
-function MenuButton({
-  icon,
-  iconColor,
-  label,
-  onPress,
-  preview,
-}: {
-  icon: string;
-  iconColor?: string;
-  label: string;
-  onPress: () => void;
-  preview?: React.ReactNode;
-}) {
-  return (
-    <Pressable onPress={onPress} style={styles.menuButton}>
-      <View style={styles.menuButtonLeft}>
-        <View style={[styles.menuIcon, iconColor ? { backgroundColor: iconColor + "18" } : undefined]}>
-          <Text style={[styles.menuIconText, iconColor ? { color: iconColor } : undefined]}>{icon}</Text>
-        </View>
-        <Text style={styles.menuLabel}>{label}</Text>
-      </View>
-      <View style={styles.menuButtonRight}>
-        {typeof preview === "string" ? (
-          <Text style={styles.menuPreviewText}>{preview}</Text>
-        ) : (
-          preview
-        )}
-        <Text style={styles.menuChevron}>›</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-function MenuDivider() {
-  return <View style={styles.divider} />;
-}
-
 /**
  * 字号选择器：进度条 + 数字输入框，范围 2–40。
  * 点击进度条任意位置跳转到对应字号，也可通过数字输入框直接键入。
