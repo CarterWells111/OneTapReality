@@ -1,10 +1,9 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const websiteDirectory = resolve(scriptDirectory, "..");
-const defaultSourceDirectory = "C:/Users/carte/Documents/xwechat_files/wxid_43yueycno0cf22_2847/msg/file/2026-07";
 
 export const productIntroductionAssets = [
   ["brand-logo", "brand-logo.png", "OneTapReality"],
@@ -65,17 +64,6 @@ const extensionByMimeType = new Map([
   ["image/svg+xml", "svg"],
 ]);
 
-function findDefaultSourcePath() {
-  const matches = readdirSync(defaultSourceDirectory)
-    .filter((name) => name.startsWith("OneTapReality_2") && name.endsWith(".html"));
-
-  if (matches.length !== 1) {
-    throw new Error(`Expected one OneTapReality product introduction source in ${defaultSourceDirectory}.`);
-  }
-
-  return join(defaultSourceDirectory, matches[0]);
-}
-
 function readDataUri(dataUri) {
   const match = /^data:([^;,]+)(;base64)?,([\s\S]*)$/i.exec(dataUri);
 
@@ -114,11 +102,15 @@ function extractInlineImages(html) {
 }
 
 export function importProductIntroduction({
-  sourcePath = findDefaultSourcePath(),
+  sourcePath,
   outputDirectory = join(websiteDirectory, "assets", "product-introduction"),
   manifestPath = join(outputDirectory, "manifest.json"),
   descriptors = productIntroductionAssets,
 } = {}) {
+  if (!sourcePath) {
+    throw new Error("A product introduction source HTML path is required.");
+  }
+
   const inlineImages = extractInlineImages(readFileSync(sourcePath, "utf8"));
 
   if (inlineImages.length !== descriptors.length) {
@@ -155,6 +147,13 @@ export function importProductIntroduction({
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const manifest = importProductIntroduction({ sourcePath: process.argv[2] });
-  console.log(`Imported ${manifest.assets.length} product images into website/assets/product-introduction/.`);
+  const sourcePath = process.argv[2];
+
+  if (!sourcePath) {
+    console.error("Usage: node import-product-introduction.mjs <source-html-path>");
+    process.exitCode = 1;
+  } else {
+    const manifest = importProductIntroduction({ sourcePath });
+    console.log(`Imported ${manifest.assets.length} product images into website/assets/product-introduction/.`);
+  }
 }

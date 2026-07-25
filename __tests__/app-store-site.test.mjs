@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
@@ -148,6 +149,14 @@ test("imports inline product images into deterministic local assets and a manife
   } finally {
     rmSync(fixtureDirectory, { recursive: true, force: true });
   }
+});
+
+test("requires an explicit source file when running the product asset importer", () => {
+  const importerPath = join(websiteRoot, "scripts", "import-product-introduction.mjs");
+  const result = spawnSync(process.execPath, [importerPath], { encoding: "utf8" });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Usage: node import-product-introduction\.mjs <source-html-path>/);
 });
 
 test("presents the complete product introduction as an accessible screenshot carousel", () => {
