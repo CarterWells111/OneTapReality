@@ -1,7 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import * as React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, bodyFont, colors, Section } from "../../components/ui";
@@ -17,7 +17,13 @@ import { useProfile } from "../../features/profile/profile-provider";
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile, isProfileReady, updateProfile } = useProfile();
-  const { forgetRememberedEmail, isAuthReady, rememberedEmail } = useAuth();
+  const {
+    forgetRememberedEmail,
+    isAuthReady,
+    rememberedEmail,
+    session,
+    signOut,
+  } = useAuth();
   const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -144,6 +150,29 @@ export default function SettingsScreen() {
         <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
         <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
       </Section>
+
+      {session ? (
+        <Section title="账户">
+          <Text selectable style={styles.helper}>
+            当前登录：{session.user.email}
+          </Text>
+          <AppButton
+            label="退出登录"
+            onPress={() => {
+              Alert.alert("退出登录", "退出后需重新使用邮箱验证码登录。", [
+                { text: "取消", style: "cancel" },
+                { text: "退出", style: "destructive", onPress: () => void signOut() },
+              ]);
+            }}
+            tone="secondary"
+          />
+        </Section>
+      ) : (
+        <Section title="账户">
+          <Text selectable style={styles.helper}>登录后可同步纪念品与 NFC 礼品。</Text>
+          <AppButton label="登录" onPress={() => router.push("/login?returnTo=/settings" as never)} />
+        </Section>
+      )}
 
       <AppButton disabled={isSaving} label={isSaving ? "正在保存资料…" : "保存资料"} onPress={() => void saveProfile()} />
     </ScrollView>

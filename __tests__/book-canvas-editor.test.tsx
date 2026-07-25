@@ -25,37 +25,65 @@ function EditorHarness({ onChange = () => undefined }: {
   }} />;
 }
 
-const editorLabel = "\u7f16\u8f91\u9009\u4e2d\u6587\u5b57";
-const stickerCategory = "\u8d34\u7eb8 2";
-const stickerChoice = "\u6dfb\u52a0\u8d34\u7eb8 2-01";
-const backgroundTray = "\u80cc\u666f";
-const backgroundChoice = "\u9009\u62e9\u80cc\u666f 01";
+const editorLabel = "编辑选中文字";
+const stickerCategory = "贴纸 2";
+const stickerChoice = "添加贴纸 2-01";
+const backgroundTray = "背景";
+const backgroundChoice = "选择背景 01";
 
 describe("BookCanvasEditor", () => {
-  it("opens the text editor after a double press", () => {
+  it("opens the text editor via the edit button after double press", () => {
     const screen = render(<EditorHarness />);
     const headline = screen.getByTestId("canvas-element-page-1:headline");
+    const nowSpy = jest.spyOn(Date, "now");
 
-    fireEvent.press(headline);
-    expect(screen.queryByLabelText(editorLabel)).toBeNull();
-    fireEvent.press(headline);
-
-    expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+    try {
+      fireEvent.press(headline);
+      expect(screen.queryByLabelText(editorLabel)).toBeNull();
+      // Double-tap selects the element
+      fireEvent.press(headline);
+      // The '编辑' button should now be visible in the toolbar
+      expect(screen.queryByText("编辑")).toBeTruthy();
+      // Text editor only opens after clicking the '编辑' button (Feature #3b)
+      expect(screen.queryByLabelText(editorLabel)).toBeNull();
+      fireEvent.press(screen.getByText("编辑"));
+      expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
-  it("clears a selected editor on a blank-page press without persisting changes", () => {
+  it("clears a selected editor on a blank-page press without persisting changes, requires edit button to re-edit", () => {
     const onChange = jest.fn();
     const screen = render(<EditorHarness onChange={onChange} />);
     const headline = screen.getByTestId("canvas-element-page-1:headline");
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, "now").mockImplementation(() => now);
 
-    fireEvent.press(headline);
-    fireEvent.press(headline);
-    expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+    try {
+      fireEvent.press(headline);
+      now += 100;
+      fireEvent.press(headline);
+      fireEvent.press(screen.getByText("编辑"));
+      expect(screen.getByLabelText(editorLabel)).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("album-canvas"));
+      fireEvent.press(screen.getByTestId("album-canvas"));
 
-    expect(screen.queryByLabelText(editorLabel)).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText(editorLabel)).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+
+      // Re-select and re-edit
+      now += 500;
+      fireEvent.press(headline);
+      now += 100;
+      fireEvent.press(headline);
+      fireEvent.press(screen.getByText("编辑"));
+      expect(screen.getByLabelText(editorLabel)).toBeTruthy();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("adds a sticker and selects it for layer editing", () => {
@@ -86,9 +114,9 @@ describe("BookCanvasEditor", () => {
   it("opens page management from the toolbar", () => {
     const screen = render(<EditorHarness />);
 
-    fireEvent.press(screen.getByLabelText("\u6253\u5f00\u9875\u9762\u7ba1\u7406"));
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
 
-    expect(screen.getByLabelText("\u5b8c\u6210\u9875\u9762\u7ba1\u7406")).toBeTruthy();
+    expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
     expect(screen.getByTestId("page-cell-0")).toBeTruthy();
     expect(screen.getByTestId("page-cell-1")).toBeTruthy();
   });

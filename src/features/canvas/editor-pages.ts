@@ -35,8 +35,7 @@ function maxLayer(elements: CanvasElement[]) {
 function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
   const prev = page.layout;
   return {
-    aspectRatio: 1 as const,
-    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
+    aspectRatio: 0.75 as const,    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
     ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
     ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
     elements,
@@ -73,7 +72,7 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
     ...(photoUri ? { photoUri } : {}),
   };
   const legacy = createLegacyLayout(page);
-  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 1 as const, elements: [] };
+  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 0.75 as const, elements: [] };
   const textElements = legacy.elements
     .filter((element) => element.type === "text")
     .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
@@ -122,6 +121,26 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
   }
   [next[index], next[target]] = [next[target], next[index]];
   return normalizePositions(next);
+}
+
+export function addImageToPage(pages: StoryPage[], pageId: string, id: string, uri: string) {
+  return updatePage(pages, pageId, (page) => ({
+    ...page,
+    layout: preserveLayoutMeta(page, [
+        ...page.layout!.elements,
+        {
+          id,
+          type: "image",
+          uri,
+          x: 0.1,
+          y: 0.1,
+          width: 0.8,
+          height: 0.8,
+          rotation: 0,
+          zIndex: maxLayer(page.layout!.elements) + 1,
+        },
+      ]),
+  }));
 }
 
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
@@ -195,7 +214,7 @@ export function setCanvasBackground(
   return updatePage(pages, pageId, (page) => ({
     ...page,
     layout: {
-      aspectRatio: 1,
+      aspectRatio: 0.75,
       ...(backgroundId ? { backgroundId } : {}),
       ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
       ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
@@ -213,7 +232,7 @@ export function setCanvasCoverColor(
     ...page,
     coverColor,
     layout: {
-      aspectRatio: 1,
+      aspectRatio: 0.75,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
       ...(coverColor ? { coverColor } : {}),
       ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
@@ -231,7 +250,7 @@ export function setCanvasCoverImage(
     ...page,
     coverImage,
     layout: {
-      aspectRatio: 1,
+      aspectRatio: 0.75,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
       ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
       ...(coverImage ? { coverImage } : {}),

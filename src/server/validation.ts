@@ -38,7 +38,7 @@ export const cloudMemoryPayloadSchema = z.object({
     body: z.string().max(10000),
     photoSlot: z.number().int().nonnegative().optional(),
     layout: z.object({
-      aspectRatio: z.literal(1),
+      aspectRatio: z.number(),
       elements: z.array(canvasElement).max(100),
     }).strict().optional(),
   }).strict()).max(100),

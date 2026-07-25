@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -25,7 +26,8 @@ type ElementContextMenuProps = {
   initialMode?: MenuMode;
 };
 
-const fontSizes = [12, 14, 16, 18, 20, 22, 24, 28, 34] as const;
+const FONT_SIZE_MIN = 2;
+const FONT_SIZE_MAX = 40;
 
 const presetColors = [
   "#1C2C28", // 墨黑
@@ -129,21 +131,13 @@ export function ElementContextMenu({
               <Text style={styles.modeTitle}>选择字号</Text>
               <View style={styles.backButton} />
             </View>
-            <View style={styles.sizeGrid}>
-              {fontSizes.map((size) => (
-                <Pressable
-                  key={size}
-                  onPress={() => {
-                    onChangeSize(size);
-                    setMode("main");
-                  }}
-                  style={[styles.sizeItem, element.fontSize === size && styles.sizeItemActive]}>
-                  <Text style={[styles.sizeItemText, element.fontSize === size && styles.sizeItemTextActive]}>
-                    {size}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <FontSizeSlider
+              onChange={(size) => {
+                onChangeSize(size);
+                setMode("main");
+              }}
+              value={element.fontSize}
+            />
           </View>
         );
       case "color":
@@ -164,7 +158,7 @@ export function ElementContextMenu({
                     key={color}
                     onPress={() => {
                       onChangeColor(color);
-                      setMode("main");
+                      onClose();
                     }}
                     style={[styles.presetSwatch, { backgroundColor: color }, element.color === color && styles.presetSwatchActive]}>
                     {element.color === color ? <Text style={styles.presetCheck}>✓</Text> : null}
@@ -180,21 +174,9 @@ export function ElementContextMenu({
           </View>
         );
       default:
-        return (
-          <View style={styles.mainMenu}>
-            <MenuButton icon="𝔸" label="字体" onPress={() => setMode("font")} preview={canvasFonts.find((f) => f.id === element.fontStyle)?.label} />
-            <MenuDivider />
-            <MenuButton icon="↓" label="字号" onPress={() => setMode("size")} preview={`${element.fontSize}`} />
-            <MenuDivider />
-            <MenuButton
-              icon="●"
-              iconColor={element.color}
-              label="颜色"
-              onPress={() => setMode("color")}
-              preview={<View style={[styles.colorPreview, { backgroundColor: element.color }]} />}
-            />
-          </View>
-        );
+        // 工具栏按钮直接导航到 font/size/color 子面板，
+        // main 面板在正常流程中不再可达。
+        return null;
     }
   };
 
@@ -218,42 +200,134 @@ export function ElementContextMenu({
   );
 }
 
-function MenuButton({
-  icon,
-  iconColor,
-  label,
-  onPress,
-  preview,
+/**
+ * 字号选择器：进度条 + 数字输入框，范围 2–40。
+ * 点击进度条任意位置跳转到对应字号，也可通过数字输入框直接键入。
+ */
+function FontSizeSlider({
+  onChange,
+  value,
 }: {
-  icon: string;
-  iconColor?: string;
-  label: string;
-  onPress: () => void;
-  preview?: React.ReactNode;
+  onChange: (size: number) => void;
+  value: number;
 }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const TRACK_WIDTH = Math.min(windowWidth - 100, 300);
+  const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value));
+  const fraction = (clamped - FONT_SIZE_MIN) / (FONT_SIZE_MAX - FONT_SIZE_MIN);
+  const thumbLeft = fraction * (TRACK_WIDTH - 24);
+
+  const onTrackPress = (event: { nativeEvent: { locationX: number } }) => {
+    const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / TRACK_WIDTH));
+    const size = Math.round(FONT_SIZE_MIN + ratio * (FONT_SIZE_MAX - FONT_SIZE_MIN));
+    onChange(size);
+  };
+
   return (
-    <Pressable onPress={onPress} style={styles.menuButton}>
-      <View style={styles.menuButtonLeft}>
-        <View style={[styles.menuIcon, iconColor ? { backgroundColor: iconColor + "18" } : undefined]}>
-          <Text style={[styles.menuIconText, iconColor ? { color: iconColor } : undefined]}>{icon}</Text>
+    <View style={sliderStyles.container}>
+      <View style={sliderStyles.row}>
+        <Text style={sliderStyles.valueLabel}>{clamped}</Text>
+        <TextInput
+          accessibilityLabel="输入字号"
+          keyboardType="number-pad"
+          onChangeText={(text) => {
+            const n = parseInt(text, 10);
+            if (!isNaN(n) && n >= FONT_SIZE_MIN && n <= FONT_SIZE_MAX) {
+              onChange(n);
+            }
+          }}
+          style={sliderStyles.numberInput}
+          value={String(clamped)}
+        />
+      </View>
+      <Pressable accessibilityRole="adjustable" onPress={onTrackPress} style={sliderStyles.sliderTrackWrapper}>
+        <View style={[sliderStyles.sliderTrack, { width: TRACK_WIDTH }]}>
+          <View style={[sliderStyles.sliderFill, { width: thumbLeft + 12 }]} />
         </View>
-        <Text style={styles.menuLabel}>{label}</Text>
+        <View style={[sliderStyles.sliderThumb, { transform: [{ translateX: thumbLeft }] }]} />
+      </Pressable>
+      <View style={sliderStyles.marksRow}>
+        <Text style={sliderStyles.markText}>小 {FONT_SIZE_MIN}</Text>
+        <Text style={sliderStyles.markText}>大 {FONT_SIZE_MAX}</Text>
       </View>
-      <View style={styles.menuButtonRight}>
-        {typeof preview === "string" ? (
-          <Text style={styles.menuPreviewText}>{preview}</Text>
-        ) : (
-          preview
-        )}
-        <Text style={styles.menuChevron}>›</Text>
-      </View>
-    </Pressable>
+    </View>
   );
 }
 
-function MenuDivider() {
-  return <View style={styles.divider} />;
-}
+const sliderStyles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  row: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  valueLabel: {
+    color: "#1C2C28",
+    fontSize: 28,
+    fontWeight: "800",
+    minWidth: 48,
+    textAlign: "center",
+  },
+  numberInput: {
+    backgroundColor: "rgba(0,0,0,0.04)",
+    borderColor: "rgba(0,0,0,0.12)",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#1C2C28",
+    fontSize: 16,
+    fontWeight: "600",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    textAlign: "center",
+    width: 64,
+  },
+  sliderTrackWrapper: {
+    alignItems: "center",
+    position: "relative",
+  },
+  sliderTrack: {
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 4,
+    height: 6,
+    overflow: "hidden",
+  },
+  sliderFill: {
+    backgroundColor: "#B76545",
+    borderRadius: 4,
+    height: "100%",
+  },
+  sliderThumb: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#B76545",
+    borderRadius: 12,
+    borderWidth: 2,
+    elevation: 3,
+    height: 24,
+    left: 0,
+    position: "absolute",
+    shadowColor: "#000",
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    top: -9,
+    width: 24,
+  },
+  marksRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  markText: {
+    color: "rgba(0,0,0,0.35)",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+});
 
 const styles = StyleSheet.create({
   menuContainer: {
@@ -379,32 +453,6 @@ const styles = StyleSheet.create({
   checkmark: {
     color: "#B76545",
     fontSize: 16,
-    fontWeight: "800",
-  },
-  sizeGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    justifyContent: "center",
-    padding: 16,
-  },
-  sizeItem: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.04)",
-    borderRadius: 12,
-    height: 48,
-    justifyContent: "center",
-    width: 60,
-  },
-  sizeItemActive: {
-    backgroundColor: "rgba(0,0,0,0.1)",
-  },
-  sizeItemText: {
-    color: "#1C2C28",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  sizeItemTextActive: {
     fontWeight: "800",
   },
   colorScroll: {
