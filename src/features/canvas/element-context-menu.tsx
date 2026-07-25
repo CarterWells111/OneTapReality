@@ -107,7 +107,7 @@ export function ElementContextMenu({
                   key={font.id}
                   onPress={() => {
                     onChangeFont(font.id);
-                    setMode("main");
+                    onClose();
                   }}
                   style={[styles.listItem, element.fontStyle === font.id && styles.listItemActive]}>
                   <Text style={[styles.listItemText, { fontFamily: font.family }, element.fontStyle === font.id && styles.listItemTextActive]}>
@@ -134,7 +134,7 @@ export function ElementContextMenu({
             <FontSizeSlider
               onChange={(size) => {
                 onChangeSize(size);
-                setMode("main");
+                onClose();
               }}
               value={element.fontSize}
             />

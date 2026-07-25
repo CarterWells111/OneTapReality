@@ -465,6 +465,7 @@ export function BookCanvasEditor({
         onDone={() => {
           discardPendingText();
           setSelectedElementId(undefined);
+          setEditingElementId(undefined);
           setShowEditInput(false);
         }}
         onDuplicate={(elementId) => {
