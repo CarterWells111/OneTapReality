@@ -35,7 +35,7 @@ function maxLayer(elements: CanvasElement[]) {
 function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
   const prev = page.layout;
   return {
-    aspectRatio: 3 / 4 as const,    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
+    aspectRatio: 0.75 as const,    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
     ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
     ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
     elements,
@@ -72,7 +72,7 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
     ...(photoUri ? { photoUri } : {}),
   };
   const legacy = createLegacyLayout(page);
-  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 3 / 4 as const, elements: [] };
+  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 0.75 as const, elements: [] };
   const textElements = legacy.elements
     .filter((element) => element.type === "text")
     .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
@@ -214,7 +214,7 @@ export function setCanvasBackground(
   return updatePage(pages, pageId, (page) => ({
     ...page,
     layout: {
-      aspectRatio: 3 / 4,
+      aspectRatio: 0.75,
       ...(backgroundId ? { backgroundId } : {}),
       ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
       ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
@@ -232,7 +232,7 @@ export function setCanvasCoverColor(
     ...page,
     coverColor,
     layout: {
-      aspectRatio: 3 / 4,
+      aspectRatio: 0.75,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
       ...(coverColor ? { coverColor } : {}),
       ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
@@ -250,7 +250,7 @@ export function setCanvasCoverImage(
     ...page,
     coverImage,
     layout: {
-      aspectRatio: 3 / 4,
+      aspectRatio: 0.75,
       ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
       ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
       ...(coverImage ? { coverImage } : {}),
