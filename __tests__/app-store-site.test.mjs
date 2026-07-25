@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import vm from "node:vm";
 import test from "node:test";
 
 const websiteRoot = join(process.cwd(), "website");
@@ -268,4 +269,163 @@ test("styles the product story as a responsive paper carousel without changing s
   assert.match(styles, /\.future-note\s*\{/);
   assert.match(styles, /@media \(max-width: 760px\)\s*\{[\s\S]*?\.product-carousel__slide\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+class CarouselElement {
+  constructor(attributes = {}) {
+    this.attributes = new Map(Object.entries(attributes));
+    this.classNames = new Set();
+    this.classList = {
+      add: (...names) => names.forEach((name) => this.classNames.add(name)),
+      contains: (name) => this.classNames.has(name),
+      remove: (...names) => names.forEach((name) => this.classNames.delete(name)),
+    };
+    this.handlers = new Map();
+    this.hidden = false;
+    this.textContent = "";
+  }
+
+  addEventListener(type, listener, options = {}) {
+    const listeners = this.handlers.get(type) ?? [];
+    listeners.push({ listener, once: Boolean(options.once) });
+    this.handlers.set(type, listeners);
+  }
+
+  dispatch(type, event = {}) {
+    const listeners = [...(this.handlers.get(type) ?? [])];
+    const dispatchedEvent = {
+      ...event,
+      currentTarget: this,
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    };
+
+    for (const entry of listeners) {
+      entry.listener(dispatchedEvent);
+      if (entry.once) {
+        this.handlers.set(
+          type,
+          (this.handlers.get(type) ?? []).filter((candidate) => candidate !== entry),
+        );
+      }
+    }
+
+    return dispatchedEvent;
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+}
+
+function createCarouselFixture({ readyState = "complete" } = {}) {
+  const root = new CarouselElement({ "data-product-carousel": "", tabindex: "0" });
+  const slides = Array.from({ length: 4 }, () => new CarouselElement({ "data-carousel-slide": "" }));
+  const previous = new CarouselElement({ "data-carousel-previous": "" });
+  const next = new CarouselElement({ "data-carousel-next": "" });
+  const live = new CarouselElement({ "data-carousel-live": "" });
+
+  root.querySelectorAll = (selector) => (selector === "[data-carousel-slide]" ? slides : []);
+  root.querySelector = (selector) => ({
+    "[data-carousel-previous]": previous,
+    "[data-carousel-next]": next,
+    "[data-carousel-live]": live,
+  }[selector] ?? null);
+
+  const document = new CarouselElement();
+  document.readyState = readyState;
+  document.activeElement = next;
+  document.querySelectorAll = (selector) => (selector === "[data-product-carousel]" ? [root] : []);
+
+  return { document, live, next, previous, root, slides };
+}
+
+function loadCarousel(fixture) {
+  const source = readWebsiteFile("product-carousel.js");
+  const context = vm.createContext({
+    document: fixture.document,
+    globalThis: {},
+    window: {},
+  });
+
+  vm.runInContext(source, context, { filename: "product-carousel.js" });
+}
+
+function assertActiveSlide(fixture, index) {
+  fixture.slides.forEach((slide, slideIndex) => {
+    assert.equal(slide.hidden, slideIndex !== index);
+    assert.equal(slide.classList.contains("is-active"), slideIndex === index);
+    assert.equal(slide.getAttribute("aria-hidden"), String(slideIndex !== index));
+    assert.equal(slide.getAttribute("aria-label"), `第 ${slideIndex + 1} 页，共 4 页`);
+  });
+  assert.equal(fixture.live.textContent, `第 ${index + 1} 页，共 4 页`);
+}
+
+test("carousel controls wrap through slides without stealing the visitor's focus", () => {
+  const fixture = createCarouselFixture();
+  loadCarousel(fixture);
+
+  assertActiveSlide(fixture, 0);
+  fixture.next.dispatch("click");
+  assertActiveSlide(fixture, 1);
+  assert.equal(fixture.document.activeElement, fixture.next);
+
+  fixture.next.dispatch("click");
+  fixture.next.dispatch("click");
+  fixture.next.dispatch("click");
+  assertActiveSlide(fixture, 0);
+
+  fixture.previous.dispatch("click");
+  assertActiveSlide(fixture, 3);
+});
+
+test("carousel handles ArrowLeft and ArrowRight only while its region receives the key event", () => {
+  const fixture = createCarouselFixture();
+  loadCarousel(fixture);
+
+  const right = fixture.root.dispatch("keydown", { key: "ArrowRight" });
+  assert.equal(right.defaultPrevented, true);
+  assertActiveSlide(fixture, 1);
+
+  const left = fixture.root.dispatch("keydown", { key: "ArrowLeft" });
+  assert.equal(left.defaultPrevented, true);
+  assertActiveSlide(fixture, 0);
+
+  const ignored = fixture.root.dispatch("keydown", { key: "ArrowDown" });
+  assert.equal(ignored.defaultPrevented, false);
+  assertActiveSlide(fixture, 0);
+});
+
+test("carousel changes slides for deliberate horizontal touch swipes without forcing motion", () => {
+  const fixture = createCarouselFixture();
+  loadCarousel(fixture);
+
+  fixture.root.dispatch("touchstart", { touches: [{ clientX: 220, clientY: 100 }] });
+  fixture.root.dispatch("touchend", { changedTouches: [{ clientX: 120, clientY: 105 }] });
+  assertActiveSlide(fixture, 1);
+
+  fixture.root.dispatch("touchstart", { touches: [{ clientX: 120, clientY: 120 }] });
+  fixture.root.dispatch("touchend", { changedTouches: [{ clientX: 205, clientY: 125 }] });
+  assertActiveSlide(fixture, 0);
+
+  fixture.root.dispatch("touchstart", { touches: [{ clientX: 150, clientY: 100 }] });
+  fixture.root.dispatch("touchend", { changedTouches: [{ clientX: 160, clientY: 240 }] });
+  assertActiveSlide(fixture, 0);
+});
+
+test("carousel initialization is idempotent when the document finishes loading", () => {
+  const fixture = createCarouselFixture({ readyState: "loading" });
+  loadCarousel(fixture);
+
+  fixture.document.dispatch("DOMContentLoaded");
+  fixture.document.dispatch("DOMContentLoaded");
+  fixture.next.dispatch("click");
+
+  assertActiveSlide(fixture, 1);
 });
