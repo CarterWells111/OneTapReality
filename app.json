@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.onetapreality.app",
+      "bundleIdentifier": "com.onereality.onetapreality",
       "associatedDomains": [
         "applinks:onetapreality.com"
       ],
@@ -82,7 +82,7 @@
         "react-native-nfc-manager",
         {
           "nfcPermission": "Allow OneTapReality to read and write NFC gift cards.",
-          "includeNdefEntitlement": true
+          "includeNdefEntitlement": false
         }
       ]
     ],

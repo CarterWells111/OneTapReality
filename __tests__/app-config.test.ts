@@ -40,7 +40,7 @@ describe("Expo Router production origin", () => {
   it("registers the production gift link for both native platforms", () => {
     const expoConfig = require("../app.json").expo;
 
-    expect(expoConfig.ios.bundleIdentifier).toBe("com.onetapreality.app");
+    expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
     expect(expoConfig.ios.associatedDomains).toContain("applinks:onetapreality.com");
     expect(expoConfig.android.package).toBe("com.onetapreality.app");
     expect(expoConfig.android.intentFilters).toEqual(expect.arrayContaining([
@@ -49,14 +49,14 @@ describe("Expo Router production origin", () => {
     ]));
   });
 
-  it("configures the NFC native module without opting out of the New Architecture", () => {
+  it("configures the NFC native module with the TAG-only iOS entitlement", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(expoConfig.plugins).toContainEqual([
       "react-native-nfc-manager",
       {
         nfcPermission: expect.any(String),
-        includeNdefEntitlement: true,
+        includeNdefEntitlement: false,
       },
     ]);
     expect(expoConfig.newArchEnabled).not.toBe(false);

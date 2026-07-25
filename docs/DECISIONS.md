@@ -312,3 +312,9 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 - `/city/[city]` 采用本地纸本旅行手账式档案布局：城市名、地区、既有宣传语、相册数量与本地插画/线描主视觉；不请求远程图片或新增依赖。
 - 已保存（及兼容的旧版）旅行记忆可在页内作为精选与展开列表浏览，草稿和已丢弃记忆不计入；创建、管理及记忆详情继续复用既有本地路由。
 - 本次仅调整客户端展示和交互，不引入网络服务、登录、支付、分析、真实 NFC 或客户端秘密。
+
+## 2026-07-25：沿用现有 TestFlight 应用标识与 TAG-only NFC entitlement
+
+- App Store Connect 应用 `6794186067` 已固定绑定 `com.onereality.onetapreality`。为保留现有 TestFlight 应用、测试组和历史构建，iOS `bundleIdentifier` 恢复为该值；Android package 继续使用 `com.onetapreality.app`。
+- iOS 26 SDK 不再接受 `com.apple.developer.nfc.readersession.formats` 中的 `NDEF` 值。`react-native-nfc-manager` 配置改为 `includeNdefEntitlement: false`，使原生构建只声明 Apple 当前支持的 `TAG` 值，同时继续通过 Core NFC 读写 NDEF 标签。
+- 生产 AASA 的 `appID` 必须同步为 `YVJ6GJG87B.com.onereality.onetapreality`；Android `assetlinks.json` 不变。
