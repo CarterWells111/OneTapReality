@@ -78,15 +78,15 @@ async function handleExport(format: ExportFormat, pages: StoryPage[], title: str
  *   并让每页内容比纸张小 2pt，规避打印引擎的舍入误差。
  *   这样 App 一页 = PDF 一页，无空白、无跨页。
  */
-const PAGE_WIDTH = 360;
+const PAGE_WIDTH = 480;
 const PAGE_HEIGHT = 480;
 
-// PDF 纸张尺寸（pt = 1/72 inch），与 App 页面同为 3:4
+// PDF 纸张尺寸（pt = 1/72 inch），与 App 页面同为 1:1 正方形
 const PDF_PAGE_W = 612;
-const PDF_PAGE_H = 816;
+const PDF_PAGE_H = 612;
 // 内容盒略小于纸张：避免 "刚好等高" 被打印引擎判为溢出而多出一张空白页
 const CONTENT_H = PDF_PAGE_H - 2;
-const CONTENT_W = Number(((CONTENT_H * PAGE_WIDTH) / PAGE_HEIGHT).toFixed(2));
+const CONTENT_W = PDF_PAGE_W - 2;
 
 async function exportPdf(pages: StoryPage[], title: string) {
   // 1. 逐页截图（有 layout 的页由 CanvasPage 渲染，无 layout 的返回 null）

@@ -10,7 +10,7 @@ import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, isReady, deleteMemory } = useMemories();
+  const { memories, isReady, discardMemory } = useMemories();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -62,7 +62,7 @@ export default function MemoriesHomeScreen() {
           style: "destructive",
           onPress: async () => {
             for (const id of selectedIds) {
-              await deleteMemory(id);
+              await discardMemory(id);
             }
             exitMultiSelect();
           },

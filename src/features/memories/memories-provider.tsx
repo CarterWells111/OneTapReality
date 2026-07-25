@@ -124,7 +124,12 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       }
 
       const pages = await generator.generate(draft);
-      const nextDraft = { ...draft, pages, updatedAt: new Date().toISOString() };
+      // 为页面 id 加命名空间前缀，避免全局主键冲突（与 createMemory 保持一致）
+      const namespacedPages = pages.map((page) => ({
+        ...page,
+        id: `${id}:${page.id}`,
+      }));
+      const nextDraft = { ...draft, pages: namespacedPages, updatedAt: new Date().toISOString() };
       await updateMemoryPages(db, nextDraft);
       return nextDraft;
     },
