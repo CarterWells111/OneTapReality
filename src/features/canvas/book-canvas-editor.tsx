@@ -267,6 +267,7 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
     setContextMenuMode("main");
     setEditingElementId(nextId);
+    setShowEditInput(true);
     setPendingTextId(nextId);
   };
 
@@ -346,6 +347,10 @@ export function BookCanvasEditor({
                   // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
                   if (pendingTextId !== undefined && id !== pendingTextId) {
                     setPendingTextId(undefined);
+                  }
+                  // 选中不同元素时，关闭之前的文字编辑状态
+                  if (editingElementId !== id) {
+                    setShowEditInput(false);
                   }
                   setSelectedElementId(id);
                   // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
