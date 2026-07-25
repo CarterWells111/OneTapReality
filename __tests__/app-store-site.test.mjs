@@ -255,3 +255,17 @@ test("keeps the imported product story local while retaining every source visual
   assert.doesNotMatch(marketing, /data:image\//i);
   assert.doesNotMatch(marketing, /https?:\/\//i);
 });
+
+test("styles the product story as a responsive paper carousel without changing shared pages", () => {
+  const styles = readWebsiteFile("styles.css");
+
+  assert.match(styles, /#product-introduction\s*\{/);
+  assert.match(styles, /#product-carousel\s*\{/);
+  assert.match(styles, /\.product-carousel__slide\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.9fr\)\s+minmax\(0,\s*1\.1fr\)/s);
+  assert.match(styles, /\.product-carousel__slide\.is-active\s*\{/);
+  assert.match(styles, /\.product-carousel__controls button\s*\{/);
+  assert.match(styles, /\.product-image-grid\s*\{[^}]*repeat\(auto-fit,\s*minmax\(/s);
+  assert.match(styles, /\.future-note\s*\{/);
+  assert.match(styles, /@media \(max-width: 760px\)\s*\{[\s\S]*?\.product-carousel__slide\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+});
