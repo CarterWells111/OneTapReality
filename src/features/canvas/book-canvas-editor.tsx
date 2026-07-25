@@ -505,6 +505,11 @@ export function BookCanvasEditor({
       <View style={styles.stickerTray}>
         <View style={styles.assetModeRow}>
           <SmallButton
+            active={false}
+            label="📷 添加照片"
+            onPress={addPhoto}
+          />
+          <SmallButton
             active={assetTrayMode === "sticker"}
             label="贴纸"
             onPress={() => {
@@ -542,11 +547,6 @@ export function BookCanvasEditor({
         {assetTrayMode === "sticker" ? (
           <>
             <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
-              <SmallButton
-                active={false}
-                label="📷 添加照片"
-                onPress={addPhoto}
-              />
               {canvasStickerCategories.map((category) => (
                 <SmallButton
                   active={category.id === stickerCategory}
