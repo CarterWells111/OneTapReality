@@ -3,10 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 import { DeveloperNfcConsole } from "../src/features/gifts/developer-nfc-console";
 import type { NfcUrlWriter } from "../src/services/nfc/nfc-url-writer";
 
-jest.mock("../src/services/gifts/gift-credentials", () => ({
-  loadGiftSession: jest.fn(),
-  saveGiftSession: jest.fn(),
-}));
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
+
+jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: jest.fn() }));
 
 jest.mock("../src/services/gifts/gift-card-pending", () => ({
   loadPendingGiftCard: jest.fn(),
@@ -14,10 +13,7 @@ jest.mock("../src/services/gifts/gift-card-pending", () => ({
   clearPendingGiftCard: jest.fn(),
 }));
 
-const { loadGiftSession, saveGiftSession } = jest.requireMock("../src/services/gifts/gift-credentials") as {
-  loadGiftSession: jest.Mock;
-  saveGiftSession: jest.Mock;
-};
+const { useAuth } = jest.requireMock("../src/features/auth/auth-provider") as { useAuth: jest.Mock };
 const { loadPendingGiftCard, savePendingGiftCard, clearPendingGiftCard } = jest.requireMock("../src/services/gifts/gift-card-pending") as {
   loadPendingGiftCard: jest.Mock;
   savePendingGiftCard: jest.Mock;
@@ -31,8 +27,6 @@ const activeCard = {
 
 function createClient() {
   return {
-    requestGiftEmailCode: jest.fn().mockResolvedValue({ email: "dev@example.com" }),
-    verifyGiftEmailCode: jest.fn().mockResolvedValue({ email: "dev@example.com", accessToken: "session" }),
     listAdminGiftCards: jest.fn().mockResolvedValue([activeCard]),
     getAdminGiftCard: jest.fn().mockResolvedValue({ card: activeCard, events: [{ id: "event-1", kind: "activated", actorEmail: "dev@example.com", metadata: null, createdAt: activeCard.activatedAt }]}),
     reserveGiftCard: jest.fn().mockResolvedValue({ cardId: "card-2", cardCode: "CARD-002", giftUrl: "https://onetapreality.com/gift/unique-token", expiresAt: "2026-07-24T00:15:00.000Z" }),
@@ -44,7 +38,7 @@ function createClient() {
 describe("developer NFC console", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    loadGiftSession.mockResolvedValue({ email: "dev@example.com", accessToken: "session" });
+    useAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "session", user: { id: "user-1", email: "dev@example.com", isAdmin: true } } });
     loadPendingGiftCard.mockResolvedValue(null);
   });
 

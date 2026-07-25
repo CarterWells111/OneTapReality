@@ -133,55 +133,46 @@ describe("CanvasPage", () => {
 describe("CanvasToolbar", () => {
   const selected: CanvasTextElement = layout.elements[1] as CanvasTextElement;
 
-  it("emits practical element actions through callbacks", async () => {
-    const onAddText = jest.fn();
-    const onAddSticker = jest.fn();
-    const onAddFrame = jest.fn();
-    const onPickBackground = jest.fn();
+  it("emits selected-element actions through callbacks", async () => {
     const onStyle = jest.fn();
     const onLayer = jest.fn();
     const onDuplicate = jest.fn();
     const onDelete = jest.fn();
-    const onDone = jest.fn();
+    const onFont = jest.fn();
+    const onSize = jest.fn();
+    const onColor = jest.fn();
     const screen = await render(
       <CanvasToolbar
         selectedElement={selected}
-        onAddText={onAddText}
-        onAddSticker={onAddSticker}
-        onAddFrame={onAddFrame}
-        onPickBackground={onPickBackground}
+        onAddText={jest.fn()}
+        onAddSticker={jest.fn()}
+        onAddFrame={jest.fn()}
+        onPickBackground={jest.fn()}
         onUpdateElement={onStyle}
         onChangeLayer={onLayer}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
-        onDone={onDone}
+        onFont={onFont}
+        onSize={onSize}
+        onColor={onColor}
       />,
     );
 
-    await fireEvent.press(screen.getByText("添加文字"));
-    await fireEvent.press(screen.getByText("添加贴纸"));
-    await fireEvent.press(screen.getByText("添加相框"));
-    await fireEvent.press(screen.getByText("选择背景"));
-    await fireEvent.press(screen.getByText("18"));
-    await fireEvent.press(screen.getByText("朝华打字机"));
-    await fireEvent.press(screen.getByText("深绿"));
+    await fireEvent.press(screen.getByText("字体"));
+    await fireEvent.press(screen.getByText("字号"));
+    await fireEvent.press(screen.getByText("颜色"));
     await fireEvent.press(screen.getByText("前移"));
     await fireEvent.press(screen.getByText("后移"));
     await fireEvent.press(screen.getByText("复制"));
     await fireEvent.press(screen.getByText("删除"));
-    await fireEvent.press(screen.getByText("完成"));
 
-    expect(onAddText).toHaveBeenCalledTimes(1);
-    expect(onAddSticker).toHaveBeenCalledTimes(1);
-    expect(onAddFrame).toHaveBeenCalledTimes(1);
-    expect(onPickBackground).toHaveBeenCalledTimes(1);
-    expect(onStyle).toHaveBeenCalledWith("caption-1", { fontSize: 18 });
-    expect(onStyle).toHaveBeenCalledWith("caption-1", { fontStyle: "ZhaohuaTypeWriter" });
-    expect(onStyle).toHaveBeenCalledWith("caption-1", { color: "#1C5A4C" });
+    expect(onFont).toHaveBeenCalledTimes(1);
+    expect(onSize).toHaveBeenCalledTimes(1);
+    expect(onColor).toHaveBeenCalledTimes(1);
+    expect(onStyle).not.toHaveBeenCalled();
     expect(onLayer).toHaveBeenNthCalledWith(1, "caption-1", "forward");
     expect(onLayer).toHaveBeenNthCalledWith(2, "caption-1", "backward");
     expect(onDuplicate).toHaveBeenCalledWith("caption-1");
     expect(onDelete).toHaveBeenCalledWith("caption-1");
-    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });

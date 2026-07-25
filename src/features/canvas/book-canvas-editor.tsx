@@ -76,7 +76,7 @@ export function BookCanvasEditor({
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
-  const [contextMenuMode, setContextMenuMode] = React.useState<"font" | "size" | "color">("font"); // 上下文菜单初始面板
+  const [contextMenuMode, setContextMenuMode] = React.useState<"main" | "font" | "size" | "color">("main"); // 上下文菜单初始面板
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
@@ -245,6 +245,8 @@ export function BookCanvasEditor({
     const nextId = buildCanvasId("text");
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
+    setContextMenuMode("main");
+    setEditingElementId(nextId);
     setPendingTextId(nextId);
   };
 
@@ -319,10 +321,11 @@ export function BookCanvasEditor({
                   setEditingElementId(undefined);
                 }}
                 onSelectElement={(id) => {
-                  // 双击选中
+                  // 双击选中。文字元素会立即打开编辑器；否则用户需要再双击一次才
+                  // 能编辑，既不符合提示文案，也会让键盘操作多出不必要的步骤。
                   setSelectedElementId(id);
-                  // 如果已选中同一个元素，再次点击进入编辑模式
-                  if (selectedElementId === id && currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                  if (currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                    setContextMenuMode("main");
                     setEditingElementId(id);
                   }
                 }}

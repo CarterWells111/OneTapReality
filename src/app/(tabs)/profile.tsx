@@ -16,6 +16,7 @@ type ListEntry = {
 };
 
 const listEntries: ListEntry[] = [
+  { key: "nfc-gifts", title: "我的纪念品", href: "/gifts" },
   { key: "orders", title: "我的订单", href: "/shop/orders" },
   { key: "favorites", title: "我的收藏", href: "/shop/favorites" },
   { key: "cities", title: "去过的城市", href: "/cities" },
@@ -52,7 +53,7 @@ export default function ProfileScreen() {
       <ScreenTitle title="我的" caption="MY ARCHIVE" />
 
       <Pressable
-        accessibilityLabel="编辑个人资料"
+        accessibilityLabel="打开设置"
         accessibilityRole="button"
         onPress={() => router.push("/settings")}
         style={({ pressed }) => [pressed && styles.pressed]}

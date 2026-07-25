@@ -1,4 +1,5 @@
-jest.mock("../src/server/gifts/repository", () => ({ consumeGiftEmailCode: jest.fn(async () => true), createGiftSession: jest.fn(async () => undefined) }));
+jest.mock("../src/server/gifts/email-auth", () => ({ normalizeGiftEmail: jest.fn((email: string) => email.trim().toLowerCase()) }));
+jest.mock("../src/server/auth/repository", () => ({ consumeAuthEmailCode: jest.fn(async () => true), createAuthSession: jest.fn(async () => undefined), createOrGetUserByEmail: jest.fn(async () => ({ id: "user-1", email: "owner@example.com" })) }));
 jest.mock("../src/server/auth/device-auth", () => ({ createAccessToken: jest.fn(() => "session-token"), hashAccessToken: jest.fn(async () => "session-hash") }));
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 
@@ -9,7 +10,7 @@ describe("gift email verification API", () => {
     process.env.GIFT_AUTH_PEPPER = "pepper";
     const response = await POST(new Request("http://localhost/api/gift-auth/verify", { method: "POST", body: JSON.stringify({ email: "owner@example.com", code: "123456" }) }));
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ accessToken: "session-token", email: "owner@example.com" });
+    expect(await response.json()).toEqual({ accessToken: "session-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } });
     delete process.env.GIFT_AUTH_PEPPER;
   });
 });
