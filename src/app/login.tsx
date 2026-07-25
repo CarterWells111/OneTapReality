@@ -13,20 +13,28 @@ function safeReturnTo(value: string | string[] | undefined): string {
 export default function LoginScreen() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
-  const { requestCode, verifyCode } = useAuth();
-  const [email, setEmail] = React.useState("");
+  const { isAuthReady, rememberedEmail, requestCode, verifyCode } = useAuth();
+  const [email, setEmail] = React.useState(rememberedEmail ?? "");
   const [code, setCode] = React.useState("");
   const [sent, setSent] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
+  React.useEffect(() => {
+    if (rememberedEmail) {
+      setEmail((current) => current || rememberedEmail);
+    }
+  }, [rememberedEmail]);
+
   const send = async () => {
+    if (!isAuthReady) return;
     if (!email.trim()) { setMessage("请输入邮箱地址。"); return; }
     try { setBusy(true); setMessage(""); const result = await requestCode(email); setEmail(result.email); setSent(true); setMessage("验证码已发送，请查收邮箱。"); }
     catch (error) { setMessage(error instanceof Error ? error.message : "暂时无法发送验证码，请稍后重试。"); }
     finally { setBusy(false); }
   };
   const verify = async () => {
+    if (!isAuthReady) return;
     if (!code.trim() || code.trim().length !== 6) { setMessage("请输入 6 位验证码。"); return; }
     try { setBusy(true); setMessage(""); await verifyCode(email, code); router.replace(safeReturnTo(returnTo) as never); }
     catch (error) { setMessage(error instanceof Error ? error.message : "验证码无效或已过期。"); }
@@ -72,11 +80,15 @@ export default function LoginScreen() {
                 value={code}
               />
             </View>
-            <AppButton disabled={busy} label="验证并登录" onPress={() => void verify()} />
-            <AppButton disabled={busy} label="重新发送验证码" tone="secondary" onPress={() => void send()} />
+            <AppButton disabled={busy || !isAuthReady} label="验证并登录" onPress={() => void verify()} />
+            <AppButton disabled={busy || !isAuthReady} label="重新发送验证码" tone="secondary" onPress={() => void send()} />
           </>
         ) : (
-          <AppButton disabled={busy} label="发送验证码" onPress={() => void send()} />
+          <AppButton
+            disabled={busy || !isAuthReady}
+            label={isAuthReady ? "发送验证码" : "正在读取账户…"}
+            onPress={() => void send()}
+          />
         )}
       </View>
     </View>

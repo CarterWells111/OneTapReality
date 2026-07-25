@@ -1,12 +1,17 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
+import { Alert } from "react-native";
 
 const mockPush = jest.fn();
 const mockIsReady = jest.fn();
 const mockMemories = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockProfile = jest.fn();
+const mockUseAuth = jest.fn();
+const mockSignOut = jest.fn();
+const mockSwitchAccount = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
+jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: mockMemories(), isReady: mockIsReady() }),
 }));
@@ -34,6 +39,14 @@ describe("ProfileScreen", () => {
     mockIsReady.mockReturnValue(true);
     mockIsProfileReady.mockReturnValue(true);
     mockProfile.mockReturnValue({ nickname: "小林", avatarUri: null });
+    mockSignOut.mockResolvedValue(undefined);
+    mockSwitchAccount.mockResolvedValue(undefined);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      user: null,
+      signOut: mockSignOut,
+      switchAccount: mockSwitchAccount,
+    });
   });
 
   it("shows the simplified profile card with the brand slogan as the default bio", async () => {
@@ -91,5 +104,77 @@ describe("ProfileScreen", () => {
 
     expect(screen.getByText("正在读取记忆…")).toBeTruthy();
     expect(screen.queryByText("我的订单")).toBeNull();
+  });
+
+  it("shows a login card when there is no account session", () => {
+    mockMemories.mockReturnValue([]);
+    const screen = render(<ProfileScreen />);
+
+    fireEvent.press(screen.getByText("登录 / 注册"));
+    expect(mockPush).toHaveBeenCalledWith("/login?returnTo=/(tabs)/profile");
+  });
+
+  it("shows the account identity and administrator badge", () => {
+    mockMemories.mockReturnValue([]);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      user: { id: "user-1", email: "owner@example.com", isAdmin: true },
+      signOut: mockSignOut,
+      switchAccount: mockSwitchAccount,
+    });
+    const screen = render(<ProfileScreen />);
+
+    expect(screen.getByText("owner@example.com")).toBeTruthy();
+    expect(screen.getByText("开发者管理员")).toBeTruthy();
+  });
+
+  it("switches account by clearing the session before opening login", async () => {
+    mockMemories.mockReturnValue([]);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      user: { id: "user-1", email: "owner@example.com", isAdmin: false },
+      signOut: mockSignOut,
+      switchAccount: mockSwitchAccount,
+    });
+    const screen = render(<ProfileScreen />);
+
+    await act(async () => fireEvent.press(screen.getByText("切换账号")));
+
+    expect(mockSwitchAccount).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith("/login?returnTo=/(tabs)/profile");
+  });
+
+  it("requires confirmation before signing out", async () => {
+    mockMemories.mockReturnValue([]);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      user: { id: "user-1", email: "owner@example.com", isAdmin: false },
+      signOut: mockSignOut,
+      switchAccount: mockSwitchAccount,
+    });
+    const alert = jest.spyOn(Alert, "alert");
+    const screen = render(<ProfileScreen />);
+
+    fireEvent.press(screen.getByText("退出登录"));
+    const confirm = alert.mock.calls[0][2]?.find((button) => button.style === "destructive");
+    await act(async () => confirm?.onPress?.());
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  it("keeps local profile content available while account hydration is pending", () => {
+    mockMemories.mockReturnValue([]);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: false,
+      user: null,
+      signOut: mockSignOut,
+      switchAccount: mockSwitchAccount,
+    });
+    const screen = render(<ProfileScreen />);
+
+    expect(screen.getByText("小林")).toBeTruthy();
+    expect(screen.getByLabelText("打开设置")).toBeTruthy();
+    expect(screen.getByText("正在读取账户…")).toBeTruthy();
   });
 });

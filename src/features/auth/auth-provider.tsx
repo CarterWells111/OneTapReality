@@ -1,15 +1,25 @@
 import * as React from "react";
 
 import { BackendApiClient, type AuthenticatedAccountSession, type AuthenticatedAccountUser } from "../../services/backend/api-client";
-import { clearAuthSession, loadAuthSession, saveAuthSession } from "./auth-storage";
+import {
+  clearAuthSession,
+  clearRememberedEmail,
+  loadAuthSession,
+  loadRememberedEmail,
+  saveAuthSession,
+  saveRememberedEmail,
+} from "./auth-storage";
 
 type AuthContextValue = {
   isAuthReady: boolean;
   session: AuthenticatedAccountSession | null;
   user: AuthenticatedAccountUser | null;
+  rememberedEmail: string | null;
   requestCode: (email: string) => Promise<{ email: string }>;
   verifyCode: (email: string, code: string) => Promise<AuthenticatedAccountSession>;
   signOut: () => Promise<void>;
+  switchAccount: () => Promise<void>;
+  forgetRememberedEmail: () => Promise<void>;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -17,37 +27,84 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [session, setSession] = React.useState<AuthenticatedAccountSession | null>(null);
+  const [rememberedEmail, setRememberedEmail] = React.useState<string | null>(null);
   const [isAuthReady, setAuthReady] = React.useState(false);
+  const operationGeneration = React.useRef(0);
 
   React.useEffect(() => {
     let active = true;
-    void loadAuthSession().then(async (saved) => {
-      if (!saved) return;
+    const generation = operationGeneration.current;
+    void Promise.all([
+      loadRememberedEmail().catch(() => null),
+      loadAuthSession().catch(() => null),
+    ]).then(async ([savedEmail, savedSession]) => {
+      if (!active || generation !== operationGeneration.current) return;
+      setRememberedEmail(savedEmail);
+      if (!savedSession) return;
       try {
-        const user = await client.getCurrentAuthUser(saved.accessToken);
-        const refreshed = { accessToken: saved.accessToken, user };
-        await saveAuthSession(refreshed);
-        if (active) setSession(refreshed);
-      } catch { await clearAuthSession(); }
-    }).finally(() => { if (active) setAuthReady(true); });
+        const user = await client.getCurrentAuthUser(savedSession.accessToken);
+        const refreshed = { accessToken: savedSession.accessToken, user };
+        if (active && generation === operationGeneration.current) {
+          setSession(refreshed);
+        }
+      } catch (error) {
+        if (!active || generation !== operationGeneration.current) return;
+        const status =
+          typeof error === "object" && error !== null && "status" in error
+            ? Number(error.status)
+            : undefined;
+        if (status === 401 || status === 403) {
+          await clearAuthSession().catch(() => undefined);
+        } else {
+          setSession(savedSession);
+        }
+      }
+    }).finally(() => {
+      if (active) setAuthReady(true);
+    });
     return () => { active = false; };
   }, [client]);
 
   const requestCode = React.useCallback((email: string) => client.requestAuthEmailCode(email), [client]);
   const verifyCode = React.useCallback(async (email: string, code: string) => {
+    operationGeneration.current += 1;
     const verified = await client.verifyAuthEmailCode(email, code);
     await saveAuthSession(verified);
     setSession(verified);
+    await saveRememberedEmail(verified.user.email)
+      .then(() => setRememberedEmail(verified.user.email))
+      .catch(() => undefined);
     return verified;
   }, [client]);
   const signOut = React.useCallback(async () => {
     const token = session?.accessToken;
-    setSession(null);
+    operationGeneration.current += 1;
     await clearAuthSession();
+    setSession(null);
     if (token) await client.logoutAuthSession(token).catch(() => undefined);
   }, [client, session?.accessToken]);
+  const forgetRememberedEmail = React.useCallback(async () => {
+    await clearRememberedEmail();
+    setRememberedEmail(null);
+  }, []);
 
-  return <AuthContext.Provider value={{ isAuthReady, session, user: session?.user ?? null, requestCode, verifyCode, signOut }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        forgetRememberedEmail,
+        isAuthReady,
+        rememberedEmail,
+        requestCode,
+        session,
+        signOut,
+        switchAccount: signOut,
+        user: session?.user ?? null,
+        verifyCode,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {

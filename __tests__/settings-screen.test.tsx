@@ -6,8 +6,10 @@ const mockLaunchImageLibrary = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockProfile = jest.fn();
 const mockIsProfileReady = jest.fn();
+const mockForgetRememberedEmail = jest.fn();
+const mockUseAuth = jest.fn();
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack }) }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
 jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: (...args: unknown[]) => mockRequestPermission(...args),
   launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
@@ -18,6 +20,9 @@ jest.mock("../src/features/profile/profile-provider", () => ({
     isProfileReady: mockIsProfileReady(),
     updateProfile: mockUpdateProfile,
   }),
+}));
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: () => mockUseAuth(),
 }));
 
 import SettingsScreen from "../src/app/settings";
@@ -31,6 +36,12 @@ describe("SettingsScreen", () => {
     mockUpdateProfile.mockResolvedValue(undefined);
     mockRequestPermission.mockResolvedValue({ granted: true });
     mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: null });
+    mockForgetRememberedEmail.mockResolvedValue(undefined);
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      rememberedEmail: "owner@example.com",
+      forgetRememberedEmail: mockForgetRememberedEmail,
+    });
   });
 
   it("requests photo permission when tapping the avatar", async () => {
@@ -165,5 +176,15 @@ describe("SettingsScreen", () => {
 
     await waitFor(() => expect(screen.getByText("保存资料失败，请重试。")).toBeTruthy());
     expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("clears the remembered email without changing the local profile", async () => {
+    const screen = render(<SettingsScreen />);
+
+    expect(screen.getByText("owner@example.com")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByText("清除已记住邮箱")));
+
+    expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
   });
 });
