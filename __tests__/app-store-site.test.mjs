@@ -56,6 +56,41 @@ test("builds the static website into the server worker for reliable hosting", ()
   assert.match(buildScript, /ConvertTo-Json -InputObject \(\[System\.IO\.File\]::ReadAllText/);
 });
 
+test("bundles the carousel script and local product images into worker-served static routes", async () => {
+  const outputDirectory = mkdtempSync(join(tmpdir(), "onetapreality-static-site-"));
+  const buildScript = join(websiteRoot, "scripts", "build-static-site.ps1");
+  const build = spawnSync(
+    "powershell",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", buildScript, "-OutputDirectory", outputDirectory],
+    { encoding: "utf8" },
+  );
+
+  try {
+    assert.equal(build.status, 0, build.stderr);
+
+    const generatedWorker = join(outputDirectory, "server", "index.js");
+    const importableWorker = join(outputDirectory, "server", "index.mjs");
+    writeFileSync(importableWorker, readFileSync(generatedWorker, "utf8"));
+    const { default: worker } = await import(`${pathToFileURL(importableWorker).href}?${Date.now()}`);
+
+    const scriptResponse = await worker.fetch(new Request("https://onetapreality.com/product-carousel.js"));
+    assert.equal(scriptResponse.status, 200);
+    assert.match(scriptResponse.headers.get("content-type"), /^application\/javascript/);
+    assert.match(await scriptResponse.text(), /data-product-carousel/);
+
+    const imageResponse = await worker.fetch(new Request("https://onetapreality.com/assets/product-introduction/brand-logo.png"));
+    assert.equal(imageResponse.status, 200);
+    assert.match(imageResponse.headers.get("content-type"), /^image\/png/);
+    assert.ok((await imageResponse.arrayBuffer()).byteLength > 0);
+
+    const supportResponse = await worker.fetch(new Request("https://onetapreality.com/support/"));
+    assert.equal(supportResponse.status, 200);
+    assert.match(await supportResponse.text(), /support@onetapreality\.com/);
+  } finally {
+    rmSync(outputDirectory, { recursive: true, force: true });
+  }
+});
+
 test("serves Android Digital Asset Links for the production package", () => {
   const assetLinks = JSON.parse(readWebsiteFile(".well-known/assetlinks.json"));
   assert.deepEqual(assetLinks, [{

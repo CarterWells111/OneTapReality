@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appID": "YVJ6GJG87B.com.onereality.onetapreality",
+        "paths": ["/gift/*", "/activate"]
+      }
+    ]
+  }
+}
