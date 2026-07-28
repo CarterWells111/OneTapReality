@@ -29,8 +29,11 @@ test("provides the marketing, support, and privacy routes Apple requires", () =>
   assert.match(marketing, /href="privacy\/"/);
   assert.match(support, /support@onetapreality\.com/);
   assert.match(support, /App 版本号/);
-  assert.match(privacy, /照片不会上传或共享/);
-  assert.match(privacy, /当前版本不进行真实 NFC 读写/);
+  assert.match(privacy, /登录并明确发布 NFC 礼品/);
+  assert.match(privacy, /私有 R2/);
+  assert.match(privacy, /本地“删除所有数据”只删除设备本地内容/);
+  assert.match(support, /主动发布 NFC 礼品/);
+  assert.match(support, /停用礼品/);
 });
 
 test("does not market unavailable payments or cloud sync as current features", () => {
@@ -108,17 +111,31 @@ test("serves Android Digital Asset Links for the production package", () => {
   assert.match(buildScript, /__ANDROID_ASSET_LINKS__/);
 });
 
-test("uses release-ready public wording without pre-launch or purchase calls to action", () => {
+test("serves the matching iOS universal-link association for gift and activation routes", () => {
+  const association = JSON.parse(readWebsiteFile(".well-known/apple-app-site-association"));
+
+  assert.deepEqual(association, {
+    applinks: {
+      details: [{
+        appID: "YVJ6GJG87B.com.onereality.onetapreality",
+        paths: ["/gift/*", "/activate"],
+      }],
+    },
+  });
+});
+
+test("uses release-ready public wording without false local-only claims or purchase calls to action", () => {
   const content = [readWebsiteFile("index.html"), readWebsiteFile("support/index.html"), readWebsiteFile("privacy/index.html")].join("\n");
 
-  for (const term of ["本地", "本机", "内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟"]) {
+  for (const term of ["内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟"]) {
     assert.doesNotMatch(content, new RegExp(term, "i"));
   }
 
   assert.doesNotMatch(content, /(?:立即|现在|马上|前往).{0,8}(?:购买|订购|支付)/i);
-
-  assert.match(content, /你的设备/);
-  assert.match(content, /照片不会上传或共享/);
+  assert.doesNotMatch(content, /没有账号系统/);
+  assert.doesNotMatch(content, /不进行真实 NFC 读写/);
+  assert.doesNotMatch(content, /照片不会上传或共享/);
+  assert.match(content, /默认只保存在你的设备/);
 });
 
 test("uses restrained homepage motion and honors reduced-motion preferences", () => {
