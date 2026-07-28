@@ -1,15 +1,17 @@
+import * as FileSystem from "expo-file-system/legacy";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+
 import type { StoryPage } from "../../types/memory";
 
 /**
  * 导出服务：将手账页面导出为图片、PDF 或自定义 .tralbum 格式。
  *
- * PDF/分享/相册功能需要安装对应的 Expo 可选包：
+ * PDF/分享功能使用项目直接依赖：
  * - expo-print
  * - expo-sharing
  * - expo-file-system
- * - expo-media-library
- *
- * 如未安装，调用对应函数时会抛出友好错误。
+ * 保存到系统相册仍为可选能力。
  */
 
 export type ExportFormat = "png" | "pdf" | "tralbum";
@@ -60,12 +62,10 @@ export async function mergeImagesToPdf(
 </html>`;
 
   try {
-    const expoPrint = require("expo-print");
-    const result = await expoPrint.printToFileAsync({ html, base64: false });
+    const result = await Print.printToFileAsync({ html, base64: false });
 
     if (outputPath) {
-      const expoFs = require("expo-file-system");
-      await expoFs.moveAsync({ from: result.uri, to: outputPath });
+      await FileSystem.moveAsync({ from: result.uri, to: outputPath });
       return outputPath;
     }
 
@@ -80,12 +80,11 @@ export async function mergeImagesToPdf(
  */
 export async function shareFile(uri: string, mimeType?: string) {
   try {
-    const expoSharing = require("expo-sharing");
-    const isAvailable = await expoSharing.isAvailableAsync();
+    const isAvailable = await Sharing.isAvailableAsync();
     if (!isAvailable) {
       throw new Error("当前设备不支持分享");
     }
-    await expoSharing.shareAsync(uri, {
+    await Sharing.shareAsync(uri, {
       mimeType: mimeType ?? "application/octet-stream",
       dialogTitle: "分享旅行手账",
     });
@@ -100,6 +99,7 @@ export async function shareFile(uri: string, mimeType?: string) {
  */
 export async function saveImageToGallery(uri: string): Promise<void> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- this optional native package is intentionally unavailable in the base build.
     const expoMedia = require("expo-media-library");
     const { status } = await expoMedia.requestPermissionsAsync();
     if (status !== "granted") {

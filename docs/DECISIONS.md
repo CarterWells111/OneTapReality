@@ -1,5 +1,15 @@
 # 决策记录
 
+## 2026-07-28：Alpha 质量门禁、分层披露与独立 staging
+
+Alpha 版本保留“本地优先旅行册”作为默认行为：本地旅行册不会自动上传，旅行册生成器不读取图像内容。只有用户完成邮箱验证并明确发布 NFC 礼品时，服务端才会保存该礼品的访问邮箱、会话、共享快照和私有 R2 媒体；礼品管理者可停用礼品并删除共享内容。
+
+- `staging.onetapreality.com` 与独立 Railway PostgreSQL、私有 R2 bucket、服务端 secrets 和管理员测试邮箱共同构成 Alpha 隔离环境。测试卡只能写入 staging gift URL，正式卡继续使用 `onetapreality.com`。
+- `ALPHA_ALLOWED_EMAILS` 仅在 staging 配置时限制邀请码邮箱；`GIFT_SHARING_ENABLED=false` 会暂停新的验证码、礼品读取、认领和发布，但保留管理员停用礼品能力用于 P0 处置。
+- 礼品 URL 统一从服务端 `GIFT_URL_ORIGIN` 生成，禁止在 API 或写卡流程中硬编码正式域名。iOS Universal Links 和 Android App Links 同时登记正式与 staging 域。
+- P0 事件按“立即停测”处置：关闭分享开关、暂停发卡/邀请、移除测试者、停用受影响礼品、保留脱敏证据，修复和回归后由发布负责人恢复。
+- Railway、R2、Resend、EAS、数据库和 DNS 的写入权限只属于发布负责人；其他协作者通过 PR、测试和运行手册协作，不接触生产秘密。
+
 ## 2026-07-24：编辑器工具栏布局重组
 
 本轮仅调整编辑页 UI 布局，不改数据逻辑、路由、交互行为、依赖或数据库 schema：

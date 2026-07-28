@@ -129,6 +129,20 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
 
     const page = t.pages[t.index];
 
+    const advance = () => {
+      const nextIndex = t.index + 1;
+      if (nextIndex >= t.pages.length) {
+        const finalResults = [...t.results];
+        t.resolve(finalResults);
+        busy.current = false;
+        task.current = null;
+        setProgress(null);
+      } else {
+        t.index = nextIndex;
+        setProgress({ current: nextIndex, total: t.pages.length });
+      }
+    };
+
     // 无 layout 的页面：不截图，直接跳到下一页
     if (!page?.layout) {
       t.results[t.index] = null;
@@ -168,21 +182,6 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
 
       if (!cancelled) {
         advance();
-      }
-    };
-
-    const advance = () => {
-      const nextIndex = t.index + 1;
-      if (nextIndex >= t.pages.length) {
-        // 全部完成
-        const finalResults = [...t.results];
-        t.resolve(finalResults);
-        busy.current = false;
-        task.current = null;
-        setProgress(null);
-      } else {
-        t.index = nextIndex;
-        setProgress({ current: nextIndex, total: t.pages.length });
       }
     };
 

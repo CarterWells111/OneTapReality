@@ -18,18 +18,18 @@ export default function PrivacyScreen() {
       <View style={styles.hero}>
         <Text selectable style={styles.eyebrow}>隐私优先</Text>
         <Text selectable style={styles.title}>数据与隐私声明</Text>
-        <Text selectable style={styles.helper}>不使用账户或自动云同步，你的数据始终由你掌控。</Text>
+        <Text selectable style={styles.helper}>本地旅行册默认留在设备；发布 NFC 礼品前会明确说明共享范围。</Text>
       </View>
 
       <Section title="数据存储说明">
-        <PrivacyCard title="SQLite 存储">
-          旅行信息、照片 URI 和旅行册内容保存在设备 SQLite 中；照片不会上传或共享。
+        <PrivacyCard title="本地旅行册">
+          本地旅行册默认保存在设备 SQLite 中；旅行信息、照片 URI 和版式不会自动上传。
         </PrivacyCard>
       </Section>
 
-      <Section title="可选后端连接">
-        <PrivacyCard title="只在主动点击时请求">
-          后端页只检查服务健康状态和能力，不上传旅行信息、照片 URI、照片二进制或文件路径。断网不影响旅行册的使用。
+      <Section title="账户与 NFC 礼品共享">
+        <PrivacyCard title="只在明确发布时上传">
+          你可以使用邮箱验证码登录。只有明确发布 NFC 礼品时，礼品访问邮箱、共享快照和所选照片才会上传到私有云端存储，供已授权的礼品成员查看。
         </PrivacyCard>
       </Section>
 
@@ -39,9 +39,9 @@ export default function PrivacyScreen() {
         </PrivacyCard>
       </Section>
 
-      <Section title="NFC 体验">
-        <PrivacyCard title="当前状态">
-          当前通过按钮读取城市钥匙，体验城市收藏功能。
+      <Section title="礼品停用与删除">
+        <PrivacyCard title="本地与共享数据分开管理">
+          本地删除不会停用已发布的礼品。礼品管理者可在礼品管理页面停用礼品；停用会删除该礼品的共享快照和媒体。
         </PrivacyCard>
       </Section>
 

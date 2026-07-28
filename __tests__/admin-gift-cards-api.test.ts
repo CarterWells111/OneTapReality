@@ -32,6 +32,7 @@ describe("admin gift card APIs", () => {
   });
 
   it("creates a fifteen-minute private reservation and returns only card activation data", async () => {
+    process.env.GIFT_URL_ORIGIN = "https://staging.onetapreality.com/";
     const response = await createCard(new Request("http://localhost/api/admin/gift-cards", {
       method: "POST",
       headers: { Authorization: "Bearer session", "Content-Type": "application/json" },
@@ -43,7 +44,7 @@ describe("admin gift card APIs", () => {
     expect(payload).toEqual({
       cardId: expect.any(String),
       cardCode: expect.stringMatching(/^CARD-[A-F0-9]{24}$/u),
-      giftUrl: expect.stringMatching(/^https:\/\/onetapreality\.com\/gift\/[A-Za-z0-9_-]{43}$/u),
+      giftUrl: expect.stringMatching(/^https:\/\/staging\.onetapreality\.com\/gift\/[A-Za-z0-9_-]{43}$/u),
       expiresAt: expect.any(String),
     });
     expect(createInitializingGiftCard).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -54,6 +55,7 @@ describe("admin gift card APIs", () => {
       adminEmail: "developer@example.com",
       expiresAt: payload.expiresAt,
     }));
+    delete process.env.GIFT_URL_ORIGIN;
   });
 
   it("does not reveal card inventory to a verified non-administrator", async () => {

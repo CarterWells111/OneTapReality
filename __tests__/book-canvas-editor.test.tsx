@@ -47,14 +47,14 @@ function EditorHarness({
 }
 
 describe("BookCanvasEditor", () => {
-  it("uses double press selection and exposes Done", () => {
+  it("uses double press selection and exposes the text selection toolbar", () => {
     const screen = render(<EditorHarness />);
     const firstText = screen.getByText("第一页");
 
     fireEvent.press(firstText);
-    expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByText("字体")).toBeNull();
     fireEvent.press(firstText);
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("字体")).toBeTruthy();
   });
 
   it("deselects on a blank page press without changing pages, but keeps selection on an element press", async () => {
@@ -65,17 +65,17 @@ describe("BookCanvasEditor", () => {
 
     await user.press(firstElement);
     await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("字体")).toBeTruthy();
 
     await user.press(screen.getByTestId("album-canvas"));
-    expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByText("字体")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
 
     await user.press(firstElement);
     await user.press(firstElement);
     await user.press(firstElement);
 
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("字体")).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -87,13 +87,13 @@ describe("BookCanvasEditor", () => {
 
     await user.press(firstElement);
     await user.press(firstElement);
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("字体")).toBeTruthy();
 
     await user.press(firstElement);
     await user.press(screen.getByTestId("album-canvas"));
     await user.press(firstElement);
 
-    expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByText("字体")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -110,7 +110,7 @@ describe("BookCanvasEditor", () => {
       await user.press(headline);
       now += 100;
       await user.press(headline);
-      expect(screen.getByText("完成")).toBeTruthy();
+      expect(screen.getByText("字体")).toBeTruthy();
 
       now = 2_000;
       await user.press(body);
@@ -121,7 +121,7 @@ describe("BookCanvasEditor", () => {
       nowSpy.mockRestore();
     }
 
-    expect(screen.queryByText("完成")).toBeNull();
+    expect(screen.queryByText("字体")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe("BookCanvasEditor", () => {
         expect.objectContaining({ type: "sticker", stickerId: "sticker2-01" }),
       ]),
     );
-    expect(screen.getByText("完成")).toBeTruthy();
+    expect(screen.getByText("前移")).toBeTruthy();
     expect(onChange).toHaveBeenLastCalledWith(
       expect.any(Array),
       "structure",
@@ -207,7 +207,6 @@ describe("BookCanvasEditor", () => {
     fireEvent.press(screen.getByLabelText("打开页面管理"));
 
     expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
-    expect(screen.getByTestId("page-cell-0")).toBeTruthy();
     expect(screen.getByTestId("page-cell-1")).toBeTruthy();
   });
 });

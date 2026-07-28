@@ -19,6 +19,7 @@ import { POST as verify } from "../src/app/api/auth/verify+api";
 
 describe("unified account authentication APIs", () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     process.env.GIFT_AUTH_PEPPER = "pepper";
     process.env.RESEND_API_KEY = "resend";
     process.env.GIFT_EMAIL_FROM = "support@onetapreality.com";
@@ -30,6 +31,7 @@ describe("unified account authentication APIs", () => {
     delete process.env.RESEND_API_KEY;
     delete process.env.GIFT_EMAIL_FROM;
     delete process.env.GIFT_ADMIN_EMAILS;
+    delete process.env.ALPHA_ALLOWED_EMAILS;
   });
 
   it("sends a code without exposing it", async () => {
@@ -43,6 +45,17 @@ describe("unified account authentication APIs", () => {
     createGiftEmailCode.mockRejectedValueOnce(new Error("Invalid email address"));
     const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "not-an-email" }) }));
     expect(response.status).toBe(400);
+  });
+
+  it("does not send a code to an email outside the staging Alpha allowlist", async () => {
+    process.env.ALPHA_ALLOWED_EMAILS = "owner@example.com";
+
+    const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "outside@example.com" }) }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "beta_invite_required" }) }));
+    const { sendGiftVerificationEmail } = jest.requireMock("../src/server/gifts/resend-email-sender") as { sendGiftVerificationEmail: jest.Mock };
+    expect(sendGiftVerificationEmail).not.toHaveBeenCalled();
   });
 
   it("creates an account session and returns its server-derived role", async () => {

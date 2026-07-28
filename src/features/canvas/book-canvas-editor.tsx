@@ -246,6 +246,7 @@ export function BookCanvasEditor({
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
     setPendingTextId(nextId);
+    setEditingElementId(nextId);
   };
 
   const pickBackground = (backgroundId: (typeof canvasBackgrounds)[number]["id"] | undefined) => {
@@ -319,10 +320,9 @@ export function BookCanvasEditor({
                   setEditingElementId(undefined);
                 }}
                 onSelectElement={(id) => {
-                  // 双击选中
+                  // 双击选中；文字元素同时直接进入编辑模式。
                   setSelectedElementId(id);
-                  // 如果已选中同一个元素，再次点击进入编辑模式
-                  if (selectedElementId === id && currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
+                  if (currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
                     setEditingElementId(id);
                   }
                 }}

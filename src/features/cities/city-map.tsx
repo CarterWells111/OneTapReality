@@ -368,12 +368,13 @@ function AnimatedWorkspaceMarker({
 
   return (
     <Animated.View
-      accessibilityLabel={savedMemoryLabel(marker.city, stat.visitCount)}
-      accessibilityRole="button"
+      accessible={false}
       style={[{ alignItems: "center", justifyContent: "center", position: "absolute" }, animatedStyle]}
       testID={`city-map-marker-dot-${marker.city}-${stat.intensity}`}
     >
       <Pressable
+        accessibilityLabel={savedMemoryLabel(marker.city, stat.visitCount)}
+        accessibilityRole="button"
         onPress={interactive ? () => onCityPress?.(marker.city) : undefined}
         style={({ pressed }) => ({
           alignItems: "center",

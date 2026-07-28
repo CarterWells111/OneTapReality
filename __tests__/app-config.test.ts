@@ -37,15 +37,18 @@ describe("Expo Router production origin", () => {
     expect(fs.existsSync(path.resolve(__dirname, "..", "assets/expo.icon/Assets/onetapreality-icon.png"))).toBe(true);
   });
 
-  it("registers the production gift link for both native platforms", () => {
+  it("registers production and staging gift links for both native platforms", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onetapreality.app");
     expect(expoConfig.ios.associatedDomains).toContain("applinks:onetapreality.com");
+    expect(expoConfig.ios.associatedDomains).toContain("applinks:staging.onetapreality.com");
     expect(expoConfig.android.package).toBe("com.onetapreality.app");
     expect(expoConfig.android.intentFilters).toEqual(expect.arrayContaining([
       expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/gift" })]) }),
       expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/activate" })]) }),
+      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "staging.onetapreality.com", pathPrefix: "/gift" })]) }),
+      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "staging.onetapreality.com", pathPrefix: "/activate" })]) }),
     ]));
   });
 
@@ -88,6 +91,15 @@ describe("Expo Router production origin", () => {
         EXPO_PUBLIC_API_ORIGIN: "https://api.onetapreality.com",
       }),
       android: expect.objectContaining({ buildType: "apk" }),
+    }));
+  });
+
+  it("provides an isolated Alpha build that only exposes the staging API origin", () => {
+    const easConfig = require("../eas.json");
+
+    expect(easConfig.build.alpha).toEqual(expect.objectContaining({
+      distribution: "internal",
+      env: { EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com" },
     }));
   });
 });

@@ -15,13 +15,14 @@ describe("PrivacyScreen", () => {
     jest.clearAllMocks();
   });
 
-  it("renders the factual local-only privacy declaration", async () => {
+  it("explains local albums and explicit NFC gift publishing accurately", async () => {
     const screen = await render(<PrivacyScreen />);
 
     expect(screen.getByText("数据与隐私声明")).toBeTruthy();
-    expect(screen.getByText(/旅行信息、照片 URI 和旅行册内容保存在设备 SQLite 中/)).toBeTruthy();
+    expect(screen.getByText(/本地旅行册默认保存在设备 SQLite 中/)).toBeTruthy();
     expect(screen.getByText(/不识别图像中的人物或具体内容/)).toBeTruthy();
-    expect(screen.getByText(/当前通过按钮读取城市钥匙/)).toBeTruthy();
+    expect(screen.getByText(/明确发布 NFC 礼品时.*私有云端存储/)).toBeTruthy();
+    expect(screen.getByText(/本地删除不会停用已发布的礼品/)).toBeTruthy();
   });
 
   it("confirms before deleting all local data", async () => {

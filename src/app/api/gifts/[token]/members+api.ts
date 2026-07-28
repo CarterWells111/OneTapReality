@@ -2,8 +2,10 @@ import { getServerDatabase } from "../../../../server/db/client";
 import { addGiftMember, getGiftAccessByTokenHash, listGiftMembers, removeGiftMember } from "../../../../server/gifts/repository";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
 
 async function requireOwner(request: Request, token: string) {
+  requireGiftSharingEnabled();
   const db = getServerDatabase();
   const email = await requireGiftSessionEmail(request, db);
   const access = await getGiftAccessByTokenHash(db, await hashGiftToken(token), email);

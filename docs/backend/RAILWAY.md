@@ -75,6 +75,12 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 然后重新构建 App。该值会进入客户端 bundle，因此只能是公开 HTTPS origin；它不应出现在 Railway 后端 Service。打开 App 的“设置 → 后端实验”，点击“检查后端连接”，显示“后端连接正常”即完成客户端接入验证。
 
+## Alpha staging
+
+Alpha 必须使用独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单。staging Service 使用 `GIFT_URL_ORIGIN=https://staging.onetapreality.com`、独立 `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET`、受邀测试者的 `ALPHA_ALLOWED_EMAILS` 和 `GIFT_SHARING_ENABLED=true`。EAS `alpha` profile 只注入 `https://api-staging.onetapreality.com`。
+
+staging 域还必须部署同一发布签名对应的 `/.well-known/apple-app-site-association` 与 `/.well-known/assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
+
 ## 常见失败
 
 - 构建在 `npm ci` 时以 `EUSAGE` 失败：`package.json` 与 `package-lock.json` 不同步；同步 lockfile 后从干净状态重新运行 `npm ci`。

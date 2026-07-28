@@ -3,9 +3,11 @@ import { getGiftAccessByTokenHash, getSharedAlbumSnapshot } from "../../../../se
 import { getR2MediaStoreFromEnvironment } from "../../../../server/gifts/r2-media";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
 
 export async function GET(request: Request, { token }: { token: string }): Promise<Response> {
   try {
+    requireGiftSharingEnabled();
     const db = getServerDatabase();
     const email = await requireGiftSessionEmail(request, db);
     const access = await getGiftAccessByTokenHash(db, await hashGiftToken(token), email);

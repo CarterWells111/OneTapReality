@@ -5,6 +5,7 @@ const compression = require("compression");
 const express = require("express");
 const morgan = require("morgan");
 const { createRequestHandler } = require("expo-server/adapter/express");
+const { productionRequestLog } = require("./src/server/http/request-log.cjs");
 
 const clientBuildDirectory = path.join(process.cwd(), "dist/client");
 const serverBuildDirectory = path.join(process.cwd(), "dist/server");
@@ -19,7 +20,7 @@ process.env.NODE_ENV ??= "production";
 const app = express();
 app.disable("x-powered-by");
 app.use(compression());
-app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(morgan(process.env.NODE_ENV === "production" ? productionRequestLog : "dev"));
 app.use(express.static(clientBuildDirectory, {
   extensions: ["html"],
   maxAge: process.env.NODE_ENV === "production" ? "1h" : 0,

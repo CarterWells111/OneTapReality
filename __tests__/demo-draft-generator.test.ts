@@ -1,7 +1,7 @@
 import { DemoDraftGenerator } from "../src/services/ai/demo-draft-generator";
 
 describe("DemoDraftGenerator", () => {
-  it("creates a cover, photo page, and closing page without network input", async () => {
+  it("creates a cover, one local page per photo, and a closing page without network input", async () => {
     const generator = new DemoDraftGenerator();
 
     const pages = await generator.generate({
@@ -11,13 +11,15 @@ describe("DemoDraftGenerator", () => {
       photoUris: ["file://first.jpg", "file://second.jpg"],
     });
 
-    expect(pages).toHaveLength(3);
+    expect(pages).toHaveLength(4);
     expect(pages.map((page) => page.kind)).toEqual([
       "cover",
+      "photo",
       "photo",
       "closing",
     ]);
     expect(pages[1].photoUri).toBe("file://first.jpg");
+    expect(pages[2].photoUri).toBe("file://second.jpg");
     expect(pages[0].headline).toBe("我们的西湖周末");
   });
 

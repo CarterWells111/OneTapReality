@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 describe("quality gate workflow", () => {
-  it("keeps production checks available for manual runs", () => {
+  it("runs production checks for pull requests, main, and manual releases", () => {
     const workflowPath = join(
       process.cwd(),
       ".github",
@@ -14,8 +14,9 @@ describe("quality gate workflow", () => {
       : "";
 
     expect(workflow).toContain("workflow_dispatch:");
-    expect(workflow).not.toContain("pull_request:");
-    expect(workflow).not.toContain("push:");
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain("push:");
+    expect(workflow).toContain("main");
     expect(workflow).toContain("Lockfile minimum (Node 20.19.4)");
     expect(workflow).toContain("node-version: 20.19.4");
     expect(workflow).toContain("Quality (Node 24)");

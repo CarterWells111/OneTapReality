@@ -13,6 +13,9 @@ declare namespace NodeJS {
     R2_SECRET_ACCESS_KEY?: string;
     GIFT_ADMIN_EMAILS?: string;
     GIFT_CARD_CLEANUP_SECRET?: string;
+    ALPHA_ALLOWED_EMAILS?: string;
+    GIFT_SHARING_ENABLED?: string;
+    GIFT_URL_ORIGIN?: string;
     PORT?: string;
   }
 }
