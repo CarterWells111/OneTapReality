@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.onetapreality.app",
+      "sha256_cert_fingerprints": [
+        "66:85:7A:70:92:A4:29:EA:1A:4E:DA:E5:BD:34:90:E6:3C:68:C1:8F:F2:14:DD:24:F0:CE:40:DB:A5:C8:49:47"
+      ]
+    }
+  }
+]

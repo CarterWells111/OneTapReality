@@ -1,5 +1,22 @@
 # 决策记录
 
+## 2026-07-30：OneTapReality 团队协作记录
+
+项目在仓库内维护唯一的协作事实源：GitHub Issue 记录范围与负责人，Pull Request 记录改动与验收证据，`docs/operations/` 记录环境、发布和实体卡批次。模板不会记录 token、卡号、邮箱、截图中的隐私信息或任何密钥。
+
+- 你是 production release owner；仅你持有 Railway、R2、Resend、EAS 和数据库的生产权限。其他成员通过 Issue、PR 和脱敏记录协作。
+- 新功能、运维、实体卡和 P0 事件分别使用对应的 Issue 模板；任何上线必须有回滚条件、负责人、验证证据和部署日志。
+- 公开产品名称统一为 OneTapReality；历史记录与 `.tralbum` 文件格式仅为兼容和审计保留，不作为当前品牌名称使用。
+
+## 2026-07-28：Alpha 质量、公开事实与环境隔离
+
+Alpha 的目标是改进发布质量和安全边界，而不扩大产品功能。`expo-file-system` 作为 Expo SDK 匹配的直接依赖保留现有 PDF 与 `.tralbum` 导出；PDF 分享采用最小测试覆盖生成、缓存复制、不可分享和失败提示。合并门槛固定为干净 `npm ci` 后 `lint`、`typecheck`、`test:ci` 与 `build:server` 全部通过，辅助开发仅可通过 PR 合并。
+
+- 旅行册默认保存在设备；生成器不读取图像内容。用户登录并明确发布 NFC 礼品后，才上传该礼品的共享快照与照片到私有 R2；邮件、会话和礼品访问名单由服务端处理。
+- staging 必须使用独立 Railway 服务、PostgreSQL、私有 R2 bucket、peppers、清理密钥和管理员测试邮箱。测试卡仅使用 `staging.onetapreality.com`，正式卡仅使用正式域名；App Links 同时验证两域。
+- `ALPHA_ALLOWED_EMAILS` 只在 staging 限制受邀 Alpha 邮箱，拒绝响应稳定为 `beta_invite_required`。`GIFT_SHARING_ENABLED` 是 P0 立即停测开关：关闭后阻止新验证码、认领、发布和礼品读取，但保持管理员停用礼品的能力。
+- 生产请求日志只保留时间、方法、状态码、延迟和脱敏路径，不保留礼品 token 或查询字符串。发生 P0 时依序关闭开关、停发新卡/邀请、移出 TestFlight 测试者、停用受影响礼品、保留脱敏证据、修复回归并由 release owner 批准恢复。
+
 ## 2026-07-25：主页账户入口与最近邮箱记忆
 
 账户继续采用邮箱一次性验证码与 30 天 bearer 会话，不新增密码注册、密码哈希或找回密码体系。会话 token 与最近一次成功验证的规范化邮箱分别保存在 SecureStore；客户端不保存验证码、密码或其他认证秘密。主页提供简洁登录/账户入口，“我的”页显示当前邮箱、管理员标识、切换账号和经确认的退出操作，设置页允许单独清除已记住邮箱。

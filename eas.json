@@ -27,6 +27,12 @@
         "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
       }
     },
+    "alpha": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {

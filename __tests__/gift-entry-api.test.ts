@@ -13,4 +13,14 @@ describe("gift entry API", () => {
     expect(response.status).toBe(200);
     delete process.env.GIFT_TOKEN_PEPPER;
   });
+
+  it("returns a stable maintenance response while gift sharing is paused", async () => {
+    process.env.GIFT_SHARING_ENABLED = "false";
+
+    const response = await GET(new Request("http://localhost/api/gifts/secret/entry"), { token: "secret" });
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_sharing_paused" }) }));
+    delete process.env.GIFT_SHARING_ENABLED;
+  });
 });

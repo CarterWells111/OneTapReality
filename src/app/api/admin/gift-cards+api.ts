@@ -11,6 +11,7 @@ import {
 import { requireGiftAdminEmail } from "../../../server/gifts/admin-auth";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../server/gifts/session-auth";
 import { errorResponse } from "../../../server/http/errors";
+import { getGiftUrlOrigin, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
 
 const reservationSchema = z.object({ note: z.string().trim().max(240).optional() });
 const reservationDurationMs = 15 * 60 * 1000;
@@ -49,6 +50,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    requireGiftSharingEnabled();
     const database = getServerDatabase();
     const adminEmail = await requireAdmin(request, database);
     const body = reservationSchema.parse(await request.json());
@@ -73,7 +75,7 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json({
           cardId,
           cardCode,
-          giftUrl: `https://onetapreality.com/gift/${giftToken}`,
+          giftUrl: `${getGiftUrlOrigin()}/gift/${giftToken}`,
           expiresAt,
         }, { status: 201 });
       } catch (error) {

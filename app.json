@@ -11,7 +11,8 @@
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.onereality.onetapreality",
       "associatedDomains": [
-        "applinks:onetapreality.com"
+        "applinks:onetapreality.com",
+        "applinks:staging.onetapreality.com"
       ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -32,6 +33,16 @@
             {
               "scheme": "https",
               "host": "onetapreality.com",
+              "pathPrefix": "/activate"
+            },
+            {
+              "scheme": "https",
+              "host": "staging.onetapreality.com",
+              "pathPrefix": "/gift"
+            },
+            {
+              "scheme": "https",
+              "host": "staging.onetapreality.com",
               "pathPrefix": "/activate"
             }
           ],

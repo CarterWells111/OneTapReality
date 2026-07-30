@@ -1,8 +1,9 @@
 import { getServerDatabase } from "../../../server/db/client";
 import { createAuthEmailCode, isAuthEmailCodeRateLimited } from "../../../server/auth/repository";
-import { createGiftEmailCode } from "../../../server/gifts/email-auth";
+import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
+import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -12,11 +13,14 @@ export async function POST(request: Request): Promise<Response> {
     const from = process.env.GIFT_EMAIL_FROM;
     if (typeof email !== "string") throw new ApiError(400, "validation_failed", "Email is required");
     if (!pepper || !apiKey || !from) throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
+    requireGiftSharingEnabled();
+    const normalizedEmail = normalizeGiftEmail(email);
+    requireAlphaEmailAllowed(normalizedEmail);
     const nowDate = new Date();
     const now = nowDate.toISOString();
     let code: Awaited<ReturnType<typeof createGiftEmailCode>>;
     try {
-      code = await createGiftEmailCode(email, pepper, undefined, now);
+      code = await createGiftEmailCode(normalizedEmail, pepper, undefined, now);
     } catch {
       throw new ApiError(400, "validation_failed", "A valid email address is required");
     }

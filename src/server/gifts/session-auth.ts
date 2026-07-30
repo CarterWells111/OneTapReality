@@ -2,6 +2,7 @@ import { extractBearerToken, hashAccessToken } from "../auth/device-auth";
 import { getAuthenticatedUserByTokenHash } from "../auth/repository";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
+import { requireAlphaEmailAllowed } from "./alpha-safety";
 
 export async function requireGiftSessionEmail(request: Request, db: BackendDatabase, now = new Date()): Promise<string> {
   const token = extractBearerToken(request.headers.get("authorization"));
@@ -9,6 +10,7 @@ export async function requireGiftSessionEmail(request: Request, db: BackendDatab
   if (!token || !pepper) throw new ApiError(401, "unauthorized", "A verified email session is required");
   const user = await getAuthenticatedUserByTokenHash(db, await hashAccessToken(token, pepper), now.toISOString());
   if (!user) throw new ApiError(401, "unauthorized", "Your account session has expired");
+  requireAlphaEmailAllowed(user.email);
   return user.email;
 }
 

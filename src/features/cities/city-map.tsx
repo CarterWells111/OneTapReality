@@ -368,6 +368,7 @@ function AnimatedWorkspaceMarker({
 
   return (
     <Animated.View
+      accessible={false}
       style={[{ alignItems: "center", justifyContent: "center", position: "absolute" }, animatedStyle]}
       testID={`city-map-marker-dot-${marker.city}-${stat.intensity}`}
     >

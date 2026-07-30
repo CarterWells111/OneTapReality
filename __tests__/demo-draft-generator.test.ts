@@ -1,7 +1,7 @@
 import { DemoDraftGenerator } from "../src/services/ai/demo-draft-generator";
 
 describe("DemoDraftGenerator", () => {
-  it("creates a cover, photo page, and closing page without network input", async () => {
+  it("creates a cover, one local page per photo, and a closing page without network input", async () => {
     const generator = new DemoDraftGenerator();
 
     const pages = await generator.generate({
