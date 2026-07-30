@@ -1,0 +1,76 @@
+name: P0 立即停测事件
+description: 记录 OneTapReality 的未授权访问、错误认领、token 泄露、媒体误公开或登录不可用事件。
+title: "[P0]: "
+labels: ["priority:P0", "status:blocked"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先处置，后记录。先将 GIFT_SHARING_ENABLED=false，再停止新卡和邀请；不要等待 Issue 填写完成。
+  - type: input
+    id: owner
+    attributes:
+      label: 事件负责人
+      description: 填写负责协调处置与更新记录的成员。
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 受影响环境
+      options:
+        - staging
+        - production
+        - unknown
+    validations:
+      required: true
+  - type: input
+    id: incident_time
+    attributes:
+      label: 首次发现时间
+      description: 使用时区明确的时间，例如 2026-07-30 10:15 BST。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响与范围
+      description: 描述人数、功能和环境；只记录脱敏信息。
+    validations:
+      required: true
+  - type: textarea
+    id: immediate_action
+    attributes:
+      label: 已执行的立即停测动作
+      description: 记录 GIFT_SHARING_ENABLED、发卡/邀请暂停、测试者移除和礼品停用的状态。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 恢复前验收条件
+      description: 列出修复、回归、证据和恢复所需条件。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏处置证据
+      description: 记录时间、卡批次、状态码和处置链接；不附原始 token 或日志。
+    validations:
+      required: true
+  - type: input
+    id: recovery_approval
+    attributes:
+      label: 恢复批准
+      description: 由发布负责人填写恢复分享前的明确批准或链接。
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe_record
+    attributes:
+      label: 脱敏确认
+      description: 请勿填写 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
+      options:
+        - label: 我确认该记录仅包含可共享的脱敏信息。
+          required: true

@@ -1,0 +1,94 @@
+name: 外部运维变更
+description: 记录 OneTapReality 对 Railway、R2、Resend、EAS、Cloudflare、TestFlight 或 App Store Connect 的计划性变更。
+title: "[Ops]: "
+labels: ["type:operations", "status:backlog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这不是授权请求的替代品。staging 和 production 的外部写入必须由发布负责人批准并执行。
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      description: 填写负责准备、验证和更新记录的唯一成员。
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 目标环境
+      options:
+        - local
+        - staging
+        - production
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 风险等级
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: dropdown
+    id: service
+    attributes:
+      label: 外部服务
+      options:
+        - Railway API 或 cron
+        - PostgreSQL
+        - Cloudflare R2
+        - Resend
+        - EAS 或 Expo
+        - Cloudflare DNS 或深链文件
+        - TestFlight 或 App Store Connect
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: 变更内容
+      description: 说明要改变的配置、代码或操作，不得粘贴实际 secret 值。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 说明健康检查、测试流程或可观察结果。
+    validations:
+      required: true
+  - type: input
+    id: approver
+    attributes:
+      label: 发布负责人批准
+      description: staging 或 production 的外部写入须由发布负责人明确批准；填写批准人的姓名或 Issue 评论链接。
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: 回滚步骤
+      description: 说明如何安全恢复；P0 先执行停测开关。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏验证证据
+      description: 记录命令、状态、构建号或链接，不得附带原始敏感日志。
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe_record
+    attributes:
+      label: 脱敏确认
+      description: 请勿填写 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
+      options:
+        - label: 我确认该记录仅包含可共享的脱敏信息。
+          required: true

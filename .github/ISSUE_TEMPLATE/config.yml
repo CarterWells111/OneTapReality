@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 阅读 OneTapReality 协作规则
+    url: https://github.com/CarterWells111/OneTapReality/blob/main/docs/operations/TEAM-COORDINATION.md
+    about: 在创建任务前阅读负责人、环境、脱敏记录和发布边界。

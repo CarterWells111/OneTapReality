@@ -1,0 +1,77 @@
+name: NFC 卡批次
+description: 记录 OneTapReality 实体 NFC 卡的写入、抽检和停用状态。
+title: "[NFC]: "
+labels: ["type:nfc", "status:backlog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        一张卡只能写入其目标环境的域名。只记录脱敏卡批次与物理卡号范围，绝不记录完整礼品 URL/token。
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      description: 填写负责该批次写卡、抽检和状态更新的唯一成员。
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 目标环境
+      options:
+        - staging
+        - production
+    validations:
+      required: true
+  - type: input
+    id: card_batch
+    attributes:
+      label: 卡批次 ID
+      description: 使用内部批次编号，不使用礼品 token。
+      placeholder: NFC-YYYYMMDD-01
+    validations:
+      required: true
+  - type: input
+    id: card_range
+    attributes:
+      label: 物理卡号范围
+      description: 填写非敏感物理卡 ID 范围；禁止填写完整礼品 URL/token。
+      placeholder: CARD-001 至 CARD-025
+    validations:
+      required: true
+  - type: textarea
+    id: write_result
+    attributes:
+      label: 写入结果
+      description: 记录成功数、失败数和失败原因分类，不粘贴卡上 URL。
+    validations:
+      required: true
+  - type: textarea
+    id: sample_check
+    attributes:
+      label: 抽检结果
+      description: 记录碰卡、深链和目标环境确认的脱敏结果。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 明确该批次可交付、隔离或停用的判定标准。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏验证证据
+      description: 填写卡批次记录链接、抽检日期和结果摘要。
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe_record
+    attributes:
+      label: 脱敏确认
+      description: 请勿填写 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
+      options:
+        - label: 我确认该记录仅包含可共享的脱敏信息。
+          required: true

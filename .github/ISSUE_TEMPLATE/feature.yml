@@ -1,0 +1,86 @@
+name: 功能或产品工作项
+description: 为 OneTapReality 记录一个可交付的产品、App、API、UI 或文案任务。
+title: "[Feature]: "
+labels: ["type:feature", "status:backlog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        开始前先搜索现有 Issue；每项工作只有一名负责人，其他成员在该 Issue 协作，避免重复实现。
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      description: 填写唯一负责交付和状态更新的成员。
+      placeholder: 姓名或 GitHub 用户名
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 工作范围
+      description: 至少选择一个范围。
+      options:
+        - label: app
+        - label: api
+        - label: ui
+        - label: content
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 影响环境
+      options:
+        - local
+        - staging
+        - production
+        - n/a
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 风险等级
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标与范围
+      description: 说明要解决什么、包含什么和明确不包含什么。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 用可验证的结果描述完成标准。
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 依赖与阻塞
+      description: 链接依赖 Issue，或明确写“无”。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 验证证据
+      description: 填写测试命令、截图说明或脱敏日志位置；实施前可写“待验证”。
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe_record
+    attributes:
+      label: 脱敏确认
+      description: 请勿填写 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
+      options:
+        - label: 我确认该记录仅包含可共享的脱敏信息。
+          required: true
