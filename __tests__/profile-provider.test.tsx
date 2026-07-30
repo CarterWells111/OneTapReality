@@ -79,7 +79,7 @@ describe("ProfileProvider", () => {
 
   it("saves an update then exposes the persisted normalized profile", async () => {
     mockLoadLocalProfile
-      .mockResolvedValueOnce({ nickname: "旅忆用户", avatarUri: null })
+      .mockResolvedValueOnce({ nickname: "一触如初用户", avatarUri: null })
       .mockResolvedValueOnce({ nickname: "小林", avatarUri: "file://avatar.jpg" });
     mockSaveLocalProfile.mockResolvedValue(undefined);
     const screen = render(
@@ -97,7 +97,7 @@ describe("ProfileProvider", () => {
   });
 
   it("rejects an update when writing the local profile fails", async () => {
-    mockLoadLocalProfile.mockResolvedValue({ nickname: "旅忆用户", avatarUri: null });
+    mockLoadLocalProfile.mockResolvedValue({ nickname: "一触如初用户", avatarUri: null });
     mockSaveLocalProfile.mockRejectedValue(new Error("write failed"));
     render(
       <ProfileProvider>

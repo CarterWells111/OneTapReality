@@ -40,7 +40,11 @@ describe("backend API routes", () => {
     const capabilities = await getCapabilities(new Request("http://localhost/api/capabilities"));
 
     expect(health.status).toBe(200);
-    expect((await health.json()).contractVersion).toBe(1);
+    expect(await health.json()).toEqual({
+      service: "onetapreality-api",
+      contractVersion: 1,
+      database: "ok",
+    });
     expect((await capabilities.json()).features.automaticSync).toBe(false);
   });
 

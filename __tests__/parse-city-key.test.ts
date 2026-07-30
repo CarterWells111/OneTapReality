@@ -9,6 +9,15 @@ const now = new Date("2026-07-23T12:00:00.000Z");
 const future = "2027-07-01";
 
 describe("parseCityKey · 合法载荷", () => {
+  it("builds only OneTapReality app-scheme and HTTPS payloads", () => {
+    expect(buildCityKeyPayload("hangzhou", future)).toMatch(
+      /^onetapreality:\/\/city-key\/v1\?/
+    );
+    expect(buildCityKeyPayload("hangzhou", future, "https")).toMatch(
+      /^https:\/\/onetapreality\.com\/city-key\/v1\?/
+    );
+  });
+
   it.each(cities)("parses the app-scheme payload for %s", (city) => {
     const result = parseCityKey(buildCityKeyPayload(city, future), now);
 
@@ -47,9 +56,16 @@ describe("parseCityKey · 安全错误", () => {
     });
   });
 
+  it("rejects the retired Tralbum payload origin", () => {
+    const sig = computeDemoSignature("v1|hangzhou|2027-07-01");
+    expect(
+      parseCityKey(`tralbum://city-key/v1?city=hangzhou&exp=2027-07-01&sig=${sig}`, now)
+    ).toEqual({ ok: false, reason: "invalid" });
+  });
+
   it("rejects unsupported versions", () => {
     const sig = computeDemoSignature("v2|hangzhou|2027-07-01");
-    const payload = `tralbum://city-key/v2?city=hangzhou&exp=2027-07-01&sig=${sig}`;
+    const payload = `onetapreality://city-key/v2?city=hangzhou&exp=2027-07-01&sig=${sig}`;
 
     expect(parseCityKey(payload, now)).toEqual({
       ok: false,
@@ -58,7 +74,7 @@ describe("parseCityKey · 安全错误", () => {
   });
 
   it("rejects unknown cities", () => {
-    const payload = "tralbum://city-key/v1?city=hong-kong&exp=2027-07-01&sig=0000";
+    const payload = "onetapreality://city-key/v1?city=hong-kong&exp=2027-07-01&sig=0000";
 
     expect(parseCityKey(payload, now)).toEqual({ ok: false, reason: "unknown-city" });
   });
@@ -84,7 +100,7 @@ describe("parseCityKey · 安全错误", () => {
   });
 
   it("rejects payloads with missing fields or malformed dates", () => {
-    expect(parseCityKey("tralbum://city-key/v1?city=hangzhou&sig=0000", now)).toEqual({
+    expect(parseCityKey("onetapreality://city-key/v1?city=hangzhou&sig=0000", now)).toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -92,7 +108,7 @@ describe("parseCityKey · 安全错误", () => {
     const sig = computeDemoSignature("v1|hangzhou|07/01/2027");
     expect(
       parseCityKey(
-        `tralbum://city-key/v1?city=hangzhou&exp=${encodeURIComponent("07/01/2027")}&sig=${sig}`,
+        `onetapreality://city-key/v1?city=hangzhou&exp=${encodeURIComponent("07/01/2027")}&sig=${sig}`,
         now
       )
     ).toEqual({ ok: false, reason: "invalid" });
@@ -100,7 +116,7 @@ describe("parseCityKey · 安全错误", () => {
 
   it("rejects malformed percent-encoding safely", () => {
     expect(
-      parseCityKey("tralbum://city-key/v1?city=%E4%ZZ&exp=2027-07-01&sig=0000", now)
+      parseCityKey("onetapreality://city-key/v1?city=%E4%ZZ&exp=2027-07-01&sig=0000", now)
     ).toEqual({ ok: false, reason: "invalid" });
   });
 });

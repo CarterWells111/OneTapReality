@@ -66,7 +66,7 @@ export type CloudMemory = CloudMemoryPayload & {
 };
 
 export type HealthResponse = {
-  service: "adventurex-api";
+  service: "onetapreality-api";
   contractVersion: typeof backendContractVersion;
   database: "ok";
 };

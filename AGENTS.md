@@ -1,7 +1,7 @@
-# 旅忆协作契约
+# OneTapReality 协作契约
 
 1. 先阅读 `docs/AI-CONSTRAINTS.md` 和 `docs/EXECUTION-CHECKLIST.md`，再修改功能代码。
-2. 任何新增范围先写入 `docs/DECISIONS.md`，不得隐式加入云服务、支付、登录、分析或真实 NFC。
+2. 任何新增范围先写入 `docs/DECISIONS.md`。账号、云端礼品共享与真实 NFC 已是当前产品范围，必须遵循现有安全与 staging 隔离规范；不得隐式加入支付、分析或新的第三方服务。
 3. 新行为遵循测试先行：先写失败测试、确认失败、实现最小代码、再跑全量检查。
 4. 所有图片、文案和数据默认本地；严禁在客户端放置 API Key 或秘密。
 5. 每个完成阶段运行 `npm run lint`、`npm run typecheck` 和 `npm run test:ci`。

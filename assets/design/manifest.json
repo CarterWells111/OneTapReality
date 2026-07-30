@@ -8,7 +8,7 @@
       "preview": "assets/design/previews/sticker-heart.png",
       "source": {
         "origin": "first-party",
-        "author": "旅忆团队",
+        "author": "OneTapReality 团队",
         "note": "团队自绘矢量素材"
       },
       "license": {
@@ -25,7 +25,7 @@
       "preview": "assets/design/previews/sticker-map-pin.png",
       "source": {
         "origin": "first-party",
-        "author": "旅忆团队",
+        "author": "OneTapReality 团队",
         "note": "团队自绘矢量素材"
       },
       "license": {
@@ -58,7 +58,7 @@
       "preview": "assets/design/previews/palette-classic.png",
       "source": {
         "origin": "first-party",
-        "author": "旅忆团队",
+        "author": "OneTapReality 团队",
         "note": "团队自定配色 token"
       },
       "license": {

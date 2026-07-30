@@ -12,7 +12,7 @@ function asset(overrides: Partial<DesignAsset> = {}): DesignAsset {
     category: "sticker",
     name: "演示贴纸",
     preview: "assets/design/previews/sticker-demo.png",
-    source: { origin: "first-party", author: "旅忆团队" },
+    source: { origin: "first-party", author: "OneTapReality 团队" },
     license: { type: "proprietary", commercialUseConfirmed: true },
     sellable: false,
     ...overrides,
@@ -31,6 +31,9 @@ describe("designManifest (内置清单)", () => {
       expect(item.preview).toBeTruthy();
       expect(item.source.origin).toBeTruthy();
       expect(item.license.type).toBeTruthy();
+      if (item.source.origin === "first-party") {
+        expect(item.source.author).toBe("OneTapReality 团队");
+      }
     }
   });
 });
