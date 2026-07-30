@@ -63,7 +63,7 @@ test("bundles the carousel script and local product images into worker-served st
   const outputDirectory = mkdtempSync(join(tmpdir(), "onetapreality-static-site-"));
   const buildScript = join(websiteRoot, "scripts", "build-static-site.ps1");
   const build = spawnSync(
-    "powershell",
+    process.platform === "win32" ? "powershell" : "pwsh",
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", buildScript, "-OutputDirectory", outputDirectory],
     { encoding: "utf8" },
   );
