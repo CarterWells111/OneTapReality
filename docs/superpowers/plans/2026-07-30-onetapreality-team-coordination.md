@@ -104,7 +104,7 @@ Expected: still FAIL because the template files remain intentionally absent.
 
 - [ ] **Step 1: Implement `config.yml`**
 
-Disable blank issues and link users to `docs/operations/TEAM-COORDINATION.md` for working rules. The contact link URL is relative to `docs/operations/TEAM-COORDINATION.md` and the text is `阅读 OneTapReality 协作规则`.
+Disable blank issues and link users to the future canonical GitHub URL `https://github.com/CarterWells111/OneTapReality/blob/main/docs/operations/TEAM-COORDINATION.md` for working rules. The contact link text is `阅读 OneTapReality 协作规则`. Do not use a relative URL because GitHub's template chooser documents external `contact_links` URLs.
 
 - [ ] **Step 2: Implement the feature form**
 
