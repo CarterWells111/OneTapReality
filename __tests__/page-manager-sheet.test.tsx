@@ -23,7 +23,7 @@ describe("PageManagerSheet", () => {
     fireEvent.press(screen.getByLabelText("删除所选页面"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].map((page: StoryPage) => page.id)).toEqual(["a"]);
+    expect(onChange.mock.calls[0][0].map((page: StoryPage) => page.id)).toEqual(["b"]);
   });
 
   it("adds a page when nothing is selected", () => {
