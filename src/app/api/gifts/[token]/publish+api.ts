@@ -62,13 +62,16 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     const now = new Date().toISOString();
     const payload = await getGiftPublishPayload(db, publicationId, email, now);
     if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
-    if (!await Promise.all(payload.media.map((media) => store.objectExists(media.objectKey))).then((exists) => exists.every(Boolean))) {
+    const uploaded = await Promise.all(payload.media.map(async (media) => {
+      const metadata = await store.getObjectMetadata(media.objectKey);
+      return metadata?.contentType === media.contentType && metadata.byteSize === media.byteSize;
+    }));
+    if (!uploaded.every(Boolean)) {
       throw new ApiError(409, "gift_upload_incomplete", "All photos must finish uploading before publishing");
     }
     // The repository owns the metadata, so the client cannot mark a partial upload as published.
     const result = await completeGiftPublishSession(db, { sessionId: publicationId, ownerEmail: email, now });
     if (!result) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
-    await store.deleteObjects(result.oldObjectKeys);
     return Response.json({ albumId: result.albumId }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }

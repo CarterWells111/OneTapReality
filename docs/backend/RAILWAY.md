@@ -4,7 +4,7 @@ Railway 托管 Expo API Routes 的 Node server 和同项目 PostgreSQL；现有 
 
 ## 仓库内置配置
 
-- `railway.json`：build、pre-deploy migration、start 与 healthcheck。
+- `railway.json`：build、由 `RUN_DB_MIGRATIONS=true` 控制的 pre-deploy migration、start 与 healthcheck。
 - `npm run build:server`：执行 API-only Expo server export。
 - `npm run db:migrate`：在发布新版本前应用 Drizzle migration。
 - `npm run start:server`：启动 Expo Server 的 Express adapter。
@@ -39,7 +39,7 @@ Railway 托管 Expo API Routes 的 Node server 和同项目 PostgreSQL；现有 
    ```
 
 5. 不要手动设置 `PORT`，Railway 会注入。不要在后端服务设置 `EXPO_PUBLIC_API_ORIGIN`，也不要把 `DATABASE_URL` 或 pepper 放进任何 `EXPO_PUBLIC_` 变量。
-6. 在 API Service 的 **Settings** 确认仓库根目录没有被改到子目录。构建、pre-deploy 和启动命令由 `railway.json` 提供，一般无需手填。
+6. 在 API Service 的 **Variables** 添加 `RUN_DB_MIGRATIONS=true`。在 API Service 的 **Settings** 确认仓库根目录没有被改到子目录。构建、pre-deploy 和启动命令由 `railway.json` 提供，一般无需手填。
 7. 触发部署。日志应依次出现 server export、Drizzle migration 和 server listening；pre-deploy 失败时 API 新版本不会启动。
 8. 进入 **Settings → Networking → Generate Domain**，生成公开 HTTPS 域名。
 
@@ -88,3 +88,7 @@ staging 域还必须部署同一发布签名对应的 `/.well-known/apple-app-si
 - 日志提示 relation 不存在：检查 pre-deploy 是否执行 `npm run db:migrate`，不要手工修改已应用 migration。
 - 构建成功但健康检查超时：不要固定 `PORT`；服务必须使用 Railway 注入值。
 - App 显示网络不可用：确认构建时 `EXPO_PUBLIC_API_ORIGIN` 是完整 HTTPS origin、没有尾部路径，并重新构建 App。
+
+## 维护 Cron
+
+同一仓库的维护 Cron 复用 Railway build 配置，但不得配置 `RUN_DB_MIGRATIONS` 或 `DATABASE_URL`。它会在 pre-deploy 阶段安全跳过 migration，只执行自己的短生命周期 Start Command。

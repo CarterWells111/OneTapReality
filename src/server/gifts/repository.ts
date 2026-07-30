@@ -1,7 +1,7 @@
-import { and, eq, gt, ilike, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, ilike, isNull, lte, sql } from "drizzle-orm";
 
 import type { BackendDatabase } from "../db/client";
-import { giftCardEvents, giftCards, giftEmailCodes, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums } from "../db/schema";
+import { giftCardEvents, giftCards, giftEmailCodes, giftMediaCleanupJobs, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums } from "../db/schema";
 
 export type GiftPublicationPayload = {
   sourceMemoryId: string;
@@ -32,26 +32,23 @@ export async function claimGiftByTokenHash(
   email: string,
   claimedAt: string,
 ): Promise<{ id: string; status: "bound"; ownerEmail: string } | null> {
-  const [gift] = await db.select().from(gifts)
-    .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "unclaimed")))
-    .limit(1);
-  if (!gift) return null;
-
   const ownerEmail = normalizeEmail(email);
-  const updated = await db.update(gifts)
-    .set({ status: "bound", claimedAt })
-    .where(and(eq(gifts.id, gift.id), eq(gifts.status, "unclaimed")))
-    .returning({ id: gifts.id });
-  if (updated.length !== 1) return null;
-
-  await db.insert(giftMembers).values({
-    id: crypto.randomUUID(),
-    giftId: gift.id,
-    email: ownerEmail,
-    role: "owner",
-    createdAt: claimedAt,
+  return db.transaction(async (tx) => {
+    // This conditional update is the ownership lock: only one concurrent claimant can win.
+    const updated = await tx.update(gifts)
+      .set({ status: "bound", claimedAt })
+      .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "unclaimed")))
+      .returning({ id: gifts.id });
+    if (updated.length !== 1) return null;
+    await tx.insert(giftMembers).values({
+      id: crypto.randomUUID(),
+      giftId: updated[0].id,
+      email: ownerEmail,
+      role: "owner",
+      createdAt: claimedAt,
+    });
+    return { id: updated[0].id, status: "bound" as const, ownerEmail };
   });
-  return { id: gift.id, status: "bound", ownerEmail };
 }
 
 export async function listOwnedGifts(db: BackendDatabase, email: string) {
@@ -63,12 +60,29 @@ export async function listOwnedGifts(db: BackendDatabase, email: string) {
   return rows;
 }
 
+/** Uses a non-secret internal id for owner-only management screens. */
+export async function getOwnedGiftById(db: BackendDatabase, giftId: string, email: string) {
+  const [gift] = await db.select({ id: gifts.id, status: gifts.status, claimedAt: gifts.claimedAt, disabledAt: gifts.disabledAt })
+    .from(gifts)
+    .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
+    .where(and(eq(gifts.id, giftId), eq(giftMembers.email, normalizeEmail(email)), eq(giftMembers.role, "owner")))
+    .limit(1);
+  return gift ?? null;
+}
+
 export async function addGiftMember(db: BackendDatabase, giftId: string, email: string, createdAt: string): Promise<boolean> {
   const normalized = normalizeEmail(email);
-  const members = await db.select({ email: giftMembers.email }).from(giftMembers).where(eq(giftMembers.giftId, giftId));
-  if (members.length >= 3 || members.some((member) => member.email === normalized)) return false;
-  await db.insert(giftMembers).values({ id: crypto.randomUUID(), giftId, email: normalized, role: "viewer", createdAt });
-  return true;
+  return db.transaction(async (tx) => {
+    // A no-op row update takes a per-gift PostgreSQL row lock before counting members.
+    const locked = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` })
+      .where(and(eq(gifts.id, giftId), eq(gifts.status, "bound")))
+      .returning({ id: gifts.id });
+    if (!locked.length) return false;
+    const members = await tx.select({ email: giftMembers.email }).from(giftMembers).where(eq(giftMembers.giftId, giftId));
+    if (members.length >= 3 || members.some((member) => member.email === normalized)) return false;
+    await tx.insert(giftMembers).values({ id: crypto.randomUUID(), giftId, email: normalized, role: "viewer", createdAt });
+    return true;
+  });
 }
 
 export async function listGiftMembers(db: BackendDatabase, giftId: string) {
@@ -208,6 +222,10 @@ export async function completeGiftPublishSession(
     if (payload.media.length) await tx.insert(sharedAlbumMedia).values(payload.media.map((media) => ({
       id: crypto.randomUUID(), sharedAlbumId: albumId, ...media, createdAt: input.now,
     })));
+    if (oldMedia.length) await tx.insert(giftMediaCleanupJobs).values(oldMedia.map((media) => ({
+      id: crypto.randomUUID(), giftId: session.giftId, objectKey: media.objectKey, state: "pending", attempts: 0,
+      nextAttemptAt: input.now, lastError: null, completedAt: null, createdAt: input.now,
+    }))).onConflictDoNothing();
     await tx.update(giftPublishSessions).set({ completedAt: input.now }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
     return { albumId, oldObjectKeys: oldMedia.map((media) => media.objectKey) };
   });
@@ -231,11 +249,50 @@ export async function getGiftMediaObjectKeys(db: BackendDatabase, giftId: string
 }
 
 export async function disableGift(db: BackendDatabase, giftId: string, disabledAt: string): Promise<boolean> {
-  const result = await db.update(gifts).set({ status: "disabled", disabledAt }).where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"))).returning({ id: gifts.id });
-  if (!result.length) return false;
-  await db.delete(giftMembers).where(eq(giftMembers.giftId, giftId));
-  await db.delete(sharedAlbums).where(eq(sharedAlbums.giftId, giftId));
-  return true;
+  return db.transaction(async (tx) => {
+    const result = await tx.update(gifts).set({ status: "disabled", disabledAt }).where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"))).returning({ id: gifts.id });
+    if (!result.length) return false;
+    const oldMedia = await tx.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia)
+      .innerJoin(sharedAlbums, eq(sharedAlbumMedia.sharedAlbumId, sharedAlbums.id))
+      .where(eq(sharedAlbums.giftId, giftId));
+    if (oldMedia.length) await tx.insert(giftMediaCleanupJobs).values(oldMedia.map((media) => ({
+      id: crypto.randomUUID(), giftId, objectKey: media.objectKey, state: "pending", attempts: 0,
+      nextAttemptAt: disabledAt, lastError: null, completedAt: null, createdAt: disabledAt,
+    }))).onConflictDoNothing();
+    await tx.delete(giftMembers).where(eq(giftMembers.giftId, giftId));
+    await tx.delete(sharedAlbums).where(eq(sharedAlbums.giftId, giftId));
+    return true;
+  });
+}
+
+export async function listGiftMediaCleanupJobs(db: BackendDatabase, now: string) {
+  return db.select({ id: giftMediaCleanupJobs.id, giftId: giftMediaCleanupJobs.giftId, objectKey: giftMediaCleanupJobs.objectKey, state: giftMediaCleanupJobs.state, attempts: giftMediaCleanupJobs.attempts })
+    .from(giftMediaCleanupJobs)
+    .where(and(eq(giftMediaCleanupJobs.state, "pending"), lte(giftMediaCleanupJobs.nextAttemptAt, now)));
+}
+
+export async function completeGiftMediaCleanupJob(db: BackendDatabase, id: string, now: string) {
+  await db.update(giftMediaCleanupJobs).set({ state: "completed", completedAt: now, lastError: null }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "pending")));
+}
+
+export async function failGiftMediaCleanupJob(db: BackendDatabase, id: string, error: string, nextAttemptAt: string) {
+  await db.update(giftMediaCleanupJobs).set({ attempts: sql`${giftMediaCleanupJobs.attempts} + 1`, lastError: error.slice(0, 500), nextAttemptAt }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "pending")));
+}
+
+/** Expired, unfinished publication uploads are never made visible and are queued for deletion. */
+export async function expireGiftPublishSessions(db: BackendDatabase, now: string): Promise<number> {
+  return db.transaction(async (tx) => {
+    const sessions = await tx.select().from(giftPublishSessions).where(and(isNull(giftPublishSessions.completedAt), lte(giftPublishSessions.expiresAt, now)));
+    for (const session of sessions) {
+      const payload = session.payloadJson as GiftPublicationPayload;
+      if (payload.media.length) await tx.insert(giftMediaCleanupJobs).values(payload.media.map((media) => ({
+        id: crypto.randomUUID(), giftId: session.giftId, objectKey: media.objectKey, state: "pending", attempts: 0,
+        nextAttemptAt: now, lastError: null, completedAt: null, createdAt: now,
+      }))).onConflictDoNothing();
+      await tx.update(giftPublishSessions).set({ completedAt: now }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
+    }
+    return sessions.length;
+  });
 }
 
 export async function createInitializingGiftCard(

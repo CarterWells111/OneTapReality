@@ -1,5 +1,5 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { addGiftMember, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftEmailCode, createGiftPublishSession, getGiftAccessByTokenHash, getGiftStatusByTokenHash, getSharedAlbumSnapshot, listGiftMembers, listOwnedGifts, consumeGiftEmailCode, createGiftSession, getGiftSessionEmail, removeGiftMember } from "../src/server/gifts/repository";
+import { addGiftMember, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftEmailCode, createGiftPublishSession, disableGift, getGiftAccessByTokenHash, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listOwnedGifts, consumeGiftEmailCode, createGiftSession, getGiftSessionEmail, removeGiftMember } from "../src/server/gifts/repository";
 
 describe("gift repository", () => {
   it("claims a pre-registered gift once and persists its owner", async () => {
@@ -85,6 +85,25 @@ describe("gift repository", () => {
       expect(result).toEqual(expect.objectContaining({ oldObjectKeys: [] }));
       await expect(getSharedAlbumSnapshot(db, result!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ title: "Summer", version: 1 }), media: [expect.objectContaining({ objectKey: "gifts/gift-1/photo.jpg" })] }));
       await expect(completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:04:00.000Z" })).resolves.toBeNull();
+    } finally { await close(); }
+  });
+
+  it("keeps management lookup internal to the owner and queues private media cleanup on permanent disable", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-07-24T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-07-24T00:01:00.000Z");
+      await createGiftPublishSession(db, { id: "publish-1", giftId: "gift-1", ownerEmail: "owner@example.com", createdAt: "2026-07-24T00:02:00.000Z", expiresAt: "2026-07-24T00:12:00.000Z", payload: { sourceMemoryId: "memory-1", title: "Summer", pages: [], media: [{ position: 0, objectKey: "gifts/gift-1/photo.jpg", contentType: "image/jpeg", byteSize: 42 }] } });
+      await completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:03:00.000Z" });
+
+      await expect(getOwnedGiftById(db, "gift-1", "owner@example.com")).resolves.toEqual(expect.objectContaining({ id: "gift-1" }));
+      await expect(getOwnedGiftById(db, "gift-1", "other@example.com")).resolves.toBeNull();
+      await expect(disableGift(db, "gift-1", "2026-07-24T00:04:00.000Z")).resolves.toBe(true);
+      await expect(getGiftAccessByTokenHash(db, "known", "owner@example.com")).resolves.toBeNull();
+      await expect(listGiftMediaCleanupJobs(db, "2026-07-24T00:04:00.000Z")).resolves.toEqual([
+        expect.objectContaining({ objectKey: "gifts/gift-1/photo.jpg", state: "pending" }),
+      ]);
     } finally { await close(); }
   });
 });

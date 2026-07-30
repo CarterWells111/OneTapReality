@@ -4,13 +4,15 @@ import * as React from "react";
 
 import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, bodyFont, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
+import { useAuth } from "../../features/auth/auth-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, isReady, deleteMemory } = useMemories();
+  const { memories, isReady, discardMemory } = useMemories();
+  const { isAuthReady, user } = useAuth();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -62,7 +64,7 @@ export default function MemoriesHomeScreen() {
           style: "destructive",
           onPress: async () => {
             for (const id of selectedIds) {
-              await deleteMemory(id);
+              await discardMemory(id);
             }
             exitMultiSelect();
           },
@@ -86,9 +88,19 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>
           选择照片，开启一册专属你们的旅行记忆。
         </Text>
+        <Text selectable style={styles.subtitle}>选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。</Text>
         <View style={styles.heroActions}>
           <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
-          <AppButton label="我的纪念品" tone="secondary" onPress={() => router.push("/gifts")} />
+          <AppButton
+            disabled={!isAuthReady}
+            label="我的纪念品"
+            tone="secondary"
+            onPress={() => {
+              if (isAuthReady) {
+                router.push((user ? "/gifts" : "/login?returnTo=/gifts") as never);
+              }
+            }}
+          />
         </View>
         <Pressable
           accessibilityRole="button"
@@ -98,6 +110,22 @@ export default function MemoriesHomeScreen() {
           <Text selectable style={styles.heroLinkText}>先翻一册杭州示例 ›</Text>
         </Pressable>
       </PaperCard>
+
+      {isAuthReady ? (
+        <PaperCard style={styles.accountCard}>
+          <View style={styles.accountCopy}>
+            <Text selectable style={styles.accountTitle}>{user ? "当前账户" : "保存和管理你的 NFC 纪念品"}</Text>
+            <Text selectable style={styles.accountEmail}>
+              {user?.email ?? "使用邮箱验证码登录，无需设置密码。"}
+            </Text>
+          </View>
+          <AppButton
+            label={user ? "账户" : "登录 / 注册"}
+            tone="secondary"
+            onPress={() => router.push((user ? "/(tabs)/profile" : "/login?returnTo=/") as never)}
+          />
+        </PaperCard>
+      ) : null}
 
       <Section
         title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}
@@ -208,6 +236,10 @@ const styles = StyleSheet.create({
   heroHeadline: { color: colors.warmAccent, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
   subtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 15, lineHeight: 23 },
   heroActions: { marginTop: 4 },
+  accountCard: { alignItems: "stretch", gap: 12 },
+  accountCopy: { gap: 4 },
+  accountTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, fontWeight: "800" },
+  accountEmail: { color: colors.muted, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 20 },
   heroLink: { alignSelf: "flex-start", justifyContent: "center", minHeight: 40 },
   heroLinkText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "800" },
   bookGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 16 },

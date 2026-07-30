@@ -1,27 +1,26 @@
-import { render, screen } from "@testing-library/react-native";
+import { render, screen, waitFor } from "@testing-library/react-native";
 
 import { GiftEntry } from "../src/features/gifts/gift-entry";
 
 jest.mock("../src/features/auth/auth-provider", () => ({
-  useAuth: jest.fn(() => ({
-    isAuthReady: true,
-    session: null,
-    requestCode: jest.fn(),
-    verifyCode: jest.fn(),
-  })),
+  useAuth: jest.fn(() => ({ isAuthReady: true, session: null })),
+}));
+
+jest.mock("../src/services/backend/api-client", () => ({
+  BackendApiClient: class BackendApiClient {
+    getGiftEntryStatus = jest.fn().mockResolvedValue({ status: "unclaimed" });
+  },
+  BackendApiError: class BackendApiError extends Error {},
 }));
 
 describe("gift NFC entry", () => {
   it("shows an install-only fallback on the web", () => {
     render(<GiftEntry token="gift-token" platform="web" />);
-
     expect(screen.getByText("请在 App 中打开礼品")).toBeTruthy();
-    expect(screen.queryByText("验证邮箱后即可认领")).toBeNull();
   });
 
-  it("asks a native visitor to verify their email before claiming", () => {
+  it("sends a native visitor to unified login before claiming", async () => {
     render(<GiftEntry token="gift-token" platform="native" />);
-
-    expect(screen.getByText("验证邮箱后即可认领")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("登录后绑定此纪念品")).toBeTruthy());
   });
 });

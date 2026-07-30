@@ -2,21 +2,51 @@
 
 ## 2026-07-30：OneTapReality 团队协作记录
 
-以 GitHub Issues 和 GitHub Projects 作为 OneTapReality 的唯一任务事实来源；聊天、口头同步和本地分支均不能替代 Issue 状态。每项可交付工作必须有唯一负责人、环境范围、验收条件和关联 PR 或部署记录。
+项目在仓库内维护唯一的协作事实源：GitHub Issue 记录范围与负责人，Pull Request 记录改动与验收证据，`docs/operations/` 记录环境、发布和实体卡批次。模板不会记录 token、卡号、邮箱、截图中的隐私信息或任何密钥。
 
-- 本轮只提交仓库内模板与协作说明：功能、运维变更、NFC 卡批次、P0 事件和 PR 模板，以及部署/卡批次记录格式。不会创建 GitHub Issue、Projects、标签、卡片，也不会写入任何外部服务。
-- 生产与 staging 的 Railway、PostgreSQL、R2、Resend、EAS、Cloudflare、App Store Connect 仍由发布负责人独占写入权限；模板要求每次外部变更记录环境、批准人、可验证证据和回滚步骤，但不得记录 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
-- 项目当前唯一名称为 `OneTapReality`。GitHub 远端仓库改名及旧名称的全局替换属于独立工作包：先由仓库所有者确认新的远端 URL，再以单独 PR 执行，不与协作模板混合提交。
+- 你是 production release owner；仅你持有 Railway、R2、Resend、EAS 和数据库的生产权限。其他成员通过 Issue、PR 和脱敏记录协作。
+- 新功能、运维、实体卡和 P0 事件分别使用对应的 Issue 模板；任何上线必须有回滚条件、负责人、验证证据和部署日志。
+- 公开产品名称统一为 OneTapReality；历史记录与 `.tralbum` 文件格式仅为兼容和审计保留，不作为当前品牌名称使用。
 
-## 2026-07-28：Alpha 质量门禁、分层披露与独立 staging
+## 2026-07-28：Alpha 质量、公开事实与环境隔离
 
-Alpha 版本保留“本地优先旅行册”作为默认行为：本地旅行册不会自动上传，旅行册生成器不读取图像内容。只有用户完成邮箱验证并明确发布 NFC 礼品时，服务端才会保存该礼品的访问邮箱、会话、共享快照和私有 R2 媒体；礼品管理者可停用礼品并删除共享内容。
+Alpha 的目标是改进发布质量和安全边界，而不扩大产品功能。`expo-file-system` 作为 Expo SDK 匹配的直接依赖保留现有 PDF 与 `.tralbum` 导出；PDF 分享采用最小测试覆盖生成、缓存复制、不可分享和失败提示。合并门槛固定为干净 `npm ci` 后 `lint`、`typecheck`、`test:ci` 与 `build:server` 全部通过，辅助开发仅可通过 PR 合并。
 
-- `staging.onetapreality.com` 与独立 Railway PostgreSQL、私有 R2 bucket、服务端 secrets 和管理员测试邮箱共同构成 Alpha 隔离环境。测试卡只能写入 staging gift URL，正式卡继续使用 `onetapreality.com`。
-- `ALPHA_ALLOWED_EMAILS` 仅在 staging 配置时限制邀请码邮箱；`GIFT_SHARING_ENABLED=false` 会暂停新的验证码、礼品读取、认领和发布，但保留管理员停用礼品能力用于 P0 处置。
-- 礼品 URL 统一从服务端 `GIFT_URL_ORIGIN` 生成，禁止在 API 或写卡流程中硬编码正式域名。iOS Universal Links 和 Android App Links 同时登记正式与 staging 域。
-- P0 事件按“立即停测”处置：关闭分享开关、暂停发卡/邀请、移除测试者、停用受影响礼品、保留脱敏证据，修复和回归后由发布负责人恢复。
-- Railway、R2、Resend、EAS、数据库和 DNS 的写入权限只属于发布负责人；其他协作者通过 PR、测试和运行手册协作，不接触生产秘密。
+- 旅行册默认保存在设备；生成器不读取图像内容。用户登录并明确发布 NFC 礼品后，才上传该礼品的共享快照与照片到私有 R2；邮件、会话和礼品访问名单由服务端处理。
+- staging 必须使用独立 Railway 服务、PostgreSQL、私有 R2 bucket、peppers、清理密钥和管理员测试邮箱。测试卡仅使用 `staging.onetapreality.com`，正式卡仅使用正式域名；App Links 同时验证两域。
+- `ALPHA_ALLOWED_EMAILS` 只在 staging 限制受邀 Alpha 邮箱，拒绝响应稳定为 `beta_invite_required`。`GIFT_SHARING_ENABLED` 是 P0 立即停测开关：关闭后阻止新验证码、认领、发布和礼品读取，但保持管理员停用礼品的能力。
+- 生产请求日志只保留时间、方法、状态码、延迟和脱敏路径，不保留礼品 token 或查询字符串。发生 P0 时依序关闭开关、停发新卡/邀请、移出 TestFlight 测试者、停用受影响礼品、保留脱敏证据、修复回归并由 release owner 批准恢复。
+
+## 2026-07-25：主页账户入口与最近邮箱记忆
+
+账户继续采用邮箱一次性验证码与 30 天 bearer 会话，不新增密码注册、密码哈希或找回密码体系。会话 token 与最近一次成功验证的规范化邮箱分别保存在 SecureStore；客户端不保存验证码、密码或其他认证秘密。主页提供简洁登录/账户入口，“我的”页显示当前邮箱、管理员标识、切换账号和经确认的退出操作，设置页允许单独清除已记住邮箱。
+
+退出和切换账号会撤销并清除当前会话，但保留最近邮箱以便重新登录；只有显式执行“清除已记住邮箱”才删除该值。账号切换不删除、上传或按账户隔离本机旅行册、昵称、头像等离线数据。
+
+App 启动时会通过 `/api/auth/me` 校验已保存会话；只有服务端明确返回 401/403 才删除会话，临时断网或服务异常时保留本机会话供离线界面使用。退出时必须先成功删除本机 token 才更新为未登录状态，避免界面显示退出但重启后恢复旧账户。
+
+## 2026-07-25：编辑器 UI 修复与增强
+
+本轮修复六个独立问题，全部为纯前端变更，不修改数据模型、路由、依赖或持久化结构：
+
+- **Bug #1（取消选中后元素消失）**：`onSelectElement` 中在选中不同元素时清除 `pendingTextId`，避免 `discardPendingText()` 误删非目标元素。
+- **Feature #2（素材面板添加照片）**：贴纸分类行最前面添加「📷 添加照片」按钮，调用 `expo-image-picker` 选择照片后作为 `type: "image"` 画布元素添加。
+- **Feature #3a（工具栏两行布局）**：`CanvasToolbar` 改为两行——第一行仅文字元素显示「编辑 | 字体 | 字号 | 颜色 | 前移 | 后移」，第二行所有元素显示「复制 | 删除」。
+- **Feature #3b（编辑文字手动触发）**：选中文本元素不再自动弹出 TextInput 和 ElementContextMenu。点击工具栏「编辑」按钮后显示编辑文字输入框；字体/字号/颜色按钮分别弹出对应上下文菜单面板。
+- **Feature #3c（字号进度条）**：字号选择面板用进度条 + 数字输入框（范围 2–40）替代固定字号列表。使用纯 RN 组件（Pressable + TextInput），不新增依赖。
+- **Bug #4（颜色面板关闭后旧菜单）**：预设配色选择后直接调用 `onClose()` 关闭整个菜单，不再回退到主菜单面板。结合 #3b，确保上下文菜单不再自动弹出。
+
+本次不新增网络、支付、账号、真实 AI、真实 NFC 或新依赖。
+
+## 2026-07-25：NFC 礼品完整发布闭环
+
+NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名设备 token。用户首次访问礼品链接时先读取不泄露相册内容的安全状态；未登录用户进入统一登录页，已有会话的首位用户自动认领未认领礼品。已绑定礼品中，拥有者进入独立的礼品管理页，受邀邮箱只可读取已发布的共享相册，未知账户只收到无权限结果。
+
+管理页只使用礼品内部 ID，并由服务端从 bearer 会话推导拥有者身份，绝不把 NFC token 放入“我的纪念品”列表或管理路由。拥有者可从本地旅行册建立手动发布快照、维护最多三位访问邮箱（含拥有者）并永久停用礼品；不提供管理权转让，也不会自动上传或同步本地旅行册。
+
+首位认领和成员变更在 PostgreSQL 事务中执行并按礼品串行化，确保每礼品只有一位拥有者且成员数永远不超过三人。R2 媒体始终私有：发布前须校验对象存在、Content-Type 和字节数；替换与停用在同一数据库事务中撤销访问并记录待删除对象。R2 删除失败不恢复访问或停用状态，而由仅服务端可调用的维护端点以持久化任务重试清理过期初始化卡、未完成发布和旧媒体。
+
+网站根域名继续只负责 App Link 文件与安装提示；API 保持在 `https://api.onetapreality.com`。iOS AASA 使用现有 Team ID；Android `assetlinks.json` 必须等提供 release SHA-256 后写入，之前不宣称 Android App Link 已完成验收。所有 Resend、数据库、R2 和维护密钥只保存在 Railway 服务端变量。
 
 ## 2026-07-24：编辑器工具栏布局重组
 
@@ -266,6 +296,7 @@ Alpha 版本保留“本地优先旅行册”作为默认行为：本地旅行�
 
 - 在首次云部署前取消 Turso/libSQL 后端方案，改用与 API Service 位于同一 Railway Project 的 PostgreSQL Service；App 本地 `expo-sqlite` 及 `luyi.db` 保持不变。
 - API Service 只读取 Railway 引用变量 `DATABASE_URL=${{Postgres.DATABASE_URL}}`，通过私有网络连接；继续由 `DEVICE_TOKEN_PEPPER` 保护匿名 bearer token hash，不向客户端暴露数据库凭据。
+- Railway 的共享仓库配置在 pre-deploy 阶段仅当服务端变量 `RUN_DB_MIGRATIONS=true` 时运行 Drizzle migration。API Service 设置该变量；短生命周期的维护 Cron 不设置该变量，也不取得 `DATABASE_URL`。
 - 服务端使用 Drizzle PostgreSQL schema 与 `node-postgres`；repository 测试和 migration 测试使用内存 PostgreSQL 模拟器，不连接生产数据库。
 - Turso 尚未创建且不存在云端生产数据，因此本次允许将尚未部署的 `drizzle/0000_initial.sql` 与 meta 重建为 PostgreSQL baseline，不迁移本地 `.data/backend.db`。该 baseline 部署后恢复“已应用 migration 不可修改”的规则。
 - 云端 API 契约、设备隔离、硬删除与外键级联行为保持不变；不新增账号、自动同步、照片上传、支付、分析、真实 AI、CI 或客户端秘密。
@@ -319,3 +350,9 @@ Alpha 版本保留“本地优先旅行册”作为默认行为：本地旅行�
 - `/city/[city]` 采用本地纸本旅行手账式档案布局：城市名、地区、既有宣传语、相册数量与本地插画/线描主视觉；不请求远程图片或新增依赖。
 - 已保存（及兼容的旧版）旅行记忆可在页内作为精选与展开列表浏览，草稿和已丢弃记忆不计入；创建、管理及记忆详情继续复用既有本地路由。
 - 本次仅调整客户端展示和交互，不引入网络服务、登录、支付、分析、真实 NFC 或客户端秘密。
+
+## 2026-07-25：沿用现有 TestFlight 应用标识与 TAG-only NFC entitlement
+
+- App Store Connect 应用 `6794186067` 已固定绑定 `com.onereality.onetapreality`。为保留现有 TestFlight 应用、测试组和历史构建，iOS `bundleIdentifier` 恢复为该值；Android package 继续使用 `com.onetapreality.app`。
+- iOS 26 SDK 不再接受 `com.apple.developer.nfc.readersession.formats` 中的 `NDEF` 值。`react-native-nfc-manager` 配置改为 `includeNdefEntitlement: false`，使原生构建只声明 Apple 当前支持的 `TAG` 值，同时继续通过 Core NFC 读写 NDEF 标签。
+- 生产 AASA 的 `appID` 必须同步为 `YVJ6GJG87B.com.onereality.onetapreality`；Android `assetlinks.json` 不变。

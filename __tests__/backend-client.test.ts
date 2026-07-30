@@ -93,4 +93,12 @@ describe("backend client", () => {
       "/api/admin/gift-cards/card-1/retire",
     ]);
   });
+
+  it("uses internal gift ids for owner management rather than NFC tokens", async () => {
+    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ gift: { id: "gift-1", status: "bound" }, members: [], album: null }), { status: 200 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.getOwnedGiftManagement("session", "gift-1")).resolves.toEqual(expect.objectContaining({ gift: expect.objectContaining({ id: "gift-1" }) }));
+    expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
+  });
 });

@@ -9,6 +9,7 @@ export interface NativeNfcModule {
   cancelTechnologyRequest(): Promise<void>;
   getTag(): Promise<{ ndefMessage?: { payload?: number[] }[] } | null>;
   ndefHandler: {
+    getNdefMessage(): Promise<{ ndefMessage?: { payload?: number[] }[] } | null>;
     writeNdefMessage(message: unknown[]): Promise<void>;
   };
   ndef: {
@@ -24,6 +25,7 @@ export interface NativeNfcModule {
 }
 
 export interface NfcUrlWriter {
+  replaceHttpsUrl(expectedUrl: string | null, url: string): Promise<void>;
   writeHttpsUrl(url: string): Promise<void>;
   verifyHttpsUrl(url: string): Promise<boolean>;
   readHttpsUrl(): Promise<string | null>;
@@ -65,21 +67,87 @@ function defaultNativeModuleLoader(): Promise<NativeNfcModule> {
   };
   const manager = imported.default ?? imported;
 
-  return Promise.resolve({
-    ...manager,
+  return Promise.resolve(Object.assign(manager, {
     ndef: imported.Ndef,
     nfcTech: imported.NfcTech,
-  } as NativeNfcModule);
+  }) as NativeNfcModule);
+}
+
+export class NfcTagMismatchError extends Error {
+  readonly code = "NFC_TAG_MISMATCH";
+
+  constructor(expectedUrl: string | null, currentUrl: string | null) {
+    const message = expectedUrl
+      ? "This card does not contain the expected activation URL. It was not changed."
+      : currentUrl
+        ? "This card already contains a URL and was not changed."
+        : "This card contains unsupported NFC data and was not changed.";
+    super(message);
+    this.name = "NfcTagMismatchError";
+  }
+}
+
+export class NfcVerificationError extends Error {
+  readonly code = "NFC_VERIFY_FAILED";
+
+  constructor() {
+    super("The NFC write could not be verified. Keep the card near the phone and retry.");
+    this.name = "NfcVerificationError";
+  }
 }
 
 function defaultIsExpoGo() {
   return Platform.OS !== "web" && Constants.appOwnership === "expo";
 }
 
+function decodeHttpsUrl(
+  native: NativeNfcModule,
+  records: { payload?: number[] }[] | undefined,
+): string | null {
+  for (const record of records ?? []) {
+    if (!record.payload) continue;
+    try {
+      const url = native.ndef.uri.decodePayload(record.payload);
+      if (isHttpsUrl(url)) return url;
+    } catch {
+      // Non-URI NDEF records are not eligible gift-card URLs.
+    }
+  }
+  return null;
+}
+
 class NativeNfcUrlWriter implements NfcUrlWriter {
   private nativeModule: NativeNfcModule | undefined;
 
   constructor(private readonly options: Required<NfcUrlWriterOptions>) {}
+
+  async replaceHttpsUrl(expectedUrl: string | null, url: string) {
+    if (expectedUrl !== null) this.assertHttpsUrl(expectedUrl);
+    this.assertHttpsUrl(url);
+    const native = await this.getNativeModule();
+    await native.start();
+    await native.requestTechnology(native.nfcTech.Ndef);
+
+    try {
+      const tag = await native.getTag();
+      const currentUrl = decodeHttpsUrl(native, tag?.ndefMessage);
+
+      if (currentUrl === url) return;
+      if (currentUrl !== expectedUrl || (!currentUrl && (tag?.ndefMessage?.length ?? 0) > 0)) {
+        throw new NfcTagMismatchError(expectedUrl, currentUrl);
+      }
+
+      await native.ndefHandler.writeNdefMessage(
+        native.ndef.encodeMessage([native.ndef.uriRecord(url)]),
+      );
+      const updatedTag = await native.ndefHandler.getNdefMessage();
+      if (decodeHttpsUrl(native, updatedTag?.ndefMessage) !== url) {
+        throw new NfcVerificationError();
+      }
+    } finally {
+      await native.cancelTechnologyRequest();
+    }
+  }
 
   async writeHttpsUrl(url: string) {
     this.assertHttpsUrl(url);

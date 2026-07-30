@@ -12,6 +12,14 @@ jest.mock("../src/features/memories/memories-provider", () => ({
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: mockIsProfileReady() }),
 }));
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: () => ({
+    isAuthReady: true,
+    signOut: jest.fn(),
+    switchAccount: jest.fn(),
+    user: null,
+  }),
+}));
 
 import ProfileScreen from "../src/app/(tabs)/profile";
 
@@ -27,7 +35,7 @@ describe("ProfileScreen settings entry", () => {
     const screen = await render(<ProfileScreen />);
 
     expect(screen.getByText("小林")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("编辑个人资料"));
+    await fireEvent.press(screen.getByLabelText("打开设置"));
 
     expect(mockPush).toHaveBeenCalledWith("/settings");
   });
@@ -36,6 +44,6 @@ describe("ProfileScreen settings entry", () => {
     mockIsProfileReady.mockReturnValue(false);
     const screen = await render(<ProfileScreen />);
 
-    expect(screen.queryByLabelText("编辑个人资料")).toBeNull();
+    expect(screen.queryByLabelText("打开设置")).toBeNull();
   });
 });

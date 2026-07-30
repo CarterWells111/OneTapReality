@@ -48,6 +48,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
   const cellWidth = (containerWidth - GAP) / 2;
   const thumbHeight = (cellWidth * 4) / 3;
   const cellHeight = thumbHeight + LABEL_HEIGHT;
+  const editablePages = pages.slice(1);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [draggingIndex, setDraggingIndex] = React.useState<number | null>(null);
@@ -83,7 +84,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     const pointY = start.y + translationY;
     let best = startIndex;
     let bestDistance = Infinity;
-    for (let index = 0; index < pages.length; index += 1) {
+    for (let index = 0; index < editablePages.length; index += 1) {
       const center = centerOf(index);
       const distance = (center.x - pointX) ** 2 + (center.y - pointY) ** 2;
       if (distance < bestDistance) {
@@ -93,7 +94,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     }
     hoverRef.current = best;
     setHoverIndex(best);
-  }, [centerOf, pages.length]);
+  }, [centerOf, editablePages.length]);
 
   const endDrag = (startIndex: number) => {
     const target = hoverRef.current ?? startIndex;
@@ -101,7 +102,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     setHoverIndex(null);
     hoverRef.current = null;
     if (target !== startIndex) {
-      onChange(reorderCanvasPages(pages, startIndex, target));
+      onChange(reorderCanvasPages(pages, startIndex + 1, target + 1));
     }
   };
 
@@ -111,8 +112,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
 
   const deleteSelected = () => {
     // 封面不可删除
-    const isCover = (id: string) => id === pages[0]?.id;
-    const safeIds = selectedIds.filter((id) => !isCover(id));
+    const safeIds = selectedIds;
     if (safeIds.length === 0) {
       return;
     }
@@ -123,10 +123,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     setSelectedIds([]);
   };
 
-  const safeIds = React.useMemo(
-    () => selectedIds.filter((id) => id !== pages[0]?.id),
-    [selectedIds, pages],
-  );
+  const safeIds = selectedIds;
 
   const draggedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: dragX.value }, { translateY: dragY.value }, { scale: draggingIndex === null ? 1 : 1.04 }],
@@ -136,7 +133,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     <Modal animationType="slide" onRequestClose={onClose} transparent={false} visible>
       <GestureHandlerRootView style={styles.root}>
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-          <Text selectable style={styles.title}>页面管理 · {pages.length - 1} 页</Text>
+          <Text selectable style={styles.title}>页面管理 · {editablePages.length} 页</Text>
           <Pressable
             accessibilityLabel="完成页面管理"
             accessibilityRole="button"
@@ -150,26 +147,27 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
 
         <ScrollView contentContainerStyle={styles.gridContent}>
           <View style={styles.grid}>
-            {pages.filter((_, index) => index !== 0).map((page, index) => {
-              // index 已过滤封面页，实际位置 = index + 1
-              const actualIndex = index + 1;
+            {editablePages.map((page, index) => {
+              const editableIndex = index;
+              const actualIndex = editableIndex + 1;
+              const pageNumber = editableIndex + 1;
               const isSelected = selectedIds.includes(page.id);
-              const isDragging = draggingIndex === actualIndex;
-              const isHovered = hoverIndex === actualIndex && draggingIndex !== null && draggingIndex !== actualIndex;
+              const isDragging = draggingIndex === editableIndex;
+              const isHovered = hoverIndex === editableIndex && draggingIndex !== null && draggingIndex !== editableIndex;
 
               const pan = Gesture.Pan()
                 .activateAfterLongPress(200)
                 .enabled(true)
                 .onStart(() => {
-                  runOnJS(startDrag)(actualIndex);
+                  runOnJS(startDrag)(editableIndex);
                 })
                 .onUpdate((event) => {
                   dragX.value = event.translationX;
                   dragY.value = event.translationY;
-                  runOnJS(updateHover)(actualIndex, event.translationX, event.translationY);
+                  runOnJS(updateHover)(editableIndex, event.translationX, event.translationY);
                 })
                 .onEnd(() => {
-                  runOnJS(endDrag)(actualIndex);
+                  runOnJS(endDrag)(editableIndex);
                 })
                 .onFinalize(() => {
                   dragX.value = 0;
@@ -185,9 +183,9 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
                       isDragging && styles.cellDragging,
                       isDragging && draggedStyle,
                     ]}
-                    testID={`page-cell-${actualIndex}`}>
+                    testID={`page-cell-${editableIndex}`}>
                     <Pressable
-                      accessibilityLabel={`第 ${actualIndex} 页${isSelected ? "，已选中" : ""}`}
+                      accessibilityLabel={`第 ${pageNumber} 页${isSelected ? "，已选中" : ""}`}
                       accessibilityRole="button"
                       accessibilityState={{ selected: isSelected }}
                       onPress={() => toggleSelect(page.id)}
@@ -212,10 +210,10 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
                       ) : null}
                     </Pressable>
                     <View style={styles.cellFooter}>
-                      <Text style={styles.cellIndex}>{`第 ${actualIndex} 页`}</Text>
+                      <Text style={styles.cellIndex}>{`第 ${pageNumber} 页`}</Text>
                       {onJumpToPage ? (
                         <Pressable
-                          accessibilityLabel={`打开第 ${actualIndex} 页`}
+                          accessibilityLabel={`打开第 ${pageNumber} 页`}
                           accessibilityRole="button"
                           onPress={() => {
                             onJumpToPage(actualIndex);

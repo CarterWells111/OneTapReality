@@ -11,6 +11,7 @@ export type R2MediaConfig = {
 export type PrivateMediaStore = {
   createUploadUrl: (input: { objectKey: string; contentType: string }) => Promise<string>;
   createReadUrl: (objectKey: string) => Promise<string>;
+  getObjectMetadata: (objectKey: string) => Promise<{ contentType: string; byteSize: number } | null>;
   objectExists: (objectKey: string) => Promise<boolean>;
   deleteObjects: (objectKeys: string[]) => Promise<void>;
 };
@@ -36,12 +37,14 @@ export function createR2MediaStore(config: R2MediaConfig): PrivateMediaStore {
       { expiresIn: signedUrlLifetimeSeconds },
     ),
     async objectExists(objectKey) {
+      return (await this.getObjectMetadata(objectKey)) !== null;
+    },
+    async getObjectMetadata(objectKey) {
       try {
-        await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: objectKey }));
-        return true;
-      } catch {
-        return false;
-      }
+        const object = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: objectKey }));
+        if (typeof object.ContentType !== "string" || typeof object.ContentLength !== "number") return null;
+        return { contentType: object.ContentType, byteSize: object.ContentLength };
+      } catch { return null; }
     },
     async deleteObjects(objectKeys) {
       if (objectKeys.length === 0) return;

@@ -31,6 +31,7 @@ import { CanvasPage } from "./canvas-page";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
+  addImageToPage,
   addStickerToPage,
   addTextToPage,
   addFrameToPage,
@@ -68,7 +69,7 @@ export function BookCanvasEditor({
   useFonts(canvasEditorFontSources);
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
-  const pageHeight = pageWidth * 4 / 3;
+  const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
   const pagePanBlocked = useSharedValue(false);
@@ -76,7 +77,8 @@ export function BookCanvasEditor({
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 进入编辑模式（显示上下文菜单）
-  const [contextMenuMode, setContextMenuMode] = React.useState<"font" | "size" | "color">("font"); // 上下文菜单初始面板
+  const [showEditInput, setShowEditInput] = React.useState(false); // 是否显示文字输入框（编辑按钮触发）
+  const [contextMenuMode, setContextMenuMode] = React.useState<"main" | "font" | "size" | "color">("main"); // 上下文菜单初始面板
   const [pendingTextId, setPendingTextId] = React.useState<string>();
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
@@ -99,7 +101,6 @@ export function BookCanvasEditor({
   const editingElement = editingElementId
     ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
     : undefined;
-  const editingText = editingElement?.type === "text" ? editingElement : undefined;
 
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
     if (reason === "structure" || reason === "transform") {
@@ -241,12 +242,31 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
   };
 
+  const addPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: false,
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const uri = result.assets[0].uri;
+      const nextId = buildCanvasId("image");
+      changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
+      setSelectedElementId(nextId);
+    }
+  };
+
   const addText = () => {
     const nextId = buildCanvasId("text");
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
+    // 不再自动打开编辑输入框：用户需点击工具栏「编辑」按钮手动触发
+    setShowEditInput(false);
     setPendingTextId(nextId);
-    setEditingElementId(nextId);
   };
 
   const pickBackground = (backgroundId: (typeof canvasBackgrounds)[number]["id"] | undefined) => {
@@ -318,13 +338,20 @@ export function BookCanvasEditor({
                   discardPendingText();
                   setSelectedElementId(undefined);
                   setEditingElementId(undefined);
+                  setShowEditInput(false);
                 }}
                 onSelectElement={(id) => {
-                  // 双击选中；文字元素同时直接进入编辑模式。
-                  setSelectedElementId(id);
-                  if (currentPage?.layout?.elements.find((el) => el.id === id)?.type === "text") {
-                    setEditingElementId(id);
+                  // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
+                  // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
+                  if (pendingTextId !== undefined && id !== pendingTextId) {
+                    setPendingTextId(undefined);
                   }
+                  // 选中不同元素时，关闭之前的文字编辑状态
+                  if (editingElementId !== id) {
+                    setShowEditInput(false);
+                  }
+                  setSelectedElementId(id);
+                  // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
                 }}
                 onTransformEnd={(elementId, patch) => {
                   handleElementInteraction(elementId);
@@ -372,40 +399,46 @@ export function BookCanvasEditor({
         </GestureDetector>
       </View>
 
-      {/* 文本编辑：选中后进入编辑模式时显示上下文菜单 + 文字输入 */}
-      {editingText ? (
-        <>
-          <View style={styles.textEditor}>
-            <Text style={styles.sectionLabel}>编辑文字</Text>
-            <TextInput
-              accessibilityLabel="编辑选中文字"
-              multiline
-              onChangeText={(text) => {
-                if (text !== editingText.text && pendingTextId === editingText.id) {
-                  setPendingTextId(undefined);
-                }
-                updateElement(editingText.id, { text }, "text");
-              }}
-              style={styles.textInput}
-              value={editingText.text}
-            />
-          </View>
-          <ElementContextMenu
-            element={editingText}
-            elementFrame={editingText ? {
-              x: editingText.x * pageWidth,
-              y: editingText.y * pageHeight,
-              width: editingText.width * pageWidth,
-              height: editingText.height * pageHeight,
-            } : null}
-            onChangeColor={(color) => updateElement(editingText?.id ?? "", { color }, "structure")}
-            onChangeFont={(fontStyle) => updateElement(editingText?.id ?? "", { fontStyle }, "structure")}
-            onChangeSize={(fontSize) => updateElement(editingText?.id ?? "", { fontSize }, "structure")}
-            onClose={() => setEditingElementId(undefined)}
-            initialMode={contextMenuMode}
-            visible={editingElementId !== undefined && editingText !== undefined}
+      {/* 文字输入：仅在点击工具栏「编辑」按钮后显示 */}
+      {showEditInput && editingElement?.type === "text" ? (
+        <View style={styles.textEditor}>
+          <Text style={styles.sectionLabel}>编辑文字</Text>
+          <TextInput
+            accessibilityLabel="编辑选中文字"
+            multiline
+            onChangeText={(text) => {
+              const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
+              if (el?.type === "text" && text !== el.text && pendingTextId === editingElement.id) {
+                setPendingTextId(undefined);
+              }
+              updateElement(editingElement.id, { text }, "text");
+            }}
+            style={styles.textInput}
+            value={(() => {
+              const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
+              return el?.type === "text" ? el.text : "";
+            })()}
           />
-        </>
+        </View>
+      ) : null}
+
+      {/* 上下文菜单：由工具栏字体/字号/颜色按钮或编辑按钮触发 */}
+      {editingElementId && editingElement?.type === "text" ? (
+        <ElementContextMenu
+          element={editingElement}
+          elementFrame={{
+            x: editingElement.x * pageWidth,
+            y: editingElement.y * pageHeight,
+            width: editingElement.width * pageWidth,
+            height: editingElement.height * pageHeight,
+          }}
+          onChangeColor={(color) => updateElement(editingElement.id, { color }, "structure")}
+          onChangeFont={(fontStyle) => updateElement(editingElement.id, { fontStyle }, "structure")}
+          onChangeSize={(fontSize) => updateElement(editingElement.id, { fontSize }, "structure")}
+          onClose={() => setEditingElementId(undefined)}
+          initialMode={contextMenuMode}
+          visible={true}
+        />
       ) : null}
 
       <CanvasToolbar
@@ -422,6 +455,7 @@ export function BookCanvasEditor({
           if (selectedElement?.type === "text") {
             setContextMenuMode("color");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onDelete={(elementId) => {
@@ -431,16 +465,27 @@ export function BookCanvasEditor({
         onDone={() => {
           discardPendingText();
           setSelectedElementId(undefined);
+          setEditingElementId(undefined);
+          setShowEditInput(false);
         }}
         onDuplicate={(elementId) => {
           const nextId = buildCanvasId("copy");
           changePages(duplicateCanvasElement(clearPendingTextFrom(), currentPage.id, elementId, nextId), "structure");
           setSelectedElementId(nextId);
         }}
+        onEdit={() => {
+          // 手动触发文字编辑模式：显示 TextInput 输入框与上下文菜单
+          if (selectedElement?.type === "text") {
+            setContextMenuMode("main");
+            setEditingElementId(selectedElement.id);
+            setShowEditInput(true);
+          }
+        }}
         onFont={() => {
           if (selectedElement?.type === "text") {
             setContextMenuMode("font");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onPickBackground={() => setAssetTrayMode("background")}
@@ -448,6 +493,7 @@ export function BookCanvasEditor({
           if (selectedElement?.type === "text") {
             setContextMenuMode("size");
             setEditingElementId(selectedElement.id);
+            setShowEditInput(false);
           }
         }}
         onUpdateElement={(elementId, patch) => {
@@ -459,6 +505,11 @@ export function BookCanvasEditor({
 
       <View style={styles.stickerTray}>
         <View style={styles.assetModeRow}>
+          <SmallButton
+            active={false}
+            label="📷 添加照片"
+            onPress={addPhoto}
+          />
           <SmallButton
             active={assetTrayMode === "sticker"}
             label="贴纸"

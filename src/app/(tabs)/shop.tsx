@@ -77,6 +77,15 @@ export default function ShopScreen() {
       </View>
 
       {/* 特殊款 / 基础款 左右切换 */}
+      <Pressable
+        accessibilityLabel="我的纪念品"
+        accessibilityRole="button"
+        onPress={() => router.push("/gifts")}
+        style={({ pressed }) => [{ alignItems: "center", borderColor: colors.warmAccent, borderRadius: 14, borderWidth: 1, padding: 12 }, pressed && styles.pressed]}
+      >
+        <Text style={{ color: colors.warmAccent, fontFamily: bodyFont, fontWeight: "800" }}>登录 / 我的纪念品</Text>
+      </Pressable>
+
       <View style={styles.tierToggle}>
         <Pressable
           accessibilityLabel="查看特殊款"

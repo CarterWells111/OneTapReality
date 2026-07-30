@@ -15,6 +15,14 @@ jest.mock("../src/features/memories/memories-provider", () => ({
 jest.mock("../src/features/profile/profile-provider", () => ({
   useProfile: () => ({ profile: mockProfile(), isProfileReady: true }),
 }));
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: () => ({
+    isAuthReady: true,
+    signOut: jest.fn(),
+    switchAccount: jest.fn(),
+    user: null,
+  }),
+}));
 
 import MemoriesHomeScreen from "../src/app/(tabs)/index";
 import ProfileScreen from "../src/app/(tabs)/profile";

@@ -65,7 +65,7 @@ export default function MemoryDetailScreen() {
         <View style={styles.summaryRow}>
           <View style={styles.summaryTitle}>
             <Tag label={isSample ? "示例 · 扉页" : "扉页"} />
-            <Text selectable style={styles.memoryTitle}>{memory.title}</Text>
+            <Text selectable style={styles.summaryMemoryTitle}>{memory.title}</Text>
           </View>
           <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
         </View>
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: 2 },
   summaryRow: { alignItems: "center", flexDirection: "row", gap: 10, justifyContent: "space-between" },
   summaryTitle: { alignItems: "center", flex: 1, flexDirection: "row", gap: 8 },
-  memoryTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" },
+  summaryMemoryTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" },
   summaryMeta: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   readerLead: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
 });

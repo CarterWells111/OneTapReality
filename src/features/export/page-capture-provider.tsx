@@ -126,22 +126,9 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     const t = task.current;
     if (!t) return;
+    const activeTask = t;
 
     const page = t.pages[t.index];
-
-    const advance = () => {
-      const nextIndex = t.index + 1;
-      if (nextIndex >= t.pages.length) {
-        const finalResults = [...t.results];
-        t.resolve(finalResults);
-        busy.current = false;
-        task.current = null;
-        setProgress(null);
-      } else {
-        t.index = nextIndex;
-        setProgress({ current: nextIndex, total: t.pages.length });
-      }
-    };
 
     // 无 layout 的页面：不截图，直接跳到下一页
     if (!page?.layout) {
@@ -184,6 +171,21 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
         advance();
       }
     };
+
+    function advance() {
+      const nextIndex = activeTask.index + 1;
+      if (nextIndex >= activeTask.pages.length) {
+        // 全部完成
+        const finalResults = [...activeTask.results];
+        activeTask.resolve(finalResults);
+        busy.current = false;
+        task.current = null;
+        setProgress(null);
+      } else {
+        activeTask.index = nextIndex;
+        setProgress({ current: nextIndex, total: activeTask.pages.length });
+      }
+    }
 
     captureCurrent();
 

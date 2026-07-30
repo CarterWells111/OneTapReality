@@ -1,17 +1,19 @@
+import type { StoryPage } from "../../types/memory";
 import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-
-import type { StoryPage } from "../../types/memory";
 
 /**
  * 导出服务：将手账页面导出为图片、PDF 或自定义 .tralbum 格式。
  *
- * PDF/分享功能使用项目直接依赖：
+ * PDF/分享/相册功能需要安装对应的 Expo 可选包：
  * - expo-print
  * - expo-sharing
  * - expo-file-system
- * 保存到系统相册仍为可选能力。
+ * - expo-media-library
+ *
+ * 如未安装，调用对应函数时会抛出友好错误。
  */
 
 export type ExportFormat = "png" | "pdf" | "tralbum";
@@ -99,13 +101,11 @@ export async function shareFile(uri: string, mimeType?: string) {
  */
 export async function saveImageToGallery(uri: string): Promise<void> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- this optional native package is intentionally unavailable in the base build.
-    const expoMedia = require("expo-media-library");
-    const { status } = await expoMedia.requestPermissionsAsync();
+    const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== "granted") {
       throw new Error("需要相册权限才能保存图片");
     }
-    await expoMedia.saveToLibraryAsync(uri);
+    await MediaLibrary.saveToLibraryAsync(uri);
   } catch (err) {
     if (err instanceof Error && err.message === "需要相册权限才能保存图片") throw err;
     throw new Error("保存到相册需要安装 expo-media-library 包");

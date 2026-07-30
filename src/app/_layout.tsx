@@ -15,8 +15,11 @@ import { appFontSources } from "../features/typography/fonts";
 import { migrateDbIfNeeded } from "../storage/memory-repository";
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts(appFontSources);
-  if (!fontsLoaded) {
+  const [fontsLoaded, fontError] = useFonts(appFontSources);
+  if (fontError) {
+    console.error("[RootLayout] 字体加载失败：", fontError);
+  }
+  if (!fontsLoaded && !fontError) {
     return null;
   }
   configureDefaultTypography();
@@ -43,6 +46,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="login" options={{ title: "登录" }} />
               <Stack.Screen name="gifts/index" options={{ title: "我的纪念品" }} />
+              <Stack.Screen name="gifts/shared/[id]" options={{ title: "分享相册" }} />
               <Stack.Screen name="gift/[token]" options={{ title: "NFC 纪念礼品" }} />
               <Stack.Screen name="memory/new" options={{ title: "创建纪念册" }} />
               <Stack.Screen name="memory/review/[id]" options={{ title: "确认草稿" }} />

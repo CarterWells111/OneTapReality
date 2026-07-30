@@ -229,6 +229,26 @@ export const giftPublishSessions = pgTable(
   (table) => [index("gift_publish_sessions_gift_expires_idx").on(table.giftId, table.expiresAt)],
 );
 
+/** Durable R2 cleanup work. Deleting an object never controls gift access. */
+export const giftMediaCleanupJobs = pgTable(
+  "gift_media_cleanup_jobs",
+  {
+    id: text("id").primaryKey(),
+    giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull(),
+    state: text("state").notNull(),
+    attempts: integer("attempts").notNull(),
+    nextAttemptAt: text("next_attempt_at").notNull(),
+    lastError: text("last_error"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gift_media_cleanup_jobs_object_key_unique").on(table.objectKey),
+    index("gift_media_cleanup_jobs_due_idx").on(table.state, table.nextAttemptAt),
+  ],
+);
+
 export type DeviceRow = typeof devices.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type AuthEmailCodeRow = typeof authEmailCodes.$inferSelect;
@@ -245,3 +265,4 @@ export type GiftSessionRow = typeof giftSessions.$inferSelect;
 export type SharedAlbumPageRow = typeof sharedAlbumPages.$inferSelect;
 export type SharedAlbumMediaRow = typeof sharedAlbumMedia.$inferSelect;
 export type GiftPublishSessionRow = typeof giftPublishSessions.$inferSelect;
+export type GiftMediaCleanupJobRow = typeof giftMediaCleanupJobs.$inferSelect;

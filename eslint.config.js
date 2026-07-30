@@ -6,7 +6,7 @@ module.exports = defineConfig([
   {
     ignores: ["node_modules/", ".expo/", "coverage/"],
     settings: {
-      "import/core-modules": ["@svg-maps/china", "expo-file-system/legacy"],
+      "import/core-modules": ["@svg-maps/china", "expo-file-system/legacy", "expo-media-library"],
     },
   },
 ]);

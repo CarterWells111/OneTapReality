@@ -5,12 +5,59 @@ import {
 } from "../src/services/nfc/nfc-url-writer";
 
 const giftUrl = "https://onetapreality.com/gift/test-token";
+const activationUrl = "https://onetapreality.com/activate";
+
+jest.mock("react-native-nfc-manager", () => {
+  class PrototypeNfcManager {
+    readonly startMock = jest.fn().mockResolvedValue(true);
+    readonly requestTechnologyMock = jest.fn().mockResolvedValue(undefined);
+    readonly cancelTechnologyRequestMock = jest.fn().mockResolvedValue(undefined);
+    readonly getTagMock = jest.fn().mockResolvedValue(null);
+    readonly getNdefMessageMock = jest.fn().mockResolvedValue(null);
+    readonly writeNdefMessageMock = jest.fn().mockResolvedValue(undefined);
+
+    start() {
+      return this.startMock();
+    }
+
+    requestTechnology(technology: unknown) {
+      return this.requestTechnologyMock(technology);
+    }
+
+    cancelTechnologyRequest() {
+      return this.cancelTechnologyRequestMock();
+    }
+
+    getTag() {
+      return this.getTagMock();
+    }
+
+    get ndefHandler() {
+      return {
+        getNdefMessage: this.getNdefMessageMock,
+        writeNdefMessage: this.writeNdefMessageMock,
+      };
+    }
+  }
+
+  return {
+    __esModule: true,
+    default: new PrototypeNfcManager(),
+    Ndef: {
+      uriRecord: jest.fn().mockReturnValue([99]),
+      encodeMessage: jest.fn().mockReturnValue([7, 8, 9]),
+      uri: { decodePayload: jest.fn() },
+    },
+    NfcTech: { Ndef: "ndef" },
+  };
+});
 
 function createNativeModule(): NativeNfcModule & {
   start: jest.Mock;
   requestTechnology: jest.Mock;
   cancelTechnologyRequest: jest.Mock;
   writeNdefMessage: jest.Mock;
+  getNdefMessage: jest.Mock;
   getTag: jest.Mock;
   uriRecord: jest.Mock;
   encodeMessage: jest.Mock;
@@ -21,6 +68,7 @@ function createNativeModule(): NativeNfcModule & {
   const cancelTechnologyRequest = jest.fn().mockResolvedValue(undefined);
   const writeNdefMessage = jest.fn().mockResolvedValue(undefined);
   const getTag = jest.fn().mockResolvedValue({ ndefMessage: [{ payload: [1, 2, 3] }] });
+  const getNdefMessage = jest.fn().mockResolvedValue({ ndefMessage: [{ payload: [4, 5, 6] }] });
   const uriRecord = jest.fn().mockReturnValue([99]);
   const encodeMessage = jest.fn().mockReturnValue([7, 8, 9]);
   const decodePayload = jest.fn().mockReturnValue(giftUrl);
@@ -35,10 +83,11 @@ function createNativeModule(): NativeNfcModule & {
     requestTechnology,
     cancelTechnologyRequest,
     getTag,
-    ndefHandler: { writeNdefMessage },
+    ndefHandler: { getNdefMessage, writeNdefMessage },
     ndef,
     nfcTech: { Ndef: "ndef" },
     writeNdefMessage,
+    getNdefMessage,
     uriRecord,
     encodeMessage,
     decodePayload,
@@ -46,6 +95,28 @@ function createNativeModule(): NativeNfcModule & {
 }
 
 describe("NFC URL writer", () => {
+  it("preserves prototype-based methods from the production native manager", async () => {
+    const imported = jest.requireMock("react-native-nfc-manager") as {
+      default: {
+        startMock: jest.Mock;
+        requestTechnologyMock: jest.Mock;
+        cancelTechnologyRequestMock: jest.Mock;
+        writeNdefMessageMock: jest.Mock;
+      };
+    };
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+    });
+
+    await writer.writeHttpsUrl(giftUrl);
+
+    expect(imported.default.startMock).toHaveBeenCalledTimes(1);
+    expect(imported.default.requestTechnologyMock).toHaveBeenCalledWith("ndef");
+    expect(imported.default.writeNdefMessageMock).toHaveBeenCalledWith([7, 8, 9]);
+    expect(imported.default.cancelTechnologyRequestMock).toHaveBeenCalledTimes(1);
+  });
+
   it("loads native NFC only when writing and writes an HTTPS NDEF URI", async () => {
     const native = createNativeModule();
     const loadNativeModule = jest.fn().mockResolvedValue(native);
@@ -105,6 +176,27 @@ describe("NFC URL writer", () => {
 
     await expect(writer.readHttpsUrl()).resolves.toBe(giftUrl);
     expect(native.getTag).toHaveBeenCalledTimes(1);
+    expect(native.cancelTechnologyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces and verifies an HTTPS URL in one native NFC session", async () => {
+    const native = createNativeModule();
+    native.decodePayload
+      .mockReturnValueOnce(activationUrl)
+      .mockReturnValueOnce(giftUrl);
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await writer.replaceHttpsUrl(activationUrl, giftUrl);
+
+    expect(native.start).toHaveBeenCalledTimes(1);
+    expect(native.requestTechnology).toHaveBeenCalledTimes(1);
+    expect(native.getTag).toHaveBeenCalledTimes(1);
+    expect(native.writeNdefMessage).toHaveBeenCalledTimes(1);
+    expect(native.getNdefMessage).toHaveBeenCalledTimes(1);
     expect(native.cancelTechnologyRequest).toHaveBeenCalledTimes(1);
   });
 
