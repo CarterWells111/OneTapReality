@@ -31,7 +31,7 @@ import { DEFAULT_BIO } from "../src/features/profile/local-profile";
 describe("SettingsScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockProfile.mockReturnValue({ nickname: "旅忆用户", avatarUri: null });
+    mockProfile.mockReturnValue({ nickname: "一触如初用户", avatarUri: null });
     mockIsProfileReady.mockReturnValue(true);
     mockUpdateProfile.mockResolvedValue(undefined);
     mockRequestPermission.mockResolvedValue({ granted: true });
@@ -130,7 +130,7 @@ describe("SettingsScreen", () => {
 
     await waitFor(() =>
       expect(mockUpdateProfile).toHaveBeenCalledWith({
-        nickname: "旅忆用户",
+        nickname: "一触如初用户",
         avatarUri: null,
         bio: "记录每一次出发",
       }),

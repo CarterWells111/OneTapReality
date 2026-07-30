@@ -356,3 +356,10 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 - App Store Connect 应用 `6794186067` 已固定绑定 `com.onereality.onetapreality`。为保留现有 TestFlight 应用、测试组和历史构建，iOS `bundleIdentifier` 恢复为该值；Android package 继续使用 `com.onetapreality.app`。
 - iOS 26 SDK 不再接受 `com.apple.developer.nfc.readersession.formats` 中的 `NDEF` 值。`react-native-nfc-manager` 配置改为 `includeNdefEntitlement: false`，使原生构建只声明 Apple 当前支持的 `TAG` 值，同时继续通过 Core NFC 读写 NDEF 标签。
 - 生产 AASA 的 `appID` 必须同步为 `YVJ6GJG87B.com.onereality.onetapreality`；Android `assetlinks.json` 不变。
+
+## 2026-07-30：Alpha 前发布标识与遗留 City Key 载荷收敛
+
+- 当前正式产品名称为 OneTapReality。所有活跃的协作规范、运行清单、公开 API 标识、示例和可生成的 City Key 载荷不得继续使用旧产品名或旧域名；`.tralbum` 仅作为已有本地导出文件格式保留，不作为品牌或 URL 协议。
+- `/api/health` 的 `service` 字段统一为 `onetapreality-api`，维持 `contractVersion: 1` 与字段结构不变。客户端只用它显示连通状态，因此这是一次同仓库前后端契约同步，而不是 API 版本升级。
+- City Key 解析器只迁移其离线载荷前缀至 `onetapreality://` 与 `https://onetapreality.com/`；它仍是未接入路由和原生 NFC 的纯解析器，不能被宣传为可扫码或碰卡直达的功能。实体 City Key 深链将在单独决策后连同 Expo 路由、AASA、App Links 与真机验收一起实现。
+- 不在本次仓库修复中创建或改动 Railway、Cloudflare、R2、Resend、EAS 或 App Store Connect 资源。独立 staging 仍是 Alpha 隔离测试的外部前置条件，只有完成 DNS、服务、数据库、私有 bucket、密钥隔离与手动演练后才能发放 `alpha` 构建和 staging 测试卡。

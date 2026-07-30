@@ -9,14 +9,14 @@ describe("backend client", () => {
 
   it("parses a health response", async () => {
     jest.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ service: "adventurex-api", contractVersion: 1, database: "ok" }), {
+      new Response(JSON.stringify({ service: "onetapreality-api", contractVersion: 1, database: "ok" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
     );
 
     await expect(new BackendApiClient().getHealth()).resolves.toEqual(
-      expect.objectContaining({ database: "ok" }),
+      expect.objectContaining({ service: "onetapreality-api", database: "ok" }),
     );
   });
 

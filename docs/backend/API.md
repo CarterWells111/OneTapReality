@@ -12,7 +12,7 @@
 
 ```json
 {
-  "service": "adventurex-api",
+  "service": "onetapreality-api",
   "contractVersion": 1,
   "database": "ok"
 }

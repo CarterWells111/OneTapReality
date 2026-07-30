@@ -1,8 +1,8 @@
 /**
  * 城市纪念品 QR/URL 载荷解析器（安全兜底）。
  * 支持 app scheme 与未来 HTTPS URL 两种前缀，载荷带版本号：
- *   tralbum://city-key/v1?city=hangzhou&exp=2027-07-01&sig=abcd
- *   https://tralbum.app/city-key/v1?city=hangzhou&exp=2027-07-01&sig=abcd
+ *   onetapreality://city-key/v1?city=hangzhou&exp=2027-07-01&sig=abcd
+ *   https://onetapreality.com/city-key/v1?city=hangzhou&exp=2027-07-01&sig=abcd
  * 校验为演示级 checksum，仅拦截误扫与明显篡改；
  * 正式版必须由服务端做加密验签。本文件不接原生 NFC，也不改路由。
  */
@@ -28,7 +28,7 @@ export type CityKeyResult =
   | { ok: false; reason: CityKeyErrorReason };
 
 const payloadPattern =
-  /^(?:tralbum:\/\/|https:\/\/tralbum\.app\/)city-key\/(v\d+)\?(.*)$/;
+  /^(?:onetapreality:\/\/|https:\/\/onetapreality\.com\/)city-key\/(v\d+)\?(.*)$/;
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -69,7 +69,7 @@ export function buildCityKeyPayload(
   base: "app-scheme" | "https" = "app-scheme"
 ): string {
   const prefix =
-    base === "https" ? "https://tralbum.app/" : "tralbum://";
+    base === "https" ? "https://onetapreality.com/" : "onetapreality://";
   const sig = computeDemoSignature(`v1|${city}|${expiresAt}`);
   return `${prefix}city-key/v1?city=${city}&exp=${expiresAt}&sig=${sig}`;
 }

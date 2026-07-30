@@ -7,7 +7,7 @@ describe("backend deployment smoke check", () => {
       const method = init?.method ?? "GET";
 
       if (url.pathname === "/api/health") {
-        return Response.json({ service: "adventurex-api", contractVersion: 1, database: "ok" });
+        return Response.json({ service: "onetapreality-api", contractVersion: 1, database: "ok" });
       }
       if (url.pathname === "/api/devices/register" && method === "POST") {
         return Response.json({ contractVersion: 1, deviceId: "device-1", accessToken: "local-secret-token" }, { status: 201 });

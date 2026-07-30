@@ -35,35 +35,35 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 
    ```env
    EXPO_PUBLIC_API_ORIGIN=
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/adventurex
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/onetapreality
    DEVICE_TOKEN_PEPPER=replace-with-your-random-local-secret
    PORT=3000
    ```
 
-   若使用已安装的 PostgreSQL 而不是 Docker，请先创建 `adventurex` 数据库，并按实际用户名、密码和端口修改 `DATABASE_URL`。
+   若使用已安装的 PostgreSQL 而不是 Docker，请先创建 `onetapreality` 数据库，并按实际用户名、密码和端口修改 `DATABASE_URL`。
 
 3. 启动 Docker Desktop，检查数据库容器是否已经存在：
 
    ```powershell
-   docker ps -a --filter "name=adventurex-postgres"
+   docker ps -a --filter "name=onetapreality-postgres"
    ```
 
    如果没有任何容器，首次创建 PostgreSQL：
 
    ```powershell
-   docker run --name adventurex-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=adventurex -p 5432:5432 -d postgres:17
+   docker run --name onetapreality-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=onetapreality -p 5432:5432 -d postgres:17
    ```
 
    如果容器已经存在但处于停止状态：
 
    ```powershell
-   docker start adventurex-postgres
+   docker start onetapreality-postgres
    ```
 
 4. 等待 PostgreSQL 接受连接：
 
    ```powershell
-   docker exec adventurex-postgres pg_isready -U postgres -d adventurex
+   docker exec onetapreality-postgres pg_isready -U postgres -d onetapreality
    ```
 
    预期包含 `accepting connections`。
@@ -72,7 +72,7 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 
    ```powershell
    npm run db:migrate
-   docker exec adventurex-postgres psql -U postgres -d adventurex -c "\dt"
+   docker exec onetapreality-postgres psql -U postgres -d onetapreality -c "\dt"
    ```
 
    预期包含 `devices`、`memories`、`memory_pages`；Drizzle 还会在 `drizzle` schema 中维护 migration 记录。这些业务表首次创建后可以是空表。
@@ -108,7 +108,7 @@ OneTapReality｜一触如初是一个本地优先的情侣旅行纪念册演示 
 
 ```powershell
 # Windows 上先确认 Docker Desktop 已启动
-docker start adventurex-postgres
+docker start onetapreality-postgres
 npm run dev
 ```
 
@@ -135,7 +135,7 @@ npm run test:ci
 开发结束后按 `Ctrl+C` 停止 Expo。数据库可以继续运行；如需停止：
 
 ```powershell
-docker stop adventurex-postgres
+docker stop onetapreality-postgres
 ```
 
 ### npm 与锁文件规范
@@ -200,15 +200,15 @@ App 的“设置 → 后端实验”只验证两件事：
 
 ```powershell
 # A. Docker 容器
-docker ps -a --filter "name=adventurex-postgres"
+docker ps -a --filter "name=onetapreality-postgres"
 
 # B. PostgreSQL 就绪状态和端口
-docker exec adventurex-postgres pg_isready -U postgres -d adventurex
+docker exec onetapreality-postgres pg_isready -U postgres -d onetapreality
 Test-NetConnection localhost -Port 5432
 
 # C. migration 与业务表
 npm run db:migrate
-docker exec adventurex-postgres psql -U postgres -d adventurex -c "\dt"
+docker exec onetapreality-postgres psql -U postgres -d onetapreality -c "\dt"
 
 # D. Expo API；保持 npm run dev 在另一终端运行
 Invoke-RestMethod http://localhost:8081/api/health
@@ -221,7 +221,7 @@ npm run verify:backend -- http://localhost:8081
 health 成功时返回：
 
 ```json
-{"service":"adventurex-api","contractVersion":1,"database":"ok"}
+{"service":"onetapreality-api","contractVersion":1,"database":"ok"}
 ```
 
 smoke check 成功时返回：
@@ -238,7 +238,7 @@ smoke 脚本会删除自己创建的测试旅行册，但会保留一条匿名�
 | --- | --- | --- |
 | `docker start` 返回 `No such container` | 数据库容器从未创建 | 执行首次搭建中的 `docker run ... postgres:17` |
 | 无法连接 Docker API | Docker Desktop 未启动 | 启动 Docker Desktop，等待引擎就绪 |
-| `pg_isready` 未显示 `accepting connections` | PostgreSQL 尚未启动或正在初始化 | 查看 `docker logs adventurex-postgres` 后重试 |
+| `pg_isready` 未显示 `accepting connections` | PostgreSQL 尚未启动或正在初始化 | 查看 `docker logs onetapreality-postgres` 后重试 |
 | `Test-NetConnection` 的 `TcpTestSucceeded` 为 `False` | 5432 未监听或被其他服务占用 | 检查容器状态、端口映射和本机 PostgreSQL |
 | capabilities 正常，但 health 返回 `503 database_unavailable` | Expo API 正常，数据库未启动或 `DATABASE_URL` 错误 | 启动 PostgreSQL 并检查 `.env` |
 | health 正常，但注册/CRUD 提示表不存在 | 数据库可连接，但 migration 未应用 | 执行 `npm run db:migrate` 并用 `\dt` 验证 |
