@@ -3,8 +3,9 @@ jest.mock("../src/server/gifts/email-auth", () => ({ createGiftEmailCode: jest.f
 jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificationEmail: jest.fn(async () => undefined) }));
 jest.mock("../src/server/auth/repository", () => ({
   createAuthEmailCode: jest.fn(async () => undefined),
+  deleteAuthEmailCodeById: jest.fn(async () => undefined),
   isAuthEmailCodeRateLimited: jest.fn(async () => false),
-  consumeAuthEmailCode: jest.fn(async () => true),
+  verifyAccountEmailCode: jest.fn(async () => ({ status: "success", user: { id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" } })),
   createOrGetUserByEmail: jest.fn(async () => ({ id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
   createAuthSession: jest.fn(async () => undefined),
   getAuthenticatedUserByTokenHash: jest.fn(async () => ({ id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
@@ -40,6 +41,17 @@ describe("unified account authentication APIs", () => {
     expect(await response.json()).toEqual({ email: "owner@example.com" });
   });
 
+  it("removes an issued code when email delivery fails", async () => {
+    const { sendGiftVerificationEmail } = jest.requireMock("../src/server/gifts/resend-email-sender") as { sendGiftVerificationEmail: jest.Mock };
+    const { deleteAuthEmailCodeById } = jest.requireMock("../src/server/auth/repository") as { deleteAuthEmailCodeById: jest.Mock };
+    sendGiftVerificationEmail.mockRejectedValueOnce(new Error("delivery failed"));
+
+    const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "owner@example.com" }) }));
+
+    expect(response.status).toBe(500);
+    expect(deleteAuthEmailCodeById).toHaveBeenCalledWith(expect.anything(), expect.any(String));
+  });
+
   it("rejects an invalid email as a client error", async () => {
     const { createGiftEmailCode } = jest.requireMock("../src/server/gifts/email-auth") as { createGiftEmailCode: jest.Mock };
     createGiftEmailCode.mockRejectedValueOnce(new Error("Invalid email address"));
@@ -62,6 +74,20 @@ describe("unified account authentication APIs", () => {
     const response = await verify(new Request("http://localhost/api/auth/verify", { method: "POST", body: JSON.stringify({ email: "owner@example.com", code: "123456" }) }));
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ accessToken: "account-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } });
+  });
+
+  it("returns retry guidance when the verification IP window is exhausted", async () => {
+    const { verifyAccountEmailCode } = jest.requireMock("../src/server/auth/repository") as { verifyAccountEmailCode: jest.Mock };
+    verifyAccountEmailCode.mockResolvedValueOnce({ status: "rate_limited" });
+
+    const response = await verify(new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.5" },
+      body: JSON.stringify({ email: "owner@example.com", code: "123456" }),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("900");
   });
 
   it("reports the current user and revokes their session on logout", async () => {

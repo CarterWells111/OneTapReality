@@ -1,4 +1,4 @@
-import { and, eq, gt, ilike, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import type { BackendDatabase } from "../db/client";
 import { giftCardEvents, giftCards, giftEmailCodes, giftMediaCleanupJobs, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums } from "../db/schema";
@@ -12,6 +12,23 @@ export type GiftPublicationPayload = {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+const publicationTails = new Map<string, Promise<void>>();
+
+async function withPublicationLock<T>(giftId: string, work: () => Promise<T>): Promise<T> {
+  const previous = publicationTails.get(giftId) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => gate);
+  publicationTails.set(giftId, tail);
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (publicationTails.get(giftId) === tail) publicationTails.delete(giftId);
+  }
 }
 
 export async function createGift(
@@ -181,7 +198,17 @@ export async function completeGiftPublishSession(
   db: BackendDatabase,
   input: { sessionId: string; ownerEmail: string; now: string },
 ): Promise<{ albumId: string; oldObjectKeys: string[] } | null> {
-  return db.transaction(async (tx) => {
+  const [candidate] = await db.select({ giftId: giftPublishSessions.giftId }).from(giftPublishSessions).where(and(
+    eq(giftPublishSessions.id, input.sessionId),
+    eq(giftPublishSessions.ownerEmail, normalizeEmail(input.ownerEmail)),
+    isNull(giftPublishSessions.completedAt),
+    gt(giftPublishSessions.expiresAt, input.now),
+  )).limit(1);
+  if (!candidate) return null;
+
+  return withPublicationLock(candidate.giftId, () => db.transaction(async (tx) => {
+    await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
+    await tx.execute(sql`select id from gifts where id = ${candidate.giftId} for update`);
     const [session] = await tx.select().from(giftPublishSessions).where(and(
       eq(giftPublishSessions.id, input.sessionId),
       eq(giftPublishSessions.ownerEmail, normalizeEmail(input.ownerEmail)),
@@ -228,7 +255,7 @@ export async function completeGiftPublishSession(
     }))).onConflictDoNothing();
     await tx.update(giftPublishSessions).set({ completedAt: input.now }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
     return { albumId, oldObjectKeys: oldMedia.map((media) => media.objectKey) };
-  });
+  }));
 }
 
 export async function getSharedAlbumSnapshot(db: BackendDatabase, albumId: string) {
@@ -271,25 +298,103 @@ export async function listGiftMediaCleanupJobs(db: BackendDatabase, now: string)
     .where(and(eq(giftMediaCleanupJobs.state, "pending"), lte(giftMediaCleanupJobs.nextAttemptAt, now)));
 }
 
-export async function completeGiftMediaCleanupJob(db: BackendDatabase, id: string, now: string) {
-  await db.update(giftMediaCleanupJobs).set({ state: "completed", completedAt: now, lastError: null }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "pending")));
+export async function claimGiftMediaCleanupJobs(
+  db: BackendDatabase,
+  now: string,
+  leaseUntil: string,
+  requestedLimit = 50,
+) {
+  const limit = Math.max(1, Math.min(requestedLimit, 50));
+  return db.transaction(async (tx) => {
+    const selected = await tx.execute<{ id: string }>(sql`
+      select id from gift_media_cleanup_jobs
+      where (state = 'pending' and next_attempt_at <= ${now})
+         or (state = 'processing' and lease_until <= ${now})
+      order by next_attempt_at, id
+      limit ${limit}
+      for update skip locked
+    `);
+    const ids = selected.rows.map((row) => row.id);
+    if (!ids.length) return [];
+    const jobs = await tx.update(giftMediaCleanupJobs).set({
+      state: "processing",
+      leaseUntil,
+      attempts: sql`${giftMediaCleanupJobs.attempts} + 1`,
+    }).where(inArray(giftMediaCleanupJobs.id, ids)).returning({
+      id: giftMediaCleanupJobs.id,
+      giftId: giftMediaCleanupJobs.giftId,
+      objectKey: giftMediaCleanupJobs.objectKey,
+      state: giftMediaCleanupJobs.state,
+      attempts: giftMediaCleanupJobs.attempts,
+    });
+    const order = new Map(ids.map((id, index) => [id, index]));
+    return jobs.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0));
+  });
 }
 
-export async function failGiftMediaCleanupJob(db: BackendDatabase, id: string, error: string, nextAttemptAt: string) {
-  await db.update(giftMediaCleanupJobs).set({ attempts: sql`${giftMediaCleanupJobs.attempts} + 1`, lastError: error.slice(0, 500), nextAttemptAt }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "pending")));
+export async function completeGiftMediaCleanupJob(db: BackendDatabase, id: string, now: string) {
+  await db.update(giftMediaCleanupJobs).set({ state: "completed", completedAt: now, leaseUntil: null, lastError: null }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "processing")));
+}
+
+export async function failGiftMediaCleanupJob(db: BackendDatabase, id: string, errorCode: string, now: string, nextAttemptAt: string) {
+  const [result] = await db.update(giftMediaCleanupJobs).set({
+    state: sql`case when ${giftMediaCleanupJobs.attempts} >= 10 then 'dead_letter' else 'pending' end`,
+    lastError: errorCode.slice(0, 100),
+    nextAttemptAt,
+    leaseUntil: null,
+    completedAt: sql`case when ${giftMediaCleanupJobs.attempts} >= 10 then ${now} else null end`,
+  }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "processing")))
+    .returning({ state: giftMediaCleanupJobs.state });
+  return result?.state ?? null;
+}
+
+export async function purgeGiftMaintenanceData(
+  db: BackendDatabase,
+  input: { publishCutoff: string; jobCutoff: string; limit: number },
+): Promise<{ publishSessions: number; cleanupJobs: number }> {
+  const limit = Math.max(1, Math.min(input.limit, 100));
+  const publishIds = await db.select({ id: giftPublishSessions.id }).from(giftPublishSessions).where(and(
+    isNotNull(giftPublishSessions.completedAt),
+    lte(giftPublishSessions.completedAt, input.publishCutoff),
+  )).limit(limit);
+  const cleanupIds = await db.select({ id: giftMediaCleanupJobs.id }).from(giftMediaCleanupJobs).where(and(
+    or(eq(giftMediaCleanupJobs.state, "completed"), eq(giftMediaCleanupJobs.state, "dead_letter")),
+    isNotNull(giftMediaCleanupJobs.completedAt),
+    lte(giftMediaCleanupJobs.completedAt, input.jobCutoff),
+  )).limit(limit);
+  const publishSessions = publishIds.length
+    ? await db.delete(giftPublishSessions).where(inArray(giftPublishSessions.id, publishIds.map((row) => row.id))).returning({ id: giftPublishSessions.id })
+    : [];
+  const cleanupJobs = cleanupIds.length
+    ? await db.delete(giftMediaCleanupJobs).where(inArray(giftMediaCleanupJobs.id, cleanupIds.map((row) => row.id))).returning({ id: giftMediaCleanupJobs.id })
+    : [];
+  return { publishSessions: publishSessions.length, cleanupJobs: cleanupJobs.length };
 }
 
 /** Expired, unfinished publication uploads are never made visible and are queued for deletion. */
-export async function expireGiftPublishSessions(db: BackendDatabase, now: string): Promise<number> {
+export async function expireGiftPublishSessions(db: BackendDatabase, now: string, requestedLimit = 50): Promise<number> {
   return db.transaction(async (tx) => {
-    const sessions = await tx.select().from(giftPublishSessions).where(and(isNull(giftPublishSessions.completedAt), lte(giftPublishSessions.expiresAt, now)));
+    const limit = Math.max(1, Math.min(requestedLimit, 50));
+    const selected = await tx.execute<{ id: string }>(sql`
+      select id from gift_publish_sessions
+      where completed_at is null and expires_at <= ${now}
+      order by expires_at, id
+      limit ${limit}
+      for update skip locked
+    `);
+    const ids = selected.rows.map((row) => row.id);
+    if (!ids.length) return 0;
+    const sessions = await tx.update(giftPublishSessions).set({ completedAt: now }).where(and(
+      inArray(giftPublishSessions.id, ids),
+      isNull(giftPublishSessions.completedAt),
+      lte(giftPublishSessions.expiresAt, now),
+    )).returning();
     for (const session of sessions) {
       const payload = session.payloadJson as GiftPublicationPayload;
       if (payload.media.length) await tx.insert(giftMediaCleanupJobs).values(payload.media.map((media) => ({
         id: crypto.randomUUID(), giftId: session.giftId, objectKey: media.objectKey, state: "pending", attempts: 0,
         nextAttemptAt: now, lastError: null, completedAt: null, createdAt: now,
       }))).onConflictDoNothing();
-      await tx.update(giftPublishSessions).set({ completedAt: now }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
     }
     return sessions.length;
   });
@@ -320,9 +425,10 @@ export async function activateGiftCard(db: BackendDatabase, cardId: string, admi
   });
 }
 
-export async function expireGiftCardReservations(db: BackendDatabase, now: string): Promise<number> {
+export async function expireGiftCardReservations(db: BackendDatabase, now: string, requestedLimit = 50): Promise<number> {
   return db.transaction(async (tx) => {
-    const cards = await tx.select().from(giftCards).where(and(eq(giftCards.state, "initializing"), lte(giftCards.expiresAt, now)));
+    const limit = Math.max(1, Math.min(requestedLimit, 50));
+    const cards = await tx.select().from(giftCards).where(and(eq(giftCards.state, "initializing"), lte(giftCards.expiresAt, now))).limit(limit);
     let expired = 0;
     for (const card of cards) {
       const updated = await tx.update(giftCards).set({ state: "retired", retiredAt: now }).where(and(

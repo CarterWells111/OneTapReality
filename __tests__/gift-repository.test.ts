@@ -88,6 +88,30 @@ describe("gift repository", () => {
     } finally { await close(); }
   });
 
+  it("serializes concurrent publication sessions for the same gift", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-07-24T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-07-24T00:01:00.000Z");
+      for (const [id, title] of [["publish-1", "First"], ["publish-2", "Second"]] as const) {
+        await createGiftPublishSession(db, {
+          id, giftId: "gift-1", ownerEmail: "owner@example.com", createdAt: "2026-07-24T00:02:00.000Z", expiresAt: "2026-07-24T00:12:00.000Z",
+          payload: { sourceMemoryId: id, title, pages: [], media: [] },
+        });
+      }
+
+      const results = await Promise.allSettled([
+        completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:03:00.000Z" }),
+        completeGiftPublishSession(db, { sessionId: "publish-2", ownerEmail: "owner@example.com", now: "2026-07-24T00:03:01.000Z" }),
+      ]);
+
+      expect(results.every((result) => result.status === "fulfilled" && result.value !== null)).toBe(true);
+      const latest = results[1].status === "fulfilled" ? results[1].value : null;
+      await expect(getSharedAlbumSnapshot(db, latest!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ version: 2 }) }));
+    } finally { await close(); }
+  });
+
   it("keeps management lookup internal to the owner and queues private media cleanup on permanent disable", async () => {
     const { db, close } = createBackendTestDatabase();
     try {

@@ -12,6 +12,7 @@ import { requireGiftAdminEmail } from "../../../server/gifts/admin-auth";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../server/gifts/session-auth";
 import { errorResponse } from "../../../server/http/errors";
 import { getGiftUrlOrigin, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
+import { scheduleOpportunisticGiftMaintenance } from "../../../server/maintenance/opportunistic-gift-maintenance";
 
 const reservationSchema = z.object({ note: z.string().trim().max(240).optional() });
 const reservationDurationMs = 15 * 60 * 1000;
@@ -72,6 +73,7 @@ export async function POST(request: Request): Promise<Response> {
           createdAt: now.toISOString(),
           expiresAt,
         });
+        scheduleOpportunisticGiftMaintenance();
         return Response.json({
           cardId,
           cardCode,

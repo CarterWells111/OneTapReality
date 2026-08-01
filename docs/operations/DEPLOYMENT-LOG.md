@@ -10,7 +10,7 @@
 - 负责人：
 - 批准人：
 - 环境：local / staging / production
-- 服务：Railway API 或 cron / PostgreSQL / Cloudflare R2 / Resend / EAS 或 Expo / Cloudflare DNS 或深链文件 / TestFlight 或 App Store Connect
+- 服务：Railway API / PostgreSQL / Cloudflare Workers Cron / Cloudflare R2 / Resend / EAS 或 Expo / Cloudflare DNS 或深链文件 / TestFlight 或 App Store Connect
 - 变更摘要：
 - 验证证据（脱敏）：
 - 回滚动作：

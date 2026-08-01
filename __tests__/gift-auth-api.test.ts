@@ -1,5 +1,7 @@
 jest.mock("../src/server/gifts/email-auth", () => ({ normalizeGiftEmail: jest.fn((email: string) => email.trim().toLowerCase()) }));
-jest.mock("../src/server/auth/repository", () => ({ consumeAuthEmailCode: jest.fn(async () => true), createAuthSession: jest.fn(async () => undefined), createOrGetUserByEmail: jest.fn(async () => ({ id: "user-1", email: "owner@example.com" })) }));
+jest.mock("../src/server/auth/repository", () => ({
+  verifyAccountEmailCode: jest.fn(async () => ({ status: "success", user: { id: "user-1", email: "owner@example.com" } })),
+}));
 jest.mock("../src/server/auth/device-auth", () => ({ createAccessToken: jest.fn(() => "session-token"), hashAccessToken: jest.fn(async () => "session-hash") }));
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 

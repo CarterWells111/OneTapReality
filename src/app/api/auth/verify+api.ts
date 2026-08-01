@@ -1,5 +1,5 @@
 import { createAccessToken, hashAccessToken } from "../../../server/auth/device-auth";
-import { consumeAuthEmailCode, createAuthSession, createOrGetUserByEmail } from "../../../server/auth/repository";
+import { verifyAccountEmailCode } from "../../../server/auth/repository";
 import { isGiftAdminEmail } from "../../../server/gifts/admin-auth";
 import { getServerDatabase } from "../../../server/db/client";
 import { normalizeGiftEmail } from "../../../server/gifts/email-auth";
@@ -15,12 +15,29 @@ export async function POST(request: Request): Promise<Response> {
     const email = normalizeGiftEmail(rawEmail);
     requireGiftSharingEnabled();
     requireAlphaEmailAllowed(email);
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
     const db = getServerDatabase();
-    if (!await consumeAuthEmailCode(db, email, await hashAccessToken(code, authPepper), now)) throw new ApiError(401, "invalid_code", "Verification code is invalid or expired");
-    const user = await createOrGetUserByEmail(db, email, now);
     const accessToken = createAccessToken();
-    await createAuthSession(db, { id: crypto.randomUUID(), userId: user.id, tokenHash: await hashAccessToken(accessToken, authPepper), createdAt: now, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() });
+    const forwardedFor = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() || "unknown";
+    const windowStartedMs = Math.floor(nowDate.getTime() / (15 * 60 * 1000)) * 15 * 60 * 1000;
+    const result = await verifyAccountEmailCode(db, {
+      email,
+      codeHash: await hashAccessToken(code, authPepper),
+      now,
+      ipScopeHash: await hashAccessToken(`verify-ip:${forwardedFor}:${windowStartedMs}`, authPepper),
+      ipWindowStartedAt: new Date(windowStartedMs).toISOString(),
+      ipExpiresAt: new Date(windowStartedMs + 15 * 60 * 1000).toISOString(),
+      session: {
+        id: crypto.randomUUID(),
+        tokenHash: await hashAccessToken(accessToken, authPepper),
+        createdAt: now,
+        expiresAt: new Date(nowDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    if (result.status === "rate_limited") throw new ApiError(429, "verification_rate_limited", "Please wait before trying another code", undefined, { "Retry-After": "900" });
+    if (result.status !== "success") throw new ApiError(401, "invalid_code", "Verification code is invalid or expired");
+    const { user } = result;
     return Response.json({ accessToken, user: { id: user.id, email: user.email, isAdmin: isGiftAdminEmail(user.email) } }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }

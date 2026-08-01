@@ -10,7 +10,7 @@ OneTapReality 保留匿名设备 API 的隔离边界，同时为 NFC 礼品使�
 
 R2 桶必须保持私有。授权后的发布请求只收到短期 PUT URL，阅读请求只收到短期 GET URL；发布提交会核对对象存在、Content-Type 与字节数。替换发布和停用先在数据库中撤销访问，再写入持久化媒体清理任务；R2 暂时删除失败绝不能恢复访问权。
 
-Railway 仅保留服务端变量：`DATABASE_URL`、`GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`RESEND_API_KEY`、`GIFT_EMAIL_FROM`、`GIFT_ADMIN_EMAILS`、`GIFT_CARD_CLEANUP_SECRET` 和 `R2_*`。`EXPO_PUBLIC_API_ORIGIN` 只允许公开 API origin，绝不包含秘密。维护端点只接受 `x-gift-maintenance-secret`，应由 Railway Cron 调用。
+Railway 仅保留服务端变量：`DATABASE_URL`、`GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`RESEND_API_KEY`、`GIFT_EMAIL_FROM`、`GIFT_ADMIN_EMAILS`、`GIFT_CARD_CLEANUP_SECRET` 和 `R2_*`。`EXPO_PUBLIC_API_ORIGIN` 只允许公开 API origin，绝不包含秘密。维护端点仅接受 POST 与 `x-gift-maintenance-secret`；调用方是无存储绑定的 Cloudflare Workers Free 小时级 Cron，Worker Secret 与 Railway 的 `GIFT_CARD_CLEANUP_SECRET` 必须一致且不得提交到仓库。独立 Railway 定时服务已停用，成功的礼品写请求仅在维护逾期时执行受租约和预算限制的兜底维护。
 
 Alpha 环境还须使用独立的 `GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`DEVICE_TOKEN_PEPPER`、R2 凭据、清理密钥和管理员测试邮箱。`ALPHA_ALLOWED_EMAILS` 仅用于 staging 白名单；不在名单内的邮箱统一得到 `beta_invite_required`。`GIFT_SHARING_ENABLED=false` 会停止新验证码、认领、发布和礼品读取，管理员停用接口保持可用。
 

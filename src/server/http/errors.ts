@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly fields?: Record<string, string>,
+    public readonly headers?: HeadersInit,
   ) {
     super(message);
     this.name = "ApiError";
@@ -16,7 +17,7 @@ export function errorResponse(error: unknown): Response {
   if (error instanceof ApiError) {
     return Response.json({
       error: { code: error.code, message: error.message, ...(error.fields ? { fields: error.fields } : {}) },
-    }, { status: error.status });
+    }, { status: error.status, headers: error.headers });
   }
 
   if (error instanceof ZodError) {

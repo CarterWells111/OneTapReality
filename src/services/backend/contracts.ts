@@ -69,6 +69,7 @@ export type HealthResponse = {
   service: "onetapreality-api";
   contractVersion: typeof backendContractVersion;
   database: "ok";
+  schemaVersion: number;
 };
 
 export type CapabilitiesResponse = {

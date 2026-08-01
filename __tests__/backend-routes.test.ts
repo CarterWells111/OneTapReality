@@ -32,7 +32,7 @@ import { createDevice, getDeviceByInstallationId, listMemories } from "../src/se
 describe("backend API routes", () => {
   beforeEach(() => {
     mockDatabaseExecute.mockReset();
-    mockDatabaseExecute.mockResolvedValue([]);
+    mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 7 }] });
   });
 
   it("returns health and capabilities without authentication", async () => {
@@ -44,8 +44,31 @@ describe("backend API routes", () => {
       service: "onetapreality-api",
       contractVersion: 1,
       database: "ok",
+      schemaVersion: 7,
     });
     expect((await capabilities.json()).features.automaticSync).toBe(false);
+  });
+
+  it("reports a database whose application schema is behind", async () => {
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: [] });
+
+    const response = await getHealth(new Request("http://localhost/api/health"));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "database_schema_outdated", message: "Database schema is not ready" },
+    });
+  });
+
+  it("reports an outdated schema when the schema metadata table is missing", async () => {
+    mockDatabaseExecute.mockRejectedValueOnce(Object.assign(new Error("relation does not exist"), { code: "42P01" }));
+
+    const response = await getHealth(new Request("http://localhost/api/health"));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "database_schema_outdated", message: "Database schema is not ready" },
+    });
   });
 
   it("reports an unavailable PostgreSQL database", async () => {
