@@ -1,5 +1,5 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 
 import * as schema from "./schema";
 
@@ -23,9 +23,32 @@ export function createBackendDatabase(client: Pool): BackendDatabase {
   return drizzle({ client, schema });
 }
 
+export function getDatabasePoolConfig(connectionString: string): PoolConfig {
+  return {
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 10_000,
+  };
+}
+
 let cachedDatabase: BackendDatabase | undefined;
+let cachedPool: Pool | undefined;
+
+export async function closeServerDatabase(): Promise<void> {
+  const pool = cachedPool;
+  cachedDatabase = undefined;
+  cachedPool = undefined;
+  if (pool) await pool.end();
+}
 
 export function getServerDatabase(): BackendDatabase {
-  cachedDatabase ??= createBackendDatabase(new Pool({ connectionString: getDatabaseUrl() }));
+  if (!cachedDatabase) {
+    cachedPool = new Pool(getDatabasePoolConfig(getDatabaseUrl()));
+    cachedDatabase = createBackendDatabase(cachedPool);
+  }
   return cachedDatabase;
 }
+
+const databaseCloserKey = Symbol.for("onetap.closeServerDatabase");
+(globalThis as typeof globalThis & { [databaseCloserKey]?: () => Promise<void> })[databaseCloserKey] = closeServerDatabase;

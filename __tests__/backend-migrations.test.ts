@@ -15,11 +15,14 @@ describe("backend PostgreSQL migrations", () => {
         select table_name
         from information_schema.tables
         where table_schema = 'public'
-          and table_name in ('devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
+          and table_name in ('app_maintenance_state', 'app_schema_meta', 'auth_rate_limits', 'devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
         order by table_name
       `);
 
       expect(result.rows.map((row) => row.table_name)).toEqual([
+        "app_maintenance_state",
+        "app_schema_meta",
+        "auth_rate_limits",
         "devices",
         "gift_email_codes",
         "gift_media_cleanup_jobs",

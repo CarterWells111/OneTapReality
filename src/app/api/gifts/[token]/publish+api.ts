@@ -4,6 +4,7 @@ import { getR2MediaStoreFromEnvironment } from "../../../../server/gifts/r2-medi
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
 import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
+import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
 type PublishBody = {
   sourceMemoryId?: string;
@@ -48,6 +49,7 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     const payload = preparePayload(await request.json() as PublishBody, giftId, sessionId);
     await createGiftPublishSession(db, { id: sessionId, giftId, ownerEmail: email, payload, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString() });
     const uploads = await Promise.all(payload.media.map(async (media) => ({ position: media.position, objectKey: media.objectKey, uploadUrl: await store.createUploadUrl(media) })));
+    scheduleOpportunisticGiftMaintenance();
     return Response.json({ publicationId: sessionId, uploads, expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString() }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }
@@ -72,6 +74,7 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     // The repository owns the metadata, so the client cannot mark a partial upload as published.
     const result = await completeGiftPublishSession(db, { sessionId: publicationId, ownerEmail: email, now });
     if (!result) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
+    scheduleOpportunisticGiftMaintenance();
     return Response.json({ albumId: result.albumId }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }

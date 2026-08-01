@@ -6,6 +6,7 @@ const express = require("express");
 const morgan = require("morgan");
 const { createRequestHandler } = require("expo-server/adapter/express");
 const { productionRequestLog } = require("./src/server/http/request-log.cjs");
+const { createGracefulShutdown } = require("./src/server/http/graceful-shutdown.cjs");
 
 const clientBuildDirectory = path.join(process.cwd(), "dist/client");
 const serverBuildDirectory = path.join(process.cwd(), "dist/server");
@@ -34,11 +35,14 @@ const server = app.listen(port, "0.0.0.0", () => {
   console.log(`AdventureX server listening on port ${port}`);
 });
 
-process.on("SIGTERM", () => {
-  server.close((error) => {
-    if (error) {
-      console.error(error);
-      process.exitCode = 1;
-    }
-  });
+const shutdown = createGracefulShutdown({
+  server,
+  closeDatabase: async () => {
+    const closeDatabase = globalThis[Symbol.for("onetap.closeServerDatabase")];
+    if (typeof closeDatabase === "function") await closeDatabase();
+  },
+  setExitCode: (code) => { process.exitCode = code; },
 });
+
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);

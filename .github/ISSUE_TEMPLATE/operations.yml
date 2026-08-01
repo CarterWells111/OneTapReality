@@ -39,8 +39,9 @@ body:
     attributes:
       label: 外部服务
       options:
-        - Railway API 或 cron
+        - Railway API
         - PostgreSQL
+        - Cloudflare Workers Cron
         - Cloudflare R2
         - Resend
         - EAS 或 Expo

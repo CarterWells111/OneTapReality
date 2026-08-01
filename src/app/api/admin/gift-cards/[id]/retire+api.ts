@@ -3,6 +3,7 @@ import { expireGiftCardReservations, retireGiftCard } from "../../../../../serve
 import { requireGiftAdminEmail } from "../../../../../server/gifts/admin-auth";
 import { requireGiftSessionEmail } from "../../../../../server/gifts/session-auth";
 import { errorResponse, notFoundResponse } from "../../../../../server/http/errors";
+import { scheduleOpportunisticGiftMaintenance } from "../../../../../server/maintenance/opportunistic-gift-maintenance";
 
 export async function POST(request: Request, context: { id: string }): Promise<Response> {
   try {
@@ -11,6 +12,7 @@ export async function POST(request: Request, context: { id: string }): Promise<R
     const now = new Date().toISOString();
     await expireGiftCardReservations(database, now);
     if (!await retireGiftCard(database, context.id, email, now)) return notFoundResponse();
+    scheduleOpportunisticGiftMaintenance();
     return Response.json({ retired: true });
   } catch (error) {
     return errorResponse(error);

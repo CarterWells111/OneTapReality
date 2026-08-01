@@ -3,6 +3,7 @@ import { addGiftMember, getGiftAccessByTokenHash, listGiftMembers, removeGiftMem
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
 import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
+import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
 async function requireOwner(request: Request, token: string) {
   requireGiftSharingEnabled();
@@ -26,7 +27,9 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email.trim())) throw new ApiError(400, "validation_failed", "A valid email is required");
     const { db, giftId } = await requireOwner(request, token);
     if (!await addGiftMember(db, giftId, email, new Date().toISOString())) throw new ApiError(409, "gift_member_limit_or_duplicate", "The email is already listed or this gift already has three members");
-    return Response.json({ members: await listGiftMembers(db, giftId), maximumMembers: 3 }, { status: 201 });
+    const members = await listGiftMembers(db, giftId);
+    scheduleOpportunisticGiftMaintenance();
+    return Response.json({ members, maximumMembers: 3 }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }
 
@@ -36,6 +39,8 @@ export async function DELETE(request: Request, { token }: { token: string }): Pr
     if (typeof email !== "string") throw new ApiError(400, "validation_failed", "An email is required");
     const { db, giftId } = await requireOwner(request, token);
     if (!await removeGiftMember(db, giftId, email)) throw new ApiError(404, "gift_member_not_found", "Only invited viewers can be removed");
-    return Response.json({ members: await listGiftMembers(db, giftId), maximumMembers: 3 });
+    const members = await listGiftMembers(db, giftId);
+    scheduleOpportunisticGiftMaintenance();
+    return Response.json({ members, maximumMembers: 3 });
   } catch (error) { return errorResponse(error); }
 }

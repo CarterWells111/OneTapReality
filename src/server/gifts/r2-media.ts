@@ -13,10 +13,16 @@ export type PrivateMediaStore = {
   createReadUrl: (objectKey: string) => Promise<string>;
   getObjectMetadata: (objectKey: string) => Promise<{ contentType: string; byteSize: number } | null>;
   objectExists: (objectKey: string) => Promise<boolean>;
-  deleteObjects: (objectKeys: string[]) => Promise<void>;
+  deleteObjects: (objectKeys: string[], options?: { abortSignal?: AbortSignal }) => Promise<void>;
 };
 
 const signedUrlLifetimeSeconds = 10 * 60;
+
+function isMissingObjectError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return candidate.$metadata?.httpStatusCode === 404 || candidate.name === "NoSuchKey" || candidate.name === "NotFound";
+}
 
 export function createR2MediaStore(config: R2MediaConfig): PrivateMediaStore {
   const client = new S3Client({
@@ -44,14 +50,20 @@ export function createR2MediaStore(config: R2MediaConfig): PrivateMediaStore {
         const object = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: objectKey }));
         if (typeof object.ContentType !== "string" || typeof object.ContentLength !== "number") return null;
         return { contentType: object.ContentType, byteSize: object.ContentLength };
-      } catch { return null; }
+      } catch (error) {
+        if (isMissingObjectError(error)) return null;
+        throw error;
+      }
     },
-    async deleteObjects(objectKeys) {
+    async deleteObjects(objectKeys, options) {
       if (objectKeys.length === 0) return;
-      await client.send(new DeleteObjectsCommand({
+      const result = await client.send(new DeleteObjectsCommand({
         Bucket: config.bucket,
         Delete: { Objects: objectKeys.map((Key) => ({ Key })), Quiet: true },
-      }));
+      }), options?.abortSignal ? { abortSignal: options.abortSignal } : undefined);
+      if (result.Errors?.length) {
+        throw new Error(`R2 deletion failed for ${result.Errors.length} object${result.Errors.length === 1 ? "" : "s"}`);
+      }
     },
   };
 }

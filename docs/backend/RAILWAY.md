@@ -51,7 +51,7 @@ Railway 托管 Expo API Routes 的 Node server 和同项目 PostgreSQL；现有 
 https://your-service.up.railway.app/api/health
 ```
 
-应返回 HTTP 200，且 JSON 中包含 `"database":"ok"`。随后在本机仓库执行完整 smoke check：
+应返回 HTTP 200，且 JSON 中包含 `"database":"ok"` 与不低于当前最低要求的 `"schemaVersion"`。若 migration 缺失，接口返回 `503 database_schema_outdated`，不会把未迁移的实例标记为 ready。随后在本机仓库执行完整 smoke check：
 
 ```bash
 npm run verify:backend -- https://your-service.up.railway.app
@@ -89,6 +89,8 @@ staging 域还必须部署同一发布签名对应的 `/.well-known/apple-app-si
 - 构建成功但健康检查超时：不要固定 `PORT`；服务必须使用 Railway 注入值。
 - App 显示网络不可用：确认构建时 `EXPO_PUBLIC_API_ORIGIN` 是完整 HTTPS origin、没有尾部路径，并重新构建 App。
 
-## 维护 Cron
+## 礼品维护
 
-同一仓库的维护 Cron 复用 Railway build 配置，但不得配置 `RUN_DB_MIGRATIONS` 或 `DATABASE_URL`。它会在 pre-deploy 阶段安全跳过 migration，只执行自己的短生命周期 Start Command。
+不再创建或运行独立 Railway Cron Service。现有 API Service 继续提供仅 POST、受 `GIFT_CARD_CLEANUP_SECRET` 保护的 `/api/internal/gift-maintenance`；一个没有 R2、KV、D1、队列或日志存储绑定的 Cloudflare Workers Free Cron 每小时调用一次。成功的礼品写请求只在上次完成维护超过 90 分钟时触发小批量兜底，健康检查始终只读。
+
+Worker 的本地 dry-run、生产审批、备份、迁移与回滚步骤见 [礼品维护运行手册](../operations/GIFT-MAINTENANCE.md)。创建 Worker、写入 Secret、启用 Cron、调用生产维护端点和部署 Railway 必须分别批准；任何要求付费计划、云端备份或新增 Railway Service 的步骤都应立即停止。

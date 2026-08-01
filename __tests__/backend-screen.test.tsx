@@ -12,7 +12,7 @@ const mockGetCapabilities = jest.spyOn(BackendApiClient.prototype, "getCapabilit
 describe("backend experiment screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetHealth.mockResolvedValue({ service: "onetapreality-api", contractVersion: 1, database: "ok" });
+    mockGetHealth.mockResolvedValue({ service: "onetapreality-api", contractVersion: 1, database: "ok", schemaVersion: 7 });
     mockGetCapabilities.mockResolvedValue({
       contractVersion: 1,
       features: { deviceRegistration: true, memoryCrud: true, automaticSync: false, photoUpload: false },

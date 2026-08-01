@@ -23,4 +23,23 @@ describe("private R2 media store", () => {
 
     await expect(store.getObjectMetadata("gifts/gift-1/photo.jpg")).resolves.toEqual({ contentType: "image/jpeg", byteSize: 42 });
   });
+
+  it("returns null only for an object that R2 reports as missing", async () => {
+    const { S3Client } = jest.requireMock("@aws-sdk/client-s3") as { S3Client: jest.Mock };
+    S3Client.mockImplementation(() => ({ send: jest.fn(async () => { throw Object.assign(new Error("missing"), { $metadata: { httpStatusCode: 404 } }); }) }));
+    const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+    await expect(store.getObjectMetadata("missing.jpg")).resolves.toBeNull();
+
+    S3Client.mockImplementation(() => ({ send: jest.fn(async () => { throw Object.assign(new Error("upstream"), { $metadata: { httpStatusCode: 503 } }); }) }));
+    const unavailable = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+    await expect(unavailable.getObjectMetadata("photo.jpg")).rejects.toThrow("upstream");
+  });
+
+  it("rejects a nominally successful batch response containing object errors", async () => {
+    const { S3Client } = jest.requireMock("@aws-sdk/client-s3") as { S3Client: jest.Mock };
+    S3Client.mockImplementation(() => ({ send: jest.fn(async () => ({ Errors: [{ Code: "InternalError", Key: "secret-object-key" }] })) }));
+    const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+
+    await expect(store.deleteObjects(["secret-object-key"])).rejects.toThrow("R2 deletion failed for 1 object");
+  });
 });

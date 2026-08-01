@@ -1,5 +1,5 @@
 import { getServerDatabase } from "../../../server/db/client";
-import { createAuthEmailCode, isAuthEmailCodeRateLimited } from "../../../server/auth/repository";
+import { createAuthEmailCode, deleteAuthEmailCodeById, isAuthEmailCodeRateLimited } from "../../../server/auth/repository";
 import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
@@ -26,8 +26,14 @@ export async function POST(request: Request): Promise<Response> {
     }
     const db = getServerDatabase();
     if (await isAuthEmailCodeRateLimited(db, code.email, new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString())) throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
-    await createAuthEmailCode(db, { id: crypto.randomUUID(), email: code.email, codeHash: code.codeHash, createdAt: now, expiresAt: code.expiresAt });
-    await sendGiftVerificationEmail({ apiKey, from, email: code.email, code: code.code });
+    const codeId = crypto.randomUUID();
+    await createAuthEmailCode(db, { id: codeId, email: code.email, codeHash: code.codeHash, createdAt: now, expiresAt: code.expiresAt });
+    try {
+      await sendGiftVerificationEmail({ apiKey, from, email: code.email, code: code.code });
+    } catch (error) {
+      await deleteAuthEmailCodeById(db, codeId);
+      throw error;
+    }
     return Response.json({ email: code.email }, { status: 202 });
   } catch (error) { return errorResponse(error); }
 }

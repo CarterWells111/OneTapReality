@@ -1,4 +1,5 @@
-import { index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 import type { CloudCanvasLayout } from "../../services/backend/contracts";
 
@@ -36,9 +37,14 @@ export const authEmailCodes = pgTable(
     codeHash: text("code_hash").notNull(),
     expiresAt: text("expires_at").notNull(),
     consumedAt: text("consumed_at"),
+    failedAttempts: integer("failed_attempts").default(0).notNull(),
     createdAt: text("created_at").notNull(),
   },
-  (table) => [index("auth_email_codes_email_created_idx").on(table.email, table.createdAt)],
+  (table) => [
+    index("auth_email_codes_email_created_idx").on(table.email, table.createdAt),
+    index("auth_email_codes_expires_idx").on(table.expiresAt, table.id),
+    check("auth_email_codes_failed_attempts_check", sql`${table.failedAttempts} between 0 and 5`),
+  ],
 );
 
 /** Thirty-day bearer-token sessions. Only a peppered hash of the token is persisted. */
@@ -52,7 +58,27 @@ export const authSessions = pgTable(
     revokedAt: text("revoked_at"),
     createdAt: text("created_at").notNull(),
   },
-  (table) => [uniqueIndex("auth_sessions_token_hash_unique").on(table.tokenHash), index("auth_sessions_user_idx").on(table.userId)],
+  (table) => [
+    uniqueIndex("auth_sessions_token_hash_unique").on(table.tokenHash),
+    index("auth_sessions_user_idx").on(table.userId),
+    index("auth_sessions_expires_idx").on(table.expiresAt, table.id),
+    index("auth_sessions_revoked_idx").on(table.revokedAt, table.id),
+  ],
+);
+
+/** Short-lived hashed verification throttles. Raw client IP addresses are never stored. */
+export const authRateLimits = pgTable(
+  "auth_rate_limits",
+  {
+    scopeHash: text("scope_hash").primaryKey(),
+    windowStartedAt: text("window_started_at").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    expiresAt: text("expires_at").notNull(),
+  },
+  (table) => [
+    index("auth_rate_limits_expires_idx").on(table.expiresAt, table.scopeHash),
+    check("auth_rate_limits_attempts_check", sql`${table.attempts} >= 0`),
+  ],
 );
 
 export const memories = pgTable(
@@ -96,7 +122,10 @@ export const gifts = pgTable(
     claimedAt: text("claimed_at"),
     disabledAt: text("disabled_at"),
   },
-  (table) => [uniqueIndex("gifts_token_hash_unique").on(table.tokenHash)],
+  (table) => [
+    uniqueIndex("gifts_token_hash_unique").on(table.tokenHash),
+    check("gifts_status_check", sql`${table.status} in ('initializing', 'unclaimed', 'bound', 'disabled')`),
+  ],
 );
 
 export const giftCards = pgTable(
@@ -116,7 +145,9 @@ export const giftCards = pgTable(
   (table) => [
     uniqueIndex("gift_cards_code_unique").on(table.code),
     uniqueIndex("gift_cards_gift_unique").on(table.giftId),
-    index("gift_cards_state_created_idx").on(table.state, table.createdAt),
+    index("gift_cards_state_expires_idx").on(table.state, table.expiresAt, table.id),
+    check("gift_cards_state_check", sql`${table.state} in ('initializing', 'active', 'retired')`),
+    check("gift_cards_gift_id_present_check", sql`${table.giftId} is not null`),
   ],
 );
 
@@ -142,7 +173,11 @@ export const giftMembers = pgTable(
     role: text("role").notNull(),
     createdAt: text("created_at").notNull(),
   },
-  (table) => [uniqueIndex("gift_members_gift_email_unique").on(table.giftId, table.email)],
+  (table) => [
+    uniqueIndex("gift_members_gift_email_unique").on(table.giftId, table.email),
+    index("gift_members_email_role_gift_idx").on(table.email, table.role, table.giftId),
+    check("gift_members_role_check", sql`${table.role} in ('owner', 'viewer')`),
+  ],
 );
 
 export const sharedAlbums = pgTable(
@@ -226,7 +261,11 @@ export const giftPublishSessions = pgTable(
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull(),
   },
-  (table) => [index("gift_publish_sessions_gift_expires_idx").on(table.giftId, table.expiresAt)],
+  (table) => [
+    index("gift_publish_sessions_gift_expires_idx").on(table.giftId, table.expiresAt),
+    index("gift_publish_sessions_expires_idx").on(table.expiresAt, table.id),
+    index("gift_publish_sessions_completed_idx").on(table.completedAt, table.id),
+  ],
 );
 
 /** Durable R2 cleanup work. Deleting an object never controls gift access. */
@@ -239,20 +278,42 @@ export const giftMediaCleanupJobs = pgTable(
     state: text("state").notNull(),
     attempts: integer("attempts").notNull(),
     nextAttemptAt: text("next_attempt_at").notNull(),
+    leaseUntil: text("lease_until"),
     lastError: text("last_error"),
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
     uniqueIndex("gift_media_cleanup_jobs_object_key_unique").on(table.objectKey),
-    index("gift_media_cleanup_jobs_due_idx").on(table.state, table.nextAttemptAt),
+    index("gift_media_cleanup_jobs_due_idx").on(table.state, table.nextAttemptAt, table.id),
+    index("gift_media_cleanup_jobs_terminal_idx").on(table.state, table.completedAt, table.id),
+    check("gift_media_cleanup_jobs_state_check", sql`${table.state} in ('pending', 'processing', 'completed', 'dead_letter')`),
+    check("gift_media_cleanup_jobs_attempts_check", sql`${table.attempts} >= 0`),
   ],
 );
+
+/** Singleton lease and last-run state shared by scheduled and opportunistic maintenance. */
+export const appMaintenanceState = pgTable("app_maintenance_state", {
+  id: text("id").primaryKey(),
+  leaseToken: text("lease_token"),
+  leaseUntil: text("lease_until"),
+  lastStartedAt: text("last_started_at"),
+  lastCompletedAt: text("last_completed_at"),
+  lastErrorCode: text("last_error_code"),
+});
+
+/** Explicit application schema version used by the public readiness check. */
+export const appSchemaMeta = pgTable("app_schema_meta", {
+  key: text("key").primaryKey(),
+  version: integer("version").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
 
 export type DeviceRow = typeof devices.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type AuthEmailCodeRow = typeof authEmailCodes.$inferSelect;
 export type AuthSessionRow = typeof authSessions.$inferSelect;
+export type AuthRateLimitRow = typeof authRateLimits.$inferSelect;
 export type MemoryRow = typeof memories.$inferSelect;
 export type MemoryPageRow = typeof memoryPages.$inferSelect;
 export type GiftRow = typeof gifts.$inferSelect;
@@ -266,3 +327,5 @@ export type SharedAlbumPageRow = typeof sharedAlbumPages.$inferSelect;
 export type SharedAlbumMediaRow = typeof sharedAlbumMedia.$inferSelect;
 export type GiftPublishSessionRow = typeof giftPublishSessions.$inferSelect;
 export type GiftMediaCleanupJobRow = typeof giftMediaCleanupJobs.$inferSelect;
+export type AppMaintenanceStateRow = typeof appMaintenanceState.$inferSelect;
+export type AppSchemaMetaRow = typeof appSchemaMeta.$inferSelect;

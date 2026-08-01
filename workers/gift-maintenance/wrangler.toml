@@ -1,0 +1,14 @@
+name = "onetap-gift-maintenance"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+MAINTENANCE_ENDPOINT = "https://api.onetapreality.com/api/internal/gift-maintenance"
+
+[observability]
+enabled = false
