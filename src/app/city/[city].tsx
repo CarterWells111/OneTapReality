@@ -22,7 +22,8 @@ export default function CityScreen() {
   useFocusEffect(React.useCallback(() => {
     let active = true;
     void resolveCityCollection(db, city).then((nextCollection) => {
-      if (active) setCollection(nextCollection);
+      // 仅当回调仍有效且城市未切换时应用，避免快速切换城市时旧结果覆盖新集合
+      if (active && nextCollection.city === city) setCollection(nextCollection);
     });
     return () => { active = false; };
   }, [city, db]));
