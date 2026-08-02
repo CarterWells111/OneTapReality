@@ -123,6 +123,35 @@ describe("CityMap", () => {
     }
   });
 
+  // 概览图宽度由外层卡片决定（手机上约 312pt，平板上可超过 600pt），
+  // 按压热区若固定按 300×351 计算，就会与 SVG 里画出的圆点错位。
+  it("scales overview marker geometry to the measured container instead of a fixed 300pt card", () => {
+    const marker = new OfflineChinaMapAdapter().markers.find((candidate) => candidate.city === "shanghai")!;
+    const layout = resolveCityMarkerLayout(marker, { height: 702, width: 600 });
+
+    expect(layout.pressFrame.x + layout.pressFrame.width / 2).toBeCloseTo(marker.coordinate.x * 600);
+    expect(layout.pressFrame.y + layout.pressFrame.height / 2).toBeCloseTo(marker.coordinate.y * 702);
+    expect(layout.labelFrame.x).toBeGreaterThanOrEqual(0);
+    expect(layout.labelFrame.x + layout.labelFrame.width).toBeLessThanOrEqual(600);
+  });
+
+  it("repositions overview press targets after the card reports its measured size", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-overview"), "layout", {
+        nativeEvent: { layout: { height: 702, width: 600, x: 0, y: 0 } },
+      });
+    });
+
+    const marker = new OfflineChinaMapAdapter().markers.find((candidate) => candidate.city === "shanghai")!;
+    const style = screen.getByTestId("city-map-marker-target-shanghai-none").props.style;
+    const resolved = Array.isArray(style) ? Object.assign({}, ...style) : style;
+
+    expect(resolved.left + resolved.width / 2).toBeCloseTo(marker.coordinate.x * 600);
+    expect(resolved.top + resolved.height / 2).toBeCloseTo(marker.coordinate.y * 702);
+  });
+
   it("hides workspace labels below the zoom threshold and scales the full marker model on the worklet viewport", () => {
     const markers = new OfflineChinaMapAdapter().markers;
     const size = { height: 351, width: 300 };

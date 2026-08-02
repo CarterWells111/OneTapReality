@@ -57,12 +57,16 @@ const markerLabelCollisionPadding = 8;
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
-export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout {
-  const anchor = { x: marker.coordinate.x * overviewMapDimensions.width, y: marker.coordinate.y * overviewMapDimensions.height };
+/**
+ * 概览图的按压热区是按真实像素绝对定位的，而圆点由 SVG viewBox 自动铺满容器宽度。
+ * 因此必须传入实测容器尺寸；沿用固定的 300×351 会让两者在任何非 300pt 宽的卡片上错位。
+ */
+export function resolveCityMarkerLayout(marker: CityMapMarker, size: WorkspaceSize = overviewMapDimensions): CityMarkerLayout {
+  const anchor = { x: marker.coordinate.x * size.width, y: marker.coordinate.y * size.height };
   const pressFrame = { height: markerTargetSize, width: markerTargetSize, x: anchor.x - markerTargetSize / 2, y: anchor.y - markerTargetSize / 2 };
   return {
     anchor,
-    labelFrame: { height: markerLabelHeight, width: markerLabelWidth, x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), overviewMapDimensions.width - markerLabelWidth), y: Math.max(0, anchor.y - 30) },
+    labelFrame: { height: markerLabelHeight, width: markerLabelWidth, x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), Math.max(0, size.width - markerLabelWidth)), y: Math.max(0, anchor.y - 30) },
     markerFrame: { height: markerVisualSize, width: markerVisualSize, x: anchor.x - markerVisualSize / 2, y: anchor.y - markerVisualSize / 2 },
     pressFrame,
   };
@@ -225,9 +229,16 @@ function computeMarkerScreenPosition(
 function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
+  // 卡片实际宽度随屏幕与外层内边距变化，热区必须跟随实测尺寸而非固定的设计稿尺寸
+  const [overviewSize, setOverviewSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
+  const onOverviewLayout = React.useCallback((event: LayoutChangeEvent) => {
+    const { height, width } = event.nativeEvent.layout;
+    if (height <= 0 || width <= 0) return;
+    setOverviewSize((current) => current.height === height && current.width === width ? current : { height, width });
+  }, []);
 
   return (
-    <View accessibilityLabel="离线中国城市旅行地图概览" style={{ aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height, backgroundColor: colors.accentSoft, borderRadius: 20, overflow: "hidden" }}>
+    <View accessibilityLabel="离线中国城市旅行地图概览" onLayout={onOverviewLayout} style={{ aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height, backgroundColor: colors.accentSoft, borderRadius: 20, overflow: "hidden" }} testID="city-map-overview">
       <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
         {chinaProvincesData.map((province) => (
           <Path
@@ -258,7 +269,7 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
       {adapter.markers.map((marker) => {
         const { city } = marker;
         const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-        const layout = resolveCityMarkerLayout(marker);
+        const layout = resolveCityMarkerLayout(marker, overviewSize);
         return (
           <Pressable
             accessibilityLabel={savedMemoryLabel(city, stat.visitCount)}
