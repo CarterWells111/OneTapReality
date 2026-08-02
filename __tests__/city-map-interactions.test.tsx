@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 
-const mockGestureHandlers: Record<string, { begin?: () => void; update?: (event: { scale?: number; translationX?: number; translationY?: number }) => void }> = {};
+const mockGestureHandlers: Record<string, { begin?: () => void; update?: (event: { scale?: number; translationX?: number; translationY?: number }) => void; end?: (event?: unknown, success?: boolean) => void }> = {};
 const mockRunOnJS = jest.fn();
 const mockSharedValues: Array<{ value: number }> = [];
 let mockDerivedValueCalls = 0;
@@ -39,12 +39,16 @@ jest.mock("react-native-gesture-handler", () => {
     gesture.onBegin = (callback: () => void) => { gesture.begin = callback; return gesture; };
     gesture.onUpdate = (callback: (event: { scale?: number; translationX?: number; translationY?: number }) => void) => { gesture.update = callback; return gesture; };
     gesture.onFinalize = () => gesture;
+    gesture.onEnd = (callback: (event?: unknown, success?: boolean) => void) => { gesture.end = callback; return gesture; };
+    gesture.numberOfTaps = () => gesture;
+    gesture.maxDelay = () => gesture;
     return gesture;
   };
   return {
     Gesture: {
       Pan: () => { const gesture = createGesture(); mockGestureHandlers.pan = gesture; return gesture; },
       Pinch: () => { const gesture = createGesture(); mockGestureHandlers.pinch = gesture; return gesture; },
+      Tap: () => { const gesture = createGesture(); mockGestureHandlers.tap = gesture; return gesture; },
       Simultaneous: (...gestures: unknown[]) => ({ gestures }),
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) => <View>{children}</View>,

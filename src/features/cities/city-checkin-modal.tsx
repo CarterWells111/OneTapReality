@@ -1,11 +1,14 @@
 import * as React from "react";
-import { Dimensions, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../../components/ui";
 import { headingFontFamily } from "../typography/fonts";
+import { CityMap } from "./city-map";
+import { getCityStats } from "./city-stats";
+import { OfflineChinaMapAdapter } from "./city-map-adapter";
+import { useMemories } from "../memories/memories-provider";
 import { cityContent } from "./city-content";
-import { getCityCheckinImage } from "./city-checkin-images";
 import type { City } from "../../types/memory";
 
 /** 每个打卡城市在地图弹窗上的光点位置（0-1 相对坐标） */
@@ -133,8 +136,17 @@ function SpotDot({ spot, onPress }: { spot: CheckinSpot; onPress: (spot: Checkin
 export function CityCheckinModal({ city, visible, onClose }: CityCheckinModalProps) {
   const insets = useSafeAreaInsets();
   const content = cityContent[city];
-  const image = getCityCheckinImage(city);
+  const { memories } = useMemories();
+  const stats = getCityStats(memories);
   const spots = cityCheckinSpots[city] ?? [];
+  // 以投影后的真实城市坐标作为聚焦中心，保证与地图标记一致
+  const cityMarker = React.useMemo(
+    () => new OfflineChinaMapAdapter().markers.find((marker) => marker.city === city),
+    [city],
+  );
+  const cityFocus = cityMarker
+    ? { center: cityMarker.coordinate, zoom: 2.4 }
+    : { center: { x: 0.5, y: 0.5 }, zoom: 1.6 };
 
   return (
     <Modal
@@ -161,23 +173,17 @@ export function CityCheckinModal({ city, visible, onClose }: CityCheckinModalPro
           </Pressable>
         </View>
 
-        {/* 地图区域 */}
+        {/* 可交互中国地图：聚焦当前城市，可平移/缩放；光点叠加其上 */}
         <View style={styles.mapContainer}>
           <View style={styles.mapFrame}>
-            {image ? (
-              <Image
-                accessibilityLabel={`${content.name}足迹地图`}
-                resizeMode="cover"
-                source={image}
-                style={styles.mapImage}
-              />
-            ) : (
-              <View style={styles.mapPlaceholder}>
-                <Text selectable style={styles.placeholderText}>{content.name}</Text>
-                <Text selectable style={styles.placeholderSub}>足迹地图加载中…</Text>
-              </View>
-            )}
-            {/* 打卡光点层 */}
+            <CityMap
+              stats={stats}
+              variant="workspace"
+              interactive
+              initialCity={city}
+              focus={cityFocus}
+            />
+            {/* 打卡光点层：百分比定位，跟随地图容器缩放 */}
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               {spots.map((spot) => (
                 <SpotDot
@@ -218,11 +224,6 @@ export function CityCheckinModal({ city, visible, onClose }: CityCheckinModalPro
     </Modal>
   );
 }
-
-const { width: screenWidth } = Dimensions.get("window");
-const mapPadding = 24;
-const mapWidth = screenWidth - mapPadding * 2;
-const mapHeight = mapWidth * 0.72;
 
 const styles = StyleSheet.create({
   root: {
@@ -270,36 +271,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: mapPadding,
+    paddingHorizontal: 24,
   },
   mapFrame: {
+    borderColor: colors.paperEdge,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.paperEdge,
-    height: mapHeight,
-    overflow: "hidden",
-    width: mapWidth,
-  },
-  mapImage: {
-    height: "100%",
-    width: "100%",
-  },
-  mapPlaceholder: {
-    alignItems: "center",
-    backgroundColor: colors.accentSoft,
     flex: 1,
-    justifyContent: "center",
-    gap: 8,
-  },
-  placeholderText: {
-    color: colors.muted,
-    fontFamily: serifFont,
-    fontSize: 24,
-  },
-  placeholderSub: {
-    color: colors.muted,
-    fontFamily: bodyFont,
-    fontSize: 14,
+    overflow: "hidden",
+    width: "100%",
   },
   legend: {
     flexDirection: "row",
