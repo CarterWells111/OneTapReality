@@ -75,18 +75,7 @@
     "jest-expo": "~54.0.17",
     "pg-mem": "^3.0.14",
     "react-test-renderer": "19.1.0",
-    "typescript": "~5.9.2",
-    "wrangler": "4.86.0"
-  },
-  "overrides": {
-    "wrangler": {
-      "esbuild": "0.28.1"
-    },
-    "miniflare": {
-      "sharp": "0.35.0",
-      "undici": "7.28.0",
-      "ws": "8.21.0"
-    }
+    "typescript": "~5.9.2"
   },
   "scripts": {
     "dev": "expo start",
@@ -102,7 +91,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --watch",
     "test:ci": "jest --runInBand && node --test __tests__/app-store-site.test.mjs __tests__/team-coordination-docs.test.mjs __tests__/active-branding-docs.test.mjs",
-    "worker:check": "wrangler deploy --dry-run --config workers/gift-maintenance/wrangler.toml --outdir .wrangler-dist",
+    "worker:check": "npx --yes wrangler@4.86.0 deploy --dry-run --config workers/gift-maintenance/wrangler.toml --outdir .wrangler-dist",
     "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-migrations.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/backend-screen.test.tsx __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
