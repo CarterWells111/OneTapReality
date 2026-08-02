@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { canvasFonts } from "./canvas-assets";
 import { ColorPicker } from "../../components/ColorPicker";
@@ -44,7 +45,8 @@ const presetColors = [
   "#5F9EA0", // 蓝绿
 ] as const;
 
-type MenuMode = "main" | "font" | "size" | "color";
+/** 面板模式。菜单没有主面板：工具栏按钮直达对应子面板，点击遮罩关闭。 */
+type MenuMode = "font" | "size" | "color";
 
 /**
  * Apple 风格浮动上下文菜单 — 白底黑字。
@@ -61,14 +63,9 @@ export function ElementContextMenu({
   initialMode,
 }: ElementContextMenuProps) {
   const { width: windowWidth } = useWindowDimensions();
-  const [mode, setMode] = React.useState<MenuMode>(initialMode ?? "main");
-
-  // 切换模式时重置
-  React.useEffect(() => {
-    if (!visible) {
-      setMode("main");
-    }
-  }, [visible]);
+  const [mode, setMode] = React.useState<MenuMode>(initialMode ?? "font");
+  // 颜色面板的滚动容器引用：传给 ColorPicker 使色盘手势与滚动共存
+  const colorScrollRef = React.useRef<ScrollView>(null);
 
   // 当 visible 变为 true 时，应用 initialMode
   React.useEffect(() => {
@@ -86,7 +83,7 @@ export function ElementContextMenu({
   const menuX = Math.max(20, Math.min(windowWidth - menuWidth - 20, elementFrame.x + elementFrame.width / 2 - menuWidth / 2));
   const aboveY = elementFrame.y - 12;
   const belowY = elementFrame.y + elementFrame.height + 12;
-  const estimatedMenuHeight = mode === "color" ? 480 : mode === "main" ? 110 : 260;
+  const estimatedMenuHeight = mode === "color" ? 480 : 260;
   const menuY = aboveY - estimatedMenuHeight < 60 ? belowY : aboveY;
 
   const renderContent = () => {
@@ -95,11 +92,7 @@ export function ElementContextMenu({
         return (
           <View style={styles.modePanel}>
             <View style={styles.modeHeader}>
-              <Pressable onPress={() => setMode("main")} style={styles.backButton}>
-                <Text style={styles.backText}>← 返回</Text>
-              </Pressable>
               <Text style={styles.modeTitle}>选择字体</Text>
-              <View style={styles.backButton} />
             </View>
             <ScrollView style={styles.listScroll} showsVerticalScrollIndicator={false}>
               {canvasFonts.map((font) => (
@@ -125,17 +118,10 @@ export function ElementContextMenu({
         return (
           <View style={styles.modePanel}>
             <View style={styles.modeHeader}>
-              <Pressable onPress={() => setMode("main")} style={styles.backButton}>
-                <Text style={styles.backText}>← 返回</Text>
-              </Pressable>
               <Text style={styles.modeTitle}>选择字号</Text>
-              <View style={styles.backButton} />
             </View>
             <FontSizeSlider
-              onChange={(size) => {
-                onChangeSize(size);
-                onClose();
-              }}
+              onChange={onChangeSize}
               value={element.fontSize}
             />
           </View>
@@ -144,13 +130,9 @@ export function ElementContextMenu({
         return (
           <View style={styles.modePanel}>
             <View style={styles.modeHeader}>
-              <Pressable onPress={() => setMode("main")} style={styles.backButton}>
-                <Text style={styles.backText}>← 返回</Text>
-              </Pressable>
               <Text style={styles.modeTitle}>选择颜色</Text>
-              <View style={styles.backButton} />
             </View>
-            <ScrollView style={styles.colorScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView ref={colorScrollRef} style={styles.colorScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.presetLabel}>推荐配色</Text>
               <View style={styles.presetGrid}>
                 {presetColors.map((color) => (
@@ -167,16 +149,13 @@ export function ElementContextMenu({
               </View>
               <Text style={styles.presetLabel}>自定义颜色</Text>
               <ColorPicker
+                scrollRef={colorScrollRef}
                 value={element.color}
                 onChange={(hex) => onChangeColor(hex)}
               />
             </ScrollView>
           </View>
         );
-      default:
-        // 工具栏按钮直接导航到 font/size/color 子面板，
-        // main 面板在正常流程中不再可达。
-        return null;
     }
   };
 
@@ -186,6 +165,7 @@ export function ElementContextMenu({
       <Pressable
         onPress={onClose}
         style={StyleSheet.absoluteFill}
+        testID="context-menu-backdrop"
       />
       <Animated.View
         entering={FadeIn.duration(200).springify().damping(20)}
@@ -201,8 +181,9 @@ export function ElementContextMenu({
 }
 
 /**
- * 字号选择器：进度条 + 数字输入框，范围 2–40。
- * 点击进度条任意位置跳转到对应字号，也可通过数字输入框直接键入。
+ * 字号选择器：可拖动进度条 + 数字输入框，范围 2–40。
+ * - 拖动/点击进度条实时应用字号（不关闭菜单）。
+ * - 数字输入：本地 draft 状态，输入时只改草稿，失焦时校验并提交。
  */
 function FontSizeSlider({
   onChange,
@@ -216,11 +197,39 @@ function FontSizeSlider({
   const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value));
   const fraction = (clamped - FONT_SIZE_MIN) / (FONT_SIZE_MAX - FONT_SIZE_MIN);
   const thumbLeft = fraction * (TRACK_WIDTH - 24);
+  // 数字输入的本地草稿：输入过程中不被外部 value 重置
+  const [draft, setDraft] = React.useState(String(clamped));
+  const trackWidthRef = React.useRef(TRACK_WIDTH);
+  trackWidthRef.current = TRACK_WIDTH;
 
-  const onTrackPress = (event: { nativeEvent: { locationX: number } }) => {
-    const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / TRACK_WIDTH));
+  // 外部变化（拖动进度条）同步到草稿
+  React.useEffect(() => {
+    setDraft(String(clamped));
+  }, [clamped]);
+
+  const applyPosition = (positionX: number) => {
+    const ratio = Math.max(0, Math.min(1, positionX / trackWidthRef.current));
     const size = Math.round(FONT_SIZE_MIN + ratio * (FONT_SIZE_MAX - FONT_SIZE_MIN));
     onChange(size);
+  };
+
+  const pan = Gesture.Pan()
+    .onBegin((event) => {
+      applyPosition(event.x);
+    })
+    .onUpdate((event) => {
+      applyPosition(event.x);
+    });
+
+  const commitDraft = () => {
+    const parsed = parseInt(draft, 10);
+    if (!Number.isNaN(parsed)) {
+      const size = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, parsed));
+      onChange(size);
+      setDraft(String(size));
+    } else {
+      setDraft(String(clamped));
+    }
   };
 
   return (
@@ -230,22 +239,31 @@ function FontSizeSlider({
         <TextInput
           accessibilityLabel="输入字号"
           keyboardType="number-pad"
+          maxLength={2}
+          onBlur={commitDraft}
           onChangeText={(text) => {
-            const n = parseInt(text, 10);
-            if (!isNaN(n) && n >= FONT_SIZE_MIN && n <= FONT_SIZE_MAX) {
-              onChange(n);
+            if (/^\d*$/.test(text)) {
+              setDraft(text);
             }
           }}
+          onSubmitEditing={commitDraft}
+          selectTextOnFocus
           style={sliderStyles.numberInput}
-          value={String(clamped)}
+          value={draft}
         />
       </View>
-      <Pressable accessibilityRole="adjustable" onPress={onTrackPress} style={sliderStyles.sliderTrackWrapper}>
-        <View style={[sliderStyles.sliderTrack, { width: TRACK_WIDTH }]}>
-          <View style={[sliderStyles.sliderFill, { width: thumbLeft + 12 }]} />
+      <GestureDetector gesture={pan}>
+        <View
+          accessibilityLabel="字号进度条"
+          accessibilityRole="adjustable"
+          style={sliderStyles.sliderTrackWrapper}
+          testID="font-size-slider">
+          <View style={[sliderStyles.sliderTrack, { width: TRACK_WIDTH }]}>
+            <View style={[sliderStyles.sliderFill, { width: thumbLeft + 12 }]} />
+          </View>
+          <View style={[sliderStyles.sliderThumb, { transform: [{ translateX: thumbLeft }] }]} />
         </View>
-        <View style={[sliderStyles.sliderThumb, { transform: [{ translateX: thumbLeft }] }]} />
-      </Pressable>
+      </GestureDetector>
       <View style={sliderStyles.marksRow}>
         <Text style={sliderStyles.markText}>小 {FONT_SIZE_MIN}</Text>
         <Text style={sliderStyles.markText}>大 {FONT_SIZE_MAX}</Text>
@@ -341,64 +359,6 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     zIndex: 20000,
   },
-  mainMenu: {
-    paddingVertical: 4,
-  },
-  menuButton: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 48,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  menuButtonLeft: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-  },
-  menuIcon: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.06)",
-    borderRadius: 10,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
-  menuIconText: {
-    color: "#1C2C28",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  menuLabel: {
-    color: "#1C2C28",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  menuButtonRight: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  menuPreviewText: {
-    color: "rgba(0,0,0,0.45)",
-    fontSize: 15,
-  },
-  menuChevron: {
-    color: "rgba(0,0,0,0.25)",
-    fontSize: 20,
-    fontWeight: "300",
-  },
-  divider: {
-    backgroundColor: "rgba(0,0,0,0.08)",
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 60,
-  },
-  colorPreview: {
-    borderRadius: 5,
-    height: 20,
-    width: 20,
-  },
   // Mode panels
   modePanel: {
     maxHeight: 440,
@@ -408,19 +368,9 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(0,0,0,0.08)",
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     paddingHorizontal: 12,
     paddingVertical: 10,
-  },
-  backButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    width: 60,
-  },
-  backText: {
-    color: "rgba(0,0,0,0.45)",
-    fontSize: 14,
-    fontWeight: "600",
   },
   modeTitle: {
     color: "#1C2C28",
