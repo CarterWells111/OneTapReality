@@ -1,4 +1,5 @@
 import { cityRegistry, type City, type CityMapFocus, type RelativeMapCoordinate } from "../../types/city";
+import { chinaMapMarkers } from "./china-map-data";
 
 export type { CityMapFocus, RelativeMapCoordinate } from "../../types/city";
 
@@ -44,14 +45,28 @@ const chinaOutline: LocalMapOutline = Object.freeze({
   ]),
 });
 
-const cityMarkers: readonly CityMapMarker[] = Object.freeze(cityRegistry.map((city) => Object.freeze({ city: city.id, coordinate: city.coordinate })));
-const cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze(Object.fromEntries(cityRegistry.map((city) => [city.id, city.focus])) as Record<City, CityMapFocus>);
+/** 城市标记坐标：由真实经纬度经 Albers 投影归一化得到（见 china-map-data.ts）。 */
+const cityMarkers: readonly CityMapMarker[] = Object.freeze(
+  cityRegistry.map((city) => {
+    const projected = chinaMapMarkers.find((marker) => marker.city === city.id);
+    return Object.freeze({
+      city: city.id,
+      coordinate: projected
+        ? freezeCoordinate({ x: projected.x, y: projected.y })
+        : city.coordinate,
+    });
+  }),
+);
+// 搜索跳转的中心点必须与标记坐标同一体系（投影后 0..1），否则跳转会定位到错误位置
+const cityFocus: Readonly<Record<City, CityMapFocus>> = Object.freeze(Object.fromEntries(
+  cityMarkers.map((marker) => [marker.city, Object.freeze({ center: marker.coordinate, zoom: 2 })]),
+) as Record<City, CityMapFocus>);
 
 export class OfflineChinaMapAdapter implements CityMapAdapter {
   readonly outline = chinaOutline;
   readonly markers = cityMarkers;
   readonly initialFocus: CityMapFocus = Object.freeze({
-    center: freezeCoordinate({ x: 0.62, y: 0.53 }),
+    center: freezeCoordinate({ x: 0.52, y: 0.42 }),
     zoom: 1,
   });
   readonly cityFocus = cityFocus;
