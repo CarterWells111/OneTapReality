@@ -22,7 +22,6 @@
     "@aws-sdk/client-s3": "^3.1093.0",
     "@aws-sdk/s3-request-presigner": "^3.1093.0",
     "@react-native-community/datetimepicker": "8.4.4",
-    "@svg-maps/china": "^2.0.0",
     "compression": "^1.8.1",
     "drizzle-orm": "^0.45.2",
     "eslint": "^9.39.5",
@@ -124,10 +123,7 @@
     ],
     "modulePathIgnorePatterns": [
       "<rootDir>/.worktrees/"
-    ],
-    "moduleNameMapper": {
-      "^@svg-maps/china$": "<rootDir>/__mocks__/svg-maps-china.ts"
-    }
+    ]
   },
   "private": true
 }
