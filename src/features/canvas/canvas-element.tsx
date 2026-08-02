@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
 import { SelectionHandles } from "./selection-handles";
+import { bodyFontFamily } from "../typography/fonts";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {
@@ -309,7 +310,7 @@ function ElementContent({
   fontScale?: SharedValue<number>;
 }) {
   if (element.type === "image") {
-    return <Image contentFit="cover" source={element.uri} style={styles.image} testID={`canvas-image-${element.id}`} />;
+    return <ImageElement testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
@@ -329,10 +330,35 @@ function ElementContent({
   return (
     <AnimatedText
       color={element.color}
-      fontFamily={font?.family}
+      fontFamily={font?.family ?? bodyFontFamily}
       fontScale={fontScale}
       fontSize={element.fontSize}
       text={element.text}
+    />
+  );
+}
+
+/**
+ * 照片元素：加载失败（文件已丢失/URI 失效）时显示占位，而不是静默空白。
+ * 成功后不再重复检查，避免同一 URI 反复触发 onError。
+ */
+function ImageElement({ testID, uri }: { testID: string; uri: string }) {
+  const [failed, setFailed] = React.useState(false);
+  if (failed) {
+    return (
+      <View style={styles.imagePlaceholder} testID="canvas-image-placeholder">
+        <Text style={styles.imagePlaceholderGlyph}>🖼</Text>
+        <Text style={styles.imagePlaceholderText}>照片丢失</Text>
+      </View>
+    );
+  }
+  return (
+    <Image
+      contentFit="cover"
+      onError={() => setFailed(true)}
+      source={uri}
+      style={styles.image}
+      testID={testID}
     />
   );
 }
@@ -378,4 +404,14 @@ const styles = StyleSheet.create({
   image: { flex: 1, width: "100%" },
   text: { paddingHorizontal: 4, paddingVertical: 2 },
   stickerFallback: { fontSize: 34, lineHeight: 40, textAlign: "center" },
+  imagePlaceholder: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.06)",
+    flex: 1,
+    gap: 2,
+    justifyContent: "center",
+    width: "100%",
+  },
+  imagePlaceholderGlyph: { fontSize: 18 },
+  imagePlaceholderText: { color: "rgba(0,0,0,0.35)", fontSize: 11, fontWeight: "600" },
 });

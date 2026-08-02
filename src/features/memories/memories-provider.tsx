@@ -2,6 +2,7 @@ import * as React from "react";
 import { useSQLiteContext } from "expo-sqlite";
 
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
+import { ensureMemoryPhotosPersisted } from "./photo-persistence";
 import {
   clearMemories,
   createDraft as createDraftInDb,
@@ -15,6 +16,7 @@ import {
   saveDraft as saveDraftInDb,
   saveMemory,
   updateMemoryPages,
+  updateMemoryPhotos,
 } from "../../storage/memory-repository";
 import type { Memory, MemoryDraftInput, StoryPage } from "../../types/memory";
 import { createMemory as createMemoryRecord } from "./memory-factory";
@@ -51,24 +53,44 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const [memories, setMemories] = React.useState<Memory[]>([]);
   const [isReady, setIsReady] = React.useState(false);
 
+  /** 读取全部记忆并迁移旧照片 URI 到沙盒（best-effort，失败不阻塞列表）。 */
   const refresh = React.useCallback(async () => {
-    const nextMemories = await listMemories(db);
-    setMemories(nextMemories);
+    let memories = await listMemories(db);
+    let migratedAny = false;
+    for (const memory of memories) {
+      try {
+        const result = await ensureMemoryPhotosPersisted(memory);
+        if (result.changed) {
+          migratedAny = true;
+          await updateMemoryPhotos(db, result.memory.id, result.memory.photoUris);
+          await updateMemoryPages(db, {
+            ...result.memory,
+            updatedAt: result.memory.updatedAt,
+          });
+        }
+      } catch (error) {
+        console.warn("[MemoriesProvider] 照片持久化迁移失败，跳过：", error);
+      }
+    }
+    if (migratedAny) {
+      // 迁移写入后再读一次，保证返回给 UI 的是持久化后的 URI
+      memories = await listMemories(db);
+    }
+    setMemories(memories);
     setIsReady(true);
   }, [db]);
 
   React.useEffect(() => {
     let isMounted = true;
-    void listMemories(db).then((nextMemories) => {
-      if (isMounted) {
-        setMemories(nextMemories);
+    void refresh().then(() => {
+      if (!isMounted) {
         setIsReady(true);
       }
     });
     return () => {
       isMounted = false;
     };
-  }, [db]);
+  }, [refresh]);
 
   const createMemory = React.useCallback(
     async (input: MemoryDraftInput) => {

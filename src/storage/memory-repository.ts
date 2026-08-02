@@ -273,6 +273,25 @@ export async function updateMemoryPages(
   });
 }
 
+/** 整体替换某个记忆的 memory_photos 行（照片 URI 持久化迁移用）。 */
+export async function updateMemoryPhotos(
+  db: SQLiteDatabase,
+  memoryId: string,
+  uris: readonly string[]
+) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM memory_photos WHERE memory_id = ?", memoryId);
+    for (const [position, uri] of uris.entries()) {
+      await db.runAsync(
+        "INSERT INTO memory_photos (memory_id, uri, position) VALUES (?, ?, ?)",
+        memoryId,
+        uri,
+        position
+      );
+    }
+  });
+}
+
 /** 把已保存的旅行册移入回收站（软删除，可在回收站恢复或彻底删除）。 */
 export async function discardMemory(
   db: SQLiteDatabase,
