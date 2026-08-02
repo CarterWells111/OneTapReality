@@ -492,10 +492,14 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       const size = { height: mapHeight.value, width: mapWidth.value };
       const currentScale = sc.value;
       const nextScale = currentScale >= 2.4 ? 1 : Math.min(3.5, currentScale * 2);
-      // 以双击点为中心缩放（手指位置保持在地图上的同一点）
+      // 以双击点为中心缩放（手指位置保持在地图上的同一点）。
+      // 画布 transform 以视图中心为原点：screen = (point - center) * scale + center + translate，
+      // 因此定焦量必须按“双击点相对中心的偏移”计算，用绝对坐标会整整差半个视口。
       const scaleRatio = nextScale / currentScale;
-      const nextTranslateX = event.x - (event.x - translateX.value) * scaleRatio;
-      const nextTranslateY = event.y - (event.y - translateY.value) * scaleRatio;
+      const focusX = event.x - size.width / 2;
+      const focusY = event.y - size.height / 2;
+      const nextTranslateX = focusX - (focusX - translateX.value) * scaleRatio;
+      const nextTranslateY = focusY - (focusY - translateY.value) * scaleRatio;
       const next = clampWorkspaceViewport({ scale: nextScale, translateX: nextTranslateX, translateY: nextTranslateY }, size);
       translateX.value = withTiming(next.translateX, { duration: 200 });
       translateY.value = withTiming(next.translateY, { duration: 200 });

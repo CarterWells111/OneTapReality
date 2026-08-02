@@ -11,7 +11,10 @@ jest.mock("react-native-reanimated", () => {
   return {
     __esModule: true,
     default: { View, createAnimatedComponent: (component: unknown) => component },
-    runOnJS: (...args: unknown[]) => mockRunOnJS(...args),
+    runOnJS: (worklet: (...args: unknown[]) => unknown) => (...args: unknown[]) => {
+      mockRunOnJS(worklet, ...args);
+      return worklet(...args);
+    },
     useAnimatedProps: (worklet: () => unknown) => worklet(),
     useAnimatedStyle: (worklet: () => unknown) => worklet(),
     useDerivedValue: (worklet: () => unknown) => {
@@ -27,6 +30,10 @@ jest.mock("react-native-reanimated", () => {
         mockSharedValues.push(shared.current);
       }
       return shared.current;
+    },
+    withTiming: (value: number, _config?: unknown, callback?: () => void) => {
+      callback?.();
+      return value;
     },
   };
 });
@@ -111,5 +118,43 @@ describe("CityMap workspace gestures", () => {
       { translateY: expect.any(Number) },
       { scale: expect.any(Number) },
     ]);
+  });
+
+  // 画布 transform 以视图中心为原点缩放，双击定焦必须按 (点 - 中心) 计算，
+  // 否则每次双击都会把地图整体甩出半个视口。
+  it("keeps the double-tapped point anchored when zooming from the viewport centre", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+    });
+    expect([mockSharedValues[0]?.value, mockSharedValues[1]?.value, mockSharedValues[2]?.value]).toEqual([0, 0, 1]);
+
+    await act(async () => {
+      mockGestureHandlers.tap.end?.({ x: 240, y: 160 }, true);
+    });
+
+    expect(mockSharedValues[2]?.value).toBe(2);
+    expect(mockSharedValues[0]?.value).toBe(0);
+    expect(mockSharedValues[1]?.value).toBe(0);
+  });
+
+  it("shifts the canvas toward an off-centre double tap instead of slamming into the clamp", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+    });
+
+    await act(async () => {
+      mockGestureHandlers.tap.end?.({ x: 360, y: 240 }, true);
+    });
+
+    // 目标点相对中心偏移 (120, 80)，放大 2 倍后需反向平移同样的偏移量
+    expect(mockSharedValues[2]?.value).toBe(2);
+    expect(mockSharedValues[0]?.value).toBe(-120);
+    expect(mockSharedValues[1]?.value).toBe(-80);
   });
 });
