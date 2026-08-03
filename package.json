@@ -66,6 +66,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@testing-library/react-native": "13.3.3",
     "@types/jest": "^29.5.14",
     "@types/pg": "^8.20.0",
