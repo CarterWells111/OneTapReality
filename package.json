@@ -85,6 +85,8 @@
     "build:server": "expo export --platform web --no-ssg",
     "start:server": "node --require dotenv/config server.cjs",
     "verify:backend": "node scripts/verify-backend.cjs",
+    "check:lockfile": "node scripts/check-release-lockfile.cjs",
+    "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
