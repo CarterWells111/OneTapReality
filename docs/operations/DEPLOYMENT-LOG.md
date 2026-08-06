@@ -30,8 +30,8 @@
 | 独立 peppers 与清理密钥 | `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` | 已完成（值脱敏） | 发布负责人 | Railway Variables 截图核对变量齐全，含 `RUN_DB_MIGRATIONS=true`（2026-08-06） |
 | R2 staging bucket | 独立私有 bucket + 最小权限凭据 | 已完成 | 发布负责人 | bucket 名称 `onetapreality-staging`；因初建在非域名账号，已于 2026-08-06 在域名账号重建并轮换 API token；`node scripts/verify-r2.cjs` 输出 `{"ok":true,...}`（上传/读取/删除通过，测试对象已清理） |
 | 域名与深链文件 | `staging.onetapreality.com` / `api-staging.onetapreality.com` + AASA；Android `assetlinks.json` 待 release SHA-256 | 已完成（Android release 指纹待确认） | 发布负责人 | `api-staging` 已解析并接入 Railway（health 200）；`staging.onetapreality.com` 已绑定 Cloudflare Pages 项目 `onetapreality-staging`（生产分支 `main`）；AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 且无 token 泄漏（2026-08-06） |
-| Resend 测试配置 | 独立 key + `staging@onetapreality.com` 已验证 | Blocked | 发布负责人 | 待填 |
-| 邮箱白名单 | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | Blocked（变量已建，内容待确认） | 发布负责人 | 待填 |
+| Resend 测试配置 | 独立 key + `staging@onetapreality.com` 已验证 | 已完成 | 发布负责人 | staging 独立 key + `GIFT_EMAIL_FROM=staging@onetapreality.com`；`/api/auth/request` 白名单邮箱 202 且收件箱收到验证码；非白名单邮箱 403 `beta_invite_required`（2026-08-06） |
+| 邮箱白名单 | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | 已完成 | 发布负责人 | `ALPHA_ALLOWED_EMAILS` 含测试邮箱，白名单外邮箱统一 403 `beta_invite_required` 且不发信（2026-08-06） |
 | EAS alpha 构建 | `npx eas-cli@latest build -p ios --profile alpha` | Blocked | 发布负责人 | 待填 |
 | 3 张内部样卡 | 可供 staging 演练（硬件批次表） | Blocked | 硬件 | 待填 |
 
