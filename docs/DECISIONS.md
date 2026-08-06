@@ -1,5 +1,24 @@
 # 决策记录
 
+## 2026-08-06：首批 Beta 功能范围冻结与候选构建规则
+
+进入首批 20 套受邀 Beta 内测前，冻结 Beta v1 功能范围并固化候选构建门槛，避免功能漂移与未经验证的扩量。
+
+- 冻结范围：独立 staging 环境（Railway Service + PostgreSQL、私有 R2 bucket、`staging.onetapreality.com` / `api-staging.onetapreality.com`、独立 secrets 与 Resend 测试发件人）；iOS NFC 实体样卡全流程（写卡/碰卡、深链、邮箱验证码登录、认领、发布共享相册、受邀只读查看、停用、R2 对象删除）；`GIFT_SHARING_ENABLED` P0 停测开关与管理员停用能力；统一邮箱验证码登录。
+- 明确排除：App 内支付、公开 App Store 发售、首批 5 套之外的扩量、以及与本路径无关的新功能；上述需求记入 Backlog，冻结至 Beta 复盘。
+- 候选构建只接受 P0/P1 修复：P0 = 安全/隐私/数据丢失/主流程阻断；P1 = 激活/登录/认领/发布/停用错误。P2+ 一律延后。
+- 每次候选构建门槛：干净 `npm ci` 后 `lint`、`typecheck`、`test:ci`、`build:server` 全部通过，并在 staging 完成对应回归；由发布负责人批准后才进入 TestFlight 候选构建。
+- 周会环境验收以脱敏演练记录为准（`docs/operations/REHEARSAL-RECORD.md`）；staging 未绿灯前不收款、不写生产卡、不扩量。
+
+## 2026-08-02：TestFlight 上传与内测发布操作指南
+
+新增 `docs/release/TESTFLIGHT-UPLOAD.md`，把从 Windows 使用 EAS 云端构建 iOS production、提交 App Store Connect（App ID `6794186067`）、分配 TestFlight 内部/外部测试员的完整流程固化为可供另一位开发者 agent 直接执行的指南。指南引用当前发布分支 `codex/testflight-internal` 及既有 EAS 配置（`cli.appVersionSource: remote`、`autoIncrement: true`、`submit.production.ios.ascAppId`），不改变应用代码、依赖或 EAS 配置。
+
+- 固定信息以 `eas.json` / `app.json` 为准：显示名 `OneTapReality一触如初`、iOS Bundle ID `com.onereality.onetapreality`、产品版本 `1.0`、EAS projectId `12831d3a-34cb-49a1-9efa-6bfd26afef7c`、production API origin `https://onetapserver-production.up.railway.app`。
+- 本次只新增发布操作文档，不新增云服务、支付、登录、分析或真实 NFC。
+
+> 2026-08-03 远端已合入官方 `docs/release/TESTFLIGHT-RELEASE.md` 与 `scripts/release-ios-testflight.cjs` 自动化手册，取代本条目所述草稿；草稿已保留在 2026-08-06 本机备份中，不再作为现行指南。
+
 ## 2026-08-01：数据库维护加固与零新增费用运行边界
 
 NFC 礼品维护不再使用独立 Railway Cron Service。现有 API Service 保留受服务端密钥保护的维护端点；Cloudflare Workers Free 计划中的单个小时级 Cron 只负责向该端点发送一次短请求，成功的礼品写请求在维护超过 90 分钟未完成时执行严格限额的后台兜底。两种入口共享数据库租约和批次上限，不新增常驻服务器、数据库、队列、付费监控、云备份或客户端秘密。

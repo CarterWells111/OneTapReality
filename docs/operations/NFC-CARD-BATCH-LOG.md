@@ -20,3 +20,16 @@
 域名类别只能是 `staging` 或 `production`，并且必须与目标环境一致。测试卡不写 production 域名，正式卡不写 staging 域名。
 
 不得记录 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片、完整邮箱名单或原始敏感日志。若卡片异常，记录物理卡号、批次和处理状态，并在关联 Issue 中完成停用或重写流程。
+
+## NFC 卡批次记录：第 1 周内部样卡（staging）
+
+- Issue：待建（NFC 卡批次模板）
+- 批次 ID：STG-2026-W1-A / STG-2026-W1-B / STG-2026-W1-C（以硬件确认后的批次表为准）
+- 负责人：硬件（批次表）；发布负责人复核环境一致性
+- 环境：staging
+- 物理卡号范围：待硬件填写
+- 域名类别：staging（只写 `staging.onetapreality.com/gift/<token>`）
+- 写入结果：待执行
+- 抽检结果：待执行（碰卡、深链、环境确认）
+- 已停用卡数：待执行
+- 后续工作：写入 `docs/operations/REHEARSAL-RECORD.md` 步骤 1–2

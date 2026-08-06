@@ -25,3 +25,5 @@
 - [ ] 已演练 P0 处置：关闭 `GIFT_SHARING_ENABLED`、停止发卡/邀请、移除受影响 TestFlight 测试者、停用礼品、保留脱敏证据、修复回归并经负责人批准后恢复。
 
 只有所有 staging 准入项完成后，才可发放 `alpha` EAS 构建和 staging 测试卡。现有指向生产 API 的 TestFlight 构建不能代替这项隔离验收。
+
+> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；以下五项均为未完成的外部前置条件，当前 Blocked。证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
