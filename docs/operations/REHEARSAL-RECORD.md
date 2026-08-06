@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | API Service | 生产 Railway Service | `onetapreality-staging.up.railway.app`（独立 Railway Service） | ✅ 已建立并通过 health 检查 |
 | PostgreSQL | 生产数据库 | `OneTapStagingDB`（独立，`RUN_DB_MIGRATIONS=true`） | ✅ 已建立，schemaVersion 7 |
-| R2 bucket | 生产私有 bucket | `onetapreality-staging`（独立私有 bucket） | ✅ 已建立（上传/删除待演练验证） |
+| R2 bucket | 生产私有 bucket | `onetapreality-staging`（域名账号内独立私有 bucket，token 已轮换） | ✅ 已建立（连通性待 `verify-r2` 确认） |
 | 域名 | `onetapreality.com` | `staging.onetapreality.com`（礼品链接）/ `api-staging.onetapreality.com`（API） | 待解析 |
 | Secrets | 生产 peppers / 清理密钥 / Resend key | 独立 `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` / R2 凭据（Resend 待配） | ✅ 已配置（值脱敏） |
 | 发件人 | `support@onetapreality.com` | `staging@onetapreality.com`（单独验证） | 待配置 |
