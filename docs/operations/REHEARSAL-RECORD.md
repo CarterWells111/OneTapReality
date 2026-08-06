@@ -3,19 +3,21 @@
 > 本记录只保存可共享的时间、环境、卡批次、状态码、构建号与脱敏截图链接。不得记录 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
 > 责任与边界：发布负责人独占 Railway、PostgreSQL、R2、Resend、EAS、DNS 与 TestFlight 写入；硬件只提供批次与抽检状态。
 
+> 2026-08-06 进度：Railway staging Service + PostgreSQL 与 R2 staging bucket 已建立；`/api/health` 200（`database:ok`、`schemaVersion:7`）、`verify:backend` 全绿。其余项见 `docs/operations/DEPLOYMENT-LOG.md` 阻塞矩阵。
+
 ## 环境隔离矩阵
 
 | 维度 | production | staging（目标） | 状态 |
 | --- | --- | --- | --- |
-| API Service | 生产 Railway Service | `api-staging.onetapreality.com` 对应独立 Railway Service | 待建立 |
-| PostgreSQL | 生产数据库 | staging 独立数据库，`DATABASE_URL=${{StagingPostgres.DATABASE_URL}}` | 待建立 |
-| R2 bucket | 生产私有 bucket | staging 独立私有 bucket + 最小权限凭据 | 待建立 |
+| API Service | 生产 Railway Service | `onetapreality-staging.up.railway.app`（独立 Railway Service） | ✅ 已建立并通过 health 检查 |
+| PostgreSQL | 生产数据库 | `OneTapStagingDB`（独立，`RUN_DB_MIGRATIONS=true`） | ✅ 已建立，schemaVersion 7 |
+| R2 bucket | 生产私有 bucket | `onetapreality-staging`（域名账号内独立私有 bucket，token 已轮换） | ✅ 已建立并通过 `verify-r2` 连通性验证 |
 | 域名 | `onetapreality.com` | `staging.onetapreality.com`（礼品链接）/ `api-staging.onetapreality.com`（API） | 待解析 |
-| Secrets | 生产 peppers / 清理密钥 / Resend key | 独立 `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` / Resend key | 待配置 |
+| Secrets | 生产 peppers / 清理密钥 / Resend key | 独立 `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` / R2 凭据（Resend 待配） | ✅ 已配置（值脱敏） |
 | 发件人 | `support@onetapreality.com` | `staging@onetapreality.com`（单独验证） | 待配置 |
-| 邮箱白名单 | 空（不限制） | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | 待配置 |
+| 邮箱白名单 | 空（不限制） | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | 待确认内容 |
 | 停测开关 | `GIFT_SHARING_ENABLED=true` | `GIFT_SHARING_ENABLED=true`（演练时临时 `false`） | 待配置 |
-| Gift URL 来源 | `GIFT_URL_ORIGIN=https://onetapreality.com` | `GIFT_URL_ORIGIN=https://staging.onetapreality.com` | 待配置 |
+| Gift URL 来源 | `GIFT_URL_ORIGIN=https://onetapreality.com` | `GIFT_URL_ORIGIN=https://staging.onetapreality.com` | 待确认值 |
 
 ## 演练步骤与结果
 
