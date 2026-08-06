@@ -55,7 +55,7 @@ export default function ProfileScreen() {
     setAccountError(null);
     try {
       await switchAccount();
-      router.push("/login?returnTo=/(tabs)/profile");
+      router.push("/login?returnTo=/(tabs)/profile" as never);
     } catch {
       setAccountError("无法切换账号，请重试。");
     } finally {
@@ -108,7 +108,7 @@ export default function ProfileScreen() {
             <AppButton disabled={accountBusy} label="退出登录" tone="danger" onPress={confirmSignOut} />
           </View>
         ) : (
-          <AppButton label="登录 / 注册" onPress={() => router.push("/login?returnTo=/(tabs)/profile")} />
+          <AppButton label="登录 / 注册" onPress={() => router.push("/login?returnTo=/(tabs)/profile" as never)} />
         )}
       </PaperCard>
 
