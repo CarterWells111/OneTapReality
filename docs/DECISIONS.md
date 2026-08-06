@@ -1,5 +1,9 @@
 # 决策记录
 
+## 2026-08-06：App Link 网页引导页（web fallback）
+
+按既有计划 `docs/superpowers/plans/2026-07-25-app-link-web-fallback.md` 实现浏览器打开 `/gift/<token>` 与 `/activate` 时的安装引导页，避免未安装 App 时返回 404；引导页不包含礼品 token，也不携带任何业务逻辑。生产与 staging 官网共用同一份 `website/` 构建产物，不新增网络、云服务、支付、分析或客户端秘密。
+
 ## 2026-08-06：首批 Beta 功能范围冻结与候选构建规则
 
 进入首批 20 套受邀 Beta 内测前，冻结 Beta v1 功能范围并固化候选构建门槛，避免功能漂移与未经验证的扩量。

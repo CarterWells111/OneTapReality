@@ -56,7 +56,7 @@ test("builds the static website into the server worker for reliable hosting", ()
   assert.match(buildScript, /__STATIC_SITE_PAGES__/);
   assert.match(buildScript, /__STATIC_SITE_STYLES__/);
   assert.match(buildScript, /__APP_LINK_FALLBACK__/);
-  assert.match(buildScript, /open-app\\index\.html/);
+  assert.match(buildScript, /open-app\\\\index\.html/);
   assert.match(buildScript, /route\.mjs/);
   assert.match(buildScript, /"\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/support\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
