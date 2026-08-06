@@ -3,11 +3,14 @@
  * public site in the worker bundle instead of depending on an external asset
  * manifest, so the three App Store URLs are always served by the same deploy.
  */
+import { resolveSitePage } from "./route.mjs";
+
 const sitePages = __STATIC_SITE_PAGES__;
 const siteStyles = __STATIC_SITE_STYLES__;
 const siteAssets = __STATIC_SITE_ASSETS__;
 const appleAppSiteAssociation = __APPLE_APP_SITE_ASSOCIATION__;
 const androidAssetLinks = __ANDROID_ASSET_LINKS__;
+const appLinkFallback = __APP_LINK_FALLBACK__;
 
 const headers = {
   "content-type": "text/html; charset=utf-8",
@@ -53,7 +56,7 @@ export default {
       return response(androidAssetLinks, "application/json; charset=utf-8");
     }
 
-    const page = sitePages[path];
+    const page = resolveSitePage(path, sitePages, appLinkFallback);
     return page
       ? response(page, "text/html; charset=utf-8")
       : new Response("Not found", { status: 404, headers });
