@@ -115,8 +115,9 @@ test("bundles the carousel script and local product images into worker-served st
     assert.equal(unknownResponse.status, 404);
 
     const redirects = readFileSync(join(outputDirectory, "_redirects"), "utf8");
-    assert.match(redirects, /^\/activate \/open-app\/index\.html 200$/m);
-    assert.match(redirects, /^\/gift\/\* \/open-app\/index\.html 200$/m);
+    assert.match(redirects, /^\/activate \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/activate\/ \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/gift\/\* \/open-app\/ 200$/m);
 
     const headers = readFileSync(join(outputDirectory, "_headers"), "utf8");
     assert.match(headers, /^\/\.well-known\/apple-app-site-association$/m);

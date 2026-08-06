@@ -23,8 +23,9 @@ Copy-Item -LiteralPath (Join-Path $siteRoot "open-app") -Destination (Join-Path 
 Copy-Item -LiteralPath (Join-Path $siteRoot "worker\\route.mjs") -Destination (Join-Path $outputRoot "server\\route.mjs")
 
 $pagesRedirects = @'
-/activate /open-app/index.html 200
-/gift/* /open-app/index.html 200
+/activate /open-app/ 200
+/activate/ /open-app/ 200
+/gift/* /open-app/ 200
 '@
 [System.IO.File]::WriteAllText((Join-Path $outputRoot "_redirects"), $pagesRedirects, [System.Text.UTF8Encoding]::new($false))
 
