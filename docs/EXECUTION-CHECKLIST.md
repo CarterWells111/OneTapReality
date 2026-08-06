@@ -26,4 +26,4 @@
 
 只有所有 staging 准入项完成后，才可发放 `alpha` EAS 构建和 staging 测试卡。现有指向生产 API 的 TestFlight 构建不能代替这项隔离验收。
 
-> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；Railway staging Service + PostgreSQL 与 R2 staging bucket 已建立，`/api/health` 200（schemaVersion 7）、`verify:backend` 全绿。其余准入项仍为 Blocked，证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
+> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；Railway staging Service + PostgreSQL 与 R2 staging bucket 已建立，`/api/health` 200（schemaVersion 7）、`verify:backend` 全绿、`verify-r2` 连通性通过。其余准入项仍为 Blocked，证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
