@@ -22,6 +22,21 @@ Copy-Item -LiteralPath (Join-Path $siteRoot ".well-known") -Destination (Join-Pa
 Copy-Item -LiteralPath (Join-Path $siteRoot "open-app") -Destination (Join-Path $outputRoot "open-app") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "worker\\route.mjs") -Destination (Join-Path $outputRoot "server\\route.mjs")
 
+$pagesRedirects = @'
+/activate /open-app/ 200
+/activate/ /open-app/ 200
+/gift/* /open-app/ 200
+'@
+[System.IO.File]::WriteAllText((Join-Path $outputRoot "_redirects"), $pagesRedirects, [System.Text.UTF8Encoding]::new($false))
+
+$pagesHeaders = @'
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+/.well-known/assetlinks.json
+  Content-Type: application/json
+'@
+[System.IO.File]::WriteAllText((Join-Path $outputRoot "_headers"), $pagesHeaders, [System.Text.UTF8Encoding]::new($false))
+
 $pages = @{
   "/" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "index.html")))
   "/index.html" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "index.html")))

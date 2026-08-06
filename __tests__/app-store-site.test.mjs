@@ -58,6 +58,8 @@ test("builds the static website into the server worker for reliable hosting", ()
   assert.match(buildScript, /__APP_LINK_FALLBACK__/);
   assert.match(buildScript, /open-app\\\\index\.html/);
   assert.match(buildScript, /route\.mjs/);
+  assert.match(buildScript, /_redirects/);
+  assert.match(buildScript, /_headers/);
   assert.match(buildScript, /"\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/support\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/privacy\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
@@ -111,6 +113,15 @@ test("bundles the carousel script and local product images into worker-served st
 
     const unknownResponse = await worker.fetch(new Request("https://onetapreality.com/unknown"));
     assert.equal(unknownResponse.status, 404);
+
+    const redirects = readFileSync(join(outputDirectory, "_redirects"), "utf8");
+    assert.match(redirects, /^\/activate \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/activate\/ \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/gift\/\* \/open-app\/ 200$/m);
+
+    const headers = readFileSync(join(outputDirectory, "_headers"), "utf8");
+    assert.match(headers, /^\/\.well-known\/apple-app-site-association$/m);
+    assert.match(headers, /Content-Type: application\/json/);
   } finally {
     rmSync(outputDirectory, { recursive: true, force: true });
   }
