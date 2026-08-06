@@ -3,7 +3,7 @@
 > 本记录只保存可共享的时间、环境、卡批次、状态码、构建号与脱敏截图链接。不得记录 secret、数据库 URL、完整礼品 URL/token、验证码、个人照片或完整邮箱名单。
 > 责任与边界：发布负责人独占 Railway、PostgreSQL、R2、Resend、EAS、DNS 与 TestFlight 写入；硬件只提供批次与抽检状态。
 
-> 2026-08-06 进度：Railway staging Service + PostgreSQL 与 R2 staging bucket 已建立；`/api/health` 200（`database:ok`、`schemaVersion:7`）、`verify:backend` 全绿。其余项见 `docs/operations/DEPLOYMENT-LOG.md` 阻塞矩阵。
+> 2026-08-06 进度：Railway staging Service + PostgreSQL 与 R2 staging bucket 已建立；`/api/health` 200（`database:ok`、`schemaVersion:7`）、`verify:backend` 全绿、`verify-r2` 通过。`staging.onetapreality.com` 与 `api-staging.onetapreality.com` 已解析并验证（AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 且无 token 泄漏）。其余项见 `docs/operations/DEPLOYMENT-LOG.md` 阻塞矩阵。
 
 ## 环境隔离矩阵
 
@@ -12,7 +12,7 @@
 | API Service | 生产 Railway Service | `onetapreality-staging.up.railway.app`（独立 Railway Service） | ✅ 已建立并通过 health 检查 |
 | PostgreSQL | 生产数据库 | `OneTapStagingDB`（独立，`RUN_DB_MIGRATIONS=true`） | ✅ 已建立，schemaVersion 7 |
 | R2 bucket | 生产私有 bucket | `onetapreality-staging`（域名账号内独立私有 bucket，token 已轮换） | ✅ 已建立并通过 `verify-r2` 连通性验证 |
-| 域名 | `onetapreality.com` | `staging.onetapreality.com`（礼品链接）/ `api-staging.onetapreality.com`（API） | 待解析 |
+| 域名 | `onetapreality.com` | `staging.onetapreality.com`（Cloudflare Pages）/ `api-staging.onetapreality.com`（Railway） | ✅ 已解析并通过深链文件验证 |
 | Secrets | 生产 peppers / 清理密钥 / Resend key | 独立 `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` / R2 凭据（Resend 待配） | ✅ 已配置（值脱敏） |
 | 发件人 | `support@onetapreality.com` | `staging@onetapreality.com`（单独验证） | 待配置 |
 | 邮箱白名单 | 空（不限制） | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | 待确认内容 |

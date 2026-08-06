@@ -29,7 +29,7 @@
 | Railway staging Service + PostgreSQL | 独立服务与数据库，`DATABASE_URL` 使用引用变量 | 已完成 | 发布负责人 | `https://onetapreality-staging.up.railway.app`；`/api/health` 200、`database:ok`、`schemaVersion:7`；`verify:backend` = {"health":200,"register":201,"create":201,"list":200,"delete":204}（2026-08-06） |
 | 独立 peppers 与清理密钥 | `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` | 已完成（值脱敏） | 发布负责人 | Railway Variables 截图核对变量齐全，含 `RUN_DB_MIGRATIONS=true`（2026-08-06） |
 | R2 staging bucket | 独立私有 bucket + 最小权限凭据 | 已完成 | 发布负责人 | bucket 名称 `onetapreality-staging`；因初建在非域名账号，已于 2026-08-06 在域名账号重建并轮换 API token；`node scripts/verify-r2.cjs` 输出 `{"ok":true,...}`（上传/读取/删除通过，测试对象已清理） |
-| 域名与深链文件 | `staging.onetapreality.com` / `api-staging.onetapreality.com` + AASA；Android `assetlinks.json` 待 release SHA-256 | Blocked | 发布负责人 | 待填 |
+| 域名与深链文件 | `staging.onetapreality.com` / `api-staging.onetapreality.com` + AASA；Android `assetlinks.json` 待 release SHA-256 | 已完成（Android release 指纹待确认） | 发布负责人 | `api-staging` 已解析并接入 Railway（health 200）；`staging.onetapreality.com` 已绑定 Cloudflare Pages 项目 `onetapreality-staging`（生产分支 `main`）；AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 且无 token 泄漏（2026-08-06） |
 | Resend 测试配置 | 独立 key + `staging@onetapreality.com` 已验证 | Blocked | 发布负责人 | 待填 |
 | 邮箱白名单 | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | Blocked（变量已建，内容待确认） | 发布负责人 | 待填 |
 | EAS alpha 构建 | `npx eas-cli@latest build -p ios --profile alpha` | Blocked | 发布负责人 | 待填 |
