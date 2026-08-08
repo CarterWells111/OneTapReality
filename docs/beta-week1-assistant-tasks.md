@@ -47,6 +47,22 @@
 - 本地无 Docker Desktop / PostgreSQL，数据库不可达。
 - 详见 `docs/operations/DEPLOYMENT-LOG.md` 与 RAILWAY 变量清单。
 
+### 2026-08-08 更新：数据库与邮件配置排查进展
+
+- **Docker Desktop 已定位并启动**（`C:\Users\JTST\AppData\Local\Programs\DockerDesktop`）。
+  - 注意：本机 `DOCKER_HOST=tcp://localhost:2375` 环境变量是旧的、无效的；
+    Docker 4.83 只监听命名管道，需用 `docker -c desktop-linux ...` 或
+    `DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine`。
+- `adventurex-postgres` 容器（postgres:17）已启动，端口 5432。
+- `adventurex` 库已应用 migration，schema version = 7。
+- **`/api/health` 返回 200** `{"database":"ok","schemaVersion":7}`；capabilities 正常。
+- `.env` 已补 `GIFT_EMAIL_FROM`、`GIFT_ADMIN_EMAILS`、`GIFT_SHARING_ENABLED`、
+  `GIFT_URL_ORIGIN`（均为文档默认值）。
+- **仍缺 2 个秘密变量**（必须从 Railway 控制台复制，无法本地生成）：
+  `GIFT_AUTH_PEPPER`、`RESEND_API_KEY`。补齐后验证码即可本地发送。
+- 生产后端 `https://onetapserver-production.up.railway.app/api/health` 在线（200），
+  若不想配本地邮件，可将 `EXPO_PUBLIC_API_ORIGIN` 指向该地址直接用生产端。
+
 ## 下轮候选（第 2 周，按 P0/P1 优先级）
 
 - [ ] 激活/登录链路错误文案的端到端验证（需后端可用后执行 `verify:backend`）。
