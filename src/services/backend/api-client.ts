@@ -67,12 +67,19 @@ export function resolveBackendRequestUrl(
 export class BackendApiClient {
   constructor(private readonly request: typeof fetch = fetch) {}
 
+  /** 后端请求超时（毫秒）。超时抛 network_unavailable，避免按钮/检查无限期卡在忙碌态。 */
+  private static readonly REQUEST_TIMEOUT_MS = 10_000;
+
   private async send<T>(path: string, options?: RequestInit): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), BackendApiClient.REQUEST_TIMEOUT_MS);
     let response: Response;
     try {
-      response = await this.request(resolveBackendRequestUrl(path), options);
+      response = await this.request(resolveBackendRequestUrl(path), { ...options, signal: controller.signal });
     } catch {
       throw new BackendApiError(0, "network_unavailable", "Network unavailable");
+    } finally {
+      clearTimeout(timeout);
     }
 
     const body = await response.json().catch(() => null) as T | BackendErrorBody | null;

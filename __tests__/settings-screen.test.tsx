@@ -8,8 +8,28 @@ const mockProfile = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockForgetRememberedEmail = jest.fn();
 const mockUseAuth = jest.fn();
+const mockDispatch = jest.fn();
+// 模拟导航的 beforeRemove：addListener 只注册不触发（与真实导航一致），
+// 测试用 fireBeforeRemove() 手动触发，取最近一次注册的监听器。
+const mockBeforeRemoveListeners: Array<(event: unknown) => void> = [];
+const fireBeforeRemove = (event?: unknown) => {
+  const listener = mockBeforeRemoveListeners[mockBeforeRemoveListeners.length - 1];
+  listener?.(event ?? {
+    preventDefault: () => undefined,
+    data: { action: { type: "GO_BACK" } },
+  });
+};
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ back: mockBack, push: jest.fn() }),
+  useNavigation: () => ({
+    addListener: jest.fn((_event: string, listener: (e: unknown) => void) => {
+      mockBeforeRemoveListeners.push(listener);
+      return () => undefined;
+    }),
+    dispatch: mockDispatch,
+  }),
+}));
 jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: (...args: unknown[]) => mockRequestPermission(...args),
   launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
@@ -186,5 +206,43 @@ describe("SettingsScreen", () => {
 
     expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("auto-saves pending profile edits when leaving the screen via the top-left back button", async () => {
+    mockBeforeRemoveListeners.length = 0;
+    mockDispatch.mockClear();
+    const screen = await render(<SettingsScreen />);
+
+    fireEvent.changeText(screen.getByLabelText("昵称"), "返回前改名");
+    await waitFor(() => expect(screen.getByLabelText("昵称").props.value).toBe("返回前改名"));
+
+    // 模拟系统返回（左上角箭头）：触发最近注册的 beforeRemove 监听器
+    await act(async () => {
+      fireBeforeRemove();
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(mockUpdateProfile).toHaveBeenCalledWith({
+        nickname: "返回前改名",
+        avatarUri: null,
+        bio: DEFAULT_BIO,
+      }),
+    );
+    // 保存成功后放行原返回动作
+    expect(mockDispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+  });
+
+  it("does not re-save when leaving without any changes", async () => {
+    mockBeforeRemoveListeners.length = 0;
+    const screen = await render(<SettingsScreen />);
+
+    await act(async () => {
+      fireBeforeRemove();
+      await Promise.resolve();
+    });
+
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
   });
 });

@@ -64,8 +64,9 @@ describe("CityMap", () => {
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
     expect(screen.getByTestId("city-map-marker-dot-jinan-none")).toBeTruthy();
-    // 新坐标系下默认视口不放大，label 仅在 zoom ≥1.8 显示；直接断言 SVG 与标记存在即可
-    expect(screen.queryByTestId("city-map-label-jinan")).toBeNull();
+    // 名称标签层始终渲染，显隐/字号/透明度由 UI 线程动画按缩放实时驱动
+    // （缩小接近透明、放大平滑显现），因此标签节点始终存在。
+    expect(screen.getByTestId("city-map-label-jinan")).toBeTruthy();
   });
 
   it("calls the city callback when an interactive marker is pressed", async () => {

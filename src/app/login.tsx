@@ -10,6 +10,23 @@ function safeReturnTo(value: string | string[] | undefined): string {
   return path?.startsWith("/") && !path.startsWith("//") ? path : "/";
 }
 
+/**
+ * 把后端/网络错误翻译成对用户有指导意义的文案。
+ * - 本地开发（EXPO_PUBLIC_API_ORIGIN 为空）：连接失败说明 dev server 未启动，
+ *   而不是邮箱/验证码本身的问题。
+ * - 服务器返回的 message 直接透传（如邮箱不在邀请名单、服务暂停等）。
+ */
+function describeAuthError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    const message = error.message;
+    if (message.includes("Network unavailable")) {
+      return "无法连接本地服务。请确认已启动开发服务器（npm run dev）后重试。";
+    }
+    return message;
+  }
+  return fallback;
+}
+
 export default function LoginScreen() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
@@ -30,14 +47,14 @@ export default function LoginScreen() {
     if (!isAuthReady) return;
     if (!email.trim()) { setMessage("请输入邮箱地址。"); return; }
     try { setBusy(true); setMessage(""); const result = await requestCode(email); setEmail(result.email); setSent(true); setMessage("验证码已发送，请查收邮箱。"); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "暂时无法发送验证码，请稍后重试。"); }
+    catch (error) { setMessage(describeAuthError(error, "暂时无法发送验证码，请稍后重试。")); }
     finally { setBusy(false); }
   };
   const verify = async () => {
     if (!isAuthReady) return;
     if (!code.trim() || code.trim().length !== 6) { setMessage("请输入 6 位验证码。"); return; }
     try { setBusy(true); setMessage(""); await verifyCode(email, code); router.replace(safeReturnTo(returnTo) as never); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "验证码无效或已过期。"); }
+    catch (error) { setMessage(describeAuthError(error, "验证码无效或已过期。")); }
     finally { setBusy(false); }
   };
 

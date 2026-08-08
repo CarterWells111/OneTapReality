@@ -6,11 +6,20 @@ const mockSharedValues: Array<{ value: number }> = [];
 let mockDerivedValueCalls = 0;
 
 jest.mock("react-native-reanimated", () => {
-  const { View } = require("react-native");
+  const { Text, View } = require("react-native");
   const React = require("react");
   return {
     __esModule: true,
-    default: { View, createAnimatedComponent: (component: unknown) => component },
+    default: {
+      View,
+      Text,
+      createAnimatedComponent: (component: unknown) => component,
+    },
+    Extrapolation: { CLAMP: "clamp" },
+    interpolate: (value: number, input: number[], output: number[], _extrapolation?: unknown) => {
+      const ratio = (value - input[0]) / (input[1] - input[0]);
+      return output[0] + (output[1] - output[0]) * Math.max(0, Math.min(1, ratio));
+    },
     runOnJS: (worklet: (...args: unknown[]) => unknown) => (...args: unknown[]) => {
       mockRunOnJS(worklet, ...args);
       return worklet(...args);

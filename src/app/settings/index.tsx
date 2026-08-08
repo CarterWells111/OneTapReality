@@ -1,5 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import * as React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -16,6 +16,7 @@ import { useProfile } from "../../features/profile/profile-provider";
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { profile, isProfileReady, updateProfile } = useProfile();
   const {
     forgetRememberedEmail,
@@ -28,10 +29,65 @@ export default function SettingsScreen() {
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
   const isSavePending = React.useRef(false);
+  // 最后一次成功保存的快照：beforeRemove 在保存按钮也触发，用它去重，避免重复落盘。
+  const lastPersisted = React.useRef<LocalProfile | null>(null);
 
   React.useEffect(() => {
-    setDraft(isProfileReady ? profile : null);
+    if (isProfileReady) {
+      setDraft(profile);
+      lastPersisted.current = profile;
+    }
   }, [isProfileReady, profile]);
+
+  /** 草稿相对最近一次保存是否有改动 */
+  const hasUnsavedChanges = React.useCallback(() => {
+    if (!draft || !lastPersisted.current) return false;
+    return (
+      draft.nickname !== lastPersisted.current.nickname ||
+      draft.avatarUri !== lastPersisted.current.avatarUri ||
+      (draft.bio ?? "") !== (lastPersisted.current.bio ?? "")
+    );
+  }, [draft]);
+
+  /** 把当前草稿保存到本地；成功返回 true。保存按钮与返回守卫共用。 */
+  const persist = React.useCallback(async (): Promise<boolean> => {
+    if (!draft) return true;
+    if (isSavePending.current) return false;
+    isSavePending.current = true;
+    setIsSaving(true);
+    try {
+      const next: LocalProfile = {
+        nickname: normalizeNickname(draft.nickname),
+        avatarUri: draft.avatarUri,
+        bio: normalizeBio(draft.bio ?? ""),
+      };
+      await updateProfile(next);
+      lastPersisted.current = next;
+      return true;
+    } catch {
+      setError("保存资料失败，请重试。");
+      return false;
+    } finally {
+      isSavePending.current = false;
+      setIsSaving(false);
+    }
+  }, [draft, updateProfile]);
+
+  // 任何方式离开本页（左上角返回、手势返回）前先自动保存未落盘的改动。
+  // beforeRemove 在路由真正弹出前触发；有改动才保存，保存成功后再放行。
+  React.useEffect(() => {
+    if (!navigation?.addListener) return;
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      const preventRemove = event?.preventDefault;
+      if (typeof preventRemove !== "function") return;
+      if (!hasUnsavedChanges()) return;
+      preventRemove();
+      void persist().then((saved) => {
+        if (saved) navigation.dispatch(event?.data?.action);
+      });
+    });
+    return unsubscribe;
+  }, [navigation, persist, hasUnsavedChanges]);
 
   const selectAvatar = async () => {
     setError("");
@@ -58,25 +114,8 @@ export default function SettingsScreen() {
   };
 
   const saveProfile = async () => {
-    if (isSavePending.current) {
-      return;
-    }
-
-    isSavePending.current = true;
-    setIsSaving(true);
-    try {
-      await updateProfile({
-        nickname: normalizeNickname(draft!.nickname),
-        avatarUri: draft!.avatarUri,
-        bio: normalizeBio(draft!.bio ?? ""),
-      });
-      router.back();
-    } catch {
-      setError("保存资料失败，请重试。");
-    } finally {
-      isSavePending.current = false;
-      setIsSaving(false);
-    }
+    const saved = await persist();
+    if (saved) router.back();
   };
 
   if (!isProfileReady || !draft) {
@@ -144,11 +183,6 @@ export default function SettingsScreen() {
             />
           ) : null}
         </View>
-      </Section>
-
-      <Section title="后端状态">
-        <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
-        <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
       </Section>
 
       {session ? (

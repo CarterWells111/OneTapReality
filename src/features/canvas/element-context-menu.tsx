@@ -213,7 +213,11 @@ function FontSizeSlider({
     onChange(size);
   };
 
+  // 滑块手势回调必须在 JS 线程执行：applyPosition 访问 React ref 并调用
+  // onChange（React 状态更新）。Gesture 回调默认在 UI 线程（worklet）运行，
+  // 那里无法访问这些对象，会导致运行时崩溃。.runOnJS(true) 让回调在 JS 线程运行。
   const pan = Gesture.Pan()
+    .runOnJS(true)
     .onBegin((event) => {
       applyPosition(event.x);
     })

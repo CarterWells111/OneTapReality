@@ -1,7 +1,7 @@
 import * as React from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import Svg, { Circle, G, Path } from "react-native-svg";
 
 import { colors } from "../../components/ui";
@@ -313,7 +313,8 @@ const MARKER_BASE_TARGET = 44;
 type AnimatedMarkerProps = {
   marker: CityMapMarker;
   stat: CityStats;
-  showLabel: boolean;
+  /** 工作区才渲染名称标签层；概览图不渲染 */
+  renderLabel: boolean;
   interactive: boolean;
   onCityPress?: (city: City) => void;
   translateX: { value: number };
@@ -323,12 +324,23 @@ type AnimatedMarkerProps = {
   mapHeight: { value: number };
 };
 
+/** 名称标签从完全不可见到完全清晰所需的缩放区间。 */
+const LABEL_FADE_MIN_SCALE = 1;
+const LABEL_FADE_MAX_SCALE = 2.4;
+const LABEL_OFFSCREEN_PADDING = 24;
+
 /**
  * 单个工作区标记点组件 — 使用 useAnimatedStyle 在 UI 线程实时计算位置，
  * 消除与地图 SVG 之间的拖动延迟。
+ *
+ * 名称标签的显隐/字号/透明度全部由 UI 线程 shared value（缩放、平移）实时
+ * 驱动，不再依赖手势结束才更新的 React state：
+ * - 缩小：标签透明度趋近 0、字号趋近 0，自然淡出；
+ * - 放大：标签平滑淡入并增大；
+ * - 拖动/缩放过程中始终跟手，不会“移动后文字突然消失/出现”。
  */
 function AnimatedWorkspaceMarker({
-  marker, stat, showLabel, interactive, onCityPress,
+  marker, stat, renderLabel, interactive, onCityPress,
   translateX, translateY, scale, mapWidth, mapHeight,
 }: AnimatedMarkerProps) {
   const token = markerTokens[stat.intensity];
@@ -361,6 +373,28 @@ function AnimatedWorkspaceMarker({
     };
   });
 
+  // 标签样式：字号与透明度随缩放平滑插值，并隐藏屏幕外的标签
+  const animatedLabelStyle = useAnimatedStyle(() => {
+    const size: WorkspaceSize = { height: mapHeight.value, width: mapWidth.value };
+    const viewport: WorkspaceViewport = { scale: scale.value, translateX: translateX.value, translateY: translateY.value };
+    const pos = computeMarkerScreenPosition(marker, viewport, size);
+    const onScreen =
+      pos.x >= -LABEL_OFFSCREEN_PADDING && pos.x <= size.width + LABEL_OFFSCREEN_PADDING &&
+      pos.y >= -LABEL_OFFSCREEN_PADDING && pos.y <= size.height + LABEL_OFFSCREEN_PADDING;
+    const progress = interpolate(
+      scale.value,
+      [LABEL_FADE_MIN_SCALE, LABEL_FADE_MAX_SCALE],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    const fontSize = MARKER_LABEL_FONT_SIZE * progress;
+    return {
+      fontSize: Math.max(1, fontSize),
+      opacity: progress * (onScreen ? 1 : 0),
+      top: -fontSize - 4,
+    };
+  });
+
   return (
     <Animated.View
       accessible={false}
@@ -382,22 +416,20 @@ function AnimatedWorkspaceMarker({
           borderColor: token.border,
           borderWidth: 1.5,
         }, animatedDotStyle]} />
-        {showLabel ? (
-          <Text
-            style={{
+        {renderLabel ? (
+          <Animated.Text
+            style={[{
               color: colors.ink,
               fontFamily: headingFontFamily,
-              fontSize: MARKER_LABEL_FONT_SIZE,
               fontWeight: "800",
               position: "absolute",
               textAlign: "center",
-              top: -MARKER_LABEL_FONT_SIZE - 4,
               width: 88,
-            }}
+            }, animatedLabelStyle]}
             testID={`city-map-label-${marker.city}`}
           >
             {cityContent[marker.city].name}
-          </Text>
+          </Animated.Text>
         ) : null}
       </Pressable>
     </Animated.View>
@@ -420,12 +452,9 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
   const pinchStartScale = useSharedValue(initialViewport.scale);
   const mapWidth = useSharedValue(workspaceSize.width);
   const mapHeight = useSharedValue(workspaceSize.height);
-  const [visibleLabelCities, setVisibleLabelCities] = React.useState<readonly City[]>(() => resolveVisibleWorkspaceLabelCities(adapter.markers, initialViewport, workspaceSize));
+  // 名称标签的显隐/字号/透明度由 UI 线程 shared value 实时驱动（见
+  // AnimatedWorkspaceMarker 的 animatedLabelStyle），无需 React state 参与。
   const animatingRef = React.useRef(false);
-
-  const updateState = React.useCallback((next: WorkspaceViewport, size: WorkspaceSize) => {
-    setVisibleLabelCities(resolveVisibleWorkspaceLabelCities(adapter.markers, next, size));
-  }, [adapter]);
 
   // targetCity 跳转动画
   // shared values (translateX, translateY, sc) 是稳定 ref，不需要作为 deps
@@ -439,7 +468,6 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
     translateY.value = withTiming(nextViewport.translateY, { duration: 500 });
     sc.value = withTiming(nextViewport.scale, { duration: 500 }, () => {
       animatingRef.current = false;
-      runOnJS(updateState)(nextViewport, workspaceSize);
       if (onTargetReached) runOnJS(onTargetReached)();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -452,8 +480,7 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
     sc.value = nextViewport.scale;
-    updateState(nextViewport, workspaceSize);
-  }, [adapter, focus, initialCity, sc, translateX, translateY, updateState, variant, workspaceSize]);
+  }, [adapter, focus, initialCity, sc, translateX, translateY, variant, workspaceSize]);
 
   const onWorkspaceLayout = React.useCallback((event: LayoutChangeEvent) => {
     const { height: h, width: w } = event.nativeEvent.layout;
@@ -474,7 +501,6 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       const next = clampWorkspaceViewport({ scale: sc.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
     });
 
   const pinch = Gesture.Pinch().enabled(variant === "workspace")
@@ -490,7 +516,6 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       sc.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
     });
 
   // 双击放大（在捏合/平移之外补充点击缩放入口，模拟器与无触控板设备可用）
@@ -515,7 +540,6 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       translateX.value = withTiming(next.translateX, { duration: 200 });
       translateY.value = withTiming(next.translateY, { duration: 200 });
       sc.value = withTiming(next.scale, { duration: 200 });
-      runOnJS(updateState)(next, size);
     });
 
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
@@ -554,7 +578,6 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
             .sort((left, right) => left.coordinate.y - right.coordinate.y)
             .map((marker) => {
             const stat = statsByCity.get(marker.city) ?? { city: marker.city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-            const showLabel = visibleLabelCities.includes(marker.city);
             return (
               <AnimatedWorkspaceMarker
                 interactive={interactive}
@@ -563,8 +586,8 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
                 mapWidth={sharedValues.mapWidth}
                 marker={marker}
                 onCityPress={onCityPress}
+                renderLabel={variant === "workspace"}
                 scale={sharedValues.scale}
-                showLabel={showLabel}
                 stat={stat}
                 translateX={sharedValues.translateX}
                 translateY={sharedValues.translateY}
