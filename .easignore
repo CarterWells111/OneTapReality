@@ -9,6 +9,7 @@
 /.pnpm-store/**
 .claude/worktrees/
 .superpowers/
+/.reasonix
 
 # Expo and generated output
 .expo/

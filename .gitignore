@@ -55,3 +55,6 @@ example
 # local helper scripts
 *.bat
 .claude/worktrees/
+
+# local AI tool metadata
+/.reasonix
