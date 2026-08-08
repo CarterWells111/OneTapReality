@@ -76,4 +76,26 @@ describe("LoginScreen account memory", () => {
     fireEvent.press(screen.getByText("正在读取账户…"));
     expect(mockRequestCode).not.toHaveBeenCalled();
   });
+
+  it("explains a network failure with actionable local-dev guidance", async () => {
+    mockRequestCode.mockRejectedValue(new Error("Network unavailable"));
+    const screen = render(<LoginScreen />);
+
+    fireEvent.press(screen.getByText("发送验证码"));
+
+    await waitFor(() =>
+      expect(screen.getByText("无法连接本地服务。请确认已启动开发服务器（npm run dev）后重试。")).toBeTruthy(),
+    );
+  });
+
+  it("passes through server-provided error messages such as an invite-only gate", async () => {
+    mockRequestCode.mockRejectedValue(new Error("This email is not invited to the Alpha"));
+    const screen = render(<LoginScreen />);
+
+    fireEvent.press(screen.getByText("发送验证码"));
+
+    await waitFor(() =>
+      expect(screen.getByText("This email is not invited to the Alpha")).toBeTruthy(),
+    );
+  });
 });

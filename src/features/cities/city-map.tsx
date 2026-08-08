@@ -166,11 +166,6 @@ export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], 
   });
 }
 
-function resolveVisibleWorkspaceLabelCities(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): City[] {
-  const models = resolveWorkspaceMarkerModels(markers, viewport, size);
-  return markers.flatMap((marker, index) => models[index]?.showLabel ? [marker.city] : []);
-}
-
 export type { CityMapProps, CityMapVariant };
 
 function savedMemoryLabel(city: City, visitCount: number) {

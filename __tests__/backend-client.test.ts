@@ -101,4 +101,25 @@ describe("backend client", () => {
     await expect(client.getOwnedGiftManagement("session", "gift-1")).resolves.toEqual(expect.objectContaining({ gift: expect.objectContaining({ id: "gift-1" }) }));
     expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
   });
+
+  it("aborts a request that hangs past the client timeout instead of leaving the UI stuck busy", async () => {
+    jest.useFakeTimers();
+    try {
+      const request = jest.fn(
+        (_url: RequestInfo | URL, init: RequestInit = {}) =>
+          new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          }),
+      );
+      const client = new BackendApiClient(request);
+
+      const pending = client.getHealth();
+      jest.advanceTimersByTime(10_001);
+      await expect(pending).rejects.toEqual(
+        expect.objectContaining<Partial<BackendApiError>>({ status: 0, code: "network_unavailable" }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
