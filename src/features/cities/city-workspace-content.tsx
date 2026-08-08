@@ -51,7 +51,7 @@ function CityArchiveHero({ city }: { readonly city: City }) {
       {visual.kind === "illustration" ? (
         <Image
           accessibilityLabel={`${content.name}城市插画`}
-          resizeMode="cover"
+          resizeMode="contain"
           source={visual.source}
           style={styles.heroIllustration}
           testID={`city-archive-hero-illustration-${city}`}

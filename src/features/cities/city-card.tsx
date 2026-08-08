@@ -53,7 +53,13 @@ export function CityCard({ city, visitCount = 0, onPress, variant }: CityCardPro
       </View>
       <View style={styles.visual} testID={`city-card-visual-${city}`}>
         {visual.kind === "illustration" ? (
-          <Image accessibilityLabel={`${content.name}插画`} resizeMode="cover" source={visual.source} style={styles.illustration} testID={`city-card-illustration-${city}`} />
+          <Image
+            accessibilityLabel={`${content.name}插画`}
+            resizeMode="contain"
+            source={visual.source}
+            style={styles.illustration}
+            testID={`city-card-illustration-${city}`}
+          />
         ) : (
           <CityLinePlaceholder city={city} />
         )}

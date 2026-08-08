@@ -14,11 +14,17 @@ describe("CityCard", () => {
     expect(StyleSheet.flatten(screen.getByTestId("city-card-visual-shanghai").props.style)).toMatchObject({ height: 100, width: 112 });
   });
 
-  it("uses the same card design with the line placeholder for unfeatured cities", async () => {
-    const screen = await render(<CityCard city="chengdu" onPress={jest.fn()} variant="unvisited" />);
+  it("uses the same card design with the line placeholder for cities without a checkin map or watercolor", async () => {
+    const screen = await render(<CityCard city="lhasa" onPress={jest.fn()} variant="unvisited" />);
 
     expect(screen.getByText("尚未打卡")).toBeTruthy();
-    expect(screen.getByTestId("city-card-placeholder-chengdu")).toBeTruthy();
-    expect(StyleSheet.flatten(screen.getByTestId("city-archive-card-chengdu").props.style)).toMatchObject({ flexDirection: "row" });
+    expect(screen.getByTestId("city-card-placeholder-lhasa")).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId("city-archive-card-lhasa").props.style)).toMatchObject({ flexDirection: "row" });
+  });
+
+  it("shows the hand-drawn checkin map as the visual for a city that has one", async () => {
+    const screen = await render(<CityCard city="chengdu" onPress={jest.fn()} variant="unvisited" />);
+
+    expect(screen.getByTestId("city-card-illustration-chengdu")).toBeTruthy();
   });
 });
