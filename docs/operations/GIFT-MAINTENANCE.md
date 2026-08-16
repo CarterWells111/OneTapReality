@@ -57,7 +57,7 @@ pg_restore --exit-on-error --no-owner --dbname=<本地临时恢复库> <仓库�
 
 第一阶段自北京时间 2026-08-09 09:00:58 起完成了至少 168 小时的稳定观察。生产只读复核、本地 `pg_dump`、本地恢复验证与第二阶段本地迁移演练均已通过；演练确认 8 项待验证约束可成功验证、两张遗留表为空且可删除，其余 18 张表行数不变，礼品卡审计事件完整保留。
 
-`drizzle/0008_database_phase2.sql` 已生成但尚未部署。它先验证 8 项约束，再以不带 `CASCADE` 的方式删除 `gift_email_codes` 与 `gift_sessions`，最后把应用 schema 版本更新为 8；存在未知依赖或历史违规时 migration 必须失败并停止。新 API 健康检查要求 `schemaVersion >= 8`，防止未迁移实例被标记为就绪。
+`drizzle/0008_database_phase2.sql` 已生成但尚未部署。它先对两张遗留表取得排他锁并确认仍为空，再验证 8 项约束，以不带 `CASCADE` 的方式删除 `gift_email_codes` 与 `gift_sessions`，最后把应用 schema 版本更新为 8；出现新数据、外部依赖或历史违规时 migration 必须失败并停止。表自身的索引和触发器会随表删除，因此生产复核仍须确认表上不存在意外对象。新 API 健康检查要求 `schemaVersion >= 8`，防止未迁移实例被标记为就绪。
 
 生成迁移不代表获得生产发布授权。推送分支、创建 PR、执行生产 migration、Railway 部署与部署后的首次维护调用仍须分别批准；生产 migration 前还要确认最新 `main` 是候选提交的祖先，并再次核对已验证备份仍存在且哈希未变化。禁止修改已应用的历史 migration。
 

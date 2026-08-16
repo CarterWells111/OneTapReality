@@ -1,3 +1,11 @@
+LOCK TABLE "gift_email_codes", "gift_sessions" IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "gift_email_codes") OR EXISTS (SELECT 1 FROM "gift_sessions") THEN
+    RAISE EXCEPTION 'Legacy gift authentication tables must be empty';
+  END IF;
+END
+$$;--> statement-breakpoint
 ALTER TABLE "auth_email_codes" VALIDATE CONSTRAINT "auth_email_codes_failed_attempts_check";--> statement-breakpoint
 ALTER TABLE "auth_rate_limits" VALIDATE CONSTRAINT "auth_rate_limits_attempts_check";--> statement-breakpoint
 ALTER TABLE "gifts" VALIDATE CONSTRAINT "gifts_status_check";--> statement-breakpoint

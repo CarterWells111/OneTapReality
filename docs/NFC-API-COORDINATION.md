@@ -41,7 +41,7 @@
 
 | # | 问题 | 后端回复 |
 |---|---|---|
-| 1 | 旧表 `gift_email_codes` / `gift_sessions` 是否清理？ | **暂时保留**。仍有 repository 函数、migration、测试依赖。等确认生产无旧客户端依赖后单独做清理 migration。 |
+| 1 | 旧表 `gift_email_codes` / `gift_sessions` 是否清理？ | **第二阶段候选已生成，尚未部署**。稳定观察、备份恢复和本地演练通过后，`0008_database_phase2.sql` 负责验证约束并删除空表；生产 migration 仍须单独批准。 |
 | 2 | `GIFT_AUTH_PEPPER` 同时用于账户和礼品？ | **有意为之的统一设计**。它是统一账户 session bearer token 的哈希 pepper。轮换它会使所有登录会话失效。`GIFT_TOKEN_PEPPER` 是独立的 NFC 礼品 token pepper，继续独立使用。 |
 | 3 | 本地 `.env` 需要补充 gift 变量吗？ | **本地只做 App UI 时不需要**，`EXPO_PUBLIC_API_ORIGIN` 指向 Railway 即可。如果本地启动 API 测试验证码/R2/管理员 NFC，则需独立配置开发环境变量，不能把 Railway 生产秘密写入 `.env`。 |
 | 4 | `/api/gift-auth/request` 等兼容端点是否保留？ | **暂时保留**，作为已安装旧客户端的兼容层。新客户端继续使用 `/api/auth/*`。 |
@@ -131,7 +131,7 @@ Response 200:
 
 - ❌ 不连接 `gift-domain.ts`（后端确认不连接，后续删除）
 - ❌ 不给 viewer 开放 `/gifts/[id]` 管理页（危险操作只限 owner）
-- ❌ 不手动清理旧表（后端后续统一做 migration）
+- ❌ 前端不手动清理旧表（后端只通过已审批的 `0008_database_phase2.sql` migration 处理）
 
 ---
 
