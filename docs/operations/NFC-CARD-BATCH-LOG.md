@@ -24,12 +24,12 @@
 ## NFC 卡批次记录：第 1 周内部样卡（staging）
 
 - Issue：待建（NFC 卡批次模板）
-- 批次 ID：STG-2026-W1-A / STG-2026-W1-B / STG-2026-W1-C（以硬件确认后的批次表为准）
+- 批次 ID：`IOS-BETA-STAGING-001`
 - 负责人：硬件（批次表）；发布负责人复核环境一致性
 - 环境：staging
-- 物理卡号范围：待硬件填写
+- 物理卡号范围：`IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003`（仅为脱敏测试编号，不是芯片 UID）
 - 域名类别：staging（只写 `staging.onetapreality.com/gift/<token>`）
-- 写入结果：待执行
-- 抽检结果：待执行（碰卡、深链、环境确认）
+- 写入结果：待按 `docs/operations/IOS-NFC-CARD-TEST.md` 执行
+- 抽检结果：待执行（逐张准确读回、iPhone 锁屏碰卡、深链、环境确认）
 - 已停用卡数：待执行
-- 后续工作：写入 `docs/operations/REHEARSAL-RECORD.md` 步骤 1–2
+- 后续工作：先确认实际卡片数量不少于 3 张，再写入 `docs/operations/REHEARSAL-RECORD.md`；少于 3 张时不得把样卡门槛标绿
