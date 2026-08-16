@@ -22,7 +22,7 @@
   - 不包含数据库、R2、Resend、礼品 pepper 或其他服务端秘密。
 - `eas.json` 新增同名 `submit.staging-testflight`，引用现有 App Store Connect App ID `6794186067`，并固定分发到内部群组 `OneTapReality Staging NFC`。
 - 保留现有 `alpha` 内部分发和 `production` profile，不改变它们的用途或 API origin。
-- 发布脚本必须显式传入 `--profile=staging-testflight`；不改变默认 production 行为，也不在 PR 中执行脚本。
+- 发布脚本必须显式传入 `--profile=staging-testflight`，并在运行时强制先 `--no-submit` 构建、后 `--build-id` 提交的两段式审批；不改变默认 production 行为，也不在 PR 中执行脚本。
 
 ## 安全与操作流程
 

@@ -46,7 +46,7 @@ describe("iOS TestFlight release guards", () => {
       platform: "IOS",
       distribution: "STORE",
       buildProfile: "staging-testflight",
-      project: { id: "project-123" },
+      app: { id: "project-123" },
     };
 
     expect(() => assertBuildMatchesSubmission(validBuild, expected)).not.toThrow();
@@ -62,9 +62,55 @@ describe("iOS TestFlight release guards", () => {
     }
     expect(() =>
       assertBuildMatchesSubmission(
-        { ...validBuild, project: { id: "another-project" } },
+        { ...validBuild, app: { id: "another-project" } },
         expected,
       ),
     ).toThrow();
+  });
+
+  it("requires staging TestFlight build and submit to remain separate approvals", () => {
+    const { assertApprovalSequence } = require(modulePath) as {
+      assertApprovalSequence: (options: {
+        profile: string;
+        submit: boolean;
+        buildId: string | null;
+      }) => void;
+    };
+
+    expect(() =>
+      assertApprovalSequence({
+        profile: "staging-testflight",
+        submit: true,
+        buildId: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      assertApprovalSequence({
+        profile: "staging-testflight",
+        submit: false,
+        buildId: null,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertApprovalSequence({
+        profile: "staging-testflight",
+        submit: true,
+        buildId: "approved-build",
+      }),
+    ).not.toThrow();
+  });
+
+  it("uses the EAS build fragment version field and fixed staging follow-up", () => {
+    const { formatBuildVersion, getSubmissionFollowUp } = require(modulePath) as {
+      formatBuildVersion: (build: Record<string, unknown>) => string;
+      getSubmissionFollowUp: (profile: string) => string[];
+    };
+
+    expect(
+      formatBuildVersion({ appVersion: "1.1.0", appBuildVersion: "42" }),
+    ).toBe("version 1.1.0 (42)");
+    const followUp = getSubmissionFollowUp("staging-testflight").join("\n");
+    expect(followUp).toContain("OneTapReality Staging NFC");
+    expect(followUp).not.toContain("add the build to a TestFlight group");
   });
 });

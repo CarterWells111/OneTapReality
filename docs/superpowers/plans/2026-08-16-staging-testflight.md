@@ -6,7 +6,7 @@
 
 **Architecture:** `eas.json` remains the source of truth for build-time API origins and App Store Connect submission IDs. Focused configuration and governance tests prevent the staging TestFlight profile from becoming ad-hoc, targeting production, exposing server secrets, or bypassing approval gates. Existing `alpha` and `production` profiles remain unchanged.
 
-**Review hardening:** The store build explicitly selects EAS `preview`, submit targets the fixed `OneTapReality Staging NFC` group, and the release script validates an existing build's project, platform, distribution, profile, and status before submission. The build-only resume command must preserve the selected profile.
+**Review hardening:** The store build explicitly selects EAS `preview`, submit targets the fixed `OneTapReality Staging NFC` group, and the release script validates an existing build's app/project, platform, distribution, profile, and status before submission. The build-only resume command must preserve the selected profile, while staging runtime rejects any attempt to build and submit under one approval.
 
 **Tech Stack:** Expo SDK 54, EAS Build/Submit configuration, Jest, Node.js release tooling, Markdown operating documentation.
 

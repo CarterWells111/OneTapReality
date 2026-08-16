@@ -6,6 +6,7 @@
 
 - `alpha` 保留为登记 UDID 后通过 EAS 链接安装的 ad-hoc 路径；`staging-testflight` 是通过 App Store Connect 内部群组安装的路径。两者只用于同一组 staging 三卡与 P0 演练，不互相冒充 production 验收。
 - 环境隔离、本地质量门禁和 iOS 静态预检通过后，可由发布负责人单独批准其中一种 staging 原生构建。EAS 云端构建与 App Store Connect 提交是两个独立审批点；配置 PR 不执行任一操作。
+- `staging-testflight` 脚本强制两段式运行：没有 `--no-submit` 的首次构建会被拒绝，提交阶段必须提供已经核验并再次批准的 build ID。
 - submit profile 固定绑定内部测试群组 `OneTapReality Staging NFC`。提交前必须确认该群组存在，并确认其他内部群组均未启用自动分发；不得添加外部测试者，不得点击 App Store 的公开审核或发布操作。
 - 获准的 staging 内部 TestFlight 安装不代表 production 或公开 App Store 放行。三卡、完整礼品生命周期和 P0 演练未通过前，仍禁止 production 写卡、收款、发货和扩大测试范围。
 

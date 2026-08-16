@@ -42,13 +42,15 @@ npx eas-cli@latest env:list --environment preview
 node scripts/release-ios-testflight.cjs --profile=staging-testflight --no-submit
 ```
 
+staging 必须严格使用两段式审批；省略 `--no-submit` 会被脚本拒绝，不会在一次运行中连续构建并提交。
+
 构建完成并核对 EAS 详情中的 profile、Bundle ID、版本和 staging origin 证据后，取得另一项提交批准，再使用上一步打印的真实 build ID：
 
 ```powershell
 node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=<approved-build-id>
 ```
 
-提交前确认 App Store Connect 已存在内部群组 `OneTapReality Staging NFC`，并确认其他内部群组均未启用自动分发。submit profile 只把构建加入该固定群组；不得添加外部测试者。测试说明写明 `Staging NFC card rehearsal`。不得点击 App Store 的公开审核或发布操作。本配置 PR 本身不运行以上命令。
+提交前确认 App Store Connect 已存在内部群组 `OneTapReality Staging NFC`，并确认其他内部群组均未启用自动分发。submit profile 会自动加入 `OneTapReality Staging NFC`；提交后只确认构建已出现，不得新建或改选群组，也不得添加外部测试者。测试说明写明 `Staging NFC card rehearsal`。不得点击 App Store 的公开审核或发布操作。本配置 PR 本身不运行以上命令。
 
 ## 脚本做了什么
 
@@ -101,7 +103,7 @@ npx eas-cli@latest credentials --platform ios
 脚本跑完后，Apple 处理约 5–10 分钟，然后在 App Store Connect 里：
 
 1. **出口合规申报** — 按实际行为回答。本 App 的 `ITSAppUsesNonExemptEncryption` 为 `false`，只使用 HTTPS 与 Keychain/SecureStore（均属豁免），通常选「否」。
-2. **加入测试群组** — TestFlight → 内部测试 → 新建或选择群组 → 添加构建 → 填写「测试内容」。
+2. **确认测试群组** — `staging-testflight` 由 submit profile 自动加入 `OneTapReality Staging NFC`，只能确认构建已出现，不得新建或改选群组；获批的 production 分发才按其独立发布计划选择群组。
 3. **内部测试员** 必须先是 App Store Connect 团队用户。以个人身份注册的 Apple 账户**可以**在 App Store Connect 添加用户，但这些用户不计入 Apple Developer Program 团队 —— 对内测来说够用。
 4. 内部测试**不需要**点击「添加以供审核」；外部测试的首个构建需要经过 TestFlight Beta 审核。
 

@@ -14,8 +14,11 @@ const { spawnSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const {
+  assertApprovalSequence,
   assertBuildMatchesSubmission,
+  formatBuildVersion,
   formatResumeCommand,
+  getSubmissionFollowUp,
 } = require("./release-ios-testflight-guards.cjs");
 
 const EAS_CLI = process.env.EAS_CLI ?? "eas-cli@latest";
@@ -214,6 +217,7 @@ async function waitForBuild(buildId) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  assertApprovalSequence(options);
   const cwd = process.cwd();
   const projectId = readProjectId(cwd);
   let buildId = options.buildId;
@@ -263,9 +267,7 @@ async function main() {
 
     step("8. Waiting for the build to finish");
     finishedBuild = await waitForBuild(buildId);
-    console.log(
-      `  version ${finishedBuild.appVersion} (${finishedBuild.iosBuildNumber ?? finishedBuild.buildNumber})`,
-    );
+    console.log(`  ${formatBuildVersion(finishedBuild)}`);
   } else {
     console.log(`Skipping build; validating existing build ${buildId}.`);
     finishedBuild = viewBuild(buildId);
@@ -289,10 +291,7 @@ async function main() {
 
   step("Done");
   console.log("Uploaded to App Store Connect. Apple processing usually takes 5-10 minutes.");
-  console.log("Remaining steps need a human in App Store Connect:");
-  console.log("  - answer the export compliance question");
-  console.log("  - add the build to a TestFlight group");
-  console.log("  https://appstoreconnect.apple.com/apps/6794186067/testflight/ios");
+  for (const line of getSubmissionFollowUp(options.profile)) console.log(line);
 }
 
 main().catch((error) => {
