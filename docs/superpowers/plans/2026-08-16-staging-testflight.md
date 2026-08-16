@@ -106,6 +106,8 @@ git commit -m "build: add staging TestFlight profile"
 - Modify: `docs/DECISIONS.md`
 - Modify: `docs/EXECUTION-CHECKLIST.md`
 - Modify: `docs/release/TESTFLIGHT-RELEASE.md`
+- Modify: `docs/operations/ALPHA-STAGING.md`
+- Modify: `docs/operations/IOS-NFC-CARD-TEST.md`
 - Test: `__tests__/beta-release-governance.test.ts`
 
 - [ ] **Step 1: Record the release decision**
@@ -115,6 +117,8 @@ Add a dated decision stating that `staging-testflight` is store-signed but stagi
 - [ ] **Step 2: Update the active staging gate**
 
 Allow either an approved `alpha` ad-hoc build or an approved `staging-testflight` internal-group build after local quality and environment isolation checks. Keep three-card, P0, production card, broader tester, payment, and public release gates unchanged.
+
+Update the Alpha staging and iOS NFC card runbooks to accept either artifact for the same staging-only rehearsal. Both paths must use `https://api-staging.onetapreality.com`; only `staging-testflight` may be installed through TestFlight, while `alpha` remains the UDID/ad-hoc path.
 
 - [ ] **Step 3: Add exact build and submit commands to the runbook**
 
@@ -140,7 +144,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit the documentation**
 
 ```powershell
-git add docs/DECISIONS.md docs/EXECUTION-CHECKLIST.md docs/release/TESTFLIGHT-RELEASE.md
+git add docs/DECISIONS.md docs/EXECUTION-CHECKLIST.md docs/release/TESTFLIGHT-RELEASE.md docs/operations/ALPHA-STAGING.md docs/operations/IOS-NFC-CARD-TEST.md
 git commit -m "docs: add staging TestFlight rehearsal flow"
 ```
 
