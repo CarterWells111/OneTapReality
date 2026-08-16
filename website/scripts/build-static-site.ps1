@@ -19,6 +19,23 @@ Copy-Item -LiteralPath (Join-Path $siteRoot "assets") -Destination (Join-Path $o
 Copy-Item -LiteralPath (Join-Path $siteRoot "support") -Destination (Join-Path $outputRoot "support") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "privacy") -Destination (Join-Path $outputRoot "privacy") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot ".well-known") -Destination (Join-Path $outputRoot ".well-known") -Recurse
+Copy-Item -LiteralPath (Join-Path $siteRoot "open-app") -Destination (Join-Path $outputRoot "open-app") -Recurse
+Copy-Item -LiteralPath (Join-Path $siteRoot "worker\\route.mjs") -Destination (Join-Path $outputRoot "server\\route.mjs")
+
+$pagesRedirects = @'
+/activate /open-app/ 200
+/activate/ /open-app/ 200
+/gift/* /open-app/ 200
+'@
+[System.IO.File]::WriteAllText((Join-Path $outputRoot "_redirects"), $pagesRedirects, [System.Text.UTF8Encoding]::new($false))
+
+$pagesHeaders = @'
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+/.well-known/assetlinks.json
+  Content-Type: application/json
+'@
+[System.IO.File]::WriteAllText((Join-Path $outputRoot "_headers"), $pagesHeaders, [System.Text.UTF8Encoding]::new($false))
 
 $pages = @{
   "/" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "index.html")))
@@ -64,4 +81,5 @@ $workerSource = $workerSource.Replace("__STATIC_SITE_STYLES__", (ConvertTo-Json 
 $workerSource = $workerSource.Replace("__STATIC_SITE_ASSETS__", (ConvertTo-Json -InputObject $staticAssets -Compress -Depth 3))
 $workerSource = $workerSource.Replace("__APPLE_APP_SITE_ASSOCIATION__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot ".well-known\\apple-app-site-association"))) -Compress))
 $workerSource = $workerSource.Replace("__ANDROID_ASSET_LINKS__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot ".well-known\\assetlinks.json"))) -Compress))
+$workerSource = $workerSource.Replace("__APP_LINK_FALLBACK__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot "open-app\\index.html"))) -Compress))
 [System.IO.File]::WriteAllText((Join-Path $outputRoot "server\\index.js"), $workerSource, [System.Text.UTF8Encoding]::new($false))

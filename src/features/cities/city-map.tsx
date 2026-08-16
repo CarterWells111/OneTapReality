@@ -3,7 +3,6 @@ import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import Svg, { Circle, G, Path } from "react-native-svg";
-import chinaMap from "@svg-maps/china";
 
 import { colors } from "../../components/ui";
 import { headingFontFamily } from "../typography/fonts";
@@ -12,6 +11,7 @@ import { cityContent } from "./city-content";
 import { OfflineChinaMapAdapter, type CityMapFocus, type CityMapMarker } from "./city-map-adapter";
 import type { CityStats, CityVisitIntensity } from "./city-stats";
 import { clampWorkspaceViewport, resolveCityFocus, type WorkspaceSize, type WorkspaceViewport } from "./city-workspace";
+import { chinaMapViewBox, chinaProvinces } from "./china-map-data";
 
 type CityMapVariant = "overview" | "workspace";
 type CityMapProps = {
@@ -34,7 +34,8 @@ const markerTokens: Record<CityVisitIntensity, { fill: string; border: string }>
   medium: { fill: colors.accentSoft, border: colors.warmAccent },
   strong: { fill: colors.warmAccent, border: colors.ink },
 };
-const overviewMapDimensions = Object.freeze({ height: 210, width: 300 });
+// 概览图尺寸与新版地图 viewBox（1000×1171）同比例，避免 letterbox 导致标记与点击区错位
+const overviewMapDimensions = Object.freeze({ height: 351, width: 300 });
 const markerTargetSize = 44;
 const markerVisualSize = 8;
 const markerLabelFontSize = 11;
@@ -42,23 +43,7 @@ const markerLabelWidth = 88;
 const markerLabelHeight = 20;
 export const workspaceLabelZoomThreshold = 1.8;
 const minimumReadableMarkerSize = 12;
-const chinaMapViewBox = chinaMap.viewBox;
-type ChinaProvince = { readonly id: string; readonly path: string };
-const chinaProvinces = chinaMap.locations as readonly ChinaProvince[];
-
-/**
- * 台湾插画路径：由于 @svg-maps/china 不含台湾省界，
- * 此处以简化路径补充台湾本岛轮廓，确保国家版图完整。
- */
-const taiwanInsetPath = "M 622 454 C 628 449 635 453 637 462 C 640 471 637 482 632 491 C 627 499 621 496 618 487 C 616 477 618 464 622 454 Z";
-
-/**
- * 台湾插画在 SVG viewBox 中的近似中心坐标，
- * 用于将台北等台湾城市的标记定位到插画位置上。
- */
-const taiwanInsetCenter = Object.freeze({ x: 629, y: 476 });
-
-
+const chinaProvincesData = chinaProvinces as readonly { readonly id: string; readonly name: string; readonly path: string }[];
 
 const [minX, minY, width, height] = chinaMapViewBox.split(/\s+/).map(Number);
 export const chinaMapCoordinateSpace = Object.freeze({ height, minX, minY, width });
@@ -70,17 +55,18 @@ const markerLabelSvgOffsetY = (markerVisualSize / 2 + markerLabelFontSize) * mar
 const markerLabelSvgWidth = markerLabelWidth * markerSvgScale;
 const markerLabelCollisionPadding = 8;
 
-/** 需要映射到台湾插画位置的城市列表 */
-const taiwanCities = new Set<City>(["taipei"]);
-
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
-export function resolveCityMarkerLayout(marker: CityMapMarker): CityMarkerLayout {
-  const anchor = { x: marker.coordinate.x * overviewMapDimensions.width, y: marker.coordinate.y * overviewMapDimensions.height };
+/**
+ * 概览图的按压热区是按真实像素绝对定位的，而圆点由 SVG viewBox 自动铺满容器宽度。
+ * 因此必须传入实测容器尺寸；沿用固定的 300×351 会让两者在任何非 300pt 宽的卡片上错位。
+ */
+export function resolveCityMarkerLayout(marker: CityMapMarker, size: WorkspaceSize = overviewMapDimensions): CityMarkerLayout {
+  const anchor = { x: marker.coordinate.x * size.width, y: marker.coordinate.y * size.height };
   const pressFrame = { height: markerTargetSize, width: markerTargetSize, x: anchor.x - markerTargetSize / 2, y: anchor.y - markerTargetSize / 2 };
   return {
     anchor,
-    labelFrame: { height: markerLabelHeight, width: markerLabelWidth, x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), overviewMapDimensions.width - markerLabelWidth), y: Math.max(0, anchor.y - 30) },
+    labelFrame: { height: markerLabelHeight, width: markerLabelWidth, x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), Math.max(0, size.width - markerLabelWidth)), y: Math.max(0, anchor.y - 30) },
     markerFrame: { height: markerVisualSize, width: markerVisualSize, x: anchor.x - markerVisualSize / 2, y: anchor.y - markerVisualSize / 2 },
     pressFrame,
   };
@@ -94,13 +80,13 @@ export function resolveChinaMapCoordinate(marker: CityMapMarker) {
   };
 }
 
-/** 对台湾城市返回台湾插画中心坐标，其余城市使用实际 SVG 坐标 */
+/** 城市标记在新地图坐标系中的位置（新版数据直接以 0..1 归一化坐标给出）。 */
 function resolveMarkerSvgCoordinate(marker: CityMapMarker) {
   "worklet";
-  if (taiwanCities.has(marker.city)) {
-    return { x: taiwanInsetCenter.x, y: taiwanInsetCenter.y };
-  }
-  return resolveChinaMapCoordinate(marker);
+  return {
+    x: marker.coordinate.x * chinaMapCoordinateSpace.width,
+    y: marker.coordinate.y * chinaMapCoordinateSpace.height,
+  };
 }
 
 export function resolveChinaMapContentFrame(size: WorkspaceSize) {
@@ -192,10 +178,15 @@ function savedMemoryLabel(city: City, visitCount: number) {
 }
 
 function focusViewport(focus: CityMapFocus, size: WorkspaceSize): WorkspaceViewport {
+  // focus.center 是地图相对坐标（0..1）。考虑容器 letterbox（地图居中、按比例缩放），
+  // 把中心点映射到实际屏幕位置后计算平移量，保证目标城市位于视口中心。
+  const contentFrame = resolveChinaMapContentFrame(size);
+  const centerX = contentFrame.x + focus.center.x * contentFrame.width;
+  const centerY = contentFrame.y + focus.center.y * contentFrame.height;
   return clampWorkspaceViewport({
     scale: focus.zoom,
-    translateX: (0.5 - focus.center.x) * size.width * focus.zoom,
-    translateY: (0.5 - focus.center.y) * size.height * focus.zoom,
+    translateX: (0.5 - centerX / size.width) * size.width * focus.zoom,
+    translateY: (0.5 - centerY / size.height) * size.height * focus.zoom,
   }, size);
 }
 
@@ -238,11 +229,18 @@ function computeMarkerScreenPosition(
 function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
+  // 卡片实际宽度随屏幕与外层内边距变化，热区必须跟随实测尺寸而非固定的设计稿尺寸
+  const [overviewSize, setOverviewSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
+  const onOverviewLayout = React.useCallback((event: LayoutChangeEvent) => {
+    const { height, width } = event.nativeEvent.layout;
+    if (height <= 0 || width <= 0) return;
+    setOverviewSize((current) => current.height === height && current.width === width ? current : { height, width });
+  }, []);
 
   return (
-    <View accessibilityLabel="离线中国城市旅行地图概览" style={{ aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height, backgroundColor: colors.accentSoft, borderRadius: 20, overflow: "hidden" }}>
+    <View accessibilityLabel="离线中国城市旅行地图概览" onLayout={onOverviewLayout} style={{ aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height, backgroundColor: colors.accentSoft, borderRadius: 20, overflow: "hidden" }} testID="city-map-overview">
       <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
-        {chinaProvinces.map((province) => (
+        {chinaProvincesData.map((province) => (
           <Path
             key={province.id}
             d={province.path}
@@ -253,16 +251,15 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
             testID={`china-province-${province.id}`}
           />
         ))}
-        <Path d={taiwanInsetPath} fill={colors.paper} stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
+        {/* 台湾省界已包含在数据中，无需手绘插画 */}
         {adapter.markers.map((marker) => {
           const { city } = marker;
           const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
           const token = markerTokens[stat.intensity];
-          const coordinate = taiwanCities.has(city) ? taiwanInsetCenter : resolveChinaMapCoordinate(marker);
-          const circleRadius = taiwanCities.has(city) ? markerSvgRadius * 1.4 : markerSvgRadius;
+          const coordinate = resolveChinaMapCoordinate(marker);
           return (
             <G key={city} testID={`city-map-marker-${city}-${stat.intensity}`}>
-              <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={circleRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} />
+              <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} />
             </G>
           );
         })}
@@ -272,7 +269,7 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
       {adapter.markers.map((marker) => {
         const { city } = marker;
         const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-        const layout = resolveCityMarkerLayout(marker);
+        const layout = resolveCityMarkerLayout(marker, overviewSize);
         return (
           <Pressable
             accessibilityLabel={savedMemoryLabel(city, stat.visitCount)}
@@ -341,10 +338,8 @@ function AnimatedWorkspaceMarker({
     const viewport: WorkspaceViewport = { scale: scale.value, translateX: translateX.value, translateY: translateY.value };
     const pos = computeMarkerScreenPosition(marker, viewport, size);
 
-    // hit area 随视口缩放：基础 44px，按缩放比动态调整
-    const contentFrame = resolveChinaMapContentFrame(size);
-    const hitScale = contentFrame.scale * viewport.scale;
-    const hitSize = Math.max(MARKER_BASE_TARGET, MARKER_BASE_TARGET * hitScale);
+    // 点击热区固定 44px：不随缩放放大，避免高倍率下互相遮挡导致误点
+    const hitSize = MARKER_BASE_TARGET;
 
     return {
       height: hitSize,
@@ -498,6 +493,31 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
       runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
     });
 
+  // 双击放大（在捏合/平移之外补充点击缩放入口，模拟器与无触控板设备可用）
+  const doubleTap = Gesture.Tap()
+    .enabled(variant === "workspace")
+    .numberOfTaps(2)
+    .maxDelay(280)
+    .onEnd((event, success) => {
+      if (!success) return;
+      const size = { height: mapHeight.value, width: mapWidth.value };
+      const currentScale = sc.value;
+      const nextScale = currentScale >= 2.4 ? 1 : Math.min(3.5, currentScale * 2);
+      // 以双击点为中心缩放（手指位置保持在地图上的同一点）。
+      // 画布 transform 以视图中心为原点：screen = (point - center) * scale + center + translate，
+      // 因此定焦量必须按“双击点相对中心的偏移”计算，用绝对坐标会整整差半个视口。
+      const scaleRatio = nextScale / currentScale;
+      const focusX = event.x - size.width / 2;
+      const focusY = event.y - size.height / 2;
+      const nextTranslateX = focusX - (focusX - translateX.value) * scaleRatio;
+      const nextTranslateY = focusY - (focusY - translateY.value) * scaleRatio;
+      const next = clampWorkspaceViewport({ scale: nextScale, translateX: nextTranslateX, translateY: nextTranslateY }, size);
+      translateX.value = withTiming(next.translateX, { duration: 200 });
+      translateY.value = withTiming(next.translateY, { duration: 200 });
+      sc.value = withTiming(next.scale, { duration: 200 });
+      runOnJS(updateState)(next, size);
+    });
+
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: getCityMapTransform({ scale: sc.value, translateX: translateX.value, translateY: translateY.value }),
@@ -509,12 +529,12 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
   }), [mapHeight, mapWidth, sc, translateX, translateY]);
 
   return (
-    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
+    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, doubleTap)}>
       <View accessibilityLabel="离线中国城市旅行地图工作区" onLayout={onWorkspaceLayout} style={{ backgroundColor: colors.accentSoft, borderRadius: 16, flex: 1, overflow: "hidden", width: "100%" }} testID="city-map-workspace">
         {/* 省份地图层：缩放跟随视口 */}
         <Animated.View pointerEvents="none" testID="city-map-workspace-canvas" style={[StyleSheet.absoluteFill, animatedCanvasStyle]}>
           <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
-            {chinaProvinces.map((province) => (
+            {chinaProvincesData.map((province) => (
               <Path
                 key={province.id}
                 d={province.path}
@@ -524,13 +544,15 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
                 testID={`china-province-${province.id}`}
               />
             ))}
-            <Path d={taiwanInsetPath} fill={colors.paper} stroke={colors.accent} strokeWidth={0.8} testID="china-province-taiwan-inset" />
           </Svg>
         </Animated.View>
 
-        {/* 标记点层：Animated.View + useAnimatedStyle → 实时跟随手势，零延迟 */}
+        {/* 标记点层：Animated.View + useAnimatedStyle → 实时跟随手势，零延迟。
+            按城市屏幕 y 坐标升序渲染（上方标记在上层），避免下方标记热区遮挡上方点击。 */}
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          {adapter.markers.map((marker) => {
+          {[...adapter.markers]
+            .sort((left, right) => left.coordinate.y - right.coordinate.y)
+            .map((marker) => {
             const stat = statsByCity.get(marker.city) ?? { city: marker.city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
             const showLabel = visibleLabelCities.includes(marker.city);
             return (

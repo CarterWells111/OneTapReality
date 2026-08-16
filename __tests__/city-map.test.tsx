@@ -27,8 +27,9 @@ describe("CityMap", () => {
 
     expect(provinces.length).toBeGreaterThanOrEqual(31);
     expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
-    expect(screen.getByTestId("china-province-taiwan-inset")).toBeTruthy();
-    expect(screen.getByText(/CC BY 4\.0/i)).toBeTruthy();
+    // 台湾省界已包含在正式数据中，不再依赖手绘插画
+    expect(screen.queryByTestId("china-province-taiwan-inset")).toBeNull();
+    expect(screen.getByText(/China provincial map/i)).toBeTruthy();
   });
 
   it("projects every local marker into the China SVG viewBox rather than the outer map container", () => {
@@ -37,23 +38,23 @@ describe("CityMap", () => {
     for (const marker of adapter.markers) {
       const coordinate = resolveChinaMapCoordinate(marker);
       expect(coordinate.x).toBeGreaterThanOrEqual(0);
-      expect(coordinate.x).toBeLessThanOrEqual(774);
+      expect(coordinate.x).toBeLessThanOrEqual(1000);
       expect(coordinate.y).toBeGreaterThanOrEqual(0);
-      expect(coordinate.y).toBeLessThanOrEqual(569);
+      expect(coordinate.y).toBeLessThanOrEqual(1171);
     }
 
     expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toMatchObject({
-      x: expect.closeTo(602.03, 2),
-      y: expect.closeTo(405.28, 2),
+      x: expect.closeTo(852.46, 1),
+      y: expect.closeTo(553.7, 1),
     });
   });
 
   it("uses the SVG meet content frame for a letterboxed workspace", () => {
     expect(resolveChinaMapContentFrame({ height: 320, width: 480 })).toEqual({
       height: 320,
-      scale: 320 / 569,
-      width: (774 * 320) / 569,
-      x: (480 - (774 * 320) / 569) / 2,
+      scale: 320 / 1171,
+      width: (1000 * 320) / 1171,
+      x: (480 - (1000 * 320) / 1171) / 2,
       y: 0,
     });
   });
@@ -63,7 +64,8 @@ describe("CityMap", () => {
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
     expect(screen.getByTestId("city-map-marker-dot-jinan-none")).toBeTruthy();
-    expect(screen.getByTestId("city-map-label-jinan")).toBeTruthy();
+    // 新坐标系下默认视口不放大，label 仅在 zoom ≥1.8 显示；直接断言 SVG 与标记存在即可
+    expect(screen.queryByTestId("city-map-label-jinan")).toBeNull();
   });
 
   it("calls the city callback when an interactive marker is pressed", async () => {
@@ -105,7 +107,7 @@ describe("CityMap", () => {
 
   it("resolves every adapter marker into bounded overview geometry", () => {
     const mapWidth = 300;
-    const mapHeight = 210;
+    const mapHeight = 351;
     const adapter = new OfflineChinaMapAdapter();
     const layouts = adapter.markers.map((marker) => ({ layout: resolveCityMarkerLayout(marker), marker }));
 
@@ -121,11 +123,43 @@ describe("CityMap", () => {
     }
   });
 
+  // 概览图宽度由外层卡片决定（手机上约 312pt，平板上可超过 600pt），
+  // 按压热区若固定按 300×351 计算，就会与 SVG 里画出的圆点错位。
+  it("scales overview marker geometry to the measured container instead of a fixed 300pt card", () => {
+    const marker = new OfflineChinaMapAdapter().markers.find((candidate) => candidate.city === "shanghai")!;
+    const layout = resolveCityMarkerLayout(marker, { height: 702, width: 600 });
+
+    expect(layout.pressFrame.x + layout.pressFrame.width / 2).toBeCloseTo(marker.coordinate.x * 600);
+    expect(layout.pressFrame.y + layout.pressFrame.height / 2).toBeCloseTo(marker.coordinate.y * 702);
+    expect(layout.labelFrame.x).toBeGreaterThanOrEqual(0);
+    expect(layout.labelFrame.x + layout.labelFrame.width).toBeLessThanOrEqual(600);
+  });
+
+  it("repositions overview press targets after the card reports its measured size", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-overview"), "layout", {
+        nativeEvent: { layout: { height: 702, width: 600, x: 0, y: 0 } },
+      });
+    });
+
+    const marker = new OfflineChinaMapAdapter().markers.find((candidate) => candidate.city === "shanghai")!;
+    const style = screen.getByTestId("city-map-marker-target-shanghai-none").props.style;
+    const resolved = Array.isArray(style) ? Object.assign({}, ...style) : style;
+
+    expect(resolved.left + resolved.width / 2).toBeCloseTo(marker.coordinate.x * 600);
+    expect(resolved.top + resolved.height / 2).toBeCloseTo(marker.coordinate.y * 702);
+  });
+
   it("hides workspace labels below the zoom threshold and scales the full marker model on the worklet viewport", () => {
     const markers = new OfflineChinaMapAdapter().markers;
-    const size = { height: 210, width: 300 };
+    const size = { height: 351, width: 300 };
     const hiddenModels = resolveWorkspaceMarkerModels(markers, { scale: 1.79, translateX: 0, translateY: 0 }, size);
-    const visibleModels = resolveWorkspaceMarkerModels([markers[0]], { scale: 1.8, translateX: 100, translateY: 0 }, size);
+    // 显式选北京（cityRegistry[0] 是乌鲁木齐，位于地图西北角，默认视口下在屏幕外）
+    const beijing = markers.find((marker) => marker.city === "beijing")!;
+    // 视口平移量把北京居中到 (150, 175)（按新坐标系 contentFrame 反算）
+    const visibleModels = resolveWorkspaceMarkerModels([beijing], { scale: 1.8, translateX: -136.8, translateY: 132.5 }, size);
 
     expect(hiddenModels.every((model) => !model.showLabel)).toBe(true);
     expect(visibleModels[0]?.dotSize).toBeCloseTo(14.4);
@@ -136,8 +170,9 @@ describe("CityMap", () => {
 
   it("shows only one of two colliding workspace labels", () => {
     const markers = new OfflineChinaMapAdapter().markers;
-    const overlappingMarkers = [markers[0], { ...markers[1], coordinate: markers[0].coordinate }];
-    const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: 150, translateY: 0 }, { height: 210, width: 300 });
+    const beijing = markers.find((marker) => marker.city === "beijing")!;
+    const overlappingMarkers = [beijing, { ...beijing, coordinate: beijing.coordinate }];
+    const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: -152, translateY: 147.3 }, { height: 351, width: 300 });
 
     expect(models.map((model) => model.showLabel)).toEqual([true, false]);
   });

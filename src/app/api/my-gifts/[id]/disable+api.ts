@@ -5,7 +5,8 @@ import { scheduleOpportunisticGiftMaintenance } from "../../../../server/mainten
 
 export async function POST(request: Request, { id }: { id: string }): Promise<Response> {
   try {
-    const { db } = await requireOwnedGift(request, id);
+    // 停用是 P0 处置手段，停测开关关闭期间必须保持可用。
+    const { db } = await requireOwnedGift(request, id, { allowWhileSharingPaused: true });
     if (!await disableGift(db, id, new Date().toISOString())) throw new ApiError(409, "gift_disable_failed", "This gift can no longer be disabled");
     scheduleOpportunisticGiftMaintenance();
     return new Response(null, { status: 204 });

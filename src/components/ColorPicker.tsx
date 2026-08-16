@@ -10,6 +10,9 @@ import Animated, {
 
 import { colors } from "./ui";
 
+// RNGH 的 simultaneousWithExternalGesture 接受任意原生组件引用；
+// 运行时即 ScrollView 原生滚动手势，类型上以 unknown 桥接。
+
 // ---------------------------------------------------------------------------
 // 色空间转换工具
 // ---------------------------------------------------------------------------
@@ -117,6 +120,12 @@ type ColorPickerProps = {
   value: string;
   /** 颜色变更回调 */
   onChange: (hex: string) => void;
+  /**
+  /**
+   * 外层滚动容器的引用：传入后色盘手势与滚动共存（色盘内拖动色相/明度
+   * 不会被滚动抢占；不传则色盘手势独立，如创建页全屏弹层）。
+   */
+  scrollRef?: React.RefObject<unknown>;
 };
 
 const SV_SIZE = 200;
@@ -131,13 +140,19 @@ const RING = 3;
  * 提供饱和度‑明度方块 + 色相条 + RGB 数值输入 + 十六进制输入 +
  * 大块颜色预览。所有转换在 UI 线程执行，无桥接延迟。
  */
-export function ColorPicker({ value, onChange }: ColorPickerProps) {
+export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
   const currentRgb = hexToRgb(value);
   const currentHsv = rgbToHsv(currentRgb);
 
   const hue = useSharedValue(currentHsv.h);
   const saturation = useSharedValue(currentHsv.s);
   const brightness = useSharedValue(currentHsv.v);
+
+  // RNGH 类型只接受其内部手势/组件引用，无法表达 ScrollView 实例；
+  // 运行时即原生滚动手势（官方推荐用法），此处仅做类型桥接。
+  const externalScrollRef = scrollRef
+    ? (scrollRef as React.RefObject<React.ComponentType | undefined>)
+    : undefined;
 
   // 响应外部 value 变化（例如点击预设色块后）
   React.useEffect(() => {
@@ -156,7 +171,11 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
   };
 
   // ---- SV 方块手势 ----
-  const svPan = Gesture.Pan()
+  // 在 ScrollView 内时与滚动共存：色盘上的拖动归色盘，色盘外的滚动归滚动。
+  const svPan = externalScrollRef
+    ? Gesture.Pan().simultaneousWithExternalGesture(externalScrollRef)
+    : Gesture.Pan();
+  svPan
     .onBegin((e) => {
       const layout = svLayout.value;
       const sx = Math.max(0, Math.min(1, e.x / layout.w));
@@ -175,7 +194,10 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
     });
 
   // ---- Hue 条手势 ----
-  const huePan = Gesture.Pan()
+  const huePan = externalScrollRef
+    ? Gesture.Pan().simultaneousWithExternalGesture(externalScrollRef)
+    : Gesture.Pan();
+  huePan
     .onBegin((e) => {
       const layout = hueLayout.value;
       const hx = Math.max(0, Math.min(360, (e.x / layout.w) * 360));

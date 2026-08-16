@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
 import test from "node:test";
+import { resolveSitePage } from "../website/worker/route.mjs";
 
 const websiteRoot = join(process.cwd(), "website");
 
@@ -48,10 +49,17 @@ test("builds the static website into the server worker for reliable hosting", ()
 
   assert.match(worker, /__STATIC_SITE_PAGES__/);
   assert.match(worker, /__STATIC_SITE_STYLES__/);
+  assert.match(worker, /__APP_LINK_FALLBACK__/);
+  assert.match(worker, /resolveSitePage/);
 
   const buildScript = readWebsiteFile("scripts/build-static-site.ps1");
   assert.match(buildScript, /__STATIC_SITE_PAGES__/);
   assert.match(buildScript, /__STATIC_SITE_STYLES__/);
+  assert.match(buildScript, /__APP_LINK_FALLBACK__/);
+  assert.match(buildScript, /open-app\\\\index\.html/);
+  assert.match(buildScript, /route\.mjs/);
+  assert.match(buildScript, /_redirects/);
+  assert.match(buildScript, /_headers/);
   assert.match(buildScript, /"\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/support\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/privacy\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
@@ -89,6 +97,31 @@ test("bundles the carousel script and local product images into worker-served st
     const supportResponse = await worker.fetch(new Request("https://onetapreality.com/support/"));
     assert.equal(supportResponse.status, 200);
     assert.match(await supportResponse.text(), /support@onetapreality\.com/);
+
+    const activateResponse = await worker.fetch(new Request("https://onetapreality.com/activate"));
+    assert.equal(activateResponse.status, 200);
+    assert.match(await activateResponse.text(), /OneTapReality App/);
+
+    const giftResponse = await worker.fetch(new Request("https://onetapreality.com/gift/example-token"));
+    assert.equal(giftResponse.status, 200);
+    const giftText = await giftResponse.text();
+    assert.match(giftText, /OneTapReality App/);
+    assert.doesNotMatch(giftText, /example-token/);
+
+    const emptyGiftResponse = await worker.fetch(new Request("https://onetapreality.com/gift/"));
+    assert.equal(emptyGiftResponse.status, 404);
+
+    const unknownResponse = await worker.fetch(new Request("https://onetapreality.com/unknown"));
+    assert.equal(unknownResponse.status, 404);
+
+    const redirects = readFileSync(join(outputDirectory, "_redirects"), "utf8");
+    assert.match(redirects, /^\/activate \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/activate\/ \/open-app\/ 200$/m);
+    assert.match(redirects, /^\/gift\/\* \/open-app\/ 200$/m);
+
+    const headers = readFileSync(join(outputDirectory, "_headers"), "utf8");
+    assert.match(headers, /^\/\.well-known\/apple-app-site-association$/m);
+    assert.match(headers, /Content-Type: application\/json/);
   } finally {
     rmSync(outputDirectory, { recursive: true, force: true });
   }
@@ -122,6 +155,20 @@ test("serves the matching iOS universal-link association for gift and activation
       }],
     },
   });
+});
+
+test("serves a token-safe App Link fallback only for supported paths", () => {
+  const pages = { "/": "<h1>Home</h1>" };
+  const fallback = "<h1>Open OneTapReality</h1><p>Install or open the app, then tap the NFC card again.</p>";
+
+  assert.equal(resolveSitePage("/activate", pages, fallback), fallback);
+  assert.equal(resolveSitePage("/activate/", pages, fallback), fallback);
+  assert.equal(resolveSitePage("/gift/example-token", pages, fallback), fallback);
+  assert.equal(resolveSitePage("/gift/example-token/", pages, fallback), fallback);
+  assert.equal(resolveSitePage("/gift/", pages, fallback), null);
+  assert.equal(resolveSitePage("/gift/example-token/extra", pages, fallback), null);
+  assert.equal(resolveSitePage("/unknown", pages, fallback), null);
+  assert.doesNotMatch(resolveSitePage("/gift/private-token", pages, fallback), /private-token/);
 });
 
 test("uses release-ready public wording without false local-only claims or purchase calls to action", () => {
