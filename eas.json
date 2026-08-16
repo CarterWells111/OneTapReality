@@ -33,6 +33,13 @@
         "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
       }
     },
+    "staging-testflight": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {
@@ -42,6 +49,11 @@
   },
   "submit": {
     "development": {
+      "ios": {
+        "ascAppId": "6794186067"
+      }
+    },
+    "staging-testflight": {
       "ios": {
         "ascAppId": "6794186067"
       }
