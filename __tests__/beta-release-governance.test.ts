@@ -46,6 +46,20 @@ describe("Beta release governance", () => {
     expect(alphaRunbook).toContain("首个 staging 演练构建例外");
   });
 
+  it("keeps staging TestFlight internal-only and separate from production release", () => {
+    const decisions = read("docs/DECISIONS.md");
+    const checklist = read("docs/EXECUTION-CHECKLIST.md");
+    const testflightRunbook = read("docs/release/TESTFLIGHT-RELEASE.md");
+
+    expect(decisions).toContain("Staging TestFlight 内部演练");
+    expect(decisions).toContain("`staging-testflight` 只连接 staging API");
+    expect(checklist).toContain("`staging-testflight` TestFlight 内部构建");
+    expect(checklist).toContain("不代表 production 或公开 App Store 放行");
+    expect(testflightRunbook).toContain("--profile=staging-testflight --no-submit");
+    expect(testflightRunbook).toContain("--profile=staging-testflight --build-id=");
+    expect(testflightRunbook).toContain("不得点击 App Store 的公开审核或发布操作");
+  });
+
   it("keeps a sanitized three-card iOS staging rehearsal guide", () => {
     const guide = read("docs/operations/IOS-NFC-CARD-TEST.md");
     const batchLog = read("docs/operations/NFC-CARD-BATCH-LOG.md");
