@@ -35,6 +35,7 @@
     },
     "staging-testflight": {
       "distribution": "store",
+      "environment": "preview",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
@@ -55,7 +56,10 @@
     },
     "staging-testflight": {
       "ios": {
-        "ascAppId": "6794186067"
+        "ascAppId": "6794186067",
+        "groups": [
+          "OneTapReality Staging NFC"
+        ]
       }
     },
     "production": {

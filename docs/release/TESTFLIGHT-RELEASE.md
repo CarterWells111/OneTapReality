@@ -26,7 +26,15 @@ node scripts/release-ios-testflight.cjs
 
 ## Staging TestFlight 内部演练
 
-`staging-testflight` 是 store 分发签名，但客户端只连接 `https://api-staging.onetapreality.com`。它只用于获准内部成员在真实 iPhone 上完成 staging NFC 三卡与 P0 演练，不得访问 production 数据或礼品。
+`staging-testflight` 是 store 分发签名，显式使用 EAS `preview` environment，并把客户端 API 固定为 `https://api-staging.onetapreality.com`。它只用于获准内部成员在真实 iPhone 上完成 staging NFC 三卡与 P0 演练，不得访问 production 数据或礼品。
+
+构建批准后、真正发起构建前，先做一次只读变量名审计（不要使用显示敏感值的参数，也不要把输出粘贴到 Issue 或聊天）：
+
+```powershell
+npx eas-cli@latest env:list --environment preview
+```
+
+确认没有 production API origin、数据库连接串、维护密钥、邮件密钥或其他客户端不应持有的服务端 Secret。此检查只核对变量名和可公开值；发现异常立即停止，不发起构建。
 
 云端构建与 App Store Connect 提交是两个独立审批点。批准构建后执行：
 
@@ -40,7 +48,7 @@ node scripts/release-ios-testflight.cjs --profile=staging-testflight --no-submit
 node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=<approved-build-id>
 ```
 
-Apple 处理完成后，只能把该构建加入名称明确包含 `Staging` 的内部测试群组，不添加外部测试者。测试说明写明 `Staging NFC card rehearsal`。不得点击 App Store 的公开审核或发布操作。本配置 PR 本身不运行以上命令。
+提交前确认 App Store Connect 已存在内部群组 `OneTapReality Staging NFC`，并确认其他内部群组均未启用自动分发。submit profile 只把构建加入该固定群组；不得添加外部测试者。测试说明写明 `Staging NFC card rehearsal`。不得点击 App Store 的公开审核或发布操作。本配置 PR 本身不运行以上命令。
 
 ## 脚本做了什么
 
@@ -52,7 +60,8 @@ Apple 处理完成后，只能把该构建加入名称明确包含 `Staging` 的
 6. **EAS 账号与构建号** — `whoami` 确认登录，`build:version:get` 读取远端构建号（`appVersionSource: remote` + `autoIncrement`，构建号由 EAS 自增，不要手改）。
 7. **发起构建** — `eas build --platform ios --profile <已批准的 profile> --non-interactive --no-wait`；staging 必须显式使用 `staging-testflight`。
 8. **轮询直到完成** — 每 30 秒查一次，最长 90 分钟。
-9. **提交** — `eas submit --id <build-id>`，使用存放在 EAS 服务器上的 App Store Connect API Key。
+9. **提交前身份校验** — 对 build ID 重新读取 EAS 元数据，只有项目、iOS 平台、store 分发、已完成状态和所选 profile 全部匹配时才继续。
+10. **提交** — `eas submit --id <build-id>`，使用存放在 EAS 服务器上的 App Store Connect API Key，并按 submit profile 绑定的固定内部群组分发。
 
 ### 为什么 lockfile 检查排在质量闸之前
 

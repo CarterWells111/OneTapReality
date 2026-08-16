@@ -6,6 +6,8 @@
 
 **Architecture:** `eas.json` remains the source of truth for build-time API origins and App Store Connect submission IDs. Focused configuration and governance tests prevent the staging TestFlight profile from becoming ad-hoc, targeting production, exposing server secrets, or bypassing approval gates. Existing `alpha` and `production` profiles remain unchanged.
 
+**Review hardening:** The store build explicitly selects EAS `preview`, submit targets the fixed `OneTapReality Staging NFC` group, and the release script validates an existing build's project, platform, distribution, profile, and status before submission. The build-only resume command must preserve the selected profile.
+
 **Tech Stack:** Expo SDK 54, EAS Build/Submit configuration, Jest, Node.js release tooling, Markdown operating documentation.
 
 ---
@@ -23,10 +25,14 @@ Extend the parsed config type with `build.staging-testflight` and `submit.stagin
 ```ts
 expect(config.build["staging-testflight"]).toEqual({
   distribution: "store",
+  environment: "preview",
   autoIncrement: true,
   env: { EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com" },
 });
 expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");
+expect(config.submit["staging-testflight"].ios.groups).toEqual([
+  "OneTapReality Staging NFC",
+]);
 ```
 
 Also iterate the profile environment keys and reject `DATABASE_URL`, `PGPASSWORD`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `RESEND_API_KEY`, `GIFT_TOKEN_PEPPER`, `GIFT_AUTH_PEPPER`, and `GIFT_CARD_CLEANUP_SECRET`.
@@ -64,6 +70,7 @@ Add this sibling of `alpha` and `production`:
 ```json
 "staging-testflight": {
   "distribution": "store",
+  "environment": "preview",
   "autoIncrement": true,
   "env": {
     "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
@@ -78,7 +85,8 @@ Add this sibling of `submit.production`:
 ```json
 "staging-testflight": {
   "ios": {
-    "ascAppId": "6794186067"
+    "ascAppId": "6794186067",
+    "groups": ["OneTapReality Staging NFC"]
   }
 }
 ```
@@ -129,7 +137,11 @@ node scripts/release-ios-testflight.cjs --profile=staging-testflight --no-submit
 node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=<approved-build-id>
 ```
 
-State that the first command creates a cloud build and the second uploads an already approved build; neither command is run by this PR. Require an internal group named to include `Staging`, and forbid clicking App Store review/publication actions.
+State that the first command creates a cloud build and the second uploads an already approved build; neither command is run by this PR. Require the fixed internal group `OneTapReality Staging NFC`, verify all other internal groups have automatic distribution disabled, and forbid clicking App Store review/publication actions. Document the read-only EAS `preview` variable-name audit before build.
+
+- [ ] **Step 3a: Harden build resume and submission identity checks**
+
+Add a failing unit test for the release guard module. Preserve `--profile=staging-testflight` in the build-only resume command, and reject existing build IDs unless project, iOS platform, store distribution, selected profile, and `FINISHED` status all match before submission.
 
 - [ ] **Step 4: Run both focused tests and verify GREEN**
 

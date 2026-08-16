@@ -16,10 +16,11 @@
 
 - `eas.json` 新增 `build.staging-testflight`：
   - `distribution: "store"`，生成可提交 App Store Connect 的 iOS 包；
+  - `environment: "preview"`，避免 store 构建默认加载 EAS production environment；
   - `autoIncrement: true`，沿用 EAS 远端版本源；
   - 仅暴露 `EXPO_PUBLIC_API_ORIGIN=https://api-staging.onetapreality.com`；
   - 不包含数据库、R2、Resend、礼品 pepper 或其他服务端秘密。
-- `eas.json` 新增同名 `submit.staging-testflight`，只引用现有 App Store Connect App ID `6794186067`。
+- `eas.json` 新增同名 `submit.staging-testflight`，引用现有 App Store Connect App ID `6794186067`，并固定分发到内部群组 `OneTapReality Staging NFC`。
 - 保留现有 `alpha` 内部分发和 `production` profile，不改变它们的用途或 API origin。
 - 发布脚本必须显式传入 `--profile=staging-testflight`；不改变默认 production 行为，也不在 PR 中执行脚本。
 
@@ -27,14 +28,15 @@
 
 本地门禁确认 profile 是 store 分发、只指向 staging、使用现有 iOS 身份且不含服务端秘密。合并配置后，后续流程分成两个独立审批点：
 
-1. 批准 EAS 云端构建，生成 staging TestFlight 候选包；
-2. 构建验证通过后，批准提交 App Store Connect，并由负责人把构建加入明确命名的内部 TestFlight 群组。
+1. 批准 EAS 云端构建，并在构建前只读审计 EAS `preview` 环境变量名，生成 staging TestFlight 候选包；
+2. 构建验证通过后，确认其他内部群组均关闭自动分发，再批准提交 App Store Connect 到固定的 `OneTapReality Staging NFC` 群组。
 
 不得点击公开 App Store 的“添加以供审核”。内部测试版的测试说明必须标注 staging；实体卡只能使用 staging URL，禁止测试生产礼品或生产数据。
 
 ## 测试与验收
 
-- 先新增失败测试，要求 `staging-testflight` build/submit profile 存在并满足 store、staging origin、autoIncrement、App ID 和无服务端秘密约束。
+- 先新增失败测试，要求 `staging-testflight` build/submit profile 存在并满足 store、EAS preview environment、staging origin、autoIncrement、App ID、固定内部群组和无服务端秘密约束。
+- 发布脚本测试要求续传命令保留 profile，并在提交已有 build ID 前校验项目、平台、分发类型、profile 与完成状态。
 - 再新增最小配置使测试转绿，并更新决策、执行检查表和 TestFlight 手册。
 - 最终运行干净安装、lockfile 检查、数据库检查、lint、typecheck、完整测试、server build、iOS staging bundle export 和静态 iOS 预检。
 - PR 只证明仓库配置和本地模拟构建门禁通过；真正的 iOS 签名、原生编译和 TestFlight 上传只能由后续获批的 EAS 云端任务验证。

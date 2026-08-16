@@ -13,6 +13,10 @@
 const { spawnSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
+const {
+  assertBuildMatchesSubmission,
+  formatResumeCommand,
+} = require("./release-ios-testflight-guards.cjs");
 
 const EAS_CLI = process.env.EAS_CLI ?? "eas-cli@latest";
 const POLL_INTERVAL_MS = 30_000;
@@ -114,6 +118,13 @@ function readProfileOrigin(cwd, profile) {
   return origin;
 }
 
+function readProjectId(cwd) {
+  const appJson = JSON.parse(readFileSync(join(cwd, "app.json"), "utf8")).expo;
+  const projectId = appJson?.extra?.eas?.projectId;
+  if (!projectId) throw new Error("app.json expo.extra.eas.projectId is not set");
+  return projectId;
+}
+
 // The router origin is injected at config-evaluation time by app.config.ts, so
 // it is only correct when EXPO_PUBLIC_API_ORIGIN matches the build profile.
 function verifyExpoConfig(cwd, origin) {
@@ -204,7 +215,9 @@ async function waitForBuild(buildId) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const cwd = process.cwd();
+  const projectId = readProjectId(cwd);
   let buildId = options.buildId;
+  let finishedBuild;
 
   if (!buildId) {
     step("1. Repository state");
@@ -249,16 +262,25 @@ async function main() {
     console.log(`  logs:     https://expo.dev/accounts/onereality/projects/onetapreality/builds/${buildId}`);
 
     step("8. Waiting for the build to finish");
-    const finished = await waitForBuild(buildId);
-    console.log(`  version ${finished.appVersion} (${finished.iosBuildNumber ?? finished.buildNumber})`);
+    finishedBuild = await waitForBuild(buildId);
+    console.log(
+      `  version ${finishedBuild.appVersion} (${finishedBuild.iosBuildNumber ?? finishedBuild.buildNumber})`,
+    );
   } else {
-    console.log(`Skipping build; submitting existing build ${buildId}.`);
+    console.log(`Skipping build; validating existing build ${buildId}.`);
+    finishedBuild = viewBuild(buildId);
   }
+
+  assertBuildMatchesSubmission(finishedBuild, {
+    buildId,
+    profile: options.profile,
+    projectId,
+  });
 
   if (!options.submit) {
     step("Done (build only)");
     console.log(`Build ${buildId} is ready. Submit later with:`);
-    console.log(`  node scripts/release-ios-testflight.cjs --build-id=${buildId}`);
+    console.log(`  ${formatResumeCommand(buildId, options.profile)}`);
     return;
   }
 

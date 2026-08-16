@@ -15,7 +15,7 @@
 
 ## 首个 staging 演练构建
 
-四周计划第 1–2 周仅支持 iPhone / iOS。首次实体卡验收前，在环境隔离检查、本地质量门禁和 `npm run beta:preflight:ios` 全部通过后，可以由发布负责人单独批准生成并安装一个仅用于 staging 演练的 `alpha` 或 `staging-testflight` 原生构建。`alpha` 通过登记 UDID 后的 EAS 链接安装；`staging-testflight` 通过名称包含 `Staging` 的 App Store Connect 内部群组安装，且云端构建和提交必须分别批准。两者只发给获准演练人员，用于完成三张实体卡和 P0 流程；它们都不代表 production、公开 App Store 或扩大测试成员已获准。第 3–4 周是否加入 Android 必须根据前两周结果重新评估并另行决策。
+四周计划第 1–2 周仅支持 iPhone / iOS。首次实体卡验收前，在环境隔离检查、本地质量门禁和 `npm run beta:preflight:ios` 全部通过后，可以由发布负责人单独批准生成并安装一个仅用于 staging 演练的 `alpha` 或 `staging-testflight` 原生构建。`alpha` 通过登记 UDID 后的 EAS 链接安装；`staging-testflight` 显式使用 EAS `preview` environment，并只通过 App Store Connect 内部群组 `OneTapReality Staging NFC` 安装，且云端构建和提交必须分别批准。提交前还须确认其他内部群组均未启用自动分发。两者只发给获准演练人员，用于完成三张实体卡和 P0 流程；它们都不代表 production、公开 App Store 或扩大测试成员已获准。第 3–4 周是否加入 Android 必须根据前两周结果重新评估并另行决策。
 
 ## 首次演练后的每次内部扩大发放前
 

@@ -22,6 +22,7 @@
 - [x] Railway staging 服务、PostgreSQL、私有 R2 bucket 和 Resend 配置均与生产隔离，且使用独立 peppers、清理密钥和管理员测试邮箱。
 - [x] `ALPHA_ALLOWED_EMAILS` 只包含获准内测邮箱；`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，测试卡不含正式礼品 URL 或 token。
 - [ ] 已从干净的最新 `main` 通过本地质量门禁和 `npm run beta:preflight:ios`，并经单独批准生成指向 staging 的 iOS EAS `alpha` 内部构建或 `staging-testflight` TestFlight 内部构建。
+- [ ] `staging-testflight` 构建前已只读核对 EAS `preview` environment 的变量名称，无 production origin、数据库连接或客户端不应持有的服务端 Secret；提交前已确认内部群组 `OneTapReality Staging NFC` 存在，且其他内部群组均未启用自动分发。
 - [ ] 三张 iOS 实体测试卡完成：准确写入、读回、锁屏碰卡、深链、邮箱登录、认领、发布、受邀只读、停用和对象删除；全程未访问生产数据库、bucket 或礼品。
 - [ ] 已演练 P0 处置：关闭 `GIFT_SHARING_ENABLED`、停止发卡/邀请、移除受影响 TestFlight 测试者、停用礼品、保留脱敏证据、修复回归并经负责人批准后恢复。
 
