@@ -8,6 +8,7 @@ function read(path: string): string {
 describe("Beta release governance", () => {
   it("keeps database phase two and album covers out of the Beta candidate", () => {
     const decisions = read("docs/DECISIONS.md");
+    const journal = read("drizzle/meta/_journal.json");
 
     expect(decisions).toContain("Beta 发布准备与数据库迁移顺序");
     expect(decisions).toContain("0008_database_phase2");
@@ -15,6 +16,18 @@ describe("Beta release governance", () => {
     expect(decisions).toContain("不得进入同一个 Beta 候选版本");
     expect(existsSync(join(process.cwd(), "drizzle", "0008_database_phase2.sql"))).toBe(false);
     expect(existsSync(join(process.cwd(), "drizzle", "0008_shared_album_covers.sql"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "drizzle", "0009_shared_album_covers.sql"))).toBe(false);
+    expect(journal).not.toContain("0008_database_phase2");
+    expect(journal).not.toContain("0009_shared_album_covers");
+  });
+
+  it("does not mark Android App Links complete before the release fingerprint is verified", () => {
+    const checklist = read("docs/EXECUTION-CHECKLIST.md");
+    const deploymentLog = read("docs/operations/DEPLOYMENT-LOG.md");
+
+    expect(deploymentLog).toContain("Partial（Android release 指纹阻塞）");
+    expect(checklist).toContain("Android release SHA-256 与 `assetlinks.json` 验证");
+    expect(checklist).toContain("仍为 Blocked");
   });
 
   it("keeps the Beta preparation specification and execution plan reviewable", () => {

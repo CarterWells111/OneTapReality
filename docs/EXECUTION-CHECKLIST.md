@@ -26,4 +26,4 @@
 
 只有所有 staging 准入项完成后，才可发放 `alpha` EAS 构建和 staging 测试卡。现有指向生产 API 的 TestFlight 构建不能代替这项隔离验收。
 
-> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；Railway staging Service + PostgreSQL、R2 staging bucket、`staging.onetapreality.com` / `api-staging.onetapreality.com` 域名与深链文件、Resend 邮件测试均已建立并验证（`/api/health` 200、`verify:backend` 全绿、`verify-r2` 通过、AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 无 token 泄漏、验证码邮件可达、白名单外 403）。其余准入项（EAS alpha 构建、实体卡演练）仍为 Blocked，证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
+> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；Railway staging Service + PostgreSQL、R2 staging bucket、staging 域名、iOS AASA、网页引导与 Resend 邮件测试均已建立并验证（`/api/health` 200、`verify:backend` 全绿、`verify-r2` 通过、AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 无 token 泄漏、验证码邮件可达、白名单外 403）。Android release SHA-256 与 `assetlinks.json` 验证、EAS alpha 构建和实体卡演练仍为 Blocked；证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
