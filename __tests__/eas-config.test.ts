@@ -14,6 +14,7 @@ describe("EAS production configuration", () => {
       };
       "staging-testflight": {
         distribution: string;
+        environment: string;
         autoIncrement: boolean;
         env: Record<string, string>;
       };
@@ -26,6 +27,7 @@ describe("EAS production configuration", () => {
       "staging-testflight": {
         ios: {
           ascAppId: string;
+          groups: string[];
         };
       };
     };
@@ -55,12 +57,16 @@ describe("EAS production configuration", () => {
 
     expect(profile).toEqual({
       distribution: "store",
+      environment: "preview",
       autoIncrement: true,
       env: {
         EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
       },
     });
     expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");
+    expect(config.submit["staging-testflight"].ios.groups).toEqual([
+      "OneTapReality Staging NFC",
+    ]);
 
     for (const key of [
       "DATABASE_URL",
