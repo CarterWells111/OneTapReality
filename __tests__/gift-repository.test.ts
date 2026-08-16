@@ -1,5 +1,5 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { addGiftMember, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftEmailCode, createGiftPublishSession, disableGift, getGiftAccessByTokenHash, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listOwnedGifts, consumeGiftEmailCode, createGiftSession, getGiftSessionEmail, removeGiftMember } from "../src/server/gifts/repository";
+import { addGiftMember, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession, disableGift, getGiftAccessByTokenHash, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listOwnedGifts, removeGiftMember } from "../src/server/gifts/repository";
 
 describe("gift repository", () => {
   it("claims a pre-registered gift once and persists its owner", async () => {
@@ -50,27 +50,6 @@ describe("gift repository", () => {
     } finally {
       await close();
     }
-  });
-
-  it("consumes a matching unexpired email code only once", async () => {
-    const { db, close } = createBackendTestDatabase();
-    try {
-      await migrateBackendDatabase(db);
-      await createGiftEmailCode(db, { id: "code-1", email: "owner@example.com", codeHash: "hash", expiresAt: "2026-07-24T00:05:00.000Z", createdAt: "2026-07-24T00:00:00.000Z" });
-
-      await expect(consumeGiftEmailCode(db, "owner@example.com", "hash", "2026-07-24T00:01:00.000Z")).resolves.toBe(true);
-      await expect(consumeGiftEmailCode(db, "owner@example.com", "hash", "2026-07-24T00:01:00.000Z")).resolves.toBe(false);
-    } finally { await close(); }
-  });
-
-  it("returns an email only for an active unrevoked gift session", async () => {
-    const { db, close } = createBackendTestDatabase();
-    try {
-      await migrateBackendDatabase(db);
-      await createGiftSession(db, { id: "session-1", email: "owner@example.com", tokenHash: "session-hash", expiresAt: "2026-08-23T00:00:00.000Z", createdAt: "2026-07-24T00:00:00.000Z" });
-      await expect(getGiftSessionEmail(db, "session-hash", "2026-07-25T00:00:00.000Z")).resolves.toBe("owner@example.com");
-      await expect(getGiftSessionEmail(db, "session-hash", "2026-08-24T00:00:00.000Z")).resolves.toBeNull();
-    } finally { await close(); }
   });
 
   it("replaces a shared album only when a live owner publication session is completed", async () => {

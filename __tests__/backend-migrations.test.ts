@@ -24,11 +24,9 @@ describe("backend PostgreSQL migrations", () => {
         "app_schema_meta",
         "auth_rate_limits",
         "devices",
-        "gift_email_codes",
         "gift_media_cleanup_jobs",
         "gift_members",
         "gift_publish_sessions",
-        "gift_sessions",
         "gifts",
         "memories",
         "memory_pages",
@@ -36,6 +34,11 @@ describe("backend PostgreSQL migrations", () => {
         "shared_album_pages",
         "shared_albums",
       ]);
+
+      const schemaVersion = await db.execute(sql`
+        select version from app_schema_meta where key = 'database'
+      `);
+      expect(schemaVersion.rows).toEqual([{ version: 8 }]);
     } finally {
       await close();
     }

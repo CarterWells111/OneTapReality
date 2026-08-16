@@ -193,32 +193,6 @@ export const sharedAlbums = pgTable(
   (table) => [uniqueIndex("shared_albums_gift_unique").on(table.giftId)],
 );
 
-export const giftEmailCodes = pgTable(
-  "gift_email_codes",
-  {
-    id: text("id").primaryKey(),
-    email: text("email").notNull(),
-    codeHash: text("code_hash").notNull(),
-    expiresAt: text("expires_at").notNull(),
-    consumedAt: text("consumed_at"),
-    createdAt: text("created_at").notNull(),
-  },
-  (table) => [index("gift_email_codes_email_created_idx").on(table.email, table.createdAt)],
-);
-
-export const giftSessions = pgTable(
-  "gift_sessions",
-  {
-    id: text("id").primaryKey(),
-    email: text("email").notNull(),
-    tokenHash: text("token_hash").notNull(),
-    expiresAt: text("expires_at").notNull(),
-    revokedAt: text("revoked_at"),
-    createdAt: text("created_at").notNull(),
-  },
-  (table) => [uniqueIndex("gift_sessions_token_hash_unique").on(table.tokenHash), index("gift_sessions_email_idx").on(table.email)],
-);
-
 /** Immutable page snapshot published by a gift owner. */
 export const sharedAlbumPages = pgTable(
   "shared_album_pages",
@@ -321,8 +295,6 @@ export type GiftCardRow = typeof giftCards.$inferSelect;
 export type GiftCardEventRow = typeof giftCardEvents.$inferSelect;
 export type GiftMemberRow = typeof giftMembers.$inferSelect;
 export type SharedAlbumRow = typeof sharedAlbums.$inferSelect;
-export type GiftEmailCodeRow = typeof giftEmailCodes.$inferSelect;
-export type GiftSessionRow = typeof giftSessions.$inferSelect;
 export type SharedAlbumPageRow = typeof sharedAlbumPages.$inferSelect;
 export type SharedAlbumMediaRow = typeof sharedAlbumMedia.$inferSelect;
 export type GiftPublishSessionRow = typeof giftPublishSessions.$inferSelect;

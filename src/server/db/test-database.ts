@@ -31,6 +31,7 @@ export function createBackendTestDatabase(options: { onQuery?: (query: string) =
         // Remove only that clause at the in-memory adapter boundary.
         supportedConfig.text = queryText
           .replace(/\s+NOT VALID/giu, "")
+          .replace(/ALTER TABLE\s+"[^"]+"\s+VALIDATE CONSTRAINT\s+"[^"]+"/giu, "SELECT 1")
           .replace(/\s+for update skip locked/giu, "");
       }
       const result = await queryForTest(supportedConfig, values) as {

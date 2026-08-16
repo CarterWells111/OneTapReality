@@ -20,4 +20,13 @@ describe("gift maintenance operations documentation", () => {
     expect(runbook).toContain("分别批准");
     expect(runbook).toContain("npm run worker:check");
   });
+
+  it("keeps the generated phase-two migration behind explicit production approval", () => {
+    const runbook = read("docs/operations/GIFT-MAINTENANCE.md");
+
+    expect(runbook).toContain("0008_database_phase2.sql");
+    expect(runbook).toContain("尚未部署");
+    expect(runbook).toContain("生产 migration");
+    expect(runbook).toContain("Railway 部署");
+  });
 });
