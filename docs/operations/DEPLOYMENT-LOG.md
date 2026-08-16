@@ -36,3 +36,11 @@
 | 3 张内部样卡 | 可供 staging 演练（硬件批次表） | Blocked | 硬件 | 待填 |
 
 回滚原则：任何一项变更失败时按 `ALPHA-STAGING.md` 恢复；暂停分享先置 `GIFT_SHARING_ENABLED=false`。
+
+## 2026-08-16：staging 礼品分享配置只读复核
+
+- 环境：staging
+- 服务：Railway API
+- 核对结果：`GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，均符合预期。
+- 安全边界：只输出预期/缺失/不匹配状态，未读取或记录 Secret、完整变量集或连接信息。
+- 变更结果：未修改变量、未触发部署；无需回滚。

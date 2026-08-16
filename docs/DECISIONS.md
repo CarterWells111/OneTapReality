@@ -1,5 +1,14 @@
 # 决策记录
 
+## 2026-08-16：Beta 发布准备与数据库迁移顺序
+
+首批 Beta 候选从执行时最新 `origin/main` 建立独立工作树，只纳入已经核实的 staging 脱敏证据以及后续 P0/P1 修复。当前主工作树中未提交的相册封面功能、数据库维护第二阶段和其他 P2+ 功能不得进入同一个 Beta 候选版本，也不得通过脏工作树构建 EAS 或 TestFlight 包。
+
+- 数据库维护第二阶段继续独占 `0008_database_phase2`，在单独分支、单独 PR、单独备份/恢复验证和单独生产审批中发布。
+- 相册封面功能只能在第二阶段迁移之后重新基线化，迁移编号固定为 `0009_shared_album_covers`；其 Drizzle journal、snapshot 和 schema 必须基于已经包含 `0008_database_phase2` 的分支重新生成，不能只改 SQL 文件名。
+- Beta 候选保持当前已发布 schema 7 契约，不包含上述两个 migration；首批 5 套稳定前不把数据库维护或相册封面与客户端候选捆绑发布。
+- 本地整理、测试与只读配置核对不触发云端构建。push、PR、GitHub 运维 Issue、Railway 变量写入、EAS 构建、TestFlight、数据库迁移和部署仍分别审批。
+
 ## 2026-08-06：App Link 网页引导页（web fallback）
 
 按既有计划 `docs/superpowers/plans/2026-07-25-app-link-web-fallback.md` 实现浏览器打开 `/gift/<token>` 与 `/activate` 时的安装引导页，避免未安装 App 时返回 404；引导页不包含礼品 token，也不携带任何业务逻辑。生产与 staging 官网共用同一份 `website/` 构建产物，不新增网络、云服务、支付、分析或客户端秘密。
