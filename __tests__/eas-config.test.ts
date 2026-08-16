@@ -65,7 +65,7 @@ describe("EAS production configuration", () => {
     });
     expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");
     expect(config.submit["staging-testflight"].ios.groups).toEqual([
-      "OneTapReality Staging NFC",
+      "OneTapReality开发员测试",
     ]);
 
     for (const key of [

@@ -20,7 +20,7 @@
   - `autoIncrement: true`，沿用 EAS 远端版本源；
   - 仅暴露 `EXPO_PUBLIC_API_ORIGIN=https://api-staging.onetapreality.com`；
   - 不包含数据库、R2、Resend、礼品 pepper 或其他服务端秘密。
-- `eas.json` 新增同名 `submit.staging-testflight`，引用现有 App Store Connect App ID `6794186067`，并固定分发到内部群组 `OneTapReality Staging NFC`。
+- `eas.json` 新增同名 `submit.staging-testflight`，引用现有 App Store Connect App ID `6794186067`，并固定分发到现有内部群组 `OneTapReality开发员测试`。
 - 保留现有 `alpha` 内部分发和 `production` profile，不改变它们的用途或 API origin。
 - 发布脚本必须显式传入 `--profile=staging-testflight`，并在运行时强制先 `--no-submit` 构建、后 `--build-id` 提交的两段式审批；不改变默认 production 行为，也不在 PR 中执行脚本。
 
@@ -29,7 +29,7 @@
 本地门禁确认 profile 是 store 分发、只指向 staging、使用现有 iOS 身份且不含服务端秘密。合并配置后，后续流程分成两个独立审批点：
 
 1. 批准 EAS 云端构建，并在构建前只读审计 EAS `preview` 环境变量名，生成 staging TestFlight 候选包；
-2. 构建验证通过后，确认其他内部群组均关闭自动分发，再批准提交 App Store Connect 到固定的 `OneTapReality Staging NFC` 群组。
+2. 构建验证通过后，确认目标群组 `OneTapReality开发员测试` 已启用自动分发且其他内部群组均关闭自动分发，再批准提交 App Store Connect 到该固定群组。
 
 不得点击公开 App Store 的“添加以供审核”。内部测试版的测试说明必须标注 staging；实体卡只能使用 staging URL，禁止测试生产礼品或生产数据。
 

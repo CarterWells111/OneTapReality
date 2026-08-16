@@ -62,10 +62,11 @@ describe("Beta release governance", () => {
     expect(testflightRunbook).toContain("--profile=staging-testflight --build-id=");
     expect(testflightRunbook).toContain("不得点击 App Store 的公开审核或发布操作");
     expect(testflightRunbook).toContain("EAS `preview` environment");
-    expect(testflightRunbook).toContain("OneTapReality Staging NFC");
+    expect(testflightRunbook).toContain("OneTapReality开发员测试");
+    expect(testflightRunbook).toContain("该目标群组已启用自动分发");
     expect(testflightRunbook).toContain("其他内部群组均未启用自动分发");
     expect(testflightRunbook).toContain("省略 `--no-submit` 会被脚本拒绝");
-    expect(testflightRunbook).toContain("自动加入 `OneTapReality Staging NFC`");
+    expect(testflightRunbook).toContain("自动加入 `OneTapReality开发员测试`");
     expect(testflightRunbook).toContain("不得新建或改选群组");
     expect(alphaRunbook).toContain("`alpha` 或 `staging-testflight`");
     expect(cardGuide).toContain("`alpha` 或 `staging-testflight`");
