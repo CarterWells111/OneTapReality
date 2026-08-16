@@ -2,10 +2,11 @@
 
 ## 2026-08-16：首批 iOS Beta 实体卡准入
 
-首批受邀 Beta 仅支持 iPhone / iOS。准入以 iOS Universal Links、EAS `alpha` 原生构建、三张 staging NFC 样卡和 iPhone 真机完整礼品生命周期为准；Android App Links、release SHA-256、`assetlinks.json` 和 Android 真机测试进入后续非阻塞 Backlog。本轮不得宣称 Android 已完成，但 Android 未完成不阻断首批 iOS Beta。
+四周 Beta 计划的第 1–2 周仅支持 iPhone / iOS。准入以 iOS Universal Links、EAS `alpha` 原生构建、三张 staging NFC 样卡和 iPhone 真机完整礼品生命周期为准；Android App Links、release SHA-256、`assetlinks.json` 和 Android 真机测试在第 3–4 周重新评估并保持非阻塞 Backlog，未经新决策不得自动纳入发布。本轮不得宣称 Android 已完成，但 Android 未完成不阻断前两周 iOS Beta。
 
 - staging 基础设施、iOS AASA、Resend、白名单与礼品 URL 来源沿用已经核实的脱敏证据；实体卡只写 `staging.onetapreality.com`。
 - EAS `alpha` 构建、staging 写入、P0 开关演练、TestFlight、production 礼品预登记和部署仍分别审批；production Railway 自动部署保持关闭。
+- 本地质量门禁和 iOS 预检通过后，可单独批准生成并安装仅用于 staging 演练的首个 `alpha` 内部构建，以完成实体卡前置测试；这不等于 TestFlight、production 或扩大测试成员的放行。
 - 三张样卡分别使用脱敏编号 `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003`。记录不得包含完整 URL、token、验证码、邮箱、照片或 Secret。
 - 四项本地质量门禁、本地 iOS 预检、三卡写入/读回/锁屏碰卡、完整礼品生命周期、环境隔离和 P0 演练全部通过后，才允许申请首批 5 套 production 写卡与 TestFlight 分发审批。
 

@@ -2,7 +2,7 @@
 
 ## 目标
 
-把首批 OneTapReality Beta 明确收敛为 iPhone / iOS，完成所有无需实体卡的发布准备，并把最终验收压缩为可重复、可脱敏记录的三张 staging 实体卡真机测试。Android App Links 保留在后续范围，但不阻断首批 iOS Beta。
+把四周计划第 1–2 周的 OneTapReality Beta 明确收敛为 iPhone / iOS，完成所有无需实体卡的发布准备，并把最终验收压缩为可重复、可脱敏记录的三张 staging 实体卡真机测试。Android App Links 在第 3–4 周重新评估，但不阻断前两周 iOS Beta。
 
 ## 范围与边界
 

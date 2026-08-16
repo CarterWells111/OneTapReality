@@ -27,10 +27,23 @@ describe("Beta release governance", () => {
     const deploymentLog = read("docs/operations/DEPLOYMENT-LOG.md");
 
     expect(decisions).toContain("首批 iOS Beta 实体卡准入");
-    expect(checklist).toContain("当前首批 Beta 仅支持 iPhone / iOS");
-    expect(checklist).toContain("Android App Links 不属于本轮准入门槛");
+    expect(decisions).toContain("第 1–2 周仅支持 iPhone / iOS");
+    expect(decisions).toContain("第 3–4 周");
+    expect(checklist).toContain("四周计划第 1–2 周的首批 Beta 仅支持 iPhone / iOS");
+    expect(checklist).toContain("Android App Links 不属于前两周准入门槛");
     expect(deploymentLog).toContain("Android 后续非阻塞 Backlog");
     expect(deploymentLog).not.toContain("Partial（Android release 指纹阻塞）");
+  });
+
+  it("allows one separately approved staging rehearsal build before card testing", () => {
+    const decisions = read("docs/DECISIONS.md");
+    const checklist = read("docs/EXECUTION-CHECKLIST.md");
+    const alphaRunbook = read("docs/operations/ALPHA-STAGING.md");
+
+    expect(decisions).toContain("仅用于 staging 演练的首个 `alpha` 内部构建");
+    expect(checklist).toContain("可单独申请生成并安装一个仅用于 staging 演练的 `alpha` 内部构建");
+    expect(checklist).toContain("不得扩大到 TestFlight、production 或更多测试成员");
+    expect(alphaRunbook).toContain("首个 staging 演练构建例外");
   });
 
   it("keeps a sanitized three-card iOS staging rehearsal guide", () => {
@@ -43,6 +56,9 @@ describe("Beta release governance", () => {
     expect(guide).toContain("不得记录完整 URL、token、验证码或邮箱");
     expect(guide).toContain("锁屏碰卡");
     expect(guide).toContain("GIFT_SHARING_ENABLED=false");
+    expect(guide).toContain("Prepare blank card");
+    expect(guide).toContain("Initialize current blank card");
+    expect(guide).toContain("active 状态");
     expect(batchLog).toContain("IOS-BETA-STAGING-001");
   });
 

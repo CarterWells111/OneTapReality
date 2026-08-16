@@ -26,11 +26,12 @@
 对 `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003` 分别执行：
 
 1. 在 iPhone 设置中确认 NFC 可用，打开 OneTapReality `alpha` 原生构建并以 staging 管理员角色登录。
-2. 打开 Developer NFC Console，选择初始化新卡；只有应用提示贴卡时才把目标卡靠近 iPhone 顶部。
-3. 等待应用完成预留、写入和同一会话读回校验。预留最长 15 分钟；超时后停止，不复用旧预留。
-4. 只核对屏幕显示的域名为 `staging.onetapreality.com`，不要复制、截图或记录完整礼品 URL。
-5. 完全关闭 App 并锁屏；再次贴卡，确认 iOS 系统提示出现，点击后打开 OneTapReality 的礼品路由。
-6. 记录卡号、iPhone 型号、iOS 版本、构建号、写入结果、读回结果和锁屏碰卡结果。失败只记录错误类别，不记录原始日志中的敏感值。
+2. 打开 Developer NFC Console，点击 `Prepare blank card`；只有应用提示贴卡时才把目标空白卡靠近 iPhone 顶部，完成第一次扫描并等待准备成功提示。
+3. 点击 `Initialize current blank card`，按提示用同一张卡完成第二次扫描。应用会先创建最长 15 分钟的预留，再把 activation URL 替换为唯一 staging 礼品 URL，并在同一 NFC 会话读回校验；超时后停止，不复用旧预留。
+4. 等待服务端激活完成，确认管理台显示该卡为 `active 状态` 且 ready for customer claim。若仍是 `initializing`，只使用界面提供的重试流程，不重新创建另一张卡。
+5. 只核对屏幕显示的域名为 `staging.onetapreality.com`，不要复制、截图或记录完整礼品 URL。
+6. 完全关闭 App 并锁屏；再次贴卡，确认 iOS 系统提示出现，点击后打开 OneTapReality 的礼品路由。
+7. 记录卡号、iPhone 型号、iOS 版本、构建号、两次扫描结果、写入结果、读回结果、`active` 状态和锁屏碰卡结果。失败只记录错误类别，不记录原始日志中的敏感值。
 
 任一张卡写入值与读回值不一致、打开 production 域名、无法由锁屏碰卡唤起或出现未知礼品时，立即停止整批测试。
 

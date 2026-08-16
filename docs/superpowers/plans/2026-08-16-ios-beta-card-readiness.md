@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the first Beta explicitly iOS-only, add a local no-cloud readiness check, and prepare a complete three-card staging NFC rehearsal.
+**Goal:** Make weeks 1–2 of the four-week Beta explicitly iOS-only, defer Android to a week 3–4 reassessment, add a local no-cloud readiness check, and prepare a complete three-card staging NFC rehearsal.
 
 **Architecture:** Governance tests are the source of enforcement, active operating documents share one iOS-only gate, and a small Node.js preflight validates static EAS/Expo configuration without network access. Remote staging writes, EAS builds, TestFlight, and production operations remain separate approval gates.
 
