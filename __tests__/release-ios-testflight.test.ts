@@ -110,7 +110,10 @@ describe("iOS TestFlight release guards", () => {
       formatBuildVersion({ appVersion: "1.1.0", appBuildVersion: "42" }),
     ).toBe("version 1.1.0 (42)");
     const followUp = getSubmissionFollowUp("staging-testflight").join("\n");
-    expect(followUp).toContain("OneTapReality Staging NFC");
+    expect(followUp).toContain("OneTapReality开发员测试");
+    expect(followUp).toContain(
+      "automatic distribution is disabled for every other internal group",
+    );
     expect(followUp).not.toContain("add the build to a TestFlight group");
   });
 });

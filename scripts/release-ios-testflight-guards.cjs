@@ -17,8 +17,9 @@ function formatBuildVersion(build) {
 function getSubmissionFollowUp(profile) {
   if (profile === "staging-testflight") {
     return [
-      "The submit profile automatically targets the internal group OneTapReality Staging NFC.",
-      "Verify the build appears in that group; do not create or select another group.",
+      "The submit profile automatically targets the internal group OneTapReality开发员测试.",
+      "Verify the build appears in that group and that automatic distribution is disabled for every other internal group.",
+      "Do not create or select another group.",
       "https://appstoreconnect.apple.com/apps/6794186067/testflight/ios",
     ];
   }

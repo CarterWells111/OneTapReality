@@ -6,7 +6,7 @@
 
 **Architecture:** `eas.json` remains the source of truth for build-time API origins and App Store Connect submission IDs. Focused configuration and governance tests prevent the staging TestFlight profile from becoming ad-hoc, targeting production, exposing server secrets, or bypassing approval gates. Existing `alpha` and `production` profiles remain unchanged.
 
-**Review hardening:** The store build explicitly selects EAS `preview`, submit targets the fixed `OneTapReality Staging NFC` group, and the release script validates an existing build's app/project, platform, distribution, profile, and status before submission. The build-only resume command must preserve the selected profile, while staging runtime rejects any attempt to build and submit under one approval.
+**Review hardening:** The store build explicitly selects EAS `preview`, submit targets the fixed `OneTapReality开发员测试` group, and the release script validates an existing build's app/project, platform, distribution, profile, and status before submission. The build-only resume command must preserve the selected profile, while staging runtime rejects any attempt to build and submit under one approval.
 
 **Tech Stack:** Expo SDK 54, EAS Build/Submit configuration, Jest, Node.js release tooling, Markdown operating documentation.
 
@@ -31,7 +31,7 @@ expect(config.build["staging-testflight"]).toEqual({
 });
 expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");
 expect(config.submit["staging-testflight"].ios.groups).toEqual([
-  "OneTapReality Staging NFC",
+  "OneTapReality开发员测试",
 ]);
 ```
 
@@ -86,7 +86,7 @@ Add this sibling of `submit.production`:
 "staging-testflight": {
   "ios": {
     "ascAppId": "6794186067",
-    "groups": ["OneTapReality Staging NFC"]
+    "groups": ["OneTapReality开发员测试"]
   }
 }
 ```
@@ -137,7 +137,7 @@ node scripts/release-ios-testflight.cjs --profile=staging-testflight --no-submit
 node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=<approved-build-id>
 ```
 
-State that the first command creates a cloud build and the second uploads an already approved build; neither command is run by this PR. Require the fixed internal group `OneTapReality Staging NFC`, verify all other internal groups have automatic distribution disabled, and forbid clicking App Store review/publication actions. Document the read-only EAS `preview` variable-name audit before build.
+State that the first command creates a cloud build and the second uploads an already approved build; neither command is run by this PR. Require the fixed existing internal group `OneTapReality开发员测试`, allow automatic distribution only for that target group, verify all other internal groups have automatic distribution disabled, and forbid clicking App Store review/publication actions. Document the read-only EAS `preview` variable-name audit before build.
 
 - [ ] **Step 3a: Harden build resume and submission identity checks**
 
