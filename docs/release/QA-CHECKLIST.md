@@ -34,11 +34,13 @@
 
 ## 6. NFC 礼品（原生构建，staging）
 
-- [ ] 测试卡写入 `https://staging.onetapreality.com/gift/<token>` 后，iOS 与 Android 都能打开正确 App 路由。
+- [ ] `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003` 写入 staging 礼品 URL 后均能准确读回，并由 iPhone 锁屏碰卡打开正确 App 路由。
 - [ ] 受邀 Alpha 邮箱可请求验证码、认领礼品、发布相册，并以受邀只读身份查看。
 - [ ] 非 `ALPHA_ALLOWED_EMAILS` 邮箱收到 `beta_invite_required`，且不发送验证码。
 - [ ] 礼品管理者停用礼品后，已发布共享媒体不可再读取，私有 R2 对象已删除。
 - [ ] `GIFT_SHARING_ENABLED=false` 时，礼品读取、认领、发布和新验证码均返回暂停提示；管理员仍可停用受影响礼品。
+
+> 当前首批 Beta 只验收 iOS。Android App Links 与 Android 真机验收在后续 Backlog 中单独完成，不得用本清单宣称 Android 已通过。
 
 ## 7. 事实核对（与上架材料一致）
 
