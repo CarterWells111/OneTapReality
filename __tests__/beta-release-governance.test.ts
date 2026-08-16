@@ -41,9 +41,35 @@ describe("Beta release governance", () => {
     const alphaRunbook = read("docs/operations/ALPHA-STAGING.md");
 
     expect(decisions).toContain("仅用于 staging 演练的首个 `alpha` 内部构建");
-    expect(checklist).toContain("可单独申请生成并安装一个仅用于 staging 演练的 `alpha` 内部构建");
-    expect(checklist).toContain("不得扩大到 TestFlight、production 或更多测试成员");
-    expect(alphaRunbook).toContain("首个 staging 演练构建例外");
+    expect(checklist).toContain("`alpha` ad-hoc 构建");
+    expect(checklist).toContain("`staging-testflight` TestFlight 内部构建");
+    expect(checklist).toContain("云构建与 App Store Connect 提交必须分别批准");
+    expect(alphaRunbook).toContain("首个 staging 演练构建");
+  });
+
+  it("keeps staging TestFlight internal-only and separate from production release", () => {
+    const decisions = read("docs/DECISIONS.md");
+    const checklist = read("docs/EXECUTION-CHECKLIST.md");
+    const testflightRunbook = read("docs/release/TESTFLIGHT-RELEASE.md");
+    const alphaRunbook = read("docs/operations/ALPHA-STAGING.md");
+    const cardGuide = read("docs/operations/IOS-NFC-CARD-TEST.md");
+
+    expect(decisions).toContain("Staging TestFlight 内部演练");
+    expect(decisions).toContain("`staging-testflight` 只连接 staging API");
+    expect(checklist).toContain("`staging-testflight` TestFlight 内部构建");
+    expect(checklist).toContain("不代表 production 或公开 App Store 放行");
+    expect(testflightRunbook).toContain("--profile=staging-testflight --no-submit");
+    expect(testflightRunbook).toContain("--profile=staging-testflight --build-id=");
+    expect(testflightRunbook).toContain("不得点击 App Store 的公开审核或发布操作");
+    expect(testflightRunbook).toContain("EAS `preview` environment");
+    expect(testflightRunbook).toContain("OneTapReality Staging NFC");
+    expect(testflightRunbook).toContain("其他内部群组均未启用自动分发");
+    expect(testflightRunbook).toContain("省略 `--no-submit` 会被脚本拒绝");
+    expect(testflightRunbook).toContain("自动加入 `OneTapReality Staging NFC`");
+    expect(testflightRunbook).toContain("不得新建或改选群组");
+    expect(alphaRunbook).toContain("`alpha` 或 `staging-testflight`");
+    expect(cardGuide).toContain("`alpha` 或 `staging-testflight`");
+    expect(cardGuide).toContain("https://api-staging.onetapreality.com");
   });
 
   it("keeps a sanitized three-card iOS staging rehearsal guide", () => {

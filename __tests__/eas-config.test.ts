@@ -12,9 +12,23 @@ describe("EAS production configuration", () => {
       preview: {
         env: Record<string, string>;
       };
+      "staging-testflight": {
+        distribution: string;
+        environment: string;
+        autoIncrement: boolean;
+        env: Record<string, string>;
+      };
       production: {
         autoIncrement: boolean;
         env: Record<string, string>;
+      };
+    };
+    submit: {
+      "staging-testflight": {
+        ios: {
+          ascAppId: string;
+          groups: string[];
+        };
       };
     };
   };
@@ -36,5 +50,35 @@ describe("EAS production configuration", () => {
   it("uses remote app versions and increments TestFlight build numbers", () => {
     expect(config.cli.appVersionSource).toBe("remote");
     expect(config.build.production.autoIncrement).toBe(true);
+  });
+
+  it("provides a store-signed TestFlight profile isolated to staging", () => {
+    const profile = config.build["staging-testflight"];
+
+    expect(profile).toEqual({
+      distribution: "store",
+      environment: "preview",
+      autoIncrement: true,
+      env: {
+        EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+      },
+    });
+    expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");
+    expect(config.submit["staging-testflight"].ios.groups).toEqual([
+      "OneTapReality Staging NFC",
+    ]);
+
+    for (const key of [
+      "DATABASE_URL",
+      "PGPASSWORD",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "RESEND_API_KEY",
+      "GIFT_TOKEN_PEPPER",
+      "GIFT_AUTH_PEPPER",
+      "GIFT_CARD_CLEANUP_SECRET",
+    ]) {
+      expect(profile.env).not.toHaveProperty(key);
+    }
   });
 });

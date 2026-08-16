@@ -10,12 +10,12 @@
 | `IOS-STG-002` | staging | 重复写入、读回与锁屏碰卡抽检 | 空白/可重写，待人工确认 |
 | `IOS-STG-003` | staging | 第二台 iPhone 或重复碰卡抽检 | 空白/可重写，待人工确认 |
 
-若实际卡片少于三张，停止并记录“数量不足”；不得复用同一张卡冒充三张样卡证据。应用必须是指向 `https://api-staging.onetapreality.com` 的 EAS `alpha` 原生构建，Expo Go 不能用于 NFC 写入验收。
+若实际卡片少于三张，停止并记录“数量不足”；不得复用同一张卡冒充三张样卡证据。应用必须是指向 `https://api-staging.onetapreality.com` 的 EAS `alpha` 或 `staging-testflight` 原生构建；前者经 EAS ad-hoc 链接安装，后者只从明确命名为 `Staging` 的 TestFlight 内部群组安装。Expo Go 不能用于 NFC 写入验收。
 
 ## 测试前门槛
 
 - [ ] 当前代码来自干净的最新 `main` 候选分支，且 `npm run beta:preflight:ios` 与完整质量门禁通过。
-- [ ] EAS `alpha` 构建经过单独批准，安装在支持 NFC 的 iPhone 上；记录构建号，不记录安装链接中的敏感参数。
+- [ ] EAS `alpha` 或 `staging-testflight` 构建经过对应的单独批准，安装在支持 NFC 的 iPhone 上；TestFlight 路径还需单独批准提交。记录 profile 与构建号，不记录安装链接中的敏感参数。
 - [ ] staging `/api/health` 返回 200、`database=ok`、`schemaVersion>=7`。
 - [ ] staging 的 `GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com` 已只读复核。
 - [ ] 管理员测试邮箱与受邀只读邮箱在 staging 白名单内；测试记录只写角色，不写地址。
@@ -25,7 +25,7 @@
 
 对 `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003` 分别执行：
 
-1. 在 iPhone 设置中确认 NFC 可用，打开 OneTapReality `alpha` 原生构建并以 staging 管理员角色登录。
+1. 在 iPhone 设置中确认 NFC 可用，打开 OneTapReality `alpha` 或 `staging-testflight` 原生构建，核对记录的 profile 与构建号，并以 staging 管理员角色登录。
 2. 打开 Developer NFC Console，点击 `Prepare blank card`；只有应用提示贴卡时才把目标空白卡靠近 iPhone 顶部，完成第一次扫描并等待准备成功提示。
 3. 点击 `Initialize current blank card`，按提示用同一张卡完成第二次扫描。应用会先创建最长 15 分钟的预留，再把 activation URL 替换为唯一 staging 礼品 URL，并在同一 NFC 会话读回校验；超时后停止，不复用旧预留。
 4. 等待服务端激活完成，确认管理台显示该卡为 `active 状态` 且 ready for customer claim。若仍是 `initializing`，只使用界面提供的重试流程，不重新创建另一张卡。
@@ -64,4 +64,4 @@
 - 全程只访问 staging；无 token、验证码、完整邮箱、照片、Secret 或 object key 进入记录。
 - `docs/operations/REHEARSAL-RECORD.md` 和 `NFC-CARD-BATCH-LOG.md` 的相应项目由发布负责人根据脱敏证据标记结果。
 
-全部条件通过前，不得申请 production 礼品预登记、production 卡写入、收款、发货或首批 TestFlight 扩量。
+全部条件通过前，不得申请 production 礼品预登记、production 卡写入、收款、发货，或把 staging TestFlight 扩大到当前获准人员之外。

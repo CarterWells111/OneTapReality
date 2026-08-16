@@ -1,14 +1,24 @@
 # 决策记录
 
+## 2026-08-16：Staging TestFlight 内部演练
+
+为让获准的 iOS 内部成员通过 TestFlight 安装真实 NFC 测试包，新增 EAS `staging-testflight` store 分发与同名 submit profile。`staging-testflight` 只连接 staging API：该构建显式使用 EAS `preview` environment，并以内联值把客户端 API 固定为 `https://api-staging.onetapreality.com`；沿用现有 App Store Connect 应用和 Bundle ID，但不访问 production API、数据库、R2 或礼品。发起构建前只读核对 `preview` 环境变量名称，不得含 production origin 或客户端不应持有的服务端 Secret。
+
+- `alpha` 保留为登记 UDID 后通过 EAS 链接安装的 ad-hoc 路径；`staging-testflight` 是通过 App Store Connect 内部群组安装的路径。两者只用于同一组 staging 三卡与 P0 演练，不互相冒充 production 验收。
+- 环境隔离、本地质量门禁和 iOS 静态预检通过后，可由发布负责人单独批准其中一种 staging 原生构建。EAS 云端构建与 App Store Connect 提交是两个独立审批点；配置 PR 不执行任一操作。
+- `staging-testflight` 脚本强制两段式运行：没有 `--no-submit` 的首次构建会被拒绝，提交阶段必须提供已经核验并再次批准的 build ID。
+- submit profile 固定绑定内部测试群组 `OneTapReality Staging NFC`。提交前必须确认该群组存在，并确认其他内部群组均未启用自动分发；不得添加外部测试者，不得点击 App Store 的公开审核或发布操作。
+- 获准的 staging 内部 TestFlight 安装不代表 production 或公开 App Store 放行。三卡、完整礼品生命周期和 P0 演练未通过前，仍禁止 production 写卡、收款、发货和扩大测试范围。
+
 ## 2026-08-16：首批 iOS Beta 实体卡准入
 
 四周 Beta 计划的第 1–2 周仅支持 iPhone / iOS。准入以 iOS Universal Links、EAS `alpha` 原生构建、三张 staging NFC 样卡和 iPhone 真机完整礼品生命周期为准；Android App Links、release SHA-256、`assetlinks.json` 和 Android 真机测试在第 3–4 周重新评估并保持非阻塞 Backlog，未经新决策不得自动纳入发布。本轮不得宣称 Android 已完成，但 Android 未完成不阻断前两周 iOS Beta。
 
 - staging 基础设施、iOS AASA、Resend、白名单与礼品 URL 来源沿用已经核实的脱敏证据；实体卡只写 `staging.onetapreality.com`。
-- EAS `alpha` 构建、staging 写入、P0 开关演练、TestFlight、production 礼品预登记和部署仍分别审批；production Railway 自动部署保持关闭。
-- 本地质量门禁和 iOS 预检通过后，可单独批准生成并安装仅用于 staging 演练的首个 `alpha` 内部构建，以完成实体卡前置测试；这不等于 TestFlight、production 或扩大测试成员的放行。
+- EAS `alpha` 或 `staging-testflight` 构建、`staging-testflight` 提交、staging 写入、P0 开关演练、production 礼品预登记和部署仍分别审批；production Railway 自动部署保持关闭。
+- 本地质量门禁和 iOS 预检通过后，可单独批准生成并安装仅用于 staging 演练的首个 `alpha` 内部构建，或生成并经另一项批准提交 `staging-testflight` 内部构建，以完成实体卡前置测试；这不等于 production、公开 App Store 或扩大测试成员的放行。
 - 三张样卡分别使用脱敏编号 `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003`。记录不得包含完整 URL、token、验证码、邮箱、照片或 Secret。
-- 四项本地质量门禁、本地 iOS 预检、三卡写入/读回/锁屏碰卡、完整礼品生命周期、环境隔离和 P0 演练全部通过后，才允许申请首批 5 套 production 写卡与 TestFlight 分发审批。
+- 四项本地质量门禁、本地 iOS 预检、三卡写入/读回/锁屏碰卡、完整礼品生命周期、环境隔离和 P0 演练全部通过后，才允许申请首批 5 套 production 写卡、production TestFlight 或扩大测试成员的审批。
 
 ## 2026-08-16：Beta 发布准备与数据库迁移顺序
 
