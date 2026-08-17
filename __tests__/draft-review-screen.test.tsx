@@ -1,4 +1,5 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as ImagePicker from "expo-image-picker";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -9,6 +10,12 @@ const mockSaveDraft = jest.fn();
 const mockRetryDraft = jest.fn();
 const mockDiscardDraft = jest.fn();
 const mockUpdateDraftPages = jest.fn();
+const mockPersistSelectedPhoto = jest.fn();
+
+jest.mock("expo-image-picker", () => ({
+  requestMediaLibraryPermissionsAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(),
+}));
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -30,6 +37,7 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     saveDraft: mockSaveDraft,
     retryDraft: mockRetryDraft,
     discardDraft: mockDiscardDraft,
+    persistSelectedPhoto: mockPersistSelectedPhoto,
     updateDraftPages: mockUpdateDraftPages,
   }),
 }));
@@ -62,6 +70,12 @@ describe("DraftReviewScreen", () => {
     mockGetDraftById.mockResolvedValue(draft);
     mockSaveDraft.mockResolvedValue(undefined);
     mockUpdateDraftPages.mockResolvedValue(undefined);
+    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: "file:///temporary.jpg" }],
+    });
+    mockPersistSelectedPhoto.mockResolvedValue("file:///permanent.jpg");
   });
 
   it("saves a loaded draft and opens its completed memory", async () => {
@@ -142,5 +156,16 @@ describe("DraftReviewScreen", () => {
     mockUpdateDraftPages.mockResolvedValue(undefined);
     fireEvent.press(screen.getByText("保存失败·重试"));
     await waitFor(() => expect(screen.getByText("已自动保存")).toBeTruthy());
+  });
+
+  it("binds selected photos to the current draft before adding them", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("📷 添加照片"));
+    });
+
+    expect(mockPersistSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
   });
 });

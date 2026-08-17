@@ -7,6 +7,7 @@ import {
   getMemory,
   getDraft,
   listDiscardedMemories,
+  listAllMemories,
   listMemories,
   migrateDbIfNeeded,
   restoreDiscardedMemory,
@@ -41,6 +42,7 @@ const draftMemory = {
   createdAt: "2026-07-22T10:00:00.000Z",
   updatedAt: "2026-07-22T10:00:00.000Z",
 };
+const accountKey = "owner@example.com";
 
 function createMemoryDatabase(options?: {
   columns?: string[];
@@ -142,10 +144,10 @@ describe("memory draft lifecycle repository", () => {
   it("keeps a newly created draft out of the saved memory list", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
+    await createDraft(database, draftMemory, accountKey);
 
-    await expect(listMemories(database)).resolves.toEqual([]);
-    await expect(getDraft(database, draftMemory.id)).resolves.toMatchObject({
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(getDraft(database, draftMemory.id, accountKey)).resolves.toMatchObject({
       id: draftMemory.id,
       status: "draft",
     });
@@ -163,7 +165,7 @@ describe("memory draft lifecycle repository", () => {
       }],
     });
 
-    await expect(getMemory(database, "legacy-1")).resolves.toMatchObject({ id: "legacy-1" });
+    await expect(getMemory(database, "legacy-1", accountKey)).resolves.toMatchObject({ id: "legacy-1" });
   });
 
   it("does not read draft or discarded memories as valid memory details", async () => {
@@ -174,24 +176,24 @@ describe("memory draft lifecycle repository", () => {
       ],
     });
 
-    await expect(getMemory(database, "draft-detail")).resolves.toBeNull();
-    await expect(getMemory(database, "discarded-detail")).resolves.toBeNull();
+    await expect(getMemory(database, "draft-detail", accountKey)).resolves.toBeNull();
+    await expect(getMemory(database, "discarded-detail", accountKey)).resolves.toBeNull();
   });
 
   it("confirms a draft as saved and marks an unconfirmed draft as discarded", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
-    await saveDraft(database, draftMemory.id, "2026-07-22T10:01:00.000Z");
+    await createDraft(database, draftMemory, accountKey);
+    await saveDraft(database, draftMemory.id, "2026-07-22T10:01:00.000Z", accountKey);
 
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "saved" },
     ]);
 
-    await createDraft(database, { ...draftMemory, id: "discard-me" });
-    await discardDraft(database, "discard-me", "2026-07-22T10:02:00.000Z");
+    await createDraft(database, { ...draftMemory, id: "discard-me" }, accountKey);
+    await discardDraft(database, "discard-me", "2026-07-22T10:02:00.000Z", accountKey);
 
-    await expect(getDraft(database, "discard-me")).resolves.toBeNull();
+    await expect(getDraft(database, "discard-me", accountKey)).resolves.toBeNull();
   });
 
   it("migrates legacy rows to saved without interpolating lifecycle values", async () => {
@@ -211,7 +213,7 @@ describe("memory draft lifecycle repository", () => {
 
     await migrateDbIfNeeded(database);
 
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: "legacy-memory", status: "saved" },
     ]);
     expect(execStatements.join(" ")).toContain(
@@ -227,40 +229,53 @@ describe("memory draft lifecycle repository", () => {
 
     expect(execStatements.join(" ")).toContain("CREATE TABLE IF NOT EXISTS city_collection_arrangements");
     expect(execStatements.join(" ")).toContain("FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE");
+    expect(execStatements.join(" ")).toContain("DROP INDEX IF EXISTS city_collection_arrangements_one_featured_city");
   });
 
   it("lists discarded memories in the recycle bin and restores one to saved", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
-    await discardDraft(database, draftMemory.id, "2026-07-22T10:02:00.000Z");
+    await createDraft(database, draftMemory, accountKey);
+    await discardDraft(database, draftMemory.id, "2026-07-22T10:02:00.000Z", accountKey);
 
-    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "discarded" },
     ]);
-    await expect(listMemories(database)).resolves.toEqual([]);
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
 
-    await restoreDiscardedMemory(database, draftMemory.id, "2026-07-22T10:03:00.000Z");
+    await restoreDiscardedMemory(database, draftMemory.id, "2026-07-22T10:03:00.000Z", accountKey);
 
-    await expect(listDiscardedMemories(database)).resolves.toEqual([]);
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "saved", updatedAt: "2026-07-22T10:03:00.000Z" },
     ]);
+  });
+
+  it("can inspect every current-account status for safe internal photo cleanup", async () => {
+    const { database } = createMemoryDatabase();
+    await createDraft(database, draftMemory, accountKey);
+    await createDraft(database, { ...draftMemory, id: "discarded" }, accountKey);
+    await discardDraft(database, "discarded", "2026-07-22T10:02:00.000Z", accountKey);
+
+    await expect(listAllMemories(database, accountKey)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: draftMemory.id, status: "draft" }),
+      expect.objectContaining({ id: "discarded", status: "discarded" }),
+    ]));
   });
 
   it("moves a saved memory into the recycle bin instead of deleting it", async () => {
     const { database } = createMemoryDatabase();
 
-    await saveMemory(database, { ...draftMemory, id: "saved-1" });
-    await discardMemory(database, "saved-1", "2026-07-22T10:05:00.000Z");
+    await saveMemory(database, { ...draftMemory, id: "saved-1" }, accountKey);
+    await discardMemory(database, "saved-1", "2026-07-22T10:05:00.000Z", accountKey);
 
-    await expect(listMemories(database)).resolves.toEqual([]);
-    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toMatchObject([
       { id: "saved-1", status: "discarded", updatedAt: "2026-07-22T10:05:00.000Z" },
     ]);
 
-    await restoreDiscardedMemory(database, "saved-1", "2026-07-22T10:06:00.000Z");
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await restoreDiscardedMemory(database, "saved-1", "2026-07-22T10:06:00.000Z", accountKey);
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: "saved-1", status: "saved" },
     ]);
   });
@@ -278,7 +293,7 @@ describe("memory draft lifecycle repository", () => {
         body: "Body",
         layout: { aspectRatio: 1, elements: [] },
       }],
-    });
+    }, accountKey);
 
     const pageInsert = runCalls.find((call) => call.statement.startsWith("INSERT INTO story_pages"));
     expect(pageInsert?.parameters).toContain('{"aspectRatio":1,"elements":[]}');

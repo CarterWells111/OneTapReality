@@ -4,6 +4,8 @@ import { useSQLiteContext } from "expo-sqlite";
 import { ScrollView, Text } from "react-native";
 
 import { colors } from "../../../components/ui";
+import { useAuth } from "../../../features/auth/auth-provider";
+import { normalizeLocalAccountKey } from "../../../features/auth/local-account";
 import { CityCollectionManager } from "../../../features/cities/city-collection-manager";
 import { resolveCityRouteParam } from "../../../features/cities/city-route";
 import { resolveCityCollection, saveCityCollection, type ResolvedCityCollection } from "../../../storage/city-collection-repository";
@@ -11,26 +13,37 @@ import { resolveCityCollection, saveCityCollection, type ResolvedCityCollection 
 export default function ManageCityCollectionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { isAuthReady, user } = useAuth();
   const { city: rawCity } = useLocalSearchParams<{ city: string }>();
   const city = resolveCityRouteParam(rawCity);
-  const [collection, setCollection] = React.useState<ResolvedCityCollection | null>(null);
+  const accountKey = user ? normalizeLocalAccountKey(user.email) : null;
+  const [loaded, setLoaded] = React.useState<{ accountKey: string; collection: ResolvedCityCollection } | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
 
   useFocusEffect(React.useCallback(() => {
     let active = true;
-    void resolveCityCollection(db, city).then((nextCollection) => {
-      if (active) setCollection(nextCollection);
+    if (!isAuthReady) return () => { active = false; };
+    if (!accountKey) {
+      router.replace(`/login?returnTo=${encodeURIComponent(`/city/${city}/manage`)}` as never);
+      return () => { active = false; };
+    }
+    const requestedAccountKey = accountKey;
+    void resolveCityCollection(db, city, requestedAccountKey).then((nextCollection) => {
+      if (active) setLoaded({ accountKey: requestedAccountKey, collection: nextCollection });
     });
     return () => { active = false; };
-  }, [city, db]));
+  }, [accountKey, city, db, isAuthReady, router]));
+
+  const collection = loaded?.accountKey === accountKey && loaded.collection.city === city ? loaded.collection : null;
 
   const save = async (memoryIds: string[], featuredMemoryId: string | null) => {
     setError("");
     setIsSaving(true);
     try {
       const updatedAt = new Date().toISOString();
-      await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt);
+      if (!accountKey || loaded?.accountKey !== accountKey || loaded.collection.city !== city) throw new Error("请先登录");
+      await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt, accountKey);
       router.back();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unable to save the city collection.");

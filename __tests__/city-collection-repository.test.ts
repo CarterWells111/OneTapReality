@@ -17,6 +17,7 @@ type MemoryRow = {
   createdAt: string;
   updatedAt: string;
 };
+const accountKey = "owner@example.com";
 
 type ArrangementRow = {
   memory_id: string;
@@ -68,7 +69,8 @@ function createDatabase(options: {
         }
       }
       if (statement.startsWith("DELETE FROM city_collection_arrangements")) {
-        const [city, cutoff] = parameters;
+        const [city] = parameters;
+        const cutoff = statement.includes("position >=") ? parameters[1] : undefined;
         for (let index = arrangements.length - 1; index >= 0; index -= 1) {
           if (arrangements[index].city === city && (cutoff === undefined || arrangements[index].position >= Number(cutoff))) arrangements.splice(index, 1);
         }
@@ -77,7 +79,7 @@ function createDatabase(options: {
         for (const arrangement of arrangements) if (arrangement.city === parameters[0]) arrangement.is_featured = 0;
       }
       if (statement.startsWith("INSERT INTO city_collection_arrangements") && statement.includes("SELECT memories.id")) {
-        const [, updatedAt, memoryId, city, status] = parameters;
+        const [, updatedAt, memoryId, city, , status] = parameters;
         const allowsLegacyStatus = statement.includes("status IS NULL OR status = ?");
         const memory = memories.find((row) =>
           row.id === memoryId &&
@@ -149,7 +151,7 @@ describe("city collection repository", () => {
       ],
     });
 
-    await expect(resolveCityCollection(database, "shanghai")).resolves.toMatchObject({
+    await expect(resolveCityCollection(database, "shanghai", accountKey)).resolves.toMatchObject({
       memories: [{ id: "newer" }, { id: "older" }],
       featuredMemory: { id: "newer" },
     });
@@ -167,7 +169,7 @@ describe("city collection repository", () => {
       ],
     });
 
-    await expect(resolveCityCollection(database, "hangzhou")).resolves.toMatchObject({
+    await expect(resolveCityCollection(database, "hangzhou", accountKey)).resolves.toMatchObject({
       memories: [{ id: "legacy" }, { id: "saved" }],
       featuredMemory: { id: "legacy" },
     });
@@ -187,7 +189,7 @@ describe("city collection repository", () => {
       ],
     });
 
-    await expect(resolveCityCollection(database, "hangzhou")).resolves.toMatchObject({
+    await expect(resolveCityCollection(database, "hangzhou", accountKey)).resolves.toMatchObject({
       city: "hangzhou",
       memories: [{ id: "hangzhou-arranged" }, { id: "hangzhou-new" }],
       featuredMemory: { id: "hangzhou-arranged" },
@@ -202,16 +204,16 @@ describe("city collection repository", () => {
       ],
     });
 
-    await persistCityCollectionOrder(fixture.database, "shenzhen", ["second", "first"], "2026-07-22T10:00:00.000Z");
-    await setFeaturedCityMemory(fixture.database, "shenzhen", "first", "2026-07-22T10:01:00.000Z");
+    await persistCityCollectionOrder(fixture.database, "shenzhen", ["second", "first"], "2026-07-22T10:00:00.000Z", accountKey);
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "first", "2026-07-22T10:01:00.000Z", accountKey);
 
     expect(fixture.exclusiveTransactions).toBe(2);
     expect(fixture.runCalls.every((call) => !call.statement.includes("'shenzhen'") && !call.statement.includes("'first'"))).toBe(true);
-    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen", accountKey)).resolves.toEqual([
       { memoryId: "second", city: "shenzhen", position: 0, isFeatured: false, updatedAt: "2026-07-22T10:00:00.000Z" },
       { memoryId: "first", city: "shenzhen", position: 1, isFeatured: true, updatedAt: "2026-07-22T10:01:00.000Z" },
     ]);
-    await expect(resolveCityCollection(fixture.database, "shenzhen")).resolves.toMatchObject({
+    await expect(resolveCityCollection(fixture.database, "shenzhen", accountKey)).resolves.toMatchObject({
       memories: [{ id: "second" }, { id: "first" }],
       featuredMemory: { id: "first" },
     });
@@ -222,9 +224,9 @@ describe("city collection repository", () => {
       memories: [{ ...baseMemory, id: "legacy-feature", city: "shenzhen", updatedAt: "2026-07-20T10:00:00.000Z" }],
     });
 
-    await setFeaturedCityMemory(fixture.database, "shenzhen", "legacy-feature", "2026-07-22T10:01:00.000Z");
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "legacy-feature", "2026-07-22T10:01:00.000Z", accountKey);
 
-    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen", accountKey)).resolves.toEqual([
       { memoryId: "legacy-feature", city: "shenzhen", position: 0, isFeatured: true, updatedAt: "2026-07-22T10:01:00.000Z" },
     ]);
   });
@@ -237,10 +239,10 @@ describe("city collection repository", () => {
       ],
     });
 
-    await setFeaturedCityMemory(fixture.database, "shenzhen", "draft-feature", "2026-07-22T10:01:00.000Z");
-    await setFeaturedCityMemory(fixture.database, "shenzhen", "discarded-feature", "2026-07-22T10:02:00.000Z");
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "draft-feature", "2026-07-22T10:01:00.000Z", accountKey);
+    await setFeaturedCityMemory(fixture.database, "shenzhen", "discarded-feature", "2026-07-22T10:02:00.000Z", accountKey);
 
-    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen")).resolves.toEqual([]);
+    await expect(fetchCityCollectionArrangements(fixture.database, "shenzhen", accountKey)).resolves.toEqual([]);
   });
 
   it("silently filters foreign, draft, and discarded IDs while preserving a full valid city order", async () => {
@@ -262,16 +264,17 @@ describe("city collection repository", () => {
       fixture.database,
       "hangzhou",
       ["hangzhou-saved", "shanghai-saved", "hangzhou-draft", "hangzhou-discarded"],
-      "2026-07-24T10:00:00.000Z"
+      "2026-07-24T10:00:00.000Z",
+      accountKey,
     );
 
-    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou", accountKey)).resolves.toEqual([
       { memoryId: "hangzhou-saved", city: "hangzhou", position: 0, isFeatured: false, updatedAt: "2026-07-24T10:00:00.000Z" },
     ]);
-    await expect(fetchCityCollectionArrangements(fixture.database, "shanghai")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "shanghai", accountKey)).resolves.toEqual([
       { memoryId: "shanghai-saved", city: "shanghai", position: 0, isFeatured: false, updatedAt: "2026-07-21T10:00:00.000Z" },
     ]);
-    await expect(resolveCityCollection(fixture.database, "hangzhou")).resolves.toMatchObject({
+    await expect(resolveCityCollection(fixture.database, "hangzhou", accountKey)).resolves.toMatchObject({
       memories: [{ id: "hangzhou-saved" }, { id: "hangzhou-old" }],
     });
   });
@@ -294,12 +297,13 @@ describe("city collection repository", () => {
         fixture.database,
         "hangzhou",
         ["replacement-first", "replacement-second"],
-        "2026-07-24T10:00:00.000Z"
+        "2026-07-24T10:00:00.000Z",
+        accountKey,
       )
     ).rejects.toThrow("arrangement write failed");
 
     expect(fixture.exclusiveTransactions).toBe(1);
-    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou", accountKey)).resolves.toEqual([
       { memoryId: "original-first", city: "hangzhou", position: 0, isFeatured: true, updatedAt: "2026-07-19T10:00:00.000Z" },
       { memoryId: "original-second", city: "hangzhou", position: 1, isFeatured: false, updatedAt: "2026-07-19T10:00:00.000Z" },
     ]);
@@ -313,10 +317,10 @@ describe("city collection repository", () => {
       ],
     });
 
-    await saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z");
+    await saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z", accountKey);
 
     expect(fixture.exclusiveTransactions).toBe(1);
-    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou", accountKey)).resolves.toEqual([
       { memoryId: "second", city: "hangzhou", position: 0, isFeatured: false, updatedAt: "2026-07-24T10:00:00.000Z" },
       { memoryId: "first", city: "hangzhou", position: 1, isFeatured: true, updatedAt: "2026-07-24T10:00:00.000Z" },
     ]);
@@ -335,11 +339,11 @@ describe("city collection repository", () => {
     });
 
     await expect(
-      saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z")
+      saveCityCollection(fixture.database, "hangzhou", ["second", "first"], "first", "2026-07-24T10:00:00.000Z", accountKey)
     ).rejects.toThrow("feature write failed");
 
     expect(fixture.exclusiveTransactions).toBe(1);
-    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou")).resolves.toEqual([
+    await expect(fetchCityCollectionArrangements(fixture.database, "hangzhou", accountKey)).resolves.toEqual([
       { memoryId: "original", city: "hangzhou", position: 0, isFeatured: true, updatedAt: "2026-07-19T10:00:00.000Z" },
     ]);
   });

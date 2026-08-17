@@ -101,4 +101,20 @@ describe("backend client", () => {
     await expect(client.getOwnedGiftManagement("session", "gift-1")).resolves.toEqual(expect.objectContaining({ gift: expect.objectContaining({ id: "gift-1" }) }));
     expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
   });
+
+  it("lists invited gifts and reads an invited album from the real endpoints", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ title: "A shared trip", pages: [], media: [], publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: null }), { status: 200 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.listInvitedGifts("session")).resolves.toEqual([
+      expect.objectContaining({ giftId: "gift-1", album: expect.objectContaining({ cover: expect.objectContaining({ readUrl: "https://cdn.test/cover.jpg" }) }) }),
+    ]);
+    await expect(client.getInvitedGiftAlbum("gift-1", "session")).resolves.toEqual(expect.objectContaining({ title: "A shared trip", cover: null }));
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      "/api/gifts/invited",
+      "/api/gifts/invited/gift-1/album",
+    ]);
+  });
 });

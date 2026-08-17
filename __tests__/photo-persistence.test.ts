@@ -3,7 +3,10 @@ import * as MediaLibrary from "expo-media-library";
 
 import {
   ensureMemoryPhotosPersisted,
+  deleteMemoryPhotoDirectory,
+  cleanupMigratedLegacyPhotoUris,
   persistPhotoUri,
+  persistPhotoUriStrict,
   persistPhotoUris,
 } from "../src/features/memories/photo-persistence";
 import type { Memory } from "../src/types/memory";
@@ -12,6 +15,7 @@ jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///data/user/0/com.app/documents/",
   makeDirectoryAsync: jest.fn(async () => undefined),
   copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock("expo-media-library", () => ({
@@ -23,6 +27,7 @@ jest.mock("expo-media-library", () => ({
 const copyAsyncMock = FileSystem.copyAsync as jest.Mock;
 const makeDirectoryAsyncMock = FileSystem.makeDirectoryAsync as jest.Mock;
 const getAssetInfoAsyncMock = MediaLibrary.getAssetInfoAsync as jest.Mock;
+const deleteAsyncMock = FileSystem.deleteAsync as jest.Mock;
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -72,35 +77,66 @@ describe("persistPhotoUri", () => {
 
   it("returns already-persisted documentDirectory URIs untouched", async () => {
     const uri = "file:///data/user/0/com.app/documents/photos/a.jpg";
-    await expect(persistPhotoUri(uri)).resolves.toBe(uri);
-    expect(copyAsyncMock).not.toHaveBeenCalled();
+    await expect(persistPhotoUri(uri, "owner@example.com", "memory-1")).resolves.toMatch(/photos\/accounts\/owner%40example\.com\/memory-1\//);
+    expect(copyAsyncMock).toHaveBeenCalledWith(expect.objectContaining({ from: uri }));
   });
 
   it("copies an external file URI into the sandbox photos directory", async () => {
     const uri = "file:///var/mobile/Containers/Shared/AppGroup/photo.jpg";
-    const persisted = await persistPhotoUri(uri);
+    const persisted = await persistPhotoUri(uri, "owner@example.com", "memory-1");
     expect(makeDirectoryAsyncMock).toHaveBeenCalled();
     expect(copyAsyncMock).toHaveBeenCalledWith({
       from: uri,
-      to: expect.stringMatching(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/.+\.jpg$/),
+      to: expect.stringMatching(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\/.+\.jpg$/),
     });
-    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
+    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
   it("resolves ph:// URIs via MediaLibrary before copying", async () => {
-    const persisted = await persistPhotoUri("ph://ABC123");
+    const persisted = await persistPhotoUri("ph://ABC123", "owner@example.com", "memory-1");
     expect(getAssetInfoAsyncMock).toHaveBeenCalledWith("ABC123");
     expect(copyAsyncMock).toHaveBeenCalledWith({
       from: "file:///tmp/ph-resolved/ABC123.jpg",
       to: expect.stringMatching(/\.jpg$/),
     });
-    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
+    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
   it("falls back to the original URI when the copy fails", async () => {
     copyAsyncMock.mockRejectedValueOnce(new Error("no space"));
     const uri = "file:///var/mobile/temp.jpg";
-    await expect(persistPhotoUri(uri)).resolves.toBe(uri);
+    await expect(persistPhotoUri(uri, "owner@example.com", "memory-1")).resolves.toBe(uri);
+  });
+
+  it("rejects instead of retaining a temporary URI when strict persistence fails", async () => {
+    copyAsyncMock.mockRejectedValueOnce(new Error("no space"));
+
+    await expect(persistPhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("no space");
+  });
+});
+
+describe("photo directory cleanup", () => {
+  it("deletes only the selected account and memory directory", async () => {
+    await deleteMemoryPhotoDirectory("Owner@Example.com", "memory/1");
+    expect(deleteAsyncMock).toHaveBeenCalledWith(
+      "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory%2F1/",
+      { idempotent: true },
+    );
+  });
+
+  it("deletes migrated legacy sandbox files only after no album still references them", async () => {
+    const legacyUnused = "file:///data/user/0/com.app/documents/photos/legacy-unused.jpg";
+    const legacyReferenced = "file:///data/user/0/com.app/documents/photos/legacy-referenced.jpg";
+    await cleanupMigratedLegacyPhotoUris([legacyUnused, legacyReferenced, "file:///var/mobile/external.jpg"], [
+      makeMemory({ photoUris: [legacyReferenced] }),
+    ]);
+    expect(deleteAsyncMock).toHaveBeenCalledWith(legacyUnused, { idempotent: true });
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith(legacyReferenced, expect.anything());
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith("file:///var/mobile/external.jpg", expect.anything());
   });
 });
 
@@ -115,9 +151,9 @@ describe("persistPhotoUris", () => {
       "file:///var/mobile/temp/b.jpg",
       "file:///var/mobile/temp/c.jpg",
     ];
-    const persisted = await persistPhotoUris(uris);
-    expect(persisted[0]).toBe(uris[0]);
-    expect(persisted.slice(1)).toEqual([
+    const persisted = await persistPhotoUris(uris, "owner@example.com", "memory-1");
+    expect(persisted).toEqual([
+      expect.stringMatching(/photos\/accounts\/owner%40example\.com\/memory-1\//),
       expect.stringMatching(/photos\//),
       expect.stringMatching(/photos\//),
     ]);
@@ -131,9 +167,9 @@ describe("ensureMemoryPhotosPersisted", () => {
 
   it("returns changed: false when nothing needs persisting", async () => {
     const memory = makeMemory();
-    const result = await ensureMemoryPhotosPersisted(memory);
-    expect(result.changed).toBe(false);
-    expect(result.memory).toBe(memory);
+    const result = await ensureMemoryPhotosPersisted(memory, "owner@example.com");
+    expect(result.changed).toBe(true);
+    expect(result.memory.photoUris[0]).toMatch(/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
   it("replaces image element uris, cover image and photoUris with sandbox copies", async () => {
@@ -183,7 +219,7 @@ describe("ensureMemoryPhotosPersisted", () => {
       ],
     });
 
-    const result = await ensureMemoryPhotosPersisted(memory);
+    const result = await ensureMemoryPhotosPersisted(memory, "owner@example.com");
     expect(result.changed).toBe(true);
 
     const page = result.memory.pages[0];

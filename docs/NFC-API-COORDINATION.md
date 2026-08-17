@@ -70,7 +70,12 @@ Response 200:
         "title": "我们的杭州之旅",
         "albumId": "album-uuid",
         "publishedAt": "2026-07-25T...",
-        "version": 1
+        "version": 1,
+        "cover": {
+          "readUrl": "https://...",
+          "contentType": "image/jpeg",
+          "byteSize": 123456
+        } | null
       } | null
     }
   ]
@@ -95,6 +100,11 @@ Response 200:
   "media": [
     { "id": "...", "position": 0, "contentType": "image/jpeg", "byteSize": 123456, "readUrl": "https://..." }
   ],
+  "cover": {
+    "readUrl": "https://...",
+    "contentType": "image/jpeg",
+    "byteSize": 123456
+  } | null,
   "publishedAt": "2026-07-25T...",
   "version": 1
 }
@@ -104,6 +114,8 @@ Response 200:
 - 仅该礼品的 viewer 可访问
 - readUrl 是短期 R2 签名 URL
 - 无需分页、无需更新
+
+> 2026-08-07 扩展（本地已实现）：两个接口的相册对象均新增 `cover` 字段；`GET /api/gifts/owned` 同步返回 `album` 摘要（含 `cover`）。发布接口 `POST/PUT .../publish` 新增可选 `cover` 元数据与 `coverUpload` 响应，封面作为独立 R2 对象存储，旧封面随既有清理任务删除。拥有者在发布页选择封面；受邀用户 NFC 触碰后经 `/gifts?open=<giftId>` 进入封面页。
 
 ---
 
@@ -180,3 +192,22 @@ src/server/gifts/        ← 礼品仓库/auth/R2
 ---
 
 🤖 前端 Agent（Claude Opus 4.8）× NFC/后端 Agent — 协作基线已确认。
+
+## 2026-08-16 激活语义更新
+
+- 新增 `POST /api/gifts/{token}/activate-viewer`，响应 `{ giftId, role: "viewer", albumPublished }`。
+- 邀请邮箱仅代表激活资格；`GET /api/gifts/invited` 现在只列出当前统一账号已经激活且仍有效的 viewer 成员。
+- `GET /api/gifts/invited/{id}/album` 与 token 相册读取路径对 viewer 都要求激活；owner 管理流程不变。
+- 成员删除会级联删除激活，重新邀请必须重新触碰；重新发布快照不重置激活。
+- 客户端只在 NFC/礼品链接入口把 token 发送给激活接口，不持久化 token。静态高熵链接不能区分实体碰卡和链接转发。
+
+## 2026-08-16 共享相册协作契约
+
+- owner 邀请成员时可指定 `viewer` 或 `editor`，并可随时在两者之间切换。两种角色都必须使用匹配邀请邮箱的账号完成首次 NFC 激活，激活后都能读取包含全部页面和媒体的完整相册预览。
+- `viewer` 只读。`editor` 可进入完整 Canvas 编辑器，并直接发布云端共享相册的新版本；编辑只修改云端共享快照，不改 owner 或任何成员设备上的本地原件，本地原件也不会自动上传。
+- editor 提交时必须携带 `baseVersion`。服务端锁定相册并比较当前版本；不一致时返回 `409 gift_album_version_conflict`，客户端终止该提交并重新加载最新版。
+- 页面 JSON 引用的已有媒体必须由服务端验证属于当前礼品；新媒体先上传到当前环境的私有 R2 临时对象，完成校验和原子提交后再提升为不可变对象。客户端不得指定对象键或绕过校验。
+- 移除成员、修改权限或整册删除时，editor 只能提交管理申请，等待 owner 批准或拒绝；owner 可直接管理，不需要为自己创建申请。
+- 创建上传会话和提交发布都重新检查当前角色、激活、礼品状态及停测开关。成员被移除、editor 权限被撤销、礼品停用或停测后，读取与尚未完成的提交立即拒绝。
+- 客户端不保存礼品 token；链接只能证明持有链接，不能证明请求来自实体 NFC 碰卡。staging 与 production 的账号、成员、激活、数据库、私有 R2、token 和版本严格隔离。
+- 本范围不新增第三方服务、支付、分析或客户端秘密。

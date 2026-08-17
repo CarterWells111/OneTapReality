@@ -34,7 +34,9 @@ type CanvasElementProps = {
   selectionContext: string | undefined;
   onInteract?: (id: string) => void;
   onSelect: (id: string) => void;
+  onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
+  onTransformSettled?: () => void;
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -106,7 +108,9 @@ export function CanvasElement({
   selectionContext,
   onInteract,
   onSelect,
+  onTransformStart,
   onTransformEnd,
+  onTransformSettled,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
 
@@ -159,9 +163,11 @@ export function CanvasElement({
       { width: canvasWidth, height: canvasHeight },
       cornerResize.value,
     ));
+    onTransformSettled?.();
   };
 
   const acknowledgeInteraction = () => onInteract?.(element.id);
+  const acknowledgeTransformStart = () => onTransformStart?.();
 
   const beginGesture = (started: typeof panStarted) => {
     "worklet";
@@ -171,6 +177,7 @@ export function CanvasElement({
     if (activeGestureCount.value === 1) {
       panStartX.value = posX.value;
       panStartY.value = posY.value;
+      runOnJS(acknowledgeTransformStart)();
     }
     runOnJS(acknowledgeInteraction)();
   };

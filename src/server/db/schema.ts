@@ -1,7 +1,9 @@
-import { check, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 import type { CloudCanvasLayout } from "../../services/backend/contracts";
+
+export type GiftMemberRole = "owner" | "viewer" | "editor";
 
 export const devices = pgTable(
   "devices",
@@ -170,13 +172,14 @@ export const giftMembers = pgTable(
     id: text("id").primaryKey(),
     giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
-    role: text("role").notNull(),
+    role: text("role").$type<GiftMemberRole>().notNull(),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
     uniqueIndex("gift_members_gift_email_unique").on(table.giftId, table.email),
+    uniqueIndex("gift_members_gift_id_id_unique").on(table.giftId, table.id),
     index("gift_members_email_role_gift_idx").on(table.email, table.role, table.giftId),
-    check("gift_members_role_check", sql`${table.role} in ('owner', 'viewer')`),
+    check("gift_members_role_check", sql`${table.role} in ('owner', 'viewer', 'editor')`),
   ],
 );
 
@@ -189,8 +192,23 @@ export const sharedAlbums = pgTable(
     title: text("title").notNull(),
     publishedAt: text("published_at").notNull(),
     version: integer("version").notNull(),
+    /** 独立于页面照片的封面对象；旧相册为 null。 */
+    coverObjectKey: text("cover_object_key"),
+    coverContentType: text("cover_content_type"),
+    coverByteSize: integer("cover_byte_size"),
   },
   (table) => [uniqueIndex("shared_albums_gift_unique").on(table.giftId)],
+);
+
+/** A viewer must prove possession of the gift token before shared media is readable. */
+export const giftMemberActivations = pgTable(
+  "gift_member_activations",
+  {
+    memberId: text("member_id").primaryKey().references(() => giftMembers.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    activatedAt: text("activated_at").notNull(),
+  },
+  (table) => [index("gift_member_activations_user_member_idx").on(table.userId, table.memberId)],
 );
 
 export const giftEmailCodes = pgTable(
@@ -256,6 +274,9 @@ export const giftPublishSessions = pgTable(
     id: text("id").primaryKey(),
     giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
     ownerEmail: text("owner_email").notNull(),
+    memberId: text("member_id").references(() => giftMembers.id, { onDelete: "set null" }),
+    baseVersion: integer("base_version").notNull(),
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
     payloadJson: jsonb("payload_json").notNull(),
     expiresAt: text("expires_at").notNull(),
     completedAt: text("completed_at"),
@@ -265,6 +286,31 @@ export const giftPublishSessions = pgTable(
     index("gift_publish_sessions_gift_expires_idx").on(table.giftId, table.expiresAt),
     index("gift_publish_sessions_expires_idx").on(table.expiresAt, table.id),
     index("gift_publish_sessions_completed_idx").on(table.completedAt, table.id),
+  ],
+);
+
+export const giftManagementRequests = pgTable(
+  "gift_management_requests",
+  {
+    id: text("id").primaryKey(),
+    giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
+    requesterMemberId: text("requester_member_id").notNull(),
+    action: text("action").$type<"delete_album" | "remove_member" | "change_member_role">().notNull(),
+    targetEmail: text("target_email"),
+    targetRole: text("target_role").$type<"viewer" | "editor">(),
+    status: text("status").$type<"pending" | "approved" | "rejected">().notNull(),
+    createdAt: text("created_at").notNull(),
+    decidedAt: text("decided_at"),
+  },
+  (table) => [
+    index("gift_management_requests_gift_status_created_idx").on(table.giftId, table.status, table.createdAt),
+    uniqueIndex("gift_management_requests_pending_unique").on(table.giftId, table.action, sql`coalesce(${table.targetEmail}, '')`, sql`coalesce(${table.targetRole}, '')`).where(sql`${table.status} = 'pending'`),
+    check("gift_management_requests_action_check", sql`${table.action} in ('delete_album', 'remove_member', 'change_member_role')`),
+    check("gift_management_requests_status_check", sql`${table.status} in ('pending', 'approved', 'rejected')`),
+    check("gift_management_requests_target_role_check", sql`${table.targetRole} is null or ${table.targetRole} in ('viewer', 'editor')`),
+    check("gift_management_requests_action_target_check", sql`(${table.action} = 'delete_album' and ${table.targetEmail} is null and ${table.targetRole} is null) or (${table.action} = 'remove_member' and ${table.targetEmail} is not null and ${table.targetRole} is null) or (${table.action} = 'change_member_role' and ${table.targetEmail} is not null and ${table.targetRole} is not null)`),
+    check("gift_management_requests_decision_time_check", sql`(${table.status} = 'pending' and ${table.decidedAt} is null) or (${table.status} in ('approved', 'rejected') and ${table.decidedAt} is not null)`),
+    foreignKey({ name: "gift_management_requests_gift_requester_member_fk", columns: [table.giftId, table.requesterMemberId], foreignColumns: [giftMembers.giftId, giftMembers.id] }).onDelete("cascade"),
   ],
 );
 
@@ -320,6 +366,7 @@ export type GiftRow = typeof gifts.$inferSelect;
 export type GiftCardRow = typeof giftCards.$inferSelect;
 export type GiftCardEventRow = typeof giftCardEvents.$inferSelect;
 export type GiftMemberRow = typeof giftMembers.$inferSelect;
+export type GiftManagementRequestRow = typeof giftManagementRequests.$inferSelect;
 export type SharedAlbumRow = typeof sharedAlbums.$inferSelect;
 export type GiftEmailCodeRow = typeof giftEmailCodes.$inferSelect;
 export type GiftSessionRow = typeof giftSessions.$inferSelect;

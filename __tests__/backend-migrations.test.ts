@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { readFileSync } from "node:fs";
 
 import {
   createBackendTestDatabase,
@@ -15,7 +16,7 @@ describe("backend PostgreSQL migrations", () => {
         select table_name
         from information_schema.tables
         where table_schema = 'public'
-          and table_name in ('app_maintenance_state', 'app_schema_meta', 'auth_rate_limits', 'devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
+          and table_name in ('app_maintenance_state', 'app_schema_meta', 'auth_rate_limits', 'devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'gift_member_activations', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
         order by table_name
       `);
 
@@ -26,6 +27,7 @@ describe("backend PostgreSQL migrations", () => {
         "devices",
         "gift_email_codes",
         "gift_media_cleanup_jobs",
+        "gift_member_activations",
         "gift_members",
         "gift_publish_sessions",
         "gift_sessions",
@@ -36,6 +38,65 @@ describe("backend PostgreSQL migrations", () => {
         "shared_album_pages",
         "shared_albums",
       ]);
+
+      const coverColumns = await db.execute(sql`
+        select column_name
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'shared_albums'
+          and column_name in ('cover_object_key', 'cover_content_type', 'cover_byte_size')
+        order by column_name
+      `);
+      expect(coverColumns.rows.map((row) => row.column_name)).toEqual([
+        "cover_byte_size",
+        "cover_content_type",
+        "cover_object_key",
+      ]);
+
+      const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
+      expect(schemaMeta.rows).toEqual([{ version: 10 }]);
+
+      const collaboration = await db.execute(sql`
+        select table_name
+        from information_schema.tables
+        where table_schema = 'public' and table_name = 'gift_management_requests'
+      `);
+      expect(collaboration.rows).toEqual([{ table_name: "gift_management_requests" }]);
+
+      const baseVersion = await db.execute(sql`
+        select is_nullable, column_default from information_schema.columns
+        where table_schema = 'public' and table_name = 'gift_publish_sessions' and column_name = 'base_version'
+      `);
+      expect(baseVersion.rows).toEqual([{ is_nullable: "NO", column_default: null }]);
+      const requestColumns = await db.execute(sql`
+        select column_name from information_schema.columns where table_schema = 'public'
+        and table_name = 'gift_management_requests' order by column_name
+      `);
+      expect(requestColumns.rows.map(row => row.column_name)).toEqual(expect.arrayContaining(["action", "created_at", "decided_at", "gift_id", "requester_member_id", "status", "target_email", "target_role"]));
+      const migration = readFileSync("drizzle/0010_shared_album_collaboration.sql", "utf8");
+      expect(migration).toEqual(expect.stringContaining("gift_management_requests_action_check"));
+      expect(migration).toEqual(expect.stringContaining("gift_management_requests_status_check"));
+      expect(migration).toEqual(expect.stringContaining("gift_publish_sessions_member_id_gift_members_id_fk"));
+      expect(migration).toEqual(expect.stringContaining("gift_publish_sessions_actor_user_id_users_id_fk"));
+      expect(migration).toEqual(expect.stringContaining("ON DELETE set null"));
+      expect(migration).toEqual(expect.stringContaining("gift_management_requests_gift_requester_member_fk"));
+      expect(migration).toEqual(expect.stringContaining('FOREIGN KEY ("gift_id", "requester_member_id")'));
+      expect(migration).toEqual(expect.stringContaining("gift_management_requests_gift_status_created_idx"));
+
+      await db.execute(sql`insert into gifts (id, token_hash, status, created_at) values ('editor-gift', 'editor-hash', 'bound', '2026-08-16T00:00:00.000Z')`);
+      await expect(db.execute(sql`
+        insert into gift_members (id, gift_id, email, role, created_at)
+        values ('editor-member', 'editor-gift', 'editor@example.com', 'editor', '2026-08-16T00:00:00.000Z')
+      `)).resolves.toBeDefined();
+      for (const values of [
+        sql`('bad-delete', 'editor-gift', 'editor-member', 'delete_album', 'someone@example.com', null, 'pending', '2026-08-16T00:00:00.000Z', null)`,
+        sql`('bad-remove', 'editor-gift', 'editor-member', 'remove_member', null, null, 'pending', '2026-08-16T00:00:00.000Z', null)`,
+        sql`('bad-change', 'editor-gift', 'editor-member', 'change_member_role', 'someone@example.com', null, 'pending', '2026-08-16T00:00:00.000Z', null)`,
+        sql`('bad-pending-time', 'editor-gift', 'editor-member', 'delete_album', null, null, 'pending', '2026-08-16T00:00:00.000Z', '2026-08-16T00:01:00.000Z')`,
+        sql`('bad-decided-time', 'editor-gift', 'editor-member', 'delete_album', null, null, 'approved', '2026-08-16T00:00:00.000Z', null)`,
+      ]) {
+        await expect(db.execute(sql`insert into gift_management_requests (id, gift_id, requester_member_id, action, target_email, target_role, status, created_at, decided_at) values ${values}`)).rejects.toThrow();
+      }
     } finally {
       await close();
     }

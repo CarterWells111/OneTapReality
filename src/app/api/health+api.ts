@@ -4,7 +4,7 @@ import { backendContractVersion, type HealthResponse } from "../../services/back
 import { getServerDatabase } from "../../server/db/client";
 import { ApiError, errorResponse } from "../../server/http/errors";
 
-const minimumSchemaVersion = 7;
+const minimumSchemaVersion = 9;
 
 export async function GET(_request?: Request): Promise<Response> {
   try {

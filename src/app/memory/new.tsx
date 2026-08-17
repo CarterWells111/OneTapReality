@@ -9,7 +9,6 @@ import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../com
 import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
-import { persistPhotoUri, persistPhotoUris } from "../../features/memories/photo-persistence";
 import { useMemories } from "../../features/memories/memories-provider";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
 
@@ -112,8 +111,7 @@ export default function NewMemoryScreen() {
       quality: 0.8,
     });
     if (!result.canceled) {
-      // 复制进沙盒，避免 ph:// / content:// 在重启后失效（照片丢失 bug）
-      setPhotoUris(await persistPhotoUris(result.assets.map((asset) => asset.uri)));
+      setPhotoUris(result.assets.map((asset) => asset.uri));
       void Haptics.selectionAsync();
     }
   };
@@ -127,7 +125,7 @@ export default function NewMemoryScreen() {
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setCoverImage(await persistPhotoUri(result.assets[0].uri));
+      setCoverImage(result.assets[0].uri);
       void Haptics.selectionAsync();
     }
   };

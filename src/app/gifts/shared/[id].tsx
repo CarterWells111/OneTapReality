@@ -1,9 +1,13 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import * as React from "react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../../components/ui";
+import { PageReader } from "../../../features/canvas/page-reader";
 import { useAuth } from "../../../features/auth/auth-provider";
+import { mapSharedAlbumToStoryPages } from "../../../features/gifts/shared-album-mapper";
+import { SharedAlbumEditor } from "../../../features/gifts/shared-album-editor";
 import { BackendApiClient, type InvitedGiftAlbum } from "../../../services/backend/api-client";
 
 export default function SharedGiftDetailScreen() {
@@ -13,95 +17,131 @@ export default function SharedGiftDetailScreen() {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [status, setStatus] = React.useState("正在读取分享相册…");
   const [album, setAlbum] = React.useState<InvitedGiftAlbum | null>(null);
-  const [photos, setPhotos] = React.useState<string[]>([]);
+  const [opened, setOpened] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [targets, setTargets] = React.useState<{ email: string; role: "viewer" | "editor" }[]>([]);
+  const [requestBusy, setRequestBusy] = React.useState(false);
+  const [requestMessage, setRequestMessage] = React.useState("");
+  const [loadFailed, setLoadFailed] = React.useState(false);
+  const [loadedContextKey, setLoadedContextKey] = React.useState<string | null>(null);
+  const requestInFlight = React.useRef(false);
+  const requestGeneration = React.useRef(0);
+  const contextKey = session && id ? `${id}\u0000${session.user.id}\u0000${session.accessToken}` : null;
+  const contextKeyRef = React.useRef(contextKey);
+  contextKeyRef.current = contextKey;
 
   const load = React.useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    setAlbum(null);
+    setOpened(false);
+    setEditing(false);
+    setTargets([]);
+    setRequestMessage("");
+    setLoadedContextKey(null);
+    requestInFlight.current = false;
+    setRequestBusy(false);
+    setStatus("正在读取分享相册…");
+    setLoadFailed(false);
     if (!session || !id) {
-      router.replace("/login?returnTo=/gifts" as never);
+      const sharedRoute = id ? `/gifts/shared/${encodeURIComponent(id)}` : "/gifts";
+      router.replace(`/login?returnTo=${encodeURIComponent(sharedRoute)}` as never);
       return;
     }
     try {
       const result = await client.getInvitedGiftAlbum(id, session.accessToken);
+      if (generation !== requestGeneration.current) return;
       setAlbum(result);
-      setPhotos(result.media.map((m) => m.readUrl));
+      if (result.role === "editor") {
+        const nextTargets = await client.listInvitedGiftManagementTargets(id, session.accessToken);
+        if (generation !== requestGeneration.current) return;
+        setTargets(nextTargets);
+      } else setTargets([]);
+      setLoadedContextKey(contextKey);
       setStatus("");
     } catch {
+      if (generation !== requestGeneration.current) return;
       setStatus("无法读取此分享相册，请检查网络后重试。");
+      setLoadFailed(true);
     }
-  }, [client, id, router, session]);
+  }, [client, contextKey, id, router, session]);
 
-  React.useEffect(() => { if (isAuthReady) void load(); }, [isAuthReady, load]);
+  React.useEffect(() => {
+    if (isAuthReady) void load();
+    return () => { requestGeneration.current += 1; };
+  }, [isAuthReady, load]);
   if (!isAuthReady || !session) return null;
+
+  const coverImage = album?.cover?.readUrl ?? null;
+  const requestManagement = async (input: { action: "delete_album" | "remove_member" | "change_member_role"; targetEmail?: string; targetRole?: "viewer" | "editor" }) => {
+    if (!session || !id || !contextKey || loadedContextKey !== contextKey || requestInFlight.current) return;
+    const generation = requestGeneration.current;
+    const operationContextKey = contextKey;
+    requestInFlight.current = true;
+    setRequestBusy(true); setRequestMessage("");
+    const current = () => generation === requestGeneration.current && operationContextKey === contextKeyRef.current;
+    try { await client.createInvitedGiftManagementRequest(id, session.accessToken, input); if (current()) setRequestMessage("申请已提交，等待拥有者处理。"); }
+    catch (error) { if (current()) setRequestMessage(error instanceof Error ? error.message : "申请提交失败，请重试。"); }
+    finally { if (current()) { requestInFlight.current = false; setRequestBusy(false); } }
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
       <ScreenTitle title={album?.title ?? "分享相册"} caption="SHARED WITH YOU" />
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
+      {loadFailed && session && id ? <AppButton label="重试" tone="secondary" onPress={() => void load()} /> : null}
+      {loadedContextKey === contextKey && album?.role === "editor" ? <Section title="管理申请" caption="OWNER APPROVAL REQUIRED"><PaperCard tone="surface" style={{ gap: 10 }}>
+        <Text style={styles.message}>这些操作需要拥有者批准后才会生效。</Text>{requestMessage ? <Text selectable style={styles.message}>{requestMessage}</Text> : null}
+        <AppButton disabled={requestBusy} label="申请删除整册" tone="danger" onPress={() => void requestManagement({ action: "delete_album" })} />
+        {targets.map((target) => <View key={target.email} style={styles.targetRow}><Text style={styles.targetEmail}>{target.email}</Text><Text style={styles.message}>{target.role === "editor" ? "读写成员" : "只读成员"}</Text>
+          <Pressable accessibilityLabel={`申请将 ${target.email} 改为${target.role === "viewer" ? "读写" : "只读"}`} accessibilityRole="button" disabled={requestBusy} onPress={() => void requestManagement({ action: "change_member_role", targetEmail: target.email, targetRole: target.role === "viewer" ? "editor" : "viewer" })} style={styles.managementButton}><Text style={styles.managementButtonText}>{target.role === "viewer" ? "申请改为读写" : "申请改为只读"}</Text></Pressable>
+          <Pressable accessibilityLabel={`申请移除成员 ${target.email}`} accessibilityRole="button" disabled={requestBusy} onPress={() => void requestManagement({ action: "remove_member", targetEmail: target.email })} style={styles.managementButton}><Text style={styles.managementButtonText}>申请移除</Text></Pressable>
+        </View>)}
+      </PaperCard></Section> : null}
+
 
       {album ? (
-        <>
-          <Section title="相册信息" caption="ALBUM INFO">
-            <PaperCard tone="surface" style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>标题</Text>
-                <Text style={styles.infoValue}>{album.title}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>版本</Text>
-                <Text style={styles.infoValue}>{album.version}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>页数</Text>
-                <Text style={styles.infoValue}>{album.pages.length} 页</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>发布</Text>
-                <Text style={styles.infoValue}>
-                  {new Date(album.publishedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
-                </Text>
-              </View>
-            </PaperCard>
-          </Section>
-
-          {photos.length > 0 ? (
-            <Section title="相册照片" caption={`${photos.length} 张`}>
-              {photos.map((uri, index) => (
-                <Image
-                  key={uri || index}
-                  source={{ uri }}
-                  style={styles.photo}
-                  accessibilityLabel={`相册照片 ${index + 1}`}
-                />
-              ))}
-            </Section>
-          ) : (
-            <Text style={styles.emptyHint}>此相册暂无照片。</Text>
-          )}
-
-          {album.pages.length > 0 ? (
-            <Section title="页面预览" caption={`${album.pages.length} 页`}>
-              {album.pages.map((item) => {
-                const page = item.page as Record<string, unknown>;
-                return (
-                  <PaperCard key={item.position} tone="surface" style={styles.pageCard}>
-                    <Text style={styles.pageKind}>
-                      {String(page.kind === "cover" ? "封面" : page.kind === "closing" ? "封底" : "照片页")}
-                    </Text>
-                    {page.headline ? <Text style={styles.pageHeadline}>{String(page.headline)}</Text> : null}
-                    {page.body ? <Text style={styles.pageBody}>{String(page.body)}</Text> : null}
-                  </PaperCard>
-                );
-              })}
-            </Section>
-          ) : null}
-        </>
+        editing && album.role === "editor" ? (
+          <SharedAlbumEditor
+            accessToken={session.accessToken}
+            album={album}
+            giftId={id}
+            onAccessLost={() => {
+              setEditing(false);
+              setAlbum(null);
+              setStatus("编辑权限已被移除，请返回纪念品列表。");
+            }}
+            onPublished={load}
+          />
+        ) : opened ? (
+          <>
+            <PageReader pages={mapSharedAlbumToStoryPages(album)} />
+            <View style={styles.actions}>
+              <AppButton label="返回纪念品" onPress={() => router.back()} />
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.coverStage}>
+              {coverImage ? (
+                <Image contentFit="cover" source={{ uri: coverImage }} style={styles.coverImage} testID="album-cover-image" />
+              ) : (
+                <View style={[styles.coverImage, styles.coverFallback]}>
+                  <Text selectable style={styles.coverFallbackTitle}>{album.title}</Text>
+                </View>
+              )}
+            </View>
+            <Text selectable style={styles.coverMeta}>
+              版本 {album.version} · {new Date(album.publishedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
+            </Text>
+            <View style={styles.actions}>
+              <AppButton label="打开相册" onPress={() => setOpened(true)} />
+              {album.role === "editor" ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
+              <AppButton label="返回纪念品" tone="secondary" onPress={() => router.back()} />
+            </View>
+          </>
+        )
       ) : null}
-
-      <View style={styles.actions}>
-        <AppButton label="返回纪念品" onPress={() => router.back()} />
-        <AppButton label="刷新" tone="secondary" onPress={() => void load()} />
-      </View>
     </ScrollView>
   );
 }
@@ -109,15 +149,22 @@ export default function SharedGiftDetailScreen() {
 const styles = StyleSheet.create({
   content: { gap: 22, padding: 20, paddingBottom: 40 },
   message: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 22 },
-  emptyHint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 22, textAlign: "center", paddingVertical: 16 },
-  infoCard: { gap: 10 },
-  infoRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  infoLabel: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
-  infoValue: { color: colors.ink, fontFamily: serifFont, fontSize: 15, fontWeight: "600" },
-  photo: { borderRadius: 12, height: 240, width: "100%" },
-  pageCard: { gap: 6 },
-  pageKind: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12, fontWeight: "700" },
-  pageHeadline: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "800" },
-  pageBody: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
+  coverStage: { alignItems: "center" },
+  coverImage: {
+    alignSelf: "center",
+    backgroundColor: colors.paper,
+    borderColor: colors.paperEdge,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 346,
+    width: 260,
+  },
+  coverFallback: { alignItems: "center", justifyContent: "center", padding: 24 },
+  coverFallbackTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 22, fontWeight: "800", lineHeight: 30, textAlign: "center" },
+  coverMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, textAlign: "center" },
   actions: { gap: 10, paddingTop: 8 },
+  targetRow: { borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, gap: 8, paddingTop: 10 },
+  targetEmail: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
+  managementButton: { alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 16, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
+  managementButtonText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
 });

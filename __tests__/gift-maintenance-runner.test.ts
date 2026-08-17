@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
 import { appMaintenanceState, giftMediaCleanupJobs } from "../src/server/db/schema";
-import { createGift } from "../src/server/gifts/repository";
+import { claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession } from "../src/server/gifts/repository";
 import type { PrivateMediaStore } from "../src/server/gifts/r2-media";
 import { runGiftMaintenance } from "../src/server/maintenance/run-gift-maintenance";
 
@@ -13,6 +13,7 @@ function createStore(deleteObjects = jest.fn(async () => undefined)): PrivateMed
     getObjectMetadata: jest.fn(),
     objectExists: jest.fn(),
     deleteObjects,
+    copyObject: jest.fn(async () => undefined),
   };
 }
 
@@ -55,6 +56,44 @@ describe("gift maintenance runner", () => {
       const second = await runGiftMaintenance({ db, store: createStore(), mode: "scheduled", now: new Date("2026-07-25T01:01:00.000Z") });
 
       expect(second).toEqual(expect.objectContaining({ skipped: true, claimedCleanupJobs: 0 }));
+    } finally { await close(); }
+  });
+
+  it("completes cleanup jobs for referenced winner finals without deleting the R2 object", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "token", createdAt: "2026-08-16T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "token", "owner@example.com", "2026-08-16T00:01:00.000Z");
+      const finalKey = "gifts/gift-1/publish/final/attempt/photo";
+      await createGiftPublishSession(db, { id: "publish", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, createdAt: "2026-08-16T00:02:00.000Z", expiresAt: "2026-08-16T00:12:00.000Z", payload: { sourceMemoryId: "memory", title: "Trip", pages: [], media: [] } });
+      await completeGiftPublishSession(db, { sessionId: "publish", ownerEmail: "owner@example.com", now: "2026-08-16T00:03:00.000Z", payload: { sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ position: 0, objectKey: finalKey, contentType: "image/jpeg", byteSize: 12, source: "upload" }] } });
+      await db.insert(giftMediaCleanupJobs).values({ id: "attempt-job", giftId: "gift-1", objectKey: finalKey, state: "pending", attempts: 0, nextAttemptAt: "2026-08-16T00:03:00.000Z", leaseUntil: null, lastError: null, completedAt: null, createdAt: "2026-08-16T00:03:00.000Z" });
+      const deleteObjects = jest.fn(async () => undefined);
+
+      await runGiftMaintenance({ db, store: createStore(deleteObjects), mode: "scheduled", now: new Date("2026-08-16T00:04:00.000Z") });
+
+      expect(deleteObjects).not.toHaveBeenCalled();
+      const [job] = await db.select().from(giftMediaCleanupJobs).where(eq(giftMediaCleanupJobs.id, "attempt-job"));
+      expect(job.state).toBe("completed");
+    } finally { await close(); }
+  });
+
+  it("retries an unreferenced attempt final after an R2 deletion failure and later reclaims it", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "token", createdAt: "2026-08-16T00:00:00.000Z" });
+      const finalKey = "gifts/gift-1/publish/final/rolled-back/photo";
+      await db.insert(giftMediaCleanupJobs).values({ id: "attempt-job", giftId: "gift-1", objectKey: finalKey, state: "pending", attempts: 0, nextAttemptAt: "2026-08-16T00:00:00.000Z", leaseUntil: null, lastError: null, completedAt: null, createdAt: "2026-08-16T00:00:00.000Z" });
+      const deleteObjects = jest.fn().mockRejectedValueOnce(new Error("R2 unavailable")).mockResolvedValueOnce(undefined);
+
+      const failed = await runGiftMaintenance({ db, store: createStore(deleteObjects), mode: "scheduled", now: new Date("2026-08-16T00:01:00.000Z") });
+      const reclaimed = await runGiftMaintenance({ db, store: createStore(deleteObjects), mode: "scheduled", now: new Date("2026-08-16T00:07:00.000Z") });
+
+      expect(failed.failedCleanupJobs).toBe(1);
+      expect(reclaimed.completedCleanupJobs).toBe(1);
+      expect(deleteObjects).toHaveBeenCalledTimes(2);
     } finally { await close(); }
   });
 });

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import * as React from "react";
-import { Image, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 
 import { AppButton, colors, PaperCard, ScreenTitle } from "../../components/ui";
 import { BackendApiClient, BackendApiError } from "../../services/backend/api-client";
@@ -16,7 +16,6 @@ function NativeGiftEntry({ token }: { token: string }) {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const { isAuthReady, session } = useAuth();
   const [status, setStatus] = React.useState("正在检查礼品状态…");
-  const [photos, setPhotos] = React.useState<string[]>([]);
   const [entryStatus, setEntryStatus] = React.useState<string | null>(null);
   const [ownerId, setOwnerId] = React.useState<string | null>(null);
   const [showBindingPrompt, setShowBindingPrompt] = React.useState(false);
@@ -54,17 +53,15 @@ function NativeGiftEntry({ token }: { token: string }) {
       setStatus(access.albumId ? `这是你管理的礼品，已发布相册"${access.albumTitle}"。` : "这是你管理的礼品；请选择并发布一册本地旅行册。");
       return;
     }
-    if (!access.albumId) { setStatus("礼品拥有者尚未发布共享相册。"); return; }
-    const album = await client.getGiftAlbum(token, accessToken);
-    setPhotos(album.media.map((media) => media.readUrl));
-    setStatus(`共享相册：${album.title}`);
-  }, [client, token]);
+    const activation = await client.activateGiftViewer(token, accessToken);
+    if (!activation.albumPublished) { setStatus("礼品拥有者尚未发布共享相册。"); return; }
+    router.replace(`/gifts/shared/${encodeURIComponent(activation.giftId)}` as never);
+  }, [client, router, token]);
 
   const refresh = React.useCallback(async () => {
     try {
       const entry = await client.getGiftEntryStatus(token);
       setEntryStatus(entry.status);
-      setPhotos([]);
       setOwnerId(null);
       setShowBindingPrompt(false);
       if (entry.status === "disabled") { setStatus("此礼品已永久停用。"); return; }
@@ -84,7 +81,6 @@ function NativeGiftEntry({ token }: { token: string }) {
     <PaperCard tone="paper" style={{ gap: 14 }}>
       <ScreenTitle title="NFC 纪念礼品" caption="ONE TAP REALITY" />
       <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>{status}</Text>
-      {photos.map((uri) => <Image key={uri} source={{ uri }} style={{ borderRadius: 12, height: 240, width: "100%" }} />)}
       {showBindingPrompt && session ? (
         <PaperCard tone="surface" style={{ gap: 10 }}>
           <Text style={{ color: colors.ink, fontWeight: "800", fontSize: 16 }}>确认绑定此纪念品</Text>

@@ -5,13 +5,26 @@ import type { Memory, StoryPage } from "../src/types/memory";
 const mockDatabase = { name: "local" };
 const mockListMemories = jest.fn();
 const mockUpdateMemoryPages = jest.fn();
+const mockPersistPhotoUriStrict = jest.fn();
 
 jest.mock("expo-sqlite", () => ({
   useSQLiteContext: () => mockDatabase,
 }));
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: () => ({ isAuthReady: true, user: { id: "user-1", email: "Owner@Example.com", isAdmin: false } }),
+}));
+jest.mock("../src/features/memories/photo-persistence", () => ({
+  cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),
+  deleteAccountPhotoDirectory: jest.fn(async () => undefined),
+  deleteMemoryPhotoDirectory: jest.fn(async () => undefined),
+  ensureMemoryPhotosPersisted: jest.fn(async (memory) => ({ memory, changed: false })),
+  findMigratedLegacyPhotoUris: jest.fn(() => []),
+  persistPhotoUriStrict: (...args: unknown[]) => mockPersistPhotoUriStrict(...args),
+}));
 
 jest.mock("../src/storage/memory-repository", () => ({
   clearMemories: jest.fn(),
+  claimUnownedMemories: jest.fn(async () => 0),
   createDraft: jest.fn(),
   deleteMemory: jest.fn(),
   discardDraft: jest.fn(),
@@ -79,7 +92,26 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(mockUpdateMemoryPages).toHaveBeenCalledWith(
       mockDatabase,
       expect.objectContaining({ id: "draft-1", pages }),
+      "owner@example.com",
     );
     expect(mockListMemories).toHaveBeenCalledTimes(1);
+  });
+
+  it("strictly persists a selected photo in the current account and memory directory", async () => {
+    mockPersistPhotoUriStrict.mockResolvedValue("file:///documents/account/draft-1/photo.jpg");
+    render(
+      <MemoriesProvider>
+        <CaptureMemories />
+      </MemoriesProvider>,
+    );
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.persistSelectedPhoto("draft-1", "file:///temporary.jpg"))
+      .resolves.toBe("file:///documents/account/draft-1/photo.jpg");
+    expect(mockPersistPhotoUriStrict).toHaveBeenCalledWith(
+      "file:///temporary.jpg",
+      "owner@example.com",
+      "draft-1",
+    );
   });
 });

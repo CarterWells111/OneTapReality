@@ -2,14 +2,18 @@ import * as React from "react";
 import { useSQLiteContext } from "expo-sqlite";
 
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
-import { ensureMemoryPhotosPersisted } from "./photo-persistence";
+import { useAuth } from "../auth/auth-provider";
+import { normalizeLocalAccountKey } from "../auth/local-account";
+import { cleanupMigratedLegacyPhotoUris, deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, findMigratedLegacyPhotoUris, persistPhotoUriStrict } from "./photo-persistence";
 import {
   clearMemories,
+  claimUnownedMemories,
   createDraft as createDraftInDb,
   deleteMemory as deleteMemoryFromDb,
   discardDraft as discardDraftInDb,
   discardMemory as discardMemoryInDb,
   getDraft,
+  listAllMemories,
   listDiscardedMemories,
   listMemories,
   restoreDiscardedMemory,
@@ -33,6 +37,7 @@ type MemoriesContextValue = {
   discardDraft: (id: string) => Promise<void>;
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   updateDraftPages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
+  persistSelectedPhoto: (memoryId: string, uri: string) => Promise<string>;
   discardMemory: (id: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
@@ -50,23 +55,38 @@ function buildId() {
 
 export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
+  const { isAuthReady, user } = useAuth();
+  const accountKey = user ? normalizeLocalAccountKey(user.email) : null;
   const [memories, setMemories] = React.useState<Memory[]>([]);
   const [isReady, setIsReady] = React.useState(false);
+  const refreshGeneration = React.useRef(0);
+  const currentAccountKey = React.useRef<string | null>(accountKey);
+  currentAccountKey.current = accountKey;
+
+  const requireAccountKey = React.useCallback(() => {
+    if (!isAuthReady || !accountKey) throw new Error("请先登录后再管理本地旅行册");
+    return accountKey;
+  }, [accountKey, isAuthReady]);
 
   /** 读取全部记忆并迁移旧照片 URI 到沙盒（best-effort，失败不阻塞列表）。 */
-  const refresh = React.useCallback(async () => {
-    let memories = await listMemories(db);
+  const refresh = React.useCallback(async (requestedAccountKey?: string) => {
+    const owner = requestedAccountKey ?? requireAccountKey();
+    const generation = ++refreshGeneration.current;
+    await claimUnownedMemories(db, owner);
+    let nextMemories = await listMemories(db, owner);
     let migratedAny = false;
-    for (const memory of memories) {
+    const migratedLegacyUris = new Set<string>();
+    for (const memory of nextMemories) {
       try {
-        const result = await ensureMemoryPhotosPersisted(memory);
+        const result = await ensureMemoryPhotosPersisted(memory, owner);
         if (result.changed) {
           migratedAny = true;
-          await updateMemoryPhotos(db, result.memory.id, result.memory.photoUris);
+          await updateMemoryPhotos(db, result.memory.id, result.memory.photoUris, owner);
           await updateMemoryPages(db, {
             ...result.memory,
             updatedAt: result.memory.updatedAt,
-          });
+          }, owner);
+          for (const uri of findMigratedLegacyPhotoUris(memory, result.memory)) migratedLegacyUris.add(uri);
         }
       } catch (error) {
         console.warn("[MemoriesProvider] 照片持久化迁移失败，跳过：", error);
@@ -74,26 +94,41 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     }
     if (migratedAny) {
       // 迁移写入后再读一次，保证返回给 UI 的是持久化后的 URI
-      memories = await listMemories(db);
+      nextMemories = await listMemories(db, owner);
     }
-    setMemories(memories);
-    setIsReady(true);
-  }, [db]);
+    if (migratedLegacyUris.size > 0) {
+      const everyOwnedMemory = await listAllMemories(db, owner);
+      await cleanupMigratedLegacyPhotoUris([...migratedLegacyUris], everyOwnedMemory);
+    }
+    if (generation === refreshGeneration.current && currentAccountKey.current === owner) {
+      setMemories(nextMemories);
+      setIsReady(true);
+    }
+  }, [db, requireAccountKey]);
 
   React.useEffect(() => {
-    let isMounted = true;
-    void refresh().then(() => {
-      if (!isMounted) {
+    refreshGeneration.current += 1;
+    setMemories([]);
+    if (!isAuthReady) {
+      setIsReady(false);
+      return;
+    }
+    if (!accountKey) {
+      setIsReady(true);
+      return;
+    }
+    setIsReady(false);
+    void refresh(accountKey).catch((error) => {
+      if (currentAccountKey.current === accountKey) {
+        console.warn("[MemoriesProvider] 无法读取当前账号的本地旅行册：", error);
         setIsReady(true);
       }
     });
-    return () => {
-      isMounted = false;
-    };
-  }, [refresh]);
+  }, [accountKey, isAuthReady, refresh]);
 
   const createMemory = React.useCallback(
     async (input: MemoryDraftInput) => {
+      const owner = requireAccountKey();
       const validation = validateMemoryDraft(input);
       if (validation.issues.length > 0) {
         throw new Error(validation.issues[0]);
@@ -102,15 +137,17 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const pages = await generator.generate(input);
       const now = new Date().toISOString();
       const memory = createMemoryRecord({ id: buildId(), now, input, pages });
-      await saveMemory(db, memory);
+      const persisted = await ensureMemoryPhotosPersisted(memory, owner);
+      await saveMemory(db, persisted.memory, owner);
       await refresh();
-      return memory;
+      return persisted.memory;
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const createDraft = React.useCallback(
     async (input: MemoryDraftInput) => {
+      const owner = requireAccountKey();
       const validation = validateMemoryDraft(input);
       if (validation.issues.length > 0) {
         throw new Error(validation.issues[0]);
@@ -119,28 +156,30 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const pages = await generator.generate(input);
       const now = new Date().toISOString();
       const memory = createMemoryRecord({ id: buildId(), now, input, pages });
-      await createDraftInDb(db, memory);
-      return { ...memory, status: "draft" as const };
+      const persisted = await ensureMemoryPhotosPersisted(memory, owner);
+      await createDraftInDb(db, persisted.memory, owner);
+      return { ...persisted.memory, status: "draft" as const };
     },
-    [db]
+    [db, requireAccountKey]
   );
 
   const getDraftById = React.useCallback(
-    async (id: string) => getDraft(db, id),
-    [db]
+    async (id: string) => getDraft(db, id, requireAccountKey()),
+    [db, requireAccountKey]
   );
 
   const saveDraft = React.useCallback(
     async (id: string) => {
-      await saveDraftInDb(db, id, new Date().toISOString());
+      await saveDraftInDb(db, id, new Date().toISOString(), requireAccountKey());
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const retryDraft = React.useCallback(
     async (id: string) => {
-      const draft = await getDraft(db, id);
+      const owner = requireAccountKey();
+      const draft = await getDraft(db, id, owner);
       if (!draft) {
         throw new Error("未找到可重试的草稿");
       }
@@ -152,75 +191,89 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         id: `${id}:${page.id}`,
       }));
       const nextDraft = { ...draft, pages: namespacedPages, updatedAt: new Date().toISOString() };
-      await updateMemoryPages(db, nextDraft);
-      return nextDraft;
+      const persisted = await ensureMemoryPhotosPersisted(nextDraft, owner);
+      await updateMemoryPages(db, persisted.memory, owner);
+      return persisted.memory;
     },
-    [db]
+    [db, requireAccountKey]
   );
 
   const discardDraft = React.useCallback(
     async (id: string) => {
-      await discardDraftInDb(db, id, new Date().toISOString());
+      await discardDraftInDb(db, id, new Date().toISOString(), requireAccountKey());
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const updatePages = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
-      await updateMemoryPages(db, {
+      const owner = requireAccountKey();
+      const persisted = await ensureMemoryPhotosPersisted({
         ...memory,
         pages,
         updatedAt: new Date().toISOString(),
-      });
+      }, owner);
+      await updateMemoryPages(db, persisted.memory, owner);
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const updateDraftPages = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
-      await updateMemoryPages(db, {
+      const owner = requireAccountKey();
+      const persisted = await ensureMemoryPhotosPersisted({
         ...memory,
         pages,
         updatedAt: new Date().toISOString(),
-      });
+      }, owner);
+      await updateMemoryPages(db, persisted.memory, owner);
     },
-    [db]
+    [db, requireAccountKey]
+  );
+
+  const persistSelectedPhoto = React.useCallback(
+    async (memoryId: string, uri: string) => persistPhotoUriStrict(uri, requireAccountKey(), memoryId),
+    [requireAccountKey],
   );
 
   const discardMemory = React.useCallback(
     async (id: string) => {
-      await discardMemoryInDb(db, id, new Date().toISOString());
+      await discardMemoryInDb(db, id, new Date().toISOString(), requireAccountKey());
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const deleteMemory = React.useCallback(
     async (id: string) => {
-      await deleteMemoryFromDb(db, id);
+      const owner = requireAccountKey();
+      await deleteMemoryFromDb(db, id, owner);
+      await deleteMemoryPhotoDirectory(owner, id);
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const clearAllMemories = React.useCallback(async () => {
-    await clearMemories(db);
+    const owner = requireAccountKey();
+    await clearMemories(db, owner);
+    await deleteAccountPhotoDirectory(owner);
     await refresh();
-  }, [db, refresh]);
+  }, [db, refresh, requireAccountKey]);
 
   const listDiscarded = React.useCallback(
-    async () => listDiscardedMemories(db),
-    [db]
+    async () => listDiscardedMemories(db, requireAccountKey()),
+    [db, requireAccountKey]
   );
 
   const restoreMemory = React.useCallback(
     async (id: string) => {
-      await restoreDiscardedMemory(db, id, new Date().toISOString());
+      await restoreDiscardedMemory(db, id, new Date().toISOString(), requireAccountKey());
       await refresh();
     },
-    [db, refresh]
+    [db, refresh, requireAccountKey]
   );
 
   const value = React.useMemo<MemoriesContextValue>(
@@ -235,6 +288,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardDraft,
       updatePages,
       updateDraftPages,
+      persistSelectedPhoto,
       discardMemory,
       deleteMemory,
       clearAllMemories,
@@ -258,6 +312,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       saveDraft,
       updatePages,
       updateDraftPages,
+      persistSelectedPhoto,
     ]
   );
 

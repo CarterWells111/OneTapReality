@@ -57,6 +57,27 @@
       "when": 1785550878310,
       "tag": "0007_lively_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785900000000,
+      "tag": "0008_shared_album_covers",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0009_gift_member_activations",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786901000000,
+      "tag": "0010_shared_album_collaboration",
+      "breakpoints": true
     }
   ]
 }

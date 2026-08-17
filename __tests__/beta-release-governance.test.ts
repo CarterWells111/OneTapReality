@@ -6,19 +6,21 @@ function read(path: string): string {
 }
 
 describe("Beta release governance", () => {
-  it("keeps database phase two and album covers out of the Beta candidate", () => {
+  it("records the approved shared-album migration chain without reusing its numbers", () => {
     const decisions = read("docs/DECISIONS.md");
     const journal = read("drizzle/meta/_journal.json");
 
-    expect(decisions).toContain("Beta 发布准备与数据库迁移顺序");
-    expect(decisions).toContain("0008_database_phase2");
-    expect(decisions).toContain("0009_shared_album_covers");
-    expect(decisions).toContain("不得进入同一个 Beta 候选版本");
+    expect(decisions).toContain("共享相册协作进入主线并取代旧 Beta 候选排除规则");
+    expect(decisions).toContain("尚未实施的 `0008_database_phase2` 不得再占用或改写");
     expect(existsSync(join(process.cwd(), "drizzle", "0008_database_phase2.sql"))).toBe(false);
-    expect(existsSync(join(process.cwd(), "drizzle", "0008_shared_album_covers.sql"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "drizzle", "0008_shared_album_covers.sql"))).toBe(true);
     expect(existsSync(join(process.cwd(), "drizzle", "0009_shared_album_covers.sql"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "drizzle", "0009_gift_member_activations.sql"))).toBe(true);
+    expect(existsSync(join(process.cwd(), "drizzle", "0010_shared_album_collaboration.sql"))).toBe(true);
     expect(journal).not.toContain("0008_database_phase2");
-    expect(journal).not.toContain("0009_shared_album_covers");
+    expect(journal).toContain("0008_shared_album_covers");
+    expect(journal).toContain("0009_gift_member_activations");
+    expect(journal).toContain("0010_shared_album_collaboration");
   });
 
   it("keeps the first Beta iOS-only without pretending Android is complete", () => {

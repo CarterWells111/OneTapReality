@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 
+import { localAccountDirectorySegment } from "../auth/local-account";
 import type { CanvasLayout, Memory } from "../../types/memory";
 
 // ---------------------------------------------------------------------------
@@ -13,23 +14,35 @@ import type { CanvasLayout, Memory } from "../../types/memory";
 /** 单张图片复制失败的并发上限（规范 §10：禁止裸 Promise.all）。 */
 const PERSIST_CONCURRENCY = 3;
 
-const PHOTOS_DIR_NAME = "photos";
+async function getPhotosDirectory(accountKey: string, memoryId: string): Promise<string> {
+  const directory = `${FileSystem.documentDirectory}photos/accounts/${localAccountDirectorySegment(accountKey)}/${encodeURIComponent(memoryId)}/`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+  return directory;
+}
 
-let photosDirReady: Promise<string> | null = null;
+function getAccountPhotosDirectory(accountKey: string): string {
+  return `${FileSystem.documentDirectory}photos/accounts/${localAccountDirectorySegment(accountKey)}/`;
+}
 
-function getPhotosDirectory(): Promise<string> {
-  if (!photosDirReady) {
-    photosDirReady = FileSystem.makeDirectoryAsync(
-      `${FileSystem.documentDirectory}${PHOTOS_DIR_NAME}`,
-      { intermediates: true },
-    )
-      .then(() => `${FileSystem.documentDirectory}${PHOTOS_DIR_NAME}/`)
-      .catch((error: unknown) => {
-        photosDirReady = null;
-        throw error;
-      });
+function isLegacySandboxPhotoUri(uri: string): boolean {
+  const photosRoot = `${FileSystem.documentDirectory}photos/`;
+  return uri.startsWith(photosRoot) && !uri.startsWith(`${photosRoot}accounts/`);
+}
+
+export async function deleteMemoryPhotoDirectory(accountKey: string, memoryId: string): Promise<void> {
+  try {
+    await FileSystem.deleteAsync(`${getAccountPhotosDirectory(accountKey)}${encodeURIComponent(memoryId)}/`, { idempotent: true });
+  } catch (error) {
+    console.warn("[photo-persistence] 无法清理相册照片目录：", error);
   }
-  return photosDirReady;
+}
+
+export async function deleteAccountPhotoDirectory(accountKey: string): Promise<void> {
+  try {
+    await FileSystem.deleteAsync(getAccountPhotosDirectory(accountKey), { idempotent: true });
+  } catch (error) {
+    console.warn("[photo-persistence] 无法清理账号照片目录：", error);
+  }
 }
 
 function getExtension(uri: string): string {
@@ -44,32 +57,31 @@ async function resolvePhUri(uri: string): Promise<string> {
   return asset.localUri ?? uri;
 }
 
-function isPersisted(uri: string): boolean {
-  const directory = FileSystem.documentDirectory;
-  return directory !== null && uri.startsWith(directory);
+function isPersisted(uri: string, directory: string): boolean {
+  return uri.startsWith(directory);
 }
 
 /**
  * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
  * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
  */
-export async function persistPhotoUri(uri: string): Promise<string> {
-  if (isPersisted(uri)) {
-    return uri;
-  }
+export async function persistPhotoUriStrict(uri: string, accountKey: string, memoryId: string): Promise<string> {
+  const directory = await getPhotosDirectory(accountKey, memoryId);
+  if (isPersisted(uri, directory)) return uri;
   let sourceUri = uri;
   if (uri.startsWith("ph://")) {
     sourceUri = await resolvePhUri(uri);
-    if (isPersisted(sourceUri)) {
-      return sourceUri;
-    }
+    if (isPersisted(sourceUri, directory)) return sourceUri;
   }
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${getExtension(sourceUri)}`;
+  const destination = `${directory}${fileName}`;
+  await FileSystem.copyAsync({ from: sourceUri, to: destination });
+  return destination;
+}
+
+export async function persistPhotoUri(uri: string, accountKey: string, memoryId: string): Promise<string> {
   try {
-    const directory = await getPhotosDirectory();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${getExtension(sourceUri)}`;
-    const destination = `${directory}${fileName}`;
-    await FileSystem.copyAsync({ from: sourceUri, to: destination });
-    return destination;
+    return await persistPhotoUriStrict(uri, accountKey, memoryId);
   } catch (error) {
     console.warn("[photo-persistence] 照片复制失败，保留原 URI：", error);
     return uri;
@@ -77,14 +89,14 @@ export async function persistPhotoUri(uri: string): Promise<string> {
 }
 
 /** 并发 3 地持久化一组 URI（规范 §10：禁止裸 Promise.all 并发）。 */
-export async function persistPhotoUris(uris: readonly string[]): Promise<string[]> {
+export async function persistPhotoUris(uris: readonly string[], accountKey: string, memoryId: string): Promise<string[]> {
   const results = new Array<string>(uris.length);
   let cursor = 0;
   const worker = async () => {
     while (cursor < uris.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await persistPhotoUri(uris[index]);
+      results[index] = await persistPhotoUri(uris[index], accountKey, memoryId);
     }
   };
   const workers: Promise<void>[] = [];
@@ -108,6 +120,37 @@ function collectLayoutUris(layout: CanvasLayout): string[] {
   return uris;
 }
 
+function collectMemoryPhotoUris(memory: Memory): string[] {
+  const uris = memory.photoUris.slice();
+  if (memory.coverImage) uris.push(memory.coverImage);
+  for (const page of memory.pages) {
+    if (page.photoUri) uris.push(page.photoUri);
+    if (page.layout) uris.push(...collectLayoutUris(page.layout));
+  }
+  return uris;
+}
+
+export function findMigratedLegacyPhotoUris(before: Memory, after: Memory): string[] {
+  const remaining = new Set(collectMemoryPhotoUris(after));
+  return [...new Set(collectMemoryPhotoUris(before))]
+    .filter((uri) => isLegacySandboxPhotoUri(uri) && !remaining.has(uri));
+}
+
+export async function cleanupMigratedLegacyPhotoUris(
+  candidates: readonly string[],
+  memories: readonly Memory[],
+): Promise<void> {
+  const referenced = new Set(memories.flatMap(collectMemoryPhotoUris));
+  for (const uri of new Set(candidates)) {
+    if (!isLegacySandboxPhotoUri(uri) || referenced.has(uri)) continue;
+    try {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+    } catch (error) {
+      console.warn("[photo-persistence] 无法清理已迁移的旧照片：", error);
+    }
+  }
+}
+
 /**
  * 持久化一个记忆内全部照片 URI（页面布局 image 元素、封面图、photoUris 列表），
  * 替换映射写回。返回持久化后的记忆与是否发生过变更。
@@ -115,18 +158,11 @@ function collectLayoutUris(layout: CanvasLayout): string[] {
  */
 export async function ensureMemoryPhotosPersisted(
   memory: Memory,
+  accountKey: string,
 ): Promise<{ memory: Memory; changed: boolean }> {
-  const allUris = memory.photoUris.slice();
-  for (const page of memory.pages) {
-    if (page.photoUri) {
-      allUris.push(page.photoUri);
-    }
-    if (page.layout) {
-      allUris.push(...collectLayoutUris(page.layout));
-    }
-  }
+  const allUris = collectMemoryPhotoUris(memory);
   const uniqueUris = [...new Set(allUris)];
-  const persisted = await persistPhotoUris(uniqueUris);
+  const persisted = await persistPhotoUris(uniqueUris, accountKey, memory.id);
   const uriMap = new Map<string, string>();
   uniqueUris.forEach((uri, index) => {
     if (persisted[index] !== uri) {
@@ -155,6 +191,7 @@ export async function ensureMemoryPhotosPersisted(
   return {
     memory: {
       ...memory,
+      coverImage: replace(memory.coverImage),
       photoUris: memory.photoUris.map((uri) => replace(uri) ?? uri),
       pages,
     },
