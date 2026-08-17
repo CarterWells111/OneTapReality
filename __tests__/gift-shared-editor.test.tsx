@@ -21,8 +21,9 @@ jest.mock("../src/services/backend/api-client", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text } = require("react-native");
-  return { BookCanvasEditor: ({ pages, onPagesChange }: any) => <>
+  return { BookCanvasEditor: ({ pages, onActivePageChange, onPagesChange }: any) => <>
     <Text testID="canvas-pages">{JSON.stringify(pages)}</Text>
+    <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "p2", index: 1 })} />
     <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
     <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
     <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
@@ -57,6 +58,7 @@ describe("SharedAlbumEditor", () => {
     const onPublished = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add local photo"));
+    fireEvent.press(screen.getByText("report second page"));
     fireEvent.press(screen.getByText("发布新版本"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-1"));
@@ -68,7 +70,7 @@ describe("SharedAlbumEditor", () => {
     ]);
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
     expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
-    expect(onPublished).toHaveBeenCalled();
+    expect(onPublished).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
   });
 
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
@@ -138,7 +140,8 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-two", uploads: [
       { position: 0, uploadUrl: "https://upload.test/a" }, { position: 1, uploadUrl: "https://upload.test/b" },
     ], coverUpload: null });
-    render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    const onPublished = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add two local photos"));
     fireEvent.press(screen.getByText("发布新版本"));
     await waitFor(() => expect(reads.get("file:///a.jpg")).toBe(2));
@@ -147,19 +150,22 @@ describe("SharedAlbumEditor", () => {
     await waitFor(() => expect(screen.getByText("照片上传失败。")).toBeTruthy());
     expect(reads.get("file:///b.jpg")).toBe(1);
     expect(mockFinish).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
   });
 
   it("locks stale state after a version conflict and reloads", async () => {
     const { BackendApiError } = require("../src/services/backend/api-client");
     mockStart.mockRejectedValueOnce(new BackendApiError(409, "gift_album_version_conflict", "stale"));
     const onPublished = jest.fn();
-    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
+    const onReload = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} onReload={onReload} />);
     fireEvent.press(screen.getByText("发布新版本"));
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
     fireEvent.press(screen.getByText("发布新版本"));
     expect(mockStart).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByText("重新加载最新版"));
-    expect(onPublished).toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(onReload).toHaveBeenCalled();
   });
 
   it("clears editing when editor access is revoked and prevents duplicate submits", async () => {
