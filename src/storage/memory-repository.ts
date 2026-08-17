@@ -7,6 +7,7 @@ type MemoryRow = Omit<Memory, "photoUris" | "pages"> & {
   status?: MemoryStatus;
   coverColor?: string | null;
   coverImage?: string | null;
+  ownerAccountKey?: string | null;
 };
 type PhotoRow = { uri: string };
 type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string | null; layout_json: string | null };
@@ -23,6 +24,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       travelDate TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'saved',
       coverColor TEXT,
+      ownerAccountKey TEXT NOT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -54,8 +56,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     );
     CREATE INDEX IF NOT EXISTS city_collection_arrangements_city_position
       ON city_collection_arrangements (city, position);
-    CREATE UNIQUE INDEX IF NOT EXISTS city_collection_arrangements_one_featured_city
-      ON city_collection_arrangements (city) WHERE is_featured = 1;
+    DROP INDEX IF EXISTS city_collection_arrangements_one_featured_city;
   `);
 
   const columns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(memories)");
@@ -70,6 +71,10 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   if (!columns.some((column) => column.name === "coverImage")) {
     await db.execAsync("ALTER TABLE memories ADD COLUMN coverImage TEXT");
   }
+  if (!columns.some((column) => column.name === "ownerAccountKey")) {
+    await db.execAsync("ALTER TABLE memories ADD COLUMN ownerAccountKey TEXT");
+  }
+  await db.execAsync("CREATE INDEX IF NOT EXISTS memories_owner_updated_idx ON memories (ownerAccountKey, updatedAt);");
   const pageColumns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(story_pages)");
   if (!pageColumns.some((column) => column.name === "layout_json")) {
     await db.execAsync("ALTER TABLE story_pages ADD COLUMN layout_json TEXT");
@@ -106,51 +111,58 @@ async function hydrateMemory(db: SQLiteDatabase, row: MemoryRow): Promise<Memory
     row.id
   );
 
+  const { ownerAccountKey: _ownerAccountKey, ...memoryRow } = row;
   return {
-    ...row,
+    ...memoryRow,
     photoUris: photos.map((photo) => photo.uri),
     pages: pages.map(toStoryPage),
   };
 }
 
-export async function listMemories(db: SQLiteDatabase): Promise<Memory[]> {
+export async function listMemories(db: SQLiteDatabase, accountKey: string): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE status IS NULL OR (status <> ? AND status <> ?) ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE (status IS NULL OR (status <> ? AND status <> ?)) AND ownerAccountKey = ? ORDER BY updatedAt DESC",
     "draft",
-    "discarded"
+    "discarded",
+    accountKey,
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
 
 export async function getMemory(
   db: SQLiteDatabase,
-  id: string
+  id: string,
+  accountKey: string,
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE id = ? AND (status IS NULL OR status = ?)",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE id = ? AND (status IS NULL OR status = ?) AND ownerAccountKey = ?",
     id,
-    "saved"
+    "saved",
+    accountKey,
   );
   return row ? hydrateMemory(db, row) : null;
 }
 
 export async function getDraft(
   db: SQLiteDatabase,
-  id: string
+  id: string,
+  accountKey: string,
 ): Promise<Memory | null> {
   const row = await db.getFirstAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE id = ? AND status = ?",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     id,
-    "draft"
+    "draft",
+    accountKey,
   );
   return row ? hydrateMemory(db, row) : null;
 }
 
 /** 回收站：列出已丢弃的本机记忆，最近更新在前。 */
-export async function listDiscardedMemories(db: SQLiteDatabase): Promise<Memory[]> {
+export async function listDiscardedMemories(db: SQLiteDatabase, accountKey: string): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, createdAt, updatedAt FROM memories WHERE status = ? ORDER BY updatedAt DESC",
-    "discarded"
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE status = ? AND ownerAccountKey = ? ORDER BY updatedAt DESC",
+    "discarded",
+    accountKey,
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
@@ -159,33 +171,45 @@ export async function listDiscardedMemories(db: SQLiteDatabase): Promise<Memory[
 export async function restoreDiscardedMemory(
   db: SQLiteDatabase,
   id: string,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: string,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "saved",
     updatedAt,
     id,
-    "discarded"
+    "discarded",
+    accountKey,
   );
 }
 
-export async function saveMemory(db: SQLiteDatabase, memory: Memory) {
-  await insertMemory(db, memory, "saved");
+/** Internal maintenance view used to avoid deleting photos referenced by drafts or recycle-bin rows. */
+export async function listAllMemories(db: SQLiteDatabase, accountKey: string): Promise<Memory[]> {
+  const rows = await db.getAllAsync<MemoryRow>(
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE ownerAccountKey = ? ORDER BY updatedAt DESC",
+    accountKey,
+  );
+  return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
 
-export async function createDraft(db: SQLiteDatabase, memory: Memory) {
-  await insertMemory(db, memory, "draft");
+export async function saveMemory(db: SQLiteDatabase, memory: Memory, accountKey: string) {
+  await insertMemory(db, memory, "saved", accountKey);
+}
+
+export async function createDraft(db: SQLiteDatabase, memory: Memory, accountKey: string) {
+  await insertMemory(db, memory, "draft", accountKey);
 }
 
 async function insertMemory(
   db: SQLiteDatabase,
   memory: Memory,
-  status: MemoryStatus
+  status: MemoryStatus,
+  accountKey: string,
 ) {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt, coverColor, coverImage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO memories (id, title, city, travelDate, status, createdAt, updatedAt, coverColor, coverImage, ownerAccountKey) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       memory.id,
       memory.title,
       memory.city,
@@ -194,7 +218,8 @@ async function insertMemory(
       memory.createdAt,
       memory.updatedAt,
       memory.coverColor ?? null,
-      memory.coverImage ?? null
+      memory.coverImage ?? null,
+      accountKey,
     );
 
     for (const [position, uri] of memory.photoUris.entries()) {
@@ -213,28 +238,32 @@ async function insertMemory(
 export async function saveDraft(
   db: SQLiteDatabase,
   id: string,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: string,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "saved",
     updatedAt,
     id,
-    "draft"
+    "draft",
+    accountKey,
   );
 }
 
 export async function discardDraft(
   db: SQLiteDatabase,
   id: string,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: string,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "discarded",
     updatedAt,
     id,
-    "draft"
+    "draft",
+    accountKey,
   );
 }
 
@@ -260,14 +289,18 @@ async function writeStoryPages(
 
 export async function updateMemoryPages(
   db: SQLiteDatabase,
-  memory: Memory
+  memory: Memory,
+  accountKey: string,
 ) {
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      "UPDATE memories SET updatedAt = ? WHERE id = ?",
+    const owned = await db.runAsync(
+      "UPDATE memories SET updatedAt = ?, coverImage = ? WHERE id = ? AND ownerAccountKey = ?",
       memory.updatedAt,
-      memory.id
+      memory.coverImage ?? null,
+      memory.id,
+      accountKey,
     );
+    if (owned.changes === 0) return;
     await db.runAsync("DELETE FROM story_pages WHERE memory_id = ?", memory.id);
     await writeStoryPages(db, memory.id, memory.pages);
   });
@@ -277,9 +310,16 @@ export async function updateMemoryPages(
 export async function updateMemoryPhotos(
   db: SQLiteDatabase,
   memoryId: string,
-  uris: readonly string[]
+  uris: readonly string[],
+  accountKey: string,
 ) {
   await db.withTransactionAsync(async () => {
+    const owned = await db.getFirstAsync<{ id: string }>(
+      "SELECT id FROM memories WHERE id = ? AND ownerAccountKey = ?",
+      memoryId,
+      accountKey,
+    );
+    if (!owned) return;
     await db.runAsync("DELETE FROM memory_photos WHERE memory_id = ?", memoryId);
     for (const [position, uri] of uris.entries()) {
       await db.runAsync(
@@ -296,22 +336,36 @@ export async function updateMemoryPhotos(
 export async function discardMemory(
   db: SQLiteDatabase,
   id: string,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: string,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ?",
+    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "discarded",
     updatedAt,
     id,
-    "saved"
+    "saved",
+    accountKey,
   );
 }
 
-export async function deleteMemory(db: SQLiteDatabase, id: string) {
-  await db.runAsync("DELETE FROM memories WHERE id = ?", id);
+export async function deleteMemory(db: SQLiteDatabase, id: string, accountKey: string) {
+  await db.runAsync("DELETE FROM memories WHERE id = ? AND ownerAccountKey = ?", id, accountKey);
 }
 
-export async function clearMemories(db: SQLiteDatabase) {
-  await db.execAsync("DELETE FROM memories;");
+export async function clearMemories(db: SQLiteDatabase, accountKey: string) {
+  await db.runAsync("DELETE FROM memories WHERE ownerAccountKey = ?", accountKey);
+}
+
+export async function claimUnownedMemories(db: SQLiteDatabase, accountKey: string): Promise<number> {
+  let changes = 0;
+  await db.withTransactionAsync(async () => {
+    const result = await db.runAsync(
+      "UPDATE memories SET ownerAccountKey = ? WHERE ownerAccountKey IS NULL",
+      accountKey,
+    );
+    changes = result.changes;
+  });
+  return changes;
 }
 

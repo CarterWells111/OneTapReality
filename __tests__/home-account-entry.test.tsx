@@ -21,6 +21,8 @@ describe("home account entry", () => {
 
     fireEvent.press(screen.getByText("登录 / 注册"));
     expect(mockPush).toHaveBeenCalledWith("/login?returnTo=/" as never);
+    expect(screen.queryByText("创建纪念册")).toBeNull();
+    expect(screen.queryByText("从第一段旅程开始")).toBeNull();
   });
 
   it("shows the signed-in email and routes account management to My", () => {

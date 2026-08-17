@@ -30,7 +30,9 @@ type CanvasPageProps = {
   onPressBlank?: () => void;
   onInteractElement?: (id: string) => void;
   onSelectElement?: (id: string) => void;
+  onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
+  onTransformSettled?: () => void;
   interactive?: boolean;
   pageSide?: "left" | "right";
   width?: number;
@@ -45,7 +47,9 @@ export function CanvasPage({
   onPressBlank,
   onInteractElement,
   onSelectElement = () => undefined,
+  onTransformStart,
   onTransformEnd,
+  onTransformSettled,
   interactive = true,
   pageSide,
   width: requestedWidth,
@@ -115,7 +119,9 @@ export function CanvasPage({
           onInteract={onInteractElement}
           selectionContext={selectedElementId}
           onSelect={onSelectElement}
+          onTransformStart={interactive ? onTransformStart : undefined}
           onTransformEnd={interactive ? onTransformEnd : undefined}
+          onTransformSettled={interactive ? onTransformSettled : undefined}
         />
       ))}
     </Pressable>

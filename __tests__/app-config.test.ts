@@ -114,4 +114,17 @@ describe("Expo Router production origin", () => {
       env: { EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com" },
     }));
   });
+
+  it("keeps the local database and native application identity stable across build profiles", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const expoConfig = require("../app.json").expo;
+    const easConfig = require("../eas.json");
+    const rootLayout = fs.readFileSync(path.resolve(__dirname, "..", "src/app/_layout.tsx"), "utf8");
+
+    expect(rootLayout).toContain('databaseName="luyi.db"');
+    expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
+    expect(expoConfig.android.package).toBe("com.onetapreality.app");
+    expect(Object.keys(easConfig.build)).toEqual(expect.arrayContaining(["development", "development-android", "preview", "alpha", "production"]));
+  });
 });

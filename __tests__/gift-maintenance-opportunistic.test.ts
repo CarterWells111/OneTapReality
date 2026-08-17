@@ -9,6 +9,7 @@ const store: PrivateMediaStore = {
   getObjectMetadata: jest.fn(),
   objectExists: jest.fn(),
   deleteObjects: jest.fn(async () => undefined),
+  copyObject: jest.fn(async () => undefined),
 };
 
 describe("opportunistic gift maintenance", () => {

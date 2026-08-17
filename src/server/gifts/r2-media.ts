@@ -1,4 +1,4 @@
-import { DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CopyObjectCommand, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export type R2MediaConfig = {
@@ -14,6 +14,7 @@ export type PrivateMediaStore = {
   getObjectMetadata: (objectKey: string) => Promise<{ contentType: string; byteSize: number } | null>;
   objectExists: (objectKey: string) => Promise<boolean>;
   deleteObjects: (objectKeys: string[], options?: { abortSignal?: AbortSignal }) => Promise<void>;
+  copyObject: (sourceKey: string, destinationKey: string) => Promise<void>;
 };
 
 const signedUrlLifetimeSeconds = 10 * 60;
@@ -64,6 +65,9 @@ export function createR2MediaStore(config: R2MediaConfig): PrivateMediaStore {
       if (result.Errors?.length) {
         throw new Error(`R2 deletion failed for ${result.Errors.length} object${result.Errors.length === 1 ? "" : "s"}`);
       }
+    },
+    async copyObject(sourceKey, destinationKey) {
+      await client.send(new CopyObjectCommand({ Bucket: config.bucket, CopySource: `${config.bucket}/${encodeURIComponent(sourceKey).replace(/%2F/gu, "/")}`, Key: destinationKey }));
     },
   };
 }

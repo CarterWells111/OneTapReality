@@ -1,20 +1,9 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import * as React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { cityContent } from "../features/cities/city-content";
-import { headingFontFamily } from "../features/typography/fonts";
+import { createLegacyLayout } from "../features/canvas/canvas-layout";
+import { CanvasPage } from "../features/canvas/canvas-page";
 import type { Memory } from "../types/memory";
-
-/** 书封面配色：以品牌米白纸感为主，见 docs/DECISIONS.md。 */
-const bookColors = {
-  cover: "#EFE2CF",
-  spine: "#D8CFC4",
-  spineEdge: "#C4B8A9",
-  ink: "#2F2A26",
-  accentLine: "#B56B52",
-  meta: "#56708A",
-} as const;
-
-const serifFont = headingFontFamily;
 
 type MemoryBookCoverProps = {
   memory: Memory;
@@ -32,8 +21,11 @@ export function MemoryBookCover({
   selected = false,
   onLongPress,
 }: MemoryBookCoverProps) {
-  const city = cityContent[memory.city];
-  const showCoverImage = !!memory.coverImage;
+  const [coverWidth, setCoverWidth] = React.useState(160);
+  const firstPage = memory.pages[0];
+  const firstPageLayout = firstPage
+    ? firstPage.layout ?? createLegacyLayout(firstPage)
+    : null;
 
   return (
     <View style={styles.bookSlot}>
@@ -46,30 +38,26 @@ export function MemoryBookCover({
             onLongPress();
           }
         }}
+        onLayout={(event) => {
+          const width = event.nativeEvent.layout.width;
+          if (width > 0 && width !== coverWidth) setCoverWidth(width);
+        }}
         style={({ pressed }) => [
           styles.book,
-          !showCoverImage && memory.coverColor ? { backgroundColor: memory.coverColor } : null,
-          !showCoverImage && !memory.coverColor ? { backgroundColor: bookColors.cover } : null,
           pressed && styles.pressed,
         ]}
       >
-        {/* 封面自定义背景图 */}
-        {showCoverImage ? (
-          <Image source={{ uri: memory.coverImage }} style={styles.coverImage} />
-        ) : null}
-        <View style={styles.spine}>
-          <View style={styles.spineEdge} />
-        </View>
-        <View style={[styles.coverBody, showCoverImage && styles.coverBodyOverlay]}>
-          <View style={styles.titleBlock}>
-            <Text numberOfLines={3} selectable style={[styles.title, showCoverImage && styles.titleOnImage]}>{memory.title}</Text>
-            <View style={[styles.accentLine, showCoverImage && styles.accentLineOnImage]} />
+        {firstPageLayout ? (
+          <View pointerEvents="none" style={styles.canvas}>
+            <CanvasPage
+              height={(coverWidth * 4) / 3}
+              interactive={false}
+              layout={firstPageLayout}
+              pageSide="right"
+              width={coverWidth}
+            />
           </View>
-          <View>
-            <Text numberOfLines={1} selectable style={[styles.meta, showCoverImage && styles.metaOnImage]}>{city.name} · {memory.travelDate}</Text>
-            <Text selectable style={[styles.meta, showCoverImage && styles.metaOnImage]}>{memory.photoUris.length} 张照片</Text>
-          </View>
-        </View>
+        ) : <View style={styles.emptyCover} />}
       </Pressable>
       {/* 多选勾选框 */}
       {multiSelect ? (
@@ -85,40 +73,13 @@ const styles = StyleSheet.create({
   bookSlot: { width: "48.5%" },
   book: {
     aspectRatio: 3 / 4,
-    borderBottomRightRadius: 10,
-    borderTopRightRadius: 10,
-    flexDirection: "row",
+    backgroundColor: "#EFE2CF",
+    borderRadius: 10,
     overflow: "hidden",
     width: "100%",
   },
-  coverImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  spine: { backgroundColor: bookColors.spine, flexDirection: "row", width: 9 },
-  spineEdge: { backgroundColor: bookColors.spineEdge, marginLeft: "auto", width: 1.5 },
-  coverBody: {
-    flex: 1,
-    justifyContent: "space-between",
-    paddingBottom: 12,
-    paddingHorizontal: 12,
-    paddingTop: 16,
-  },
-  coverBodyOverlay: {
-    backgroundColor: "rgba(0,0,0,0.18)",
-  },
-  titleBlock: { gap: 8 },
-  title: {
-    color: bookColors.ink,
-    fontFamily: serifFont,
-    fontSize: 17,
-    fontWeight: "700",
-    lineHeight: 23,
-  },
-  titleOnImage: { color: "#FFFFFF" },
-  accentLine: { backgroundColor: bookColors.accentLine, height: 2, width: 26 },
-  accentLineOnImage: { backgroundColor: "rgba(255,255,255,0.7)" },
-  meta: { color: bookColors.meta, fontSize: 11.5, lineHeight: 17 },
-  metaOnImage: { color: "rgba(255,255,255,0.85)" },
+  canvas: { ...StyleSheet.absoluteFillObject },
+  emptyCover: { backgroundColor: "#EFE2CF", flex: 1 },
   pressed: { opacity: 0.85 },
   checkCircle: {
     alignItems: "center",

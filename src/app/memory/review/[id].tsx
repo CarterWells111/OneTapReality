@@ -25,6 +25,7 @@ export default function DraftReviewScreen() {
   const {
     discardDraft,
     getDraftById,
+    persistSelectedPhoto,
     retryDraft,
     saveDraft,
     updateDraftPages,
@@ -263,6 +264,7 @@ export default function DraftReviewScreen() {
           <BookCanvasEditor
             onPagesChange={changePages}
             pages={draft.pages}
+            persistSelectedPhoto={(uri) => persistSelectedPhoto(draft.id, uri)}
           />
 
           <AutosaveStatus

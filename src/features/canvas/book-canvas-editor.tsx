@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as ImagePicker from "expo-image-picker";
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,14 +48,15 @@ import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
-import { persistPhotoUri } from "../memories/photo-persistence";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
 type BookCanvasEditorProps = {
   onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
+  onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
+  persistSelectedPhoto?: (uri: string) => Promise<string>;
 };
 
 function buildCanvasId(prefix: string) {
@@ -63,7 +65,9 @@ function buildCanvasId(prefix: string) {
 
 export function BookCanvasEditor({
   onPagesChange,
+  onTransformPendingChange,
   pages,
+  persistSelectedPhoto,
 }: BookCanvasEditorProps) {
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
@@ -105,6 +109,19 @@ export function BookCanvasEditor({
     }
     onPagesChange(nextPages, reason);
   }, [onPagesChange, pages, pushState]);
+
+  const persistPickedPhoto = React.useCallback(async (uri: string) => {
+    if (!persistSelectedPhoto) return uri;
+    try {
+      return await persistSelectedPhoto(uri);
+    } catch {
+      Alert.alert(
+        "照片保存失败",
+        "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+      );
+      return null;
+    }
+  }, [persistSelectedPhoto]);
 
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
     if (!pendingTextId || !currentPage) {
@@ -250,8 +267,8 @@ export function BookCanvasEditor({
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      // 复制进沙盒，避免重启后 URI 失效
-      const uri = await persistPhotoUri(result.assets[0].uri);
+      const uri = await persistPickedPhoto(result.assets[0].uri);
+      if (!uri) return;
       const nextId = buildCanvasId("image");
       changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
       setSelectedElementId(nextId);
@@ -355,6 +372,8 @@ export function BookCanvasEditor({
                   handleElementInteraction(elementId);
                   updateElement(elementId, patch, "transform");
                 }}
+                onTransformSettled={() => onTransformPendingChange?.(false)}
+                onTransformStart={() => onTransformPendingChange?.(true)}
                 pageSide={isRightPage ? "right" : "left"}
                 selectedElementId={selectedElementId}
                 width={pageWidth}
@@ -603,7 +622,8 @@ export function BookCanvasEditor({
                     quality: 0.8,
                   });
                   if (!result.canceled && result.assets[0]) {
-                    const uri = await persistPhotoUri(result.assets[0].uri);
+                    const uri = await persistPickedPhoto(result.assets[0].uri);
+                    if (!uri) return;
                     changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, uri), "structure");
                   }
                 }}

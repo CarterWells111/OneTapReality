@@ -90,7 +90,7 @@ export default function MemoriesHomeScreen() {
         </Text>
         <Text selectable style={styles.subtitle}>选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。</Text>
         <View style={styles.heroActions}>
-          <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
+          {user ? <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} /> : null}
           <AppButton
             disabled={!isAuthReady}
             label="我的纪念品"
@@ -102,13 +102,13 @@ export default function MemoriesHomeScreen() {
             }}
           />
         </View>
-        <Pressable
+        {user ? <Pressable
           accessibilityRole="button"
           onPress={() => router.push({ pathname: "/memory/[id]", params: { id: sampleMemory.id } })}
           style={({ pressed }) => [styles.heroLink, pressed && styles.pressed]}
         >
           <Text selectable style={styles.heroLinkText}>先翻一册杭州示例 ›</Text>
-        </Pressable>
+        </Pressable> : null}
       </PaperCard>
 
       {isAuthReady ? (
@@ -127,7 +127,7 @@ export default function MemoriesHomeScreen() {
         </PaperCard>
       ) : null}
 
-      <Section
+      {user ? <Section
         title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}
         caption="MY TRAVEL ALBUMS"
       >
@@ -205,7 +205,7 @@ export default function MemoriesHomeScreen() {
             <AppButton label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
           </PaperCard>
         )}
-      </Section>
+      </Section> : null}
 
       <Pressable
         accessibilityRole="button"

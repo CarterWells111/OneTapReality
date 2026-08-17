@@ -11,12 +11,13 @@ import type { Memory, StoryPage } from "../../../types/memory";
 export default function EditMemoryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getDraftById, getMemoryById, updatePages } = useMemories();
+  const { getDraftById, getMemoryById, persistSelectedPhoto, updatePages } = useMemories();
   const savedMemory = getMemoryById(id);
   const [loadedDraft, setLoadedDraft] = React.useState<Memory | null>(null);
   const memory = savedMemory ?? loadedDraft ?? undefined;
   const [pages, setPages] = React.useState<StoryPage[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isTransformPending, setIsTransformPending] = React.useState(false);
 
   React.useEffect(() => {
     if (savedMemory) {
@@ -66,10 +67,12 @@ export default function EditMemoryScreen() {
       </Text>
       <BookCanvasEditor
         onPagesChange={(nextPages) => setPages(nextPages)}
+        onTransformPendingChange={setIsTransformPending}
         pages={pages}
+        persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
       />
       <AppButton
-        disabled={isSaving}
+        disabled={isSaving || isTransformPending}
         label={isSaving ? "正在保存…" : "保存画布"}
         onPress={() => void save()}
       />
