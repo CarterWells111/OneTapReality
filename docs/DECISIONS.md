@@ -1,5 +1,11 @@
 # 决策记录
 
+## 2026-08-17：共享相册协作进入主线并取代旧 Beta 候选排除规则
+
+经本次明确批准，共享相册封面、成员首次激活与读写协作作为同一功能链合并进入 `main`，对应不可变迁移依次为 `0008_shared_album_covers`、`0009_gift_member_activations` 与 `0010_shared_album_collaboration`。本决策取代 2026-08-16“相册封面不得进入同一 Beta 候选、预留为 `0009_shared_album_covers`”的旧排除与编号规则；尚未实施的 `0008_database_phase2` 不得再占用或改写这些已经进入主线的迁移编号，后续数据库维护必须从当前 journal 末尾另建迁移。
+
+这次代码合并不等于执行数据库迁移、构建 EAS/TestFlight、部署 staging/production 或扩大测试范围；这些外部写入仍保持各自审批与环境隔离门禁。
+
 ## 2026-08-17：本地相册新选照片必须先持久化再进入画布
 
 本地相册与草稿编辑器新选择的普通照片和封面图片，必须先复制到当前规范化账号键与相册 ID 对应的应用 `Documents` 目录；复制成功后才允许写入 Canvas 页面状态。复制失败时显示原生弹窗，保持画布不变，不得把 ImagePicker 临时 URI 写入 SQLite。现有整册持久化继续作为旧数据迁移和防御性兜底，不能代替选择时的严格复制。共享礼品编辑继续使用其私有 R2 发布流程，不绑定接收方的本地相册目录。卸载、换设备或 Bundle ID 变化仍不在本地保留保证范围内。
@@ -38,6 +44,34 @@
 - 客户端：发布页增加封面选择；“我的纪念品”卡片显示封面缩略图并支持 `open=<giftId>` 自动打开相册封面页；只读相册页改为“封面态 → 打开相册 → 阅读态（复用 PageReader/CanvasPage）”，返回键回到列表；NFC 入口对受邀且有相册的用户重定向到 `/gifts?open=<giftId>`。
 - 阅读器按页面图片元素数量顺序把相册 `media` 映射进页面布局，映射不上的图片省略；不修复“仅 layout 图片无 photoUri 不进入媒体”的既有问题。
 - 不引入新第三方服务、支付或分析，沿用现有 R2/统一邮箱会话架构。
+## 2026-08-16：Staging TestFlight 内部演练
+
+为让获准的 iOS 内部成员通过 TestFlight 安装真实 NFC 测试包，新增 EAS `staging-testflight` store 分发与同名 submit profile。`staging-testflight` 只连接 staging API：该构建显式使用 EAS `preview` environment，并以内联值把客户端 API 固定为 `https://api-staging.onetapreality.com`；沿用现有 App Store Connect 应用和 Bundle ID，但不访问 production API、数据库、R2 或礼品。发起构建前只读核对 `preview` 环境变量名称，不得含 production origin 或客户端不应持有的服务端 Secret。
+
+- `alpha` 保留为登记 UDID 后通过 EAS 链接安装的 ad-hoc 路径；`staging-testflight` 是通过 App Store Connect 内部群组安装的路径。两者只用于同一组 staging 三卡与 P0 演练，不互相冒充 production 验收。
+- 环境隔离、本地质量门禁和 iOS 静态预检通过后，可由发布负责人单独批准其中一种 staging 原生构建。EAS 云端构建与 App Store Connect 提交是两个独立审批点；配置 PR 不执行任一操作。
+- `staging-testflight` 脚本强制两段式运行：没有 `--no-submit` 的首次构建会被拒绝，提交阶段必须提供已经核验并再次批准的 build ID。
+- submit profile 固定绑定现有内部测试群组 `OneTapReality开发员测试`。该目标群组已启用自动分发；提交前必须确认它仍是唯一启用自动分发的内部群组，其他内部群组均须关闭自动分发。不得新建或改选群组、添加外部测试者，亦不得点击 App Store 的公开审核或发布操作。
+- 获准的 staging 内部 TestFlight 安装不代表 production 或公开 App Store 放行。三卡、完整礼品生命周期和 P0 演练未通过前，仍禁止 production 写卡、收款、发货和扩大测试范围。
+
+## 2026-08-16：首批 iOS Beta 实体卡准入
+
+四周 Beta 计划的第 1–2 周仅支持 iPhone / iOS。准入以 iOS Universal Links、EAS `alpha` 原生构建、三张 staging NFC 样卡和 iPhone 真机完整礼品生命周期为准；Android App Links、release SHA-256、`assetlinks.json` 和 Android 真机测试在第 3–4 周重新评估并保持非阻塞 Backlog，未经新决策不得自动纳入发布。本轮不得宣称 Android 已完成，但 Android 未完成不阻断前两周 iOS Beta。
+
+- staging 基础设施、iOS AASA、Resend、白名单与礼品 URL 来源沿用已经核实的脱敏证据；实体卡只写 `staging.onetapreality.com`。
+- EAS `alpha` 或 `staging-testflight` 构建、`staging-testflight` 提交、staging 写入、P0 开关演练、production 礼品预登记和部署仍分别审批；production Railway 自动部署保持关闭。
+- 本地质量门禁和 iOS 预检通过后，可单独批准生成并安装仅用于 staging 演练的首个 `alpha` 内部构建，或生成并经另一项批准提交 `staging-testflight` 内部构建，以完成实体卡前置测试；这不等于 production、公开 App Store 或扩大测试成员的放行。
+- 三张样卡分别使用脱敏编号 `IOS-STG-001`、`IOS-STG-002`、`IOS-STG-003`。记录不得包含完整 URL、token、验证码、邮箱、照片或 Secret。
+- 四项本地质量门禁、本地 iOS 预检、三卡写入/读回/锁屏碰卡、完整礼品生命周期、环境隔离和 P0 演练全部通过后，才允许申请首批 5 套 production 写卡、production TestFlight 或扩大测试成员的审批。
+
+## 2026-08-16：Beta 发布准备与数据库迁移顺序
+
+首批 Beta 候选从执行时最新 `origin/main` 建立独立工作树，只纳入已经核实的 staging 脱敏证据以及后续 P0/P1 修复。当前主工作树中未提交的相册封面功能、数据库维护第二阶段和其他 P2+ 功能不得进入同一个 Beta 候选版本，也不得通过脏工作树构建 EAS 或 TestFlight 包。
+
+- 数据库维护第二阶段继续独占 `0008_database_phase2`，在单独分支、单独 PR、单独备份/恢复验证和单独生产审批中发布。
+- 相册封面功能只能在第二阶段迁移之后重新基线化，迁移编号固定为 `0009_shared_album_covers`；其 Drizzle journal、snapshot 和 schema 必须基于已经包含 `0008_database_phase2` 的分支重新生成，不能只改 SQL 文件名。
+- Beta 候选保持当前已发布 schema 7 契约，不包含上述两个 migration；首批 5 套稳定前不把数据库维护或相册封面与客户端候选捆绑发布。
+- 本地整理、测试与只读配置核对不触发云端构建。push、PR、GitHub 运维 Issue、Railway 变量写入、EAS 构建、TestFlight、数据库迁移和部署仍分别审批。
 
 ## 2026-08-06：App Link 网页引导页（web fallback）
 

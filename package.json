@@ -86,6 +86,7 @@
     "start:server": "node --require dotenv/config server.cjs",
     "verify:backend": "node scripts/verify-backend.cjs",
     "check:lockfile": "node scripts/check-release-lockfile.cjs",
+    "beta:preflight:ios": "node scripts/check-ios-beta-readiness.cjs",
     "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",

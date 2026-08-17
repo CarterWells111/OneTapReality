@@ -1,6 +1,6 @@
 # iOS TestFlight 发布手册
 
-从任意平台（含 Windows）用 EAS 云端构建 iOS production 包并提交到 App Store Connect，再经 TestFlight 分发。
+从任意平台（含 Windows）用 EAS 云端构建 iOS production 或 staging 内部测试包，提交到 App Store Connect 后再经 TestFlight 分发。
 
 本文与 `scripts/release-ios-testflight.cjs` 配套：脚本负责全部可自动化的步骤，本文说明前置条件、权限边界，以及必须由人完成的部分。所有固定值以仓库内 `app.json` / `eas.json` 为准，**不要照抄本文之外的旧指南**。
 
@@ -24,6 +24,34 @@ node scripts/release-ios-testflight.cjs
 
 环境变量 `EAS_CLI` 可固定 eas-cli 版本（默认 `eas-cli@latest`）。
 
+## Staging TestFlight 内部演练
+
+`staging-testflight` 是 store 分发签名，显式使用 EAS `preview` environment，并把客户端 API 固定为 `https://api-staging.onetapreality.com`。它只用于获准内部成员在真实 iPhone 上完成 staging NFC 三卡与 P0 演练，不得访问 production 数据或礼品。
+
+构建批准后、真正发起构建前，先做一次只读变量名审计（不要使用显示敏感值的参数，也不要把输出粘贴到 Issue 或聊天）：
+
+```powershell
+npx eas-cli@latest env:list --environment preview
+```
+
+确认没有 production API origin、数据库连接串、维护密钥、邮件密钥或其他客户端不应持有的服务端 Secret。此检查只核对变量名和可公开值；发现异常立即停止，不发起构建。
+
+云端构建与 App Store Connect 提交是两个独立审批点。批准构建后执行：
+
+```powershell
+node scripts/release-ios-testflight.cjs --profile=staging-testflight --no-submit
+```
+
+staging 必须严格使用两段式审批；省略 `--no-submit` 会被脚本拒绝，不会在一次运行中连续构建并提交。
+
+构建完成并核对 EAS 详情中的 profile、Bundle ID、版本和 staging origin 证据后，取得另一项提交批准，再使用上一步打印的真实 build ID：
+
+```powershell
+node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=<approved-build-id>
+```
+
+提交前确认 App Store Connect 已存在内部群组 `OneTapReality开发员测试`，且该目标群组已启用自动分发，并确认其他内部群组均未启用自动分发。submit profile 会自动加入 `OneTapReality开发员测试`；提交后只确认构建已出现，不得新建或改选群组，也不得添加外部测试者。测试说明写明 `Staging NFC card rehearsal`。不得点击 App Store 的公开审核或发布操作。本配置 PR 本身不运行以上命令。
+
 ## 脚本做了什么
 
 1. **仓库状态** — 工作区必须干净。EAS 归档的是工作目录，未提交的改动会一起打进包里。
@@ -32,9 +60,10 @@ node scripts/release-ios-testflight.cjs
 4. **lint / typecheck / test:ci / build:server** — 四道质量闸。
 5. **Expo 配置解析核对** — 用该 profile 的 `EXPO_PUBLIC_API_ORIGIN` 跑 `expo config`，核对 bundle ID、EAS projectId、expo-router origin 与出口合规字段是否与 `app.json` 一致。`app.config.ts` 在解析时注入 router origin，所以不带正确的环境变量跑出来的配置是错的。
 6. **EAS 账号与构建号** — `whoami` 确认登录，`build:version:get` 读取远端构建号（`appVersionSource: remote` + `autoIncrement`，构建号由 EAS 自增，不要手改）。
-7. **发起构建** — `eas build --platform ios --profile production --non-interactive --no-wait`。
+7. **发起构建** — `eas build --platform ios --profile <已批准的 profile> --non-interactive --no-wait`；staging 必须显式使用 `staging-testflight`。
 8. **轮询直到完成** — 每 30 秒查一次，最长 90 分钟。
-9. **提交** — `eas submit --id <build-id>`，使用存放在 EAS 服务器上的 App Store Connect API Key。
+9. **提交前身份校验** — 对 build ID 重新读取 EAS 元数据，只有项目、iOS 平台、store 分发、已完成状态和所选 profile 全部匹配时才继续。
+10. **提交** — `eas submit --id <build-id>`，使用存放在 EAS 服务器上的 App Store Connect API Key，并按 submit profile 绑定的固定内部群组分发。
 
 ### 为什么 lockfile 检查排在质量闸之前
 
@@ -59,7 +88,7 @@ node scripts/check-release-lockfile.cjs
 npx eas-cli@latest credentials --platform ios
 ```
 
-选 `production`，看列表里有没有 **App Store Connect API Key**。询问「是否登录 Apple 账号」时**选 No** —— 那一步走的是 Apple Developer Portal（管证书用），如果你的 Apple ID 不在开发者团队里会直接报 `You have no team associated with your Apple account`，而这跟提交能力无关。
+选准备使用的 profile，确认列表里已有 **App Store Connect API Key**。询问「是否登录 Apple 账号」时**选 No** —— 那一步走的是 Apple Developer Portal（管证书用），如果你的 Apple ID 不在开发者团队里会直接报 `You have no team associated with your Apple account`，而这跟提交能力无关。
 
 若尚未配置，需要 Apple 账户持有人**一次性**操作：
 
@@ -74,7 +103,7 @@ npx eas-cli@latest credentials --platform ios
 脚本跑完后，Apple 处理约 5–10 分钟，然后在 App Store Connect 里：
 
 1. **出口合规申报** — 按实际行为回答。本 App 的 `ITSAppUsesNonExemptEncryption` 为 `false`，只使用 HTTPS 与 Keychain/SecureStore（均属豁免），通常选「否」。
-2. **加入测试群组** — TestFlight → 内部测试 → 新建或选择群组 → 添加构建 → 填写「测试内容」。
+2. **确认测试群组** — `staging-testflight` 由 submit profile 自动加入 `OneTapReality开发员测试`，只能确认构建已出现，并确认除该目标群组外的其他内部群组均未启用自动分发；不得新建或改选群组。获批的 production 分发才按其独立发布计划选择群组。
 3. **内部测试员** 必须先是 App Store Connect 团队用户。以个人身份注册的 Apple 账户**可以**在 App Store Connect 添加用户，但这些用户不计入 Apple Developer Program 团队 —— 对内测来说够用。
 4. 内部测试**不需要**点击「添加以供审核」；外部测试的首个构建需要经过 TestFlight Beta 审核。
 
@@ -98,6 +127,6 @@ npx eas-cli@latest credentials --platform ios
 
 ## 与 Alpha 隔离验收的关系
 
-本流程产出的是**指向生产 API** 的 TestFlight beta（`production` profile 注入 `EXPO_PUBLIC_API_ORIGIN=https://api.onetapreality.com`）。
+`production` profile 产出指向 production API 的 TestFlight beta，不能用于 staging 隔离验收。`alpha` profile 指向 staging，且是 `distribution: internal` 的 ad-hoc 分发，技术上无法提交到 TestFlight。`staging-testflight` 则是 `distribution: store` 且只指向 staging API，可作为 [EXECUTION-CHECKLIST.md](../EXECUTION-CHECKLIST.md) 与 [ALPHA-STAGING.md](../operations/ALPHA-STAGING.md) 规定的受限内部演练安装路径。
 
-按 [EXECUTION-CHECKLIST.md](../EXECUTION-CHECKLIST.md) 的规定，它**不能**替代 Alpha 的独立 staging 隔离验收。`eas.json` 里的 `alpha` profile 指向 staging，且是 `distribution: internal`（ad-hoc 分发），**技术上无法提交到 TestFlight** —— TestFlight 只接受 App Store 分发（`distribution: store`，即省略该字段时的默认值）。若要做 staging 隔离的 TestFlight 内测，需要新增一个 store 分发且指向 staging 的 profile，并先完成 [ALPHA-STAGING.md](../operations/ALPHA-STAGING.md) 的全部前置条件。
+三种 profile 不得互换环境或省略名称：staging TestFlight 命令必须显式传入 `--profile=staging-testflight`。任何 staging 内部构建都不代表 production、外部 TestFlight 或公开 App Store 已放行。
