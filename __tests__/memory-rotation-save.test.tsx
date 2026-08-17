@@ -5,8 +5,12 @@ import type { Memory, StoryPage } from "../src/types/memory";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockBack = jest.fn();
+const mockReplace = jest.fn();
 const mockUpdatePages = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
+const mockGetMemoryEditDraft = jest.fn();
+const mockSaveMemoryEditDraft = jest.fn();
+const mockClearMemoryEditDraft = jest.fn();
 
 const mockPages: StoryPage[] = [{
   id: "page-1",
@@ -43,14 +47,21 @@ const mockMemory: Memory = {
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "memory-1" }),
-  useRouter: () => ({ back: mockBack }),
+  useRouter: () => ({ back: mockBack, replace: mockReplace }),
+}));
+
+jest.mock("../src/features/auth/auth-provider", () => ({
+  useAuth: () => ({ user: { email: "owner@example.com" } }),
 }));
 
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({
     getDraftById: jest.fn(),
+    clearMemoryEditDraft: mockClearMemoryEditDraft,
     getMemoryById: () => mockMemory,
+    getMemoryEditDraft: mockGetMemoryEditDraft,
     persistSelectedPhoto: mockPersistSelectedPhoto,
+    saveMemoryEditDraft: mockSaveMemoryEditDraft,
     updatePages: mockUpdatePages,
   }),
 }));
@@ -90,11 +101,15 @@ import EditMemoryScreen from "../src/app/memory/[id]/edit";
 describe("memory canvas rotation saving", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetMemoryEditDraft.mockResolvedValue(null);
+    mockSaveMemoryEditDraft.mockResolvedValue(undefined);
+    mockClearMemoryEditDraft.mockResolvedValue(undefined);
     mockUpdatePages.mockResolvedValue(undefined);
   });
 
   it("waits for the final rotation commit before saving the canvas", async () => {
     const screen = render(<EditMemoryScreen />);
+    await screen.findByText("begin rotation");
 
     fireEvent.press(screen.getByText("begin rotation"));
     await act(async () => {
@@ -114,6 +129,7 @@ describe("memory canvas rotation saving", () => {
   it("binds editor photo persistence to the current memory", async () => {
     mockPersistSelectedPhoto.mockResolvedValue("file:///permanent.jpg");
     const screen = render(<EditMemoryScreen />);
+    await screen.findByText("persist photo");
 
     fireEvent.press(screen.getByText("persist photo"));
 

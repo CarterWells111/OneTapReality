@@ -48,6 +48,7 @@ import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
+import { localDiagnostics } from "../diagnostics/local-diagnostics";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
@@ -59,6 +60,19 @@ type BookCanvasEditorProps = {
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
 };
+
+const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
+const MIN_FONT_SIZE = 2;
+const MAX_FONT_SIZE = 40;
+const DEFAULT_COVER_COLOR = "#EFE2CF";
+
+function resolveCoverColor(page: StoryPage | undefined) {
+  return page?.layout?.coverColor ?? page?.coverColor ?? DEFAULT_COVER_COLOR;
+}
+
+function isValidFontSize(value: number) {
+  return Number.isFinite(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
 
 type BookCanvasEditorLayerBufferProps = {
   current: StoryPage;
@@ -103,7 +117,7 @@ export function BookCanvasEditorLayerBuffer({
         {...(isCurrent ? currentCanvasProps : {})}
         height={pageHeight}
         interactive={isCurrent}
-        layout={page.layout!}
+        layout={isCurrent ? currentCanvasProps.layout : page.layout!}
         pageSide={isRight ? "right" : "left"}
         width={pageWidth}
       />
@@ -135,6 +149,15 @@ export function BookCanvasEditor({
   const turnGenerationRef = React.useRef(turnGeneration);
   const stableTurnGeneration = turnGenerationRef.current;
   const pagePanBlocked = useSharedValue(false);
+  const colorPreviewValue = useSharedValue("#000000");
+  const fontSizePreviewValue = useSharedValue(16);
+  const coverColorPreviewValue = useSharedValue(DEFAULT_COVER_COLOR);
+  const colorPreviewRef = React.useRef(colorPreviewValue);
+  const fontSizePreviewRef = React.useRef(fontSizePreviewValue);
+  const coverColorPreviewRef = React.useRef(coverColorPreviewValue);
+  const stableColorPreview = colorPreviewRef.current;
+  const stableFontSizePreview = fontSizePreviewRef.current;
+  const stableCoverColorPreview = coverColorPreviewRef.current;
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const activePageIdRef = React.useRef(pages[0]?.id);
   const activePageChangeRef = React.useRef(onActivePageChange);
@@ -166,12 +189,20 @@ export function BookCanvasEditor({
     activePageIdRef.current = currentPage.id;
   }
 
+  const initializeCoverPreview = React.useCallback((page: StoryPage | undefined) => {
+    stableCoverColorPreview.value = resolveCoverColor(page);
+  }, [stableCoverColorPreview]);
+
   React.useEffect(() => {
     if (currentIndex !== validCurrentIndex) {
       setCurrentIndex(validCurrentIndex);
       setSelectedElementId(undefined);
     }
   }, [currentIndex, validCurrentIndex]);
+
+  React.useEffect(() => {
+    initializeCoverPreview(currentPage);
+  }, [currentPage, currentPageId, initializeCoverPreview]);
 
   React.useEffect(() => {
     if (!currentPageId) {
@@ -260,6 +291,7 @@ export function BookCanvasEditor({
     stableTurnGeneration.value += 1;
     const targetIndex = pagesRef.current.findIndex((page) => page.id === targetPageId);
     if (targetIndex >= 0) {
+      initializeCoverPreview(pagesRef.current[targetIndex]);
       discardPendingText();
       setSelectedElementId(undefined);
       activePageIdRef.current = targetPageId;
@@ -268,7 +300,7 @@ export function BookCanvasEditor({
     setPendingTurn(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [discardPendingText, stableTurnGeneration, translateX, turnDir]);
+  }, [discardPendingText, initializeCoverPreview, stableTurnGeneration, translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
     .enabled(pendingTurn === null)
@@ -357,6 +389,67 @@ export function BookCanvasEditor({
     reason: BookEditorChangeReason,
   ) => {
     changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);
+  };
+
+  const commitElementColor = (elementId: string, color: string) => {
+    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    const normalizedColor = color.toUpperCase();
+    if (VALID_HEX_COLOR.test(normalizedColor) && element?.type === "text") {
+      if (normalizedColor === element.color.toUpperCase()) {
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: currentPage.id,
+          property: "color",
+        });
+        return;
+      }
+      updateElement(elementId, { color: normalizedColor }, "structure");
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: currentPage.id,
+        property: "color",
+      });
+      return;
+    }
+    stableColorPreview.value = element?.type === "text" ? element.color : "#000000";
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: currentPage.id,
+      property: "color",
+    });
+  };
+
+  const commitElementFontSize = (elementId: string, fontSize: number) => {
+    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    if (isValidFontSize(fontSize) && element?.type === "text") {
+      if (fontSize === element.fontSize) {
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: currentPage.id,
+          property: "fontSize",
+        });
+        return;
+      }
+      updateElement(elementId, { fontSize }, "structure");
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: currentPage.id,
+        property: "fontSize",
+      });
+      return;
+    }
+    stableFontSizePreview.value = element?.type === "text" ? element.fontSize : MIN_FONT_SIZE;
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: currentPage.id,
+      property: "fontSize",
+    });
   };
 
   const addSticker = (stickerId = getCanvasStickers(stickerCategory)[0]?.id ?? canvasStickers[0].id) => {
@@ -450,6 +543,7 @@ export function BookCanvasEditor({
             setPendingTurn(null);
             translateX.value = 0;
             turnDir.value = 0;
+            initializeCoverPreview(pages[index]);
             discardPendingText();
             setSelectedElementId(undefined);
             activePageIdRef.current = pages[index]?.id;
@@ -492,7 +586,15 @@ export function BookCanvasEditor({
                 },
                 onTransformSettled: () => onTransformPendingChange?.(false),
                 onTransformStart: () => onTransformPendingChange?.(true),
+                coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
+                  ? stableCoverColorPreview
+                  : undefined,
                 selectedElementId,
+                stylePreview: editingElement?.type === "text" && menuMode === "color"
+                  ? { color: stableColorPreview, elementId: editingElement.id }
+                  : editingElement?.type === "text" && menuMode === "size"
+                    ? { elementId: editingElement.id, fontSize: stableFontSizePreview }
+                    : undefined,
                 layout: currentPage.layout,
               }}
               currentIsRight={isRightPage}
@@ -533,6 +635,7 @@ export function BookCanvasEditor({
       {/* 上下文菜单：字体/字号/颜色面板，由工具栏按钮触发；关闭后回到文字编辑态 */}
       {menuMode !== null && editingElement?.type === "text" ? (
         <ElementContextMenu
+          colorPreview={stableColorPreview}
           element={editingElement}
           elementFrame={{
             x: editingElement.x * pageWidth,
@@ -540,10 +643,33 @@ export function BookCanvasEditor({
             width: editingElement.width * pageWidth,
             height: editingElement.height * pageHeight,
           }}
-          onChangeColor={(color) => updateElement(editingElement.id, { color }, "structure")}
-          onChangeFont={(fontStyle) => updateElement(editingElement.id, { fontStyle }, "structure")}
-          onChangeSize={(fontSize) => updateElement(editingElement.id, { fontSize }, "structure")}
-          onClose={() => setMenuMode(null)}
+          onCancelColor={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "color",
+            });
+          }}
+          onCancelSize={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "fontSize",
+            });
+          }}
+          onChangeColor={(color) => commitElementColor(editingElement.id, color)}
+          onChangeFont={(fontStyle) => {
+            updateElement(editingElement.id, { fontStyle }, "structure");
+          }}
+          onChangeSize={(fontSize) => commitElementFontSize(editingElement.id, fontSize)}
+          onClose={() => {
+            stableColorPreview.value = editingElement.color;
+            stableFontSizePreview.value = editingElement.fontSize;
+            setMenuMode(null);
+          }}
+          fontSizePreview={stableFontSizePreview}
           initialMode={menuMode}
           visible={true}
         />
@@ -561,6 +687,7 @@ export function BookCanvasEditor({
         }}
         onColor={() => {
           if (selectedElement?.type === "text") {
+            stableColorPreview.value = selectedElement.color;
             setMenuMode("color");
             setEditingElementId(selectedElement.id);
           }
@@ -596,6 +723,7 @@ export function BookCanvasEditor({
         onPickBackground={() => setAssetTrayMode("background")}
         onSize={() => {
           if (selectedElement?.type === "text") {
+            stableFontSizePreview.value = selectedElement.fontSize;
             setMenuMode("size");
             setEditingElementId(selectedElement.id);
           }
@@ -644,6 +772,7 @@ export function BookCanvasEditor({
               label="封面"
               onPress={() => {
                 discardPendingText();
+                initializeCoverPreview(currentPage);
                 setAssetTrayMode("cover");
               }}
             />
@@ -693,10 +822,40 @@ export function BookCanvasEditor({
         ) : assetTrayMode === "cover" ? (
           <View style={styles.coverTray}>
             <ColorPicker
-              value={currentPage.coverColor ?? "#EFE2CF"}
-              onChange={(hex) => {
-                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, hex), "structure");
+              value={resolveCoverColor(currentPage)}
+              onCancel={() => {
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "cancel",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
               }}
+              onCommit={(hex) => {
+                const normalizedColor = hex.toUpperCase();
+                if (!VALID_HEX_COLOR.test(normalizedColor)) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "cancel",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                if (normalizedColor === resolveCoverColor(currentPage).toUpperCase()) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "no_op",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, normalizedColor), "structure");
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "commit",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
+              }}
+              previewValue={stableCoverColorPreview}
             />
             <View style={styles.coverImageRow}>
               <Pressable

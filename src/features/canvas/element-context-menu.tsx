@@ -8,7 +8,14 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { canvasFonts } from "./canvas-assets";
@@ -22,7 +29,11 @@ type ElementContextMenuProps = {
   elementFrame: { x: number; y: number; width: number; height: number } | null;
   onChangeFont: (fontStyle: string) => void;
   onChangeSize: (fontSize: number) => void;
+  onCancelSize?: () => void;
+  fontSizePreview?: SharedValue<number>;
   onChangeColor: (color: string) => void;
+  onCancelColor?: () => void;
+  colorPreview?: SharedValue<string>;
   onClose: () => void;
   /** 初始面板模式。工具栏按钮可传入对应模式直达目标面板。 */
   initialMode?: MenuMode;
@@ -59,7 +70,11 @@ export function ElementContextMenu({
   elementFrame,
   onChangeFont,
   onChangeSize,
+  onCancelSize,
+  fontSizePreview,
   onChangeColor,
+  onCancelColor,
+  colorPreview,
   onClose,
   initialMode,
 }: ElementContextMenuProps) {
@@ -124,7 +139,9 @@ export function ElementContextMenu({
               <Text style={styles.modeTitle}>选择字号</Text>
             </View>
             <FontSizeSlider
+              onCancel={onCancelSize}
               onChange={onChangeSize}
+              previewValue={fontSizePreview}
               value={element.fontSize}
             />
           </View>
@@ -152,9 +169,11 @@ export function ElementContextMenu({
               </View>
               <Text style={styles.presetLabel}>自定义颜色</Text>
               <ColorPicker
+                onCancel={onCancelColor}
                 scrollRef={colorScrollRef}
                 value={element.color}
-                onChange={(hex) => onChangeColor(hex)}
+                onCommit={onChangeColor}
+                previewValue={colorPreview}
               />
             </ScrollView>
           </View>
@@ -189,46 +208,95 @@ export function ElementContextMenu({
  * - 数字输入：本地 draft 状态，输入时只改草稿，失焦时校验并提交。
  */
 function FontSizeSlider({
+  onCancel,
   onChange,
+  previewValue,
   value,
 }: {
+  onCancel?: () => void;
   onChange: (size: number) => void;
+  previewValue?: SharedValue<number>;
   value: number;
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const TRACK_WIDTH = Math.min(windowWidth - 100, 300);
-  const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value));
-  const fraction = (clamped - FONT_SIZE_MIN) / (FONT_SIZE_MAX - FONT_SIZE_MIN);
-  const thumbLeft = fraction * (TRACK_WIDTH - 24);
+  const clamped = Number.isFinite(value)
+    ? Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value))
+    : FONT_SIZE_MIN;
   // 数字输入的本地草稿：输入过程中不被外部 value 重置
   const [draft, setDraft] = React.useState(String(clamped));
-  const trackWidthRef = React.useRef(TRACK_WIDTH);
-  trackWidthRef.current = TRACK_WIDTH;
+  const changeRef = React.useRef(onChange);
+  changeRef.current = onChange;
+  const cancelRef = React.useRef(onCancel);
+  cancelRef.current = onCancel;
+  const localPreviewValue = useSharedValue(clamped);
+  const localPreviewRef = React.useRef(localPreviewValue);
+  const stablePreviewValue = previewValue ?? localPreviewRef.current;
+  const gestureStartValue = useSharedValue(clamped);
+  const gestureStartRef = React.useRef(gestureStartValue);
+  const stableGestureStart = gestureStartRef.current;
+  const submittedDraftRef = React.useRef(false);
 
   // 外部变化（拖动进度条）同步到草稿
   React.useEffect(() => {
     setDraft(String(clamped));
-  }, [clamped]);
+    stablePreviewValue.value = clamped;
+  }, [clamped, stablePreviewValue]);
 
-  const applyPosition = (positionX: number) => {
-    const ratio = Math.max(0, Math.min(1, positionX / trackWidthRef.current));
+  const emitGestureCommit = React.useCallback((size: number) => {
+    if (Number.isFinite(size) && size >= FONT_SIZE_MIN && size <= FONT_SIZE_MAX) {
+      changeRef.current(size);
+    }
+  }, []);
+  const emitGestureCancel = React.useCallback(() => {
+    cancelRef.current?.();
+  }, []);
+
+  const previewPosition = (positionX: number) => {
+    "worklet";
+    const ratio = Math.max(0, Math.min(1, positionX / TRACK_WIDTH));
     const size = Math.round(FONT_SIZE_MIN + ratio * (FONT_SIZE_MAX - FONT_SIZE_MIN));
-    onChange(size);
+    stablePreviewValue.value = size;
   };
 
   const pan = Gesture.Pan()
     .onBegin((event) => {
-      applyPosition(event.x);
+      stableGestureStart.value = stablePreviewValue.value;
+      previewPosition(event.x);
     })
     .onUpdate((event) => {
-      applyPosition(event.x);
+      previewPosition(event.x);
+    })
+    .onFinalize((_event, success) => {
+      if (success === false) {
+        stablePreviewValue.value = stableGestureStart.value;
+        runOnJS(emitGestureCancel)();
+        return;
+      }
+      runOnJS(emitGestureCommit)(stablePreviewValue.value);
     });
 
-  const commitDraft = () => {
+  const fillStyle = useAnimatedStyle(() => {
+    const ratio = (stablePreviewValue.value - FONT_SIZE_MIN) / (FONT_SIZE_MAX - FONT_SIZE_MIN);
+    return { width: Math.max(0, Math.min(1, ratio)) * (TRACK_WIDTH - 24) + 12 };
+  });
+
+  const thumbStyle = useAnimatedStyle(() => {
+    const ratio = (stablePreviewValue.value - FONT_SIZE_MIN) / (FONT_SIZE_MAX - FONT_SIZE_MIN);
+    return { transform: [{ translateX: Math.max(0, Math.min(1, ratio)) * (TRACK_WIDTH - 24) }] };
+  });
+
+  const commitDraft = (source: "blur" | "submit") => {
+    if (source === "blur" && submittedDraftRef.current) {
+      submittedDraftRef.current = false;
+      return;
+    }
+    submittedDraftRef.current = source === "submit";
     const parsed = parseInt(draft, 10);
     if (!Number.isNaN(parsed)) {
       const size = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, parsed));
-      onChange(size);
+      stablePreviewValue.value = size;
+      changeRef.current(size);
       setDraft(String(size));
     } else {
       setDraft(String(clamped));
@@ -243,13 +311,14 @@ function FontSizeSlider({
           accessibilityLabel="输入字号"
           keyboardType="number-pad"
           maxLength={2}
-          onBlur={commitDraft}
+          onBlur={() => commitDraft("blur")}
           onChangeText={(text) => {
             if (/^\d*$/.test(text)) {
+              submittedDraftRef.current = false;
               setDraft(text);
             }
           }}
-          onSubmitEditing={commitDraft}
+          onSubmitEditing={() => commitDraft("submit")}
           selectTextOnFocus
           style={sliderStyles.numberInput}
           value={draft}
@@ -262,9 +331,9 @@ function FontSizeSlider({
           style={sliderStyles.sliderTrackWrapper}
           testID="font-size-slider">
           <View style={[sliderStyles.sliderTrack, { width: TRACK_WIDTH }]}>
-            <View style={[sliderStyles.sliderFill, { width: thumbLeft + 12 }]} />
+            <Animated.View style={[sliderStyles.sliderFill, fillStyle]} />
           </View>
-          <View style={[sliderStyles.sliderThumb, { transform: [{ translateX: thumbLeft }] }]} />
+          <Animated.View style={[sliderStyles.sliderThumb, thumbStyle]} />
         </View>
       </GestureDetector>
       <View style={sliderStyles.marksRow}>

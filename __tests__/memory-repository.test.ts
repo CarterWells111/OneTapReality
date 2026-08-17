@@ -25,6 +25,17 @@ type MemoryRow = {
   updatedAt: string;
 };
 
+type StoryPageRow = {
+  id: string;
+  memory_id: string;
+  position: number;
+  kind: "cover" | "photo" | "closing";
+  headline: string;
+  body: string;
+  photo_uri: string | null;
+  layout_json: string | null;
+};
+
 type FakeMemoryDatabase = {
   database: SQLiteDatabase;
   execStatements: string[];
@@ -60,6 +71,7 @@ function createMemoryDatabase(options?: {
   ];
   const execStatements: string[] = [];
   const runCalls: Array<{ statement: string; parameters: unknown[] }> = [];
+  const storyPages: StoryPageRow[] = [];
 
   const selectMemories = (statement: string, parameters: unknown[]) => {
     const id = statement.includes("WHERE id = ?")
@@ -87,6 +99,11 @@ function createMemoryDatabase(options?: {
     if (statement.includes("FROM memories")) {
       return selectMemories(statement, parameters) as T[];
     }
+    if (statement.includes("FROM story_pages")) {
+      return storyPages
+        .filter((page) => page.memory_id === parameters[0])
+        .sort((left, right) => left.position - right.position) as T[];
+    }
     return [] as T[];
   };
 
@@ -111,6 +128,19 @@ function createMemoryDatabase(options?: {
           status: parameters[4] as MemoryRow["status"],
           createdAt: String(parameters[5]),
           updatedAt: String(parameters[6]),
+        });
+      }
+
+      if (statement.startsWith("INSERT INTO story_pages")) {
+        storyPages.push({
+          id: String(parameters[0]),
+          memory_id: String(parameters[1]),
+          position: Number(parameters[2]),
+          kind: parameters[3] as StoryPageRow["kind"],
+          headline: String(parameters[4]),
+          body: String(parameters[5]),
+          photo_uri: parameters[6] === null ? null : String(parameters[6]),
+          layout_json: parameters[7] === null ? null : String(parameters[7]),
         });
       }
 
@@ -297,5 +327,28 @@ describe("memory draft lifecycle repository", () => {
 
     const pageInsert = runCalls.find((call) => call.statement.startsWith("INSERT INTO story_pages"));
     expect(pageInsert?.parameters).toContain('{"aspectRatio":1,"elements":[]}');
+  });
+
+  it("round trips a formal full-bleed canvas element without shrinking it", async () => {
+    const { database } = createMemoryDatabase();
+    await saveMemory(database, {
+      ...draftMemory,
+      id: "full-bleed-memory",
+      pages: [{
+        id: "full-bleed-page",
+        position: 0,
+        kind: "photo",
+        headline: "Full bleed",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          elements: [{ id: "hero", type: "image", uri: "file:///hero.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }],
+        },
+      }],
+    }, accountKey);
+
+    const restored = await getMemory(database, "full-bleed-memory", accountKey);
+
+    expect(restored?.pages[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 });

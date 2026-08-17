@@ -6,6 +6,17 @@ let completePageTurn: ((finished: boolean) => void) | undefined;
 const mockMounts = new Map<string, number>();
 const mockUnmounts = new Map<string, number>();
 const mockCanvasProps = new Map<string, Record<string, unknown>>();
+const mockCanvasRenderSnapshots: Array<{
+  coverColor?: string;
+  id: string;
+  interactive?: boolean;
+}> = [];
+let mockColorPickerProps: Record<string, unknown> | undefined;
+const mockEmitDiagnostic = jest.fn();
+
+jest.mock("../src/features/diagnostics/local-diagnostics", () => ({
+  localDiagnostics: { emit: (...args: unknown[]) => mockEmitDiagnostic(...args) },
+}));
 
 jest.mock("react-native-gesture-handler", () => {
   const React = require("react") as typeof import("react");
@@ -43,10 +54,23 @@ jest.mock("../src/features/canvas/canvas-page", () => ({
     const React = require("react") as typeof import("react");
     const id = props.layout.backgroundId!;
     mockCanvasProps.set(id, props as unknown as Record<string, unknown>);
+    const canvasProps = props as unknown as Record<string, unknown>;
+    mockCanvasRenderSnapshots.push({
+      coverColor: (canvasProps.coverColorPreview as { value?: string } | undefined)?.value,
+      id,
+      interactive: canvasProps.interactive as boolean | undefined,
+    });
     React.useEffect(() => {
       mockMounts.set(id, (mockMounts.get(id) ?? 0) + 1);
       return () => { mockUnmounts.set(id, (mockUnmounts.get(id) ?? 0) + 1); };
     }, [id]);
+    return null;
+  },
+}));
+
+jest.mock("../src/components/ColorPicker", () => ({
+  ColorPicker: (props: Record<string, unknown>) => {
+    mockColorPickerProps = props;
     return null;
   },
 }));
@@ -68,8 +92,124 @@ describe("BookCanvasEditor page buffer", () => {
     mockMounts.clear();
     mockUnmounts.clear();
     mockCanvasProps.clear();
+    mockCanvasRenderSnapshots.length = 0;
     finalizePageTurn = undefined;
     completePageTurn = undefined;
+    mockColorPickerProps = undefined;
+  });
+
+  it("renders a transient cover color only on the current canvas and commits it once", () => {
+    const onPagesChange = jest.fn();
+    const coverPage: StoryPage = {
+      ...page("p1", 0),
+      kind: "cover",
+      layout: {
+        ...page("p1", 0).layout!,
+        coverColor: "#EFE2CF",
+      },
+    };
+    const screen = render(
+      <BookCanvasEditor pages={[coverPage, page("p2", 1)]} onPagesChange={onPagesChange} />,
+    );
+
+    fireEvent.press(screen.getByText("封面"));
+    const previewValue = mockColorPickerProps?.previewValue as { value: string } | undefined;
+    expect(previewValue).toBeDefined();
+    expect(mockColorPickerProps?.onPreview).toBeUndefined();
+    expect(mockCanvasProps.get("p1")?.coverColorPreview).toBe(previewValue);
+    act(() => { previewValue!.value = "#123456"; });
+
+    expect(onPagesChange).not.toHaveBeenCalled();
+    expect(previewValue?.value).toBe("#123456");
+
+    act(() => finalizePageTurn?.({ translationX: -100, velocityX: -700 }));
+    expect(mockCanvasProps.get("p2")?.coverColorPreview).toBeUndefined();
+
+    mockEmitDiagnostic.mockClear();
+    act(() => {
+      (mockColorPickerProps?.onCancel as (() => void) | undefined)?.();
+    });
+    expect(onPagesChange).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      outcome: "cancel",
+      pageId: "p1",
+      property: "coverColor",
+    });
+
+    act(() => {
+      (mockColorPickerProps?.onCommit as ((color: string) => void) | undefined)?.("#efe2cf");
+    });
+    expect(onPagesChange).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      outcome: "no_op",
+      pageId: "p1",
+      property: "coverColor",
+    });
+
+    act(() => {
+      (mockColorPickerProps?.onCommit as ((color: string) => void) | undefined)?.("#123456");
+    });
+    expect(onPagesChange).toHaveBeenCalledTimes(1);
+    const committedPages = onPagesChange.mock.calls[0][0] as StoryPage[];
+    expect(committedPages[0].layout?.coverColor).toBe("#123456");
+    expect(mockEmitDiagnostic).toHaveBeenLastCalledWith("style_transaction_finalized", {
+      outcome: "commit",
+      pageId: "p1",
+      property: "coverColor",
+    });
+  });
+
+  it("opens the cover picker with a restored layout-only color without committing a change", () => {
+    const onPagesChange = jest.fn();
+    const restoredCover: StoryPage = {
+      ...page("p1", 0),
+      kind: "cover",
+      layout: {
+        ...page("p1", 0).layout!,
+        coverColor: "#345678",
+      },
+    };
+    const screen = render(
+      <BookCanvasEditor pages={[restoredCover]} onPagesChange={onPagesChange} />,
+    );
+
+    fireEvent.press(screen.getByText("封面"));
+
+    expect(mockColorPickerProps?.value).toBe("#345678");
+    expect((mockCanvasProps.get("p1")?.coverColorPreview as { value?: string } | undefined)?.value).toBe("#345678");
+    expect(onPagesChange).not.toHaveBeenCalled();
+  });
+
+  it("initializes a promoted cover preview before its first current render", async () => {
+    const coverPage = (id: string, position: number, coverColor: string): StoryPage => ({
+      ...page(id, position),
+      coverColor,
+      kind: "cover",
+      layout: { ...page(id, position).layout!, coverColor },
+    });
+    const screen = render(
+      <BookCanvasEditor
+        pages={[
+          coverPage("p1", 0, "#112233"),
+          coverPage("p2", 1, "#445566"),
+        ]}
+        onPagesChange={() => undefined}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("封面"));
+    act(() => finalizePageTurn?.({ translationX: -100, velocityX: -700 }));
+    mockCanvasRenderSnapshots.length = 0;
+
+    await act(async () => {
+      completePageTurn?.(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const firstCurrentRender = mockCanvasRenderSnapshots.find(
+      (snapshot) => snapshot.id === "p2" && snapshot.interactive === true,
+    );
+    expect(firstCurrentRender?.coverColor).toBe("#445566");
   });
 
   it("keeps the incoming canvas mounted when it becomes current", async () => {
