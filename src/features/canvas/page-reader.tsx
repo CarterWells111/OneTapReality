@@ -16,6 +16,15 @@ import type { StoryPage } from "../../types/memory";
 
 const serifFont = headingFontFamily;
 
+function clampPageIndex(index: number, pageCount: number) {
+  return Math.max(0, Math.min(index, Math.max(0, pageCount - 1)));
+}
+
+function resolveRestoredIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
+  const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
+  return idIndex >= 0 ? idIndex : clampPageIndex(fallbackIndex, pages.length);
+}
+
 type PageReaderLayerBufferProps = {
   current: StoryPage;
   currentIsRight: boolean;
@@ -74,27 +83,73 @@ export function PageReaderLayerBuffer({
  * 只读的左右滑动翻页阅读器：整页滑出后再切换，无回弹。
  * 编辑能力交给 BookCanvasEditor，这里只用于查看样本与已保存旅行册。
  */
-export function PageReader({ pages }: { pages: StoryPage[] }) {
+type PageReaderProps = {
+  fallbackIndex?: number;
+  initialPageId?: string;
+  pages: StoryPage[];
+};
+
+export function PageReader({ fallbackIndex = 0, initialPageId, pages }: PageReaderProps) {
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(width - 40, 280), 360);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
-  const [index, setIndex] = React.useState(0);
-  const [pending, setPending] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const turnGeneration = useSharedValue(0);
+  const turnGenerationRef = React.useRef(turnGeneration);
+  const stableTurnGeneration = turnGenerationRef.current;
+  const initialIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
+  const [activePageId, setActivePageId] = React.useState(pages[initialIndex]?.id);
+  const [pending, setPending] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
+  const restorationRef = React.useRef({ fallbackIndex, initialPageId });
+  const pagesRef = React.useRef(pages);
+  pagesRef.current = pages;
+
+  const activeIndex = activePageId ? pages.findIndex((page) => page.id === activePageId) : -1;
+  const index = activeIndex >= 0 ? activeIndex : clampPageIndex(fallbackIndex, pages.length);
 
   React.useEffect(() => {
-    if (index >= pages.length) {
-      setIndex(Math.max(0, pages.length - 1));
-    }
-  }, [index, pages.length]);
+    const restorationChanged = restorationRef.current.initialPageId !== initialPageId
+      || restorationRef.current.fallbackIndex !== fallbackIndex;
+    restorationRef.current = { fallbackIndex, initialPageId };
 
-  const commit = React.useCallback((targetIndex: number) => {
-    setIndex(targetIndex);
+    if (restorationChanged) {
+      stableTurnGeneration.value += 1;
+      const restoredIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
+      setActivePageId(pages[restoredIndex]?.id);
+      setPending(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+      return;
+    }
+
+    if (activeIndex < 0) {
+      setActivePageId(pages[clampPageIndex(fallbackIndex, pages.length)]?.id);
+    }
+    if (pending && !pages.some((page) => page.id === pending.targetPageId)) {
+      stableTurnGeneration.value += 1;
+      setPending(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+    }
+  }, [activeIndex, fallbackIndex, initialPageId, pages, pending, stableTurnGeneration, translateX, turnDir]);
+
+  React.useEffect(() => () => {
+    stableTurnGeneration.value += 1;
+  }, [stableTurnGeneration]);
+
+  const commit = React.useCallback((targetPageId: string, generation: number) => {
+    if (generation !== stableTurnGeneration.value) {
+      return;
+    }
+    stableTurnGeneration.value += 1;
+    if (pagesRef.current.some((page) => page.id === targetPageId)) {
+      setActivePageId(targetPageId);
+    }
     setPending(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [translateX, turnDir]);
+  }, [stableTurnGeneration, translateX, turnDir]);
 
   const pan = React.useMemo(() => Gesture.Pan()
     .enabled(pending === null)
@@ -114,21 +169,27 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
         velocityX: event.velocityX,
       });
       if (decision.shouldTurn && decision.direction !== 0) {
+        stableTurnGeneration.value += 1;
+        const generation = stableTurnGeneration.value;
         turnDir.value = decision.direction;
-        runOnJS(setPending)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        const targetPageId = pages[decision.targetIndex]?.id;
+        if (!targetPageId) {
+          return;
+        }
+        runOnJS(setPending)({ direction: decision.direction, generation, targetPageId });
         translateX.value = withTiming(
           -decision.direction * pageWidth,
           { duration: 260 },
           (finished) => {
             if (finished) {
-              runOnJS(commit)(decision.targetIndex);
+              runOnJS(commit)(targetPageId, generation);
             }
           },
         );
       } else {
         translateX.value = withTiming(0, { duration: 160 });
       }
-    }), [commit, index, pageWidth, pages.length, pending, translateX, turnDir]);
+    }), [commit, index, pageWidth, pages, pending, stableTurnGeneration, translateX, turnDir]);
 
   const currentStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -138,14 +199,17 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
   }));
 
   const current = pages[index] ?? pages[0];
-  const incoming = pending ? pages[pending.targetIndex] : undefined;
+  const incomingIndex = pending
+    ? pages.findIndex((page) => page.id === pending.targetPageId)
+    : -1;
+  const incoming = incomingIndex >= 0 ? pages[incomingIndex] : undefined;
 
   if (!current) {
     return null;
   }
 
   const isRightPage = index % 2 === 0;
-  const incomingIsRight = pending ? pending.targetIndex % 2 === 0 : false;
+  const incomingIsRight = incomingIndex >= 0 ? incomingIndex % 2 === 0 : false;
 
   return (
     <View style={styles.reader}>

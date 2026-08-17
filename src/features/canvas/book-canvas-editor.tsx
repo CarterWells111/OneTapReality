@@ -53,17 +53,74 @@ import type { StoryPage } from "../../types/memory";
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
 type BookCanvasEditorProps = {
+  onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
   onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
   onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
 };
 
+type BookCanvasEditorLayerBufferProps = {
+  current: StoryPage;
+  currentCanvasProps: React.ComponentProps<typeof CanvasPage>;
+  currentIsRight: boolean;
+  currentStyle: React.ComponentProps<typeof Animated.View>["style"];
+  incoming?: StoryPage;
+  incomingIsRight?: boolean;
+  incomingStyle: React.ComponentProps<typeof Animated.View>["style"];
+  pageHeight: number;
+  pageWidth: number;
+};
+
+export function BookCanvasEditorLayerBuffer({
+  current,
+  currentCanvasProps,
+  currentIsRight,
+  currentStyle,
+  incoming,
+  incomingIsRight = false,
+  incomingStyle,
+  pageHeight,
+  pageWidth,
+}: BookCanvasEditorLayerBufferProps) {
+  const layers = [
+    { isCurrent: true, isRight: currentIsRight, page: current, style: currentStyle },
+    ...(incoming ? [{ isCurrent: false, isRight: incomingIsRight, page: incoming, style: incomingStyle }] : []),
+  ];
+
+  return layers.map(({ isCurrent, isRight, page, style }) => (
+    <Animated.View
+      key={page.id}
+      pointerEvents={isCurrent ? "auto" : "none"}
+      style={[
+        styles.pageShadow,
+        styles.pageLayer,
+        isRight ? styles.rightPageShadow : styles.leftPageShadow,
+        style,
+      ]}
+      testID={isCurrent ? "book-page" : "book-page-incoming"}>
+      <CanvasPage
+        {...(isCurrent ? currentCanvasProps : {})}
+        height={pageHeight}
+        interactive={isCurrent}
+        layout={page.layout!}
+        pageSide={isRight ? "right" : "left"}
+        width={pageWidth}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.spine, isRight ? styles.spineLeft : styles.spineRight]}
+      />
+    </Animated.View>
+  ));
+}
+
 function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function BookCanvasEditor({
+  onActivePageChange,
   onPagesChange,
   onTransformPendingChange,
   pages,
@@ -74,9 +131,18 @@ export function BookCanvasEditor({
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
+  const turnGeneration = useSharedValue(0);
+  const turnGenerationRef = React.useRef(turnGeneration);
+  const stableTurnGeneration = turnGenerationRef.current;
   const pagePanBlocked = useSharedValue(false);
   const [currentIndex, setCurrentIndex] = React.useState(0);
-  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const activePageIdRef = React.useRef(pages[0]?.id);
+  const activePageChangeRef = React.useRef(onActivePageChange);
+  const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
+  const pagesRef = React.useRef(pages);
+  pagesRef.current = pages;
+  activePageChangeRef.current = onActivePageChange;
+  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
   const [menuMode, setMenuMode] = React.useState<"font" | "size" | "color" | null>(null); // 打开的面板；null = 文字编辑态
@@ -88,14 +154,51 @@ export function BookCanvasEditor({
     onPagesChange(restoredPages, "structure");
   });
 
+  const activePageIndex = activePageIdRef.current
+    ? pages.findIndex((page) => page.id === activePageIdRef.current)
+    : -1;
+  const validCurrentIndex = activePageIndex >= 0
+    ? activePageIndex
+    : Math.min(currentIndex, Math.max(0, pages.length - 1));
+  const currentPage = pages[validCurrentIndex];
+  const currentPageId = currentPage?.id;
+  if (currentPage && activePageIndex < 0) {
+    activePageIdRef.current = currentPage.id;
+  }
+
   React.useEffect(() => {
-    if (currentIndex >= pages.length) {
-      setCurrentIndex(Math.max(0, pages.length - 1));
+    if (currentIndex !== validCurrentIndex) {
+      setCurrentIndex(validCurrentIndex);
       setSelectedElementId(undefined);
     }
-  }, [currentIndex, pages.length]);
+  }, [currentIndex, validCurrentIndex]);
 
-  const currentPage = pages[currentIndex] ?? pages[0];
+  React.useEffect(() => {
+    if (!currentPageId) {
+      return;
+    }
+    const cursor = { pageId: currentPageId, index: validCurrentIndex };
+    const lastCursor = lastReportedCursorRef.current;
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) {
+      return;
+    }
+    lastReportedCursorRef.current = cursor;
+    activePageChangeRef.current?.(cursor);
+  }, [currentPageId, validCurrentIndex]);
+
+  React.useEffect(() => {
+    if (pendingTurn && !pages.some((page) => page.id === pendingTurn.targetPageId)) {
+      stableTurnGeneration.value += 1;
+      setPendingTurn(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+    }
+  }, [pages, pendingTurn, stableTurnGeneration, translateX, turnDir]);
+
+  React.useEffect(() => () => {
+    stableTurnGeneration.value += 1;
+  }, [stableTurnGeneration]);
+
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
@@ -150,14 +253,22 @@ export function BookCanvasEditor({
     discardPendingText();
   }, [discardPendingText, pendingTextId]);
 
-  const commitTurn = React.useCallback((targetIndex: number) => {
-    discardPendingText();
-    setSelectedElementId(undefined);
-    setCurrentIndex(targetIndex);
+  const commitTurn = React.useCallback((targetPageId: string, generation: number) => {
+    if (generation !== stableTurnGeneration.value) {
+      return;
+    }
+    stableTurnGeneration.value += 1;
+    const targetIndex = pagesRef.current.findIndex((page) => page.id === targetPageId);
+    if (targetIndex >= 0) {
+      discardPendingText();
+      setSelectedElementId(undefined);
+      activePageIdRef.current = targetPageId;
+      setCurrentIndex(targetIndex);
+    }
     setPendingTurn(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [discardPendingText, translateX, turnDir]);
+  }, [discardPendingText, stableTurnGeneration, translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
     .enabled(pendingTurn === null)
@@ -176,8 +287,8 @@ export function BookCanvasEditor({
       if (pagePanBlocked.value) {
         return;
       }
-      const outsideStart = (currentIndex === 0 && event.translationX > 0)
-        || (currentIndex === pages.length - 1 && event.translationX < 0);
+      const outsideStart = (validCurrentIndex === 0 && event.translationX > 0)
+        || (validCurrentIndex === pages.length - 1 && event.translationX < 0);
       translateX.value = outsideStart ? event.translationX * 0.22 : event.translationX;
     })
     .onFinalize((event) => {
@@ -187,21 +298,27 @@ export function BookCanvasEditor({
         return;
       }
       const decision = resolvePageTurn({
-        currentIndex,
+        currentIndex: validCurrentIndex,
         pageCount: pages.length,
         pageWidth,
         translationX: event.translationX,
         velocityX: event.velocityX,
       });
       if (decision.shouldTurn && decision.direction !== 0) {
+        const targetPageId = pages[decision.targetIndex]?.id;
+        if (!targetPageId) {
+          return;
+        }
+        stableTurnGeneration.value += 1;
+        const generation = stableTurnGeneration.value;
         turnDir.value = decision.direction;
-        runOnJS(setPendingTurn)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        runOnJS(setPendingTurn)({ direction: decision.direction, generation, targetPageId });
         translateX.value = withTiming(
           -decision.direction * pageWidth,
           { duration: 260 },
           (finished) => {
             if (finished) {
-              runOnJS(commitTurn)(decision.targetIndex);
+              runOnJS(commitTurn)(targetPageId, generation);
             }
           },
         );
@@ -210,13 +327,14 @@ export function BookCanvasEditor({
       }
     }), [
       commitTurn,
-      currentIndex,
+      validCurrentIndex,
       pageHeight,
       pagePanBlocked,
       pageWidth,
-      pages.length,
+      pages,
       pendingTurn,
       selectedElement,
+      stableTurnGeneration,
       translateX,
       turnDir,
     ]);
@@ -288,9 +406,12 @@ export function BookCanvasEditor({
     setSelectedElementId(undefined);
   };
 
-  const isRightPage = currentIndex % 2 === 0;
-  const incomingPage = pendingTurn ? pages[pendingTurn.targetIndex] : undefined;
-  const incomingIsRight = pendingTurn ? pendingTurn.targetIndex % 2 === 0 : false;
+  const isRightPage = validCurrentIndex % 2 === 0;
+  const incomingIndex = pendingTurn
+    ? pages.findIndex((page) => page.id === pendingTurn.targetPageId)
+    : -1;
+  const incomingPage = incomingIndex >= 0 ? pages[incomingIndex] : undefined;
+  const incomingIsRight = incomingIndex >= 0 ? incomingIndex % 2 === 0 : false;
 
   return (
     <View style={styles.editor}>
@@ -325,8 +446,13 @@ export function BookCanvasEditor({
           onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
           onClose={() => setManagerOpen(false)}
           onJumpToPage={(index) => {
+            stableTurnGeneration.value += 1;
+            setPendingTurn(null);
+            translateX.value = 0;
+            turnDir.value = 0;
             discardPendingText();
             setSelectedElementId(undefined);
+            activePageIdRef.current = pages[index]?.id;
             setCurrentIndex(index);
           }}
           pages={pages}
@@ -336,25 +462,17 @@ export function BookCanvasEditor({
       <View style={styles.bookStage}>
         <GestureDetector gesture={pagePan}>
           <View style={{ height: pageHeight, width: pageWidth }}>
-            <Animated.View
-              style={[
-                styles.pageShadow,
-                styles.pageLayer,
-                isRightPage ? styles.rightPageShadow : styles.leftPageShadow,
-                currentPageStyle,
-              ]}
-              testID="book-page">
-              <CanvasPage
-                height={pageHeight}
-                layout={currentPage.layout}
-                onInteractElement={handleElementInteraction}
-                onPressBlank={() => {
+            <BookCanvasEditorLayerBuffer
+              current={currentPage}
+              currentCanvasProps={{
+                onInteractElement: handleElementInteraction,
+                onPressBlank: () => {
                   discardPendingText();
                   setSelectedElementId(undefined);
                   setEditingElementId(undefined);
                   setMenuMode(null);
-                }}
-                onSelectElement={(id) => {
+                },
+                onSelectElement: (id) => {
                   // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
                   // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
                   if (pendingTextId !== undefined && id !== pendingTextId) {
@@ -367,51 +485,24 @@ export function BookCanvasEditor({
                   }
                   setSelectedElementId(id);
                   // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
-                }}
-                onTransformEnd={(elementId, patch) => {
+                },
+                onTransformEnd: (elementId, patch) => {
                   handleElementInteraction(elementId);
                   updateElement(elementId, patch, "transform");
-                }}
-                onTransformSettled={() => onTransformPendingChange?.(false)}
-                onTransformStart={() => onTransformPendingChange?.(true)}
-                pageSide={isRightPage ? "right" : "left"}
-                selectedElementId={selectedElementId}
-                width={pageWidth}
-              />
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.spine,
-                  isRightPage ? styles.spineLeft : styles.spineRight,
-                ]}
-              />
-            </Animated.View>
-
-            {incomingPage?.layout ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.pageShadow,
-                  styles.pageLayer,
-                  incomingIsRight ? styles.rightPageShadow : styles.leftPageShadow,
-                  incomingPageStyle,
-                ]}>
-                <CanvasPage
-                  height={pageHeight}
-                  interactive={false}
-                  layout={incomingPage.layout}
-                  pageSide={incomingIsRight ? "right" : "left"}
-                  width={pageWidth}
-                />
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.spine,
-                    incomingIsRight ? styles.spineLeft : styles.spineRight,
-                  ]}
-                />
-              </Animated.View>
-            ) : null}
+                },
+                onTransformSettled: () => onTransformPendingChange?.(false),
+                onTransformStart: () => onTransformPendingChange?.(true),
+                selectedElementId,
+                layout: currentPage.layout,
+              }}
+              currentIsRight={isRightPage}
+              currentStyle={currentPageStyle}
+              incoming={incomingPage?.layout ? incomingPage : undefined}
+              incomingIsRight={incomingIsRight}
+              incomingStyle={incomingPageStyle}
+              pageHeight={pageHeight}
+              pageWidth={pageWidth}
+            />
           </View>
         </GestureDetector>
       </View>

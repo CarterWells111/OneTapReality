@@ -53,6 +53,10 @@ Resolve the initial/current index by exact ID, otherwise clamp `fallbackIndex ??
 
 Run the Task 1 Jest command and expect both suites to pass.
 
+- [ ] **Step 5: Preserve the editor Canvas across page-turn commit**
+
+Add a failing mount-count test proving the incoming editor `CanvasPage` is not unmounted when it becomes current, and an interaction test proving the buffered incoming page receives no selection/transform handlers. Render editor layers from one sibling list keyed by `page.id`; keep the existing animation styles and enable handlers only for the current layer. Run the Task 1 Jest command and expect all tests to pass.
+
 ### Task 2: Restore local album page after save
 
 **Files:**

@@ -36,6 +36,19 @@ function EditorHarness({ onChange = () => undefined, persistSelectedPhoto }: {
   }} />;
 }
 
+function CursorHarness({ onActivePageChange }: {
+  onActivePageChange: jest.Mock;
+}) {
+  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
+  return (
+    <BookCanvasEditor
+      pages={currentPages}
+      onActivePageChange={onActivePageChange}
+      onPagesChange={(nextPages) => setCurrentPages(nextPages)}
+    />
+  );
+}
+
 const editorLabel = "编辑选中文字";
 const stickerCategory = "贴纸 2";
 const stickerChoice = "添加贴纸 2-01";
@@ -139,6 +152,97 @@ describe("BookCanvasEditor", () => {
     expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
     expect(screen.getByTestId("page-cell-0")).toBeTruthy();
     expect(screen.getByTestId("page-cell-1")).toBeTruthy();
+  });
+
+  it("reports the stable page cursor after jumping to a page from page management", () => {
+    const onActivePageChange = jest.fn();
+    const screen = render(<CursorHarness onActivePageChange={onActivePageChange} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    fireEvent.press(screen.getAllByText("打开")[1]);
+
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-2", index: 1 });
+  });
+
+  it("reports only a valid consistent cursor when pages shrink past the active index", () => {
+    const onActivePageChange = jest.fn();
+    const threePages = canvasPages([
+      ...pages,
+      { id: "page-3", position: 2, kind: "photo", headline: "Third page", body: "Third body" },
+    ]);
+    const view = render(
+      <BookCanvasEditor
+        pages={threePages}
+        onActivePageChange={onActivePageChange}
+        onPagesChange={() => undefined}
+      />,
+    );
+
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[2]);
+    onActivePageChange.mockClear();
+
+    view.rerender(
+      <BookCanvasEditor
+        pages={threePages.slice(0, 1)}
+        onActivePageChange={onActivePageChange}
+        onPagesChange={() => undefined}
+      />,
+    );
+
+    expect(onActivePageChange).toHaveBeenCalledTimes(1);
+    expect(onActivePageChange).toHaveBeenCalledWith({ pageId: "page-1", index: 0 });
+  });
+
+  it("keeps the active page by id across reorder and clamps its old index only after deletion", () => {
+    const onActivePageChange = jest.fn();
+    const threePages = canvasPages([
+      ...pages,
+      { id: "page-3", position: 2, kind: "photo", headline: "Third page", body: "Third body" },
+    ]);
+    const view = render(
+      <BookCanvasEditor pages={threePages} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[1]);
+    onActivePageChange.mockClear();
+
+    const reordered = [threePages[1], threePages[0], threePages[2]];
+    view.rerender(
+      <BookCanvasEditor pages={reordered} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-2", index: 0 });
+
+    onActivePageChange.mockClear();
+    view.rerender(
+      <BookCanvasEditor pages={reordered.slice(1)} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-1", index: 0 });
+  });
+
+  it("deduplicates cursor notifications while retaining the latest callback", () => {
+    const firstCallback = jest.fn();
+    const latestCallback = jest.fn();
+    const initialPages = canvasPages(pages);
+    const view = render(
+      <BookCanvasEditor pages={initialPages} onActivePageChange={firstCallback} onPagesChange={() => undefined} />,
+    );
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+
+    view.rerender(
+      <BookCanvasEditor
+        pages={[{ ...initialPages[0], headline: "Updated" }, initialPages[1]]}
+        onActivePageChange={latestCallback}
+        onPagesChange={() => undefined}
+      />,
+    );
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    expect(latestCallback).not.toHaveBeenCalled();
+
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[1]);
+    expect(latestCallback).toHaveBeenCalledTimes(1);
+    expect(latestCallback).toHaveBeenCalledWith({ pageId: "page-2", index: 1 });
   });
 
   it("adds a selected photo only after it is copied to permanent storage", async () => {
