@@ -4,7 +4,7 @@
 
 **Goal:** Keep login inputs and actions visible while the keyboard is open and dismiss the keyboard from intentional background or submit-key actions.
 
-**Architecture:** The existing login form remains one screen and keeps its authentication state. A native `KeyboardAvoidingView` wraps a scrollable centered content container, while a background press target dismisses the keyboard and the card absorbs internal presses. A verification-code ref provides deterministic next/done keyboard navigation without adding dependencies.
+**Architecture:** The existing login form remains one screen and keeps its authentication state. A native `KeyboardAvoidingView` wraps a scrollable centered content container. Page background and card non-interactive blank space dismiss the keyboard, while each input and action wrapper stops propagation so interacting with a control does not dismiss it. A verification-code ref and an iOS `InputAccessoryView` provide deterministic next/done keyboard navigation without adding dependencies.
 
 **Tech Stack:** React Native, Expo Router, TypeScript, Jest, React Native Testing Library.
 
@@ -18,7 +18,7 @@
 
 - [ ] **Step 1: Add failing behavior tests**
 
-Mock `Keyboard.dismiss` and `Platform.OS`. Assert the screen contains a `KeyboardAvoidingView` with iOS `behavior="padding"`, a `ScrollView` with `keyboardShouldPersistTaps="handled"`, and a background press target. Pressing the background must call dismiss; pressing the card or an input must not invoke the background handler.
+Mock `Keyboard.dismiss` and `Platform.OS`. Assert the screen contains a `KeyboardAvoidingView` with iOS `behavior="padding"`, a `ScrollView` with `keyboardShouldPersistTaps="handled"`, and dismiss targets for both the page background and card non-interactive blank space. Assert input and action wrappers stop propagation, while each action still runs exactly once. Cover iOS and Android branches independently.
 
 - [ ] **Step 2: Verify RED**
 
@@ -40,16 +40,18 @@ Use these native components and props:
     contentContainerStyle={styles.scrollContent}
     keyboardShouldPersistTaps="handled"
   >
-    <Pressable accessibilityLabel="关闭键盘" onPress={Keyboard.dismiss} style={styles.dismissArea}>
-      <Pressable onPress={(event) => event.stopPropagation()} style={styles.card}>
-        {/* existing form */}
+    <Pressable accessible={false} onPress={Keyboard.dismiss} style={styles.dismissArea}>
+      <Pressable accessible={false} onPress={dismissAndStopPropagation} style={styles.card}>
+        <View onTouchEnd={(event) => event.stopPropagation()}>
+          {/* input or action control */}
+        </View>
       </Pressable>
     </Pressable>
   </ScrollView>
 </KeyboardAvoidingView>
 ```
 
-Keep the existing visual centering through `flexGrow: 1` and `justifyContent: "center"`. Do not add a dependency or change authentication calls.
+Keep the existing visual centering through `flexGrow: 1` and `justifyContent: "center"`. Allow both page background and card non-interactive blank space to dismiss, while input/button wrappers stop propagation. Add a platform-appropriate `keyboardDismissMode`. Do not add a dependency or change authentication calls.
 
 - [ ] **Step 4: Add failing submit-key tests**
 
@@ -57,7 +59,7 @@ Before a code is sent, submit the email input and expect `Keyboard.dismiss`. Aft
 
 - [ ] **Step 5: Implement keyboard navigation**
 
-Create a `React.useRef<TextInput>(null)` for the code input. Add `returnKeyType="next"` and `onSubmitEditing={() => sent ? codeInputRef.current?.focus() : Keyboard.dismiss()}` to email; add `ref`, `returnKeyType="done"`, and `onSubmitEditing={Keyboard.dismiss}` to code. Preserve the explicit login button and all existing validation.
+Create a `React.useRef<TextInput>(null)` for the code input. Use `returnKeyType={sent ? "next" : "done"}` and `onSubmitEditing={() => sent ? codeInputRef.current?.focus() : Keyboard.dismiss()}` for email; add `ref`, `returnKeyType="done"`, and `onSubmitEditing={Keyboard.dismiss}` to code. Associate the iOS code input with an `InputAccessoryView` containing a visible “完成” control that calls `Keyboard.dismiss`. Preserve the explicit login button and all existing validation.
 
 - [ ] **Step 6: Verify focused GREEN**
 
@@ -71,7 +73,7 @@ Run the Step 2 command and expect all login tests to pass.
 
 - [ ] **Step 1: Run independent spec and quality reviews**
 
-Confirm background-only dismissal, input focus navigation, keyboard avoidance on both platforms, no authentication behavior change, and accessible dismissal semantics.
+Confirm page and card blank-space dismissal, control interaction isolation, input focus navigation, the iOS number-pad accessory, keyboard avoidance on both platforms, no authentication behavior change, and accessible dismissal semantics.
 
 - [ ] **Step 2: Run repository gates**
 

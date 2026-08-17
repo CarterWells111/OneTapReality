@@ -8,19 +8,20 @@
 
 - 页面根部使用 `KeyboardAvoidingView` 占满可用空间；iOS 使用 `behavior="padding"`，Android 不强制额外位移，继续使用系统窗口 resize。
 - 内部使用 `ScrollView`，`contentContainerStyle` 保持原有居中卡片视觉，并允许键盘出现后滚动。
-- `keyboardShouldPersistTaps="handled"` 保证按钮和输入框点击先完成目标操作，不被滚动容器吞掉。
-- 卡片外的背景点击层负责调用 `Keyboard.dismiss()`；卡片自身阻止该背景点击层接收内部交互。
+- `keyboardShouldPersistTaps="handled"` 保证按钮和输入框点击先完成目标操作，不被滚动容器吞掉；`keyboardDismissMode` 允许拖动页面关闭键盘。
+- 页面背景及卡片内非交互空白负责调用 `Keyboard.dismiss()`；输入框和按钮具有明确的交互隔离，不触发空白关闭处理。
 
 ## 输入流程
 
-- 邮箱输入框的 return key 显示“下一步”。验证码已显示时聚焦验证码；尚未显示时关闭键盘。
-- 验证码输入框的 return key 显示“完成”，提交键只关闭键盘，不绕过现有显式“验证并登录”按钮及其校验。
+- 邮箱输入框在验证码已显示时使用“下一步”并聚焦验证码；尚未显示时使用“完成”并关闭键盘。
+- 验证码输入框的提交键只关闭键盘，不绕过现有显式“验证并登录”按钮及其校验。由于 iOS `number-pad` 通常不显示提交键，iOS 额外渲染关联的 `InputAccessoryView`“完成”按钮。
 - 邮箱请求、验证码验证、busy、防重复和 returnTo 安全逻辑保持不变。
 
 ## 测试
 
-- 外层空白点击调用 `Keyboard.dismiss()`；卡片内部点击不触发背景关闭处理。
-- 页面包含平台正确的 `KeyboardAvoidingView` 和可滚动容器。
+- 页面背景和卡片非交互空白点击调用 `Keyboard.dismiss()`；输入框和按钮点击不触发空白关闭处理。
+- 页面分别满足 iOS `padding` 与 Android 无额外 behavior，并包含可滚动、可拖动关闭键盘的容器。
 - 邮箱提交键在验证码显示前关闭键盘，显示后聚焦验证码。
 - 验证码提交键关闭键盘。
+- iOS 验证码输入关联可见的输入附件“完成”按钮并关闭键盘。
 - 既有记忆邮箱、请求验证码和登录测试继续通过。
