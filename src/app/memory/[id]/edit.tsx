@@ -16,8 +16,21 @@ export default function EditMemoryScreen() {
   const [loadedDraft, setLoadedDraft] = React.useState<Memory | null>(null);
   const memory = savedMemory ?? loadedDraft ?? undefined;
   const [pages, setPages] = React.useState<StoryPage[]>([]);
+  const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isTransformPending, setIsTransformPending] = React.useState(false);
+  const isMountedRef = React.useRef(true);
+  const saveInFlightRef = React.useRef(false);
+  const saveGenerationRef = React.useRef(0);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      saveGenerationRef.current += 1;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (savedMemory) {
@@ -51,12 +64,34 @@ export default function EditMemoryScreen() {
   }
 
   const save = async () => {
+    if (saveInFlightRef.current) {
+      return;
+    }
+    saveInFlightRef.current = true;
+    const generation = ++saveGenerationRef.current;
     setIsSaving(true);
+    setSaveError(null);
     try {
       await updatePages(memory, canvasPages(pages));
-      router.back();
+      if (!isMountedRef.current || generation !== saveGenerationRef.current) {
+        return;
+      }
+      const cursor = activePage ?? { pageId: pages[0].id, index: 0 };
+      router.replace({
+        pathname: "/memory/[id]",
+        params: { id: memory.id, pageId: cursor.pageId, pageIndex: String(cursor.index) },
+      });
+    } catch {
+      if (isMountedRef.current && generation === saveGenerationRef.current) {
+        setSaveError("保存失败，请稍后重试。");
+      }
     } finally {
-      setIsSaving(false);
+      if (generation === saveGenerationRef.current) {
+        saveInFlightRef.current = false;
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
     }
   };
 
@@ -66,11 +101,17 @@ export default function EditMemoryScreen() {
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
       <BookCanvasEditor
+        onActivePageChange={setActivePage}
         onPagesChange={(nextPages) => setPages(nextPages)}
         onTransformPendingChange={setIsTransformPending}
         pages={pages}
         persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
       />
+      {saveError ? (
+        <Text accessibilityLiveRegion="polite" accessibilityRole="alert" selectable style={styles.error}>
+          {saveError}
+        </Text>
+      ) : null}
       <AppButton
         disabled={isSaving || isTransformPending}
         label={isSaving ? "正在保存…" : "保存画布"}
@@ -83,4 +124,5 @@ export default function EditMemoryScreen() {
 const styles = StyleSheet.create({
   content: { gap: 16, paddingBottom: 28, paddingTop: 14 },
   muted: { color: colors.muted, lineHeight: 22, paddingHorizontal: 20 },
+  error: { color: colors.danger, paddingHorizontal: 20 },
 });

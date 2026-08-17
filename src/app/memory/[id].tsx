@@ -12,7 +12,11 @@ import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoryDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pageId, pageIndex } = useLocalSearchParams<{
+    id: string;
+    pageId?: string | string[];
+    pageIndex?: string | string[];
+  }>();
   const { discardMemory, getMemoryById } = useMemories();
   const isSample = id === sampleMemory.id;
   const memory = isSample ? sampleMemory : getMemoryById(id);
@@ -77,13 +81,25 @@ export default function MemoryDetailScreen() {
             <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
           </View>
         ) : null}
-        <PageReader pages={memory.pages} />
+        <PageReader
+          fallbackIndex={parseFallbackIndex(pageIndex)}
+          initialPageId={typeof pageId === "string" ? pageId : undefined}
+          pages={memory.pages}
+        />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
         ) : null}
       </ScrollView>
     </>
   );
+}
+
+function parseFallbackIndex(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
+    return 0;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
 const styles = StyleSheet.create({

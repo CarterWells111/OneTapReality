@@ -19,13 +19,25 @@ import type { Memory, StoryPage } from "../src/types/memory";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockBack = jest.fn();
+const mockReplace = jest.fn();
 const mockUpdatePages = jest.fn();
 const mockGetMemoryById = jest.fn();
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "memory-1" }),
-  useRouter: () => ({ back: mockBack }),
+  useRouter: () => ({ back: mockBack, replace: mockReplace }),
 }));
+
+jest.mock("../src/features/canvas/book-canvas-editor", () => {
+  const { Button, View } = require("react-native");
+  return { BookCanvasEditor: ({ onActivePageChange }: {
+    onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
+  }) => (
+    <View testID="album-canvas">
+      <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "page-2", index: 1 })} />
+    </View>
+  ) };
+});
 
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ getMemoryById: mockGetMemoryById, updatePages: mockUpdatePages }),
@@ -116,24 +128,73 @@ describe("EditMemoryScreen", () => {
     mockUpdatePages.mockResolvedValue(undefined);
   });
 
-  it("adds a page through the manager and saves changed layouts only after Save", async () => {
+  it("waits for persistence before replacing the edit route with the active page", async () => {
+    let resolveUpdate: (() => void) | undefined;
+    mockUpdatePages.mockReturnValue(new Promise<void>((resolve) => { resolveUpdate = resolve; }));
     const screen = render(<EditMemoryScreen />);
 
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
-    expect(mockUpdatePages).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText("report second page"));
+    fireEvent.press(screen.getByText("保存画布"));
 
-    fireEvent.press(screen.getByLabelText("打开页面管理"));
-    fireEvent.press(screen.getByText("添加页面"));
-    expect(screen.getByTestId("page-cell-2")).toBeTruthy();
-    fireEvent.press(screen.getByLabelText("完成页面管理"));
-    expect(mockUpdatePages).not.toHaveBeenCalled();
+    expect(mockUpdatePages).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveUpdate?.();
+    });
+
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: "/memory/[id]",
+      params: { id: "memory-1", pageId: "page-2", pageIndex: "1" },
+    });
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("stays on the edit screen when persistence fails", async () => {
+    mockUpdatePages.mockRejectedValue(new Error("save failed"));
+    const screen = render(<EditMemoryScreen />);
 
     await act(async () => {
       fireEvent.press(screen.getByText("保存画布"));
     });
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
-    expect(mockUpdatePages.mock.calls[0][1]).toHaveLength(3);
-    expect(mockBack).toHaveBeenCalledTimes(1);
+    const errorMessage = screen.getByText("保存失败，请稍后重试。");
+    expect(errorMessage.props.accessibilityRole).toBe("alert");
+    expect(errorMessage.props.accessibilityLiveRegion).toBe("polite");
+    expect(screen.getByTestId("album-canvas")).toBeTruthy();
+    expect(screen.getByText("保存画布")).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("coalesces rapid save presses into one persistence operation and one navigation", async () => {
+    let resolveUpdate: (() => void) | undefined;
+    mockUpdatePages.mockReturnValue(new Promise<void>((resolve) => { resolveUpdate = resolve; }));
+    const screen = render(<EditMemoryScreen />);
+    const saveButton = screen.getByText("保存画布");
+
+    fireEvent.press(saveButton);
+    fireEvent.press(saveButton);
+    expect(mockUpdatePages).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveUpdate?.());
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["resolve", "reject"])("does not navigate or update state after unmount when save %ss", async (outcome) => {
+    let settle: (() => void) | undefined;
+    mockUpdatePages.mockReturnValue(new Promise<void>((resolve, reject) => {
+      settle = outcome === "resolve" ? resolve : () => reject(new Error("save failed"));
+    }));
+    const screen = render(<EditMemoryScreen />);
+
+    fireEvent.press(screen.getByText("保存画布"));
+    screen.unmount();
+    await act(async () => settle?.());
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
   });
 });

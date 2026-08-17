@@ -4,6 +4,8 @@ import { StyleSheet } from "react-native";
 const mockGetMemoryById = jest.fn();
 const mockPush = jest.fn();
 const mockShare = jest.fn();
+const mockPageReader = jest.fn();
+let mockSearchParams: { id: string; pageId?: string | string[]; pageIndex?: string | string[] } = { id: "memory-canvas" };
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -14,8 +16,20 @@ jest.mock("expo-router", () => {
         <View>{options?.headerRight ? options.headerRight() : null}</View>
       ),
     },
-    useLocalSearchParams: () => ({ id: "memory-canvas" }),
+    useLocalSearchParams: () => mockSearchParams,
     useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  };
+});
+
+jest.mock("../src/features/canvas/page-reader", () => {
+  const React = require("react");
+  const actual = jest.requireActual("../src/features/canvas/page-reader");
+  return {
+    ...actual,
+    PageReader: (props: unknown) => {
+      mockPageReader(props);
+      return React.createElement(actual.PageReader, props);
+    },
   };
 });
 
@@ -28,7 +42,10 @@ jest.mock("../src/features/export/share-action-sheet", () => ({ showShareActionS
 import MemoryDetailScreen from "../src/app/memory/[id]";
 
 describe("MemoryDetailScreen canvas rendering", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSearchParams = { id: "memory-canvas" };
+  });
   it("renders saved canvas layouts and keeps the page heading available", async () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas",
@@ -65,6 +82,30 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(StyleSheet.flatten(screen.getByTestId("canvas-element-title").props.style)).toMatchObject({
       transform: [{ rotate: "0.25rad" }],
     });
+    expect(mockPageReader).toHaveBeenCalledWith(expect.objectContaining({ pages: expect.any(Array) }));
+  });
+
+  it.each([
+    [{ id: "memory-canvas", pageId: "page-2", pageIndex: "1" }, "page-2", 1],
+    [{ id: "memory-canvas", pageId: "missing", pageIndex: "-1" }, "missing", 0],
+    [{ id: "memory-canvas", pageIndex: "Infinity" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "1.5" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: ["1"] }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "0x10" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "1e2" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "9007199254740992" }, undefined, 0],
+    [{ id: "memory-canvas", pageId: ["page-2"], pageIndex: "1" }, undefined, 1],
+  ])("passes defensive restoration params to the page reader", (params, initialPageId, fallbackIndex) => {
+    mockSearchParams = params;
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [{ id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" }],
+    });
+
+    render(<MemoryDetailScreen />);
+
+    expect(mockPageReader).toHaveBeenCalledWith(expect.objectContaining({ initialPageId, fallbackIndex }));
   });
 
   it("shows explicit local edit, share, and gift binding actions without consulting shared roles", () => {
