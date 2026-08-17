@@ -10,12 +10,17 @@ import type { Memory, StoryPage } from "../../../types/memory";
 
 export default function EditMemoryScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pageId, pageIndex } = useLocalSearchParams<{
+    id: string;
+    pageId?: string | string[];
+    pageIndex?: string | string[];
+  }>();
   const { getDraftById, getMemoryById, persistSelectedPhoto, updatePages } = useMemories();
   const savedMemory = getMemoryById(id);
   const [loadedDraft, setLoadedDraft] = React.useState<Memory | null>(null);
   const memory = savedMemory ?? loadedDraft ?? undefined;
   const [pages, setPages] = React.useState<StoryPage[]>([]);
+  const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isTransformPending, setIsTransformPending] = React.useState(false);
 
@@ -54,7 +59,13 @@ export default function EditMemoryScreen() {
     setIsSaving(true);
     try {
       await updatePages(memory, canvasPages(pages));
-      router.back();
+      const fallbackIndex = parseFallbackIndex(pageIndex);
+      const fallbackPage = pages[fallbackIndex] ?? pages[0];
+      const cursor = activePage ?? { pageId: fallbackPage.id, index: fallbackIndex };
+      router.dismissTo({
+        pathname: "/memory/[id]",
+        params: { id: memory.id, pageId: cursor.pageId, pageIndex: String(cursor.index) },
+      });
     } finally {
       setIsSaving(false);
     }
@@ -66,6 +77,9 @@ export default function EditMemoryScreen() {
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
       <BookCanvasEditor
+        fallbackIndex={parseFallbackIndex(pageIndex)}
+        initialPageId={typeof pageId === "string" ? pageId : undefined}
+        onActivePageChange={setActivePage}
         onPagesChange={(nextPages) => setPages(nextPages)}
         onTransformPendingChange={setIsTransformPending}
         pages={pages}
@@ -78,6 +92,14 @@ export default function EditMemoryScreen() {
       />
     </ScrollView>
   );
+}
+
+function parseFallbackIndex(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
+    return 0;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
 const styles = StyleSheet.create({

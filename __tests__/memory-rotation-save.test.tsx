@@ -5,6 +5,7 @@ import type { Memory, StoryPage } from "../src/types/memory";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockBack = jest.fn();
+const mockDismissTo = jest.fn();
 const mockUpdatePages = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
 
@@ -43,7 +44,7 @@ const mockMemory: Memory = {
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "memory-1" }),
-  useRouter: () => ({ back: mockBack }),
+  useRouter: () => ({ back: mockBack, dismissTo: mockDismissTo }),
 }));
 
 jest.mock("../src/features/memories/memories-provider", () => ({

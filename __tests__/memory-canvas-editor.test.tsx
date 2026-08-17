@@ -19,12 +19,14 @@ import type { Memory, StoryPage } from "../src/types/memory";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockBack = jest.fn();
+const mockDismissTo = jest.fn();
 const mockUpdatePages = jest.fn();
 const mockGetMemoryById = jest.fn();
+let mockSearchParams: { id: string; pageId?: string; pageIndex?: string } = { id: "memory-1" };
 
 jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ id: "memory-1" }),
-  useRouter: () => ({ back: mockBack }),
+  useLocalSearchParams: () => mockSearchParams,
+  useRouter: () => ({ back: mockBack, dismissTo: mockDismissTo }),
 }));
 
 jest.mock("../src/features/memories/memories-provider", () => ({
@@ -112,14 +114,15 @@ describe("canvas page editing model", () => {
 describe("EditMemoryScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParams = { id: "memory-1", pageId: "closing-1", pageIndex: "1" };
     mockGetMemoryById.mockReturnValue(memory);
     mockUpdatePages.mockResolvedValue(undefined);
   });
 
-  it("adds a page through the manager and saves changed layouts only after Save", async () => {
+  it("opens on the requested page and dismisses back to one detail route after Save", async () => {
     const screen = render(<EditMemoryScreen />);
 
-    expect(screen.getByTestId("album-canvas")).toBeTruthy();
+    expect(screen.getByTestId("canvas-element-closing-1:headline")).toBeTruthy();
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
@@ -134,6 +137,10 @@ describe("EditMemoryScreen", () => {
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockUpdatePages.mock.calls[0][1]).toHaveLength(3);
-    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockDismissTo).toHaveBeenCalledWith({
+      pathname: "/memory/[id]",
+      params: { id: "memory-1", pageId: "closing-1", pageIndex: "1" },
+    });
+    expect(mockBack).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,15 @@ import type { StoryPage } from "../../types/memory";
 
 const serifFont = headingFontFamily;
 
+function clampPageIndex(index: number, pageCount: number) {
+  return Math.max(0, Math.min(index, Math.max(0, pageCount - 1)));
+}
+
+function resolveRestoredIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
+  const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
+  return idIndex >= 0 ? idIndex : clampPageIndex(fallbackIndex, pages.length);
+}
+
 type PageReaderLayerBufferProps = {
   current: StoryPage;
   currentIsRight: boolean;
@@ -74,20 +83,50 @@ export function PageReaderLayerBuffer({
  * 只读的左右滑动翻页阅读器：整页滑出后再切换，无回弹。
  * 编辑能力交给 BookCanvasEditor，这里只用于查看样本与已保存旅行册。
  */
-export function PageReader({ pages }: { pages: StoryPage[] }) {
+type PageReaderProps = {
+  fallbackIndex?: number;
+  initialPageId?: string;
+  onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
+  pages: StoryPage[];
+};
+
+export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChange, pages }: PageReaderProps) {
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(width - 40, 280), 360);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
-  const [index, setIndex] = React.useState(0);
+  const initialIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
+  const [index, setIndex] = React.useState(initialIndex);
   const [pending, setPending] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const restorationRef = React.useRef({ fallbackIndex, initialPageId });
+  const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
 
   React.useEffect(() => {
-    if (index >= pages.length) {
+    const restorationChanged = restorationRef.current.initialPageId !== initialPageId
+      || restorationRef.current.fallbackIndex !== fallbackIndex;
+    restorationRef.current = { fallbackIndex, initialPageId };
+    if (restorationChanged) {
+      setIndex(resolveRestoredIndex(pages, initialPageId, fallbackIndex));
+      setPending(null);
+    } else if (index >= pages.length) {
       setIndex(Math.max(0, pages.length - 1));
     }
-  }, [index, pages.length]);
+  }, [fallbackIndex, index, initialPageId, pages]);
+
+  React.useEffect(() => {
+    const pageId = pages[index]?.id;
+    if (!pageId) {
+      return;
+    }
+    const cursor = { pageId, index };
+    const lastCursor = lastReportedCursorRef.current;
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) {
+      return;
+    }
+    lastReportedCursorRef.current = cursor;
+    onActivePageChange?.(cursor);
+  }, [index, onActivePageChange, pages]);
 
   const commit = React.useCallback((targetIndex: number) => {
     setIndex(targetIndex);

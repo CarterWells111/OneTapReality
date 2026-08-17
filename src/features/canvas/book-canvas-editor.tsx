@@ -53,6 +53,9 @@ import type { StoryPage } from "../../types/memory";
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
 type BookCanvasEditorProps = {
+  fallbackIndex?: number;
+  initialPageId?: string;
+  onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
   onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
   onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
@@ -63,7 +66,19 @@ function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
+  const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
+  if (idIndex >= 0) {
+    return idIndex;
+  }
+  const safeFallbackIndex = Number.isSafeInteger(fallbackIndex) ? fallbackIndex : 0;
+  return Math.max(0, Math.min(safeFallbackIndex, Math.max(0, pages.length - 1)));
+}
+
 export function BookCanvasEditor({
+  fallbackIndex = 0,
+  initialPageId,
+  onActivePageChange,
   onPagesChange,
   onTransformPendingChange,
   pages,
@@ -75,7 +90,8 @@ export function BookCanvasEditor({
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
   const pagePanBlocked = useSharedValue(false);
-  const [currentIndex, setCurrentIndex] = React.useState(0);
+  const initialPageIndex = resolveInitialPageIndex(pages, initialPageId, fallbackIndex);
+  const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
@@ -96,6 +112,12 @@ export function BookCanvasEditor({
   }, [currentIndex, pages.length]);
 
   const currentPage = pages[currentIndex] ?? pages[0];
+
+  React.useEffect(() => {
+    if (currentPage) {
+      onActivePageChange?.({ pageId: currentPage.id, index: currentIndex });
+    }
+  }, [currentIndex, currentPage, onActivePageChange]);
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );

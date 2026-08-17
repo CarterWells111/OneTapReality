@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import * as React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
@@ -12,10 +13,15 @@ import { showShareActionSheet } from "../../features/export/share-action-sheet";
 
 export default function MemoryDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pageId, pageIndex } = useLocalSearchParams<{
+    id: string;
+    pageId?: string | string[];
+    pageIndex?: string | string[];
+  }>();
   const { discardMemory, getMemoryById } = useMemories();
   const isSample = id === sampleMemory.id;
   const memory = isSample ? sampleMemory : getMemoryById(id);
+  const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
 
   if (!memory) {
     return (
@@ -26,6 +32,15 @@ export default function MemoryDetailScreen() {
   }
 
   const city = cityContent[memory.city];
+  const fallbackIndex = parseFallbackIndex(pageIndex);
+  const fallbackPage = memory.pages[fallbackIndex] ?? memory.pages[0];
+  const openEditor = () => {
+    const cursor = activePage ?? { pageId: fallbackPage?.id ?? "", index: fallbackIndex };
+    router.push({
+      pathname: "/memory/[id]/edit",
+      params: { id: memory.id, pageId: cursor.pageId, pageIndex: String(cursor.index) },
+    });
+  };
   const confirmDelete = () => {
     Alert.alert("删除这册旅行记忆？", "会移入回收站，可在回收站里恢复或彻底删除。", [
       { text: "取消", style: "cancel" },
@@ -47,7 +62,7 @@ export default function MemoryDetailScreen() {
           <IconButton
             accessibilityLabel="编辑旅行册"
             icon="edit"
-            onPress={() => router.push({ pathname: "/memory/[id]/edit", params: { id: memory.id } })}
+            onPress={openEditor}
           />
           <IconButton
             accessibilityLabel="删除这册旅行记忆"
@@ -72,18 +87,31 @@ export default function MemoryDetailScreen() {
         <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
         {!isSample ? (
           <View style={styles.localActions}>
-            <AppButton label="编辑相册" onPress={() => router.push({ pathname: "/memory/[id]/edit", params: { id: memory.id } })} />
+            <AppButton label="编辑相册" onPress={openEditor} />
             <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ pages: memory.pages, title: memory.title })} />
             <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
           </View>
         ) : null}
-        <PageReader pages={memory.pages} />
+        <PageReader
+          fallbackIndex={fallbackIndex}
+          initialPageId={typeof pageId === "string" ? pageId : undefined}
+          onActivePageChange={setActivePage}
+          pages={memory.pages}
+        />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
         ) : null}
       </ScrollView>
     </>
   );
+}
+
+function parseFallbackIndex(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
+    return 0;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
 const styles = StyleSheet.create({
