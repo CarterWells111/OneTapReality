@@ -1,5 +1,21 @@
 # 决策记录
 
+## 2026-08-16：修复“旋转过的贴纸保存后旋转效果消失”回归
+
+Betay 内测反馈：编辑器中旋转过的贴纸在保存后旋转效果丢失（此前修复过、后又复现）。
+复核并确认持久化链路（编辑器 `onTransformEnd` 提交 → `updateCanvasElement` → `layout_json`
+序列化 → `normalizeLayout` 还原 → 阅读器 `CanvasPage` 非交互渲染）在数据模型层面均正确保留
+`element.rotation`。根因是 `CanvasElement` 手势提交 `finalizeGesture` 与手柄拖拽提交在计算最终
+旋转时依赖闭包快照 `element.rotation`，在重动画手势重配/快速连续编辑时可能读到过期值，导致旋转被
+写回 0。
+
+修复：在 `CanvasElement` 新增与 `element.rotation` 同步的共享值 `baseRotation`，`finalizeGesture`、
+角落手柄 `onHandleDragEnd` 与交互态 `animatedStyle` 改用 `baseRotation.value + gestureRotation.value`
+计算与展示旋转，使旋转提交不再依赖可能过期的 JS 闭包，已保存旋转在后续任意变换中都被正确保留/累加。
+纯前端变更，不修改数据模型、SQLite schema、路由、依赖或持久化结构；新增
+`__tests__/sticker-rotation-persistence.test.tsx` 覆盖“保存→重载→阅读器渲染”“角落缩放保留旋转”
+“累积旋转”闭环回归。
+
 ## 2026-08-06：App Link 网页引导页（web fallback）
 
 按既有计划 `docs/superpowers/plans/2026-07-25-app-link-web-fallback.md` 实现浏览器打开 `/gift/<token>` 与 `/activate` 时的安装引导页，避免未安装 App 时返回 404；引导页不包含礼品 token，也不携带任何业务逻辑。生产与 staging 官网共用同一份 `website/` 构建产物，不新增网络、云服务、支付、分析或客户端秘密。

@@ -122,6 +122,9 @@ export function CanvasElement({
   // 手势缩放因子（共享值），确保捏合时手柄跟随
   const gestureScale = useSharedValue(1);
   const gestureRotation = useSharedValue(0);
+  // 已保存的基座旋转角（弧度）。与 element.rotation 同步，但可被 UI 线程手势读取，
+  // 避免提交 finalRot 时依赖可能过期的 JS 闭包快照，导致旋转在保存后丢失。
+  const baseRotation = useSharedValue(element.rotation);
   const activeGestureCount = useSharedValue(0);
   const panStarted = useSharedValue(false);
   const pinchStarted = useSharedValue(false);
@@ -145,9 +148,10 @@ export function CanvasElement({
     elemH.value = element.height * canvasHeight;
     gestureScale.value = 1;
     gestureRotation.value = 0;
+    baseRotation.value = element.rotation;
     fontScale.value = 1;
   }, [element.x, element.y, element.width, element.height, element.rotation,
-      canvasWidth, canvasHeight, posX, posY, elemW, elemH, gestureScale, gestureRotation, fontScale, activeGestureCount]);
+      canvasWidth, canvasHeight, posX, posY, elemW, elemH, gestureScale, gestureRotation, baseRotation, fontScale, activeGestureCount]);
 
   const commitTransform = (
     absoluteX: number, absoluteY: number,
@@ -191,7 +195,8 @@ export function CanvasElement({
     const finalY = posY.value;
     const finalW = elemW.value * gestureScale.value;
     const finalH = elemH.value * gestureScale.value;
-    const finalRot = element.rotation + gestureRotation.value;
+    // 基座旋转 + 手势增量：用共享值而非闭包快照，确保已保存旋转被正确累加/保留
+    const finalRot = baseRotation.value + gestureRotation.value;
     // 不需要重置共享值 —— React 重渲染时会通过 useEffect 同步
     runOnJS(commitTransform)(finalX, finalY, finalW, finalH, finalRot);
   };
@@ -230,7 +235,7 @@ export function CanvasElement({
     top: posY.value,
     width: elemW.value * gestureScale.value,
     height: elemH.value * gestureScale.value,
-    transform: [{ rotate: `${element.rotation + gestureRotation.value}rad` }],
+    transform: [{ rotate: `${baseRotation.value + gestureRotation.value}rad` }],
   }));
 
   // ── 非交互模式的静态样式 ──
@@ -284,9 +289,9 @@ export function CanvasElement({
             elemW={elemW}
             gestureScale={gestureScale}
             onHandleDragEnd={() => {
-              // 拖拽结束，提交变换
+              // 拖拽结束，提交变换（保留已有旋转，不因手柄拖拽被重置）
               cornerResize.value = true;
-              commitTransform(posX.value, posY.value, elemW.value * gestureScale.value, elemH.value * gestureScale.value, element.rotation + gestureRotation.value);
+              commitTransform(posX.value, posY.value, elemW.value * gestureScale.value, elemH.value * gestureScale.value, baseRotation.value + gestureRotation.value);
               cornerResize.value = false;
             }}
             posX={posX}
