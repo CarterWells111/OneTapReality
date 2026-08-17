@@ -11,11 +11,11 @@
 3. 为 `staging.onetapreality.com` 配置 HTTPS 与匹配当前 iOS Team ID/Bundle ID 的 Apple App Site Association；服务端 `GIFT_URL_ORIGIN` 必须等于该域名。
 4. 经单独批准后，用 `npx eas-cli@latest build -p ios --profile alpha` 生成 ad-hoc 内部构建，或按 TestFlight 手册用 `staging-testflight` profile 生成 store 构建并经另一项批准提交到内部群组。测试卡只写 staging URL。
 
-当前首批 Beta 仅支持 iPhone / iOS。Android Asset Links、release SHA-256 与 Android 真机验收属于后续非阻塞 Backlog，不得对外宣称已完成。
+当前产品仅支持 iPhone / iOS。Android 不在当前及可预见产品计划内，不配置 Android package、Asset Links、构建或真机验收。
 
 ## 首个 staging 演练构建
 
-四周计划第 1–2 周仅支持 iPhone / iOS。首次实体卡验收前，在环境隔离检查、本地质量门禁和 `npm run beta:preflight:ios` 全部通过后，可以由发布负责人单独批准生成并安装一个仅用于 staging 演练的 `alpha` 或 `staging-testflight` 原生构建。`alpha` 通过登记 UDID 后的 EAS 链接安装；`staging-testflight` 显式使用 EAS `preview` environment，并只通过 App Store Connect 现有内部群组 `OneTapReality开发员测试` 安装，且云端构建和提交必须分别批准。该目标群组已启用自动分发；提交前还须确认其他内部群组均未启用自动分发。两者只发给获准演练人员，用于完成三张实体卡和 P0 流程；它们都不代表 production、公开 App Store 或扩大测试成员已获准。第 3–4 周是否加入 Android 必须根据前两周结果重新评估并另行决策。
+当前产品仅支持 iPhone / iOS。首次实体卡验收前，在环境隔离检查、本地质量门禁和 `npm run beta:preflight:ios` 全部通过后，可以由发布负责人单独批准生成并安装一个仅用于 staging 演练的 `alpha` 或 `staging-testflight` 原生构建。`alpha` 通过登记 UDID 后的 EAS 链接安装；`staging-testflight` 显式使用 EAS `preview` environment，并只通过 App Store Connect 现有内部群组 `OneTapReality开发员测试` 安装，且云端构建和提交必须分别批准。该目标群组已启用自动分发；提交前还须确认其他内部群组均未启用自动分发。两者只发给获准演练人员，用于完成三张实体卡和 P0 流程；它们都不代表 production、公开 App Store 或扩大测试成员已获准。Android 不属于后续发布计划。
 
 ## 首次演练后的每次内部扩大发放前
 

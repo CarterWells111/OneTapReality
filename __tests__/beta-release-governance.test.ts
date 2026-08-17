@@ -23,17 +23,16 @@ describe("Beta release governance", () => {
     expect(journal).toContain("0010_shared_album_collaboration");
   });
 
-  it("keeps the first Beta iOS-only without pretending Android is complete", () => {
+  it("keeps the product iOS-only without an Android release backlog", () => {
     const decisions = read("docs/DECISIONS.md");
     const checklist = read("docs/EXECUTION-CHECKLIST.md");
     const deploymentLog = read("docs/operations/DEPLOYMENT-LOG.md");
 
     expect(decisions).toContain("首批 iOS Beta 实体卡准入");
-    expect(decisions).toContain("第 1–2 周仅支持 iPhone / iOS");
-    expect(decisions).toContain("第 3–4 周");
-    expect(checklist).toContain("四周计划第 1–2 周的首批 Beta 仅支持 iPhone / iOS");
-    expect(checklist).toContain("Android App Links 不属于前两周准入门槛");
-    expect(deploymentLog).toContain("Android 后续非阻塞 Backlog");
+    expect(decisions).toContain("当前及可预见计划仅支持 iPhone / iOS");
+    expect(checklist).toContain("当前产品仅支持 iPhone / iOS");
+    expect(deploymentLog).toContain("Android 不在当前及可预见产品计划内");
+    expect(deploymentLog).not.toContain("Android 后续非阻塞 Backlog");
     expect(deploymentLog).not.toContain("Partial（Android release 指纹阻塞）");
   });
 

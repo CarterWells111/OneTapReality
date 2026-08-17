@@ -13,6 +13,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { canvasFonts } from "./canvas-assets";
 import { ColorPicker } from "../../components/ColorPicker";
+import { useFontLoading } from "../typography/font-loading-provider";
 import type { CanvasTextElement } from "../../types/memory";
 
 type ElementContextMenuProps = {
@@ -62,6 +63,7 @@ export function ElementContextMenu({
   onClose,
   initialMode,
 }: ElementContextMenuProps) {
+  const { requestFont, resolveFontFamily } = useFontLoading();
   const { width: windowWidth } = useWindowDimensions();
   const [mode, setMode] = React.useState<MenuMode>(initialMode ?? "font");
   // 颜色面板的滚动容器引用：传给 ColorPicker 使色盘手势与滚动共存
@@ -99,11 +101,12 @@ export function ElementContextMenu({
                 <Pressable
                   key={font.id}
                   onPress={() => {
+                    requestFont(font.id, true);
                     onChangeFont(font.id);
                     onClose();
                   }}
                   style={[styles.listItem, element.fontStyle === font.id && styles.listItemActive]}>
-                  <Text style={[styles.listItemText, { fontFamily: font.family }, element.fontStyle === font.id && styles.listItemTextActive]}>
+                  <Text style={[styles.listItemText, { fontFamily: resolveFontFamily(font.id) }, element.fontStyle === font.id && styles.listItemTextActive]}>
                     {font.label}
                   </Text>
                   {element.fontStyle === font.id ? (

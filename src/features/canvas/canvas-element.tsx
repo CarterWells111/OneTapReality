@@ -9,9 +9,9 @@ import Animated, {
 import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
+import { canvasFrames, canvasStickers } from "./canvas-assets";
 import { SelectionHandles } from "./selection-handles";
-import { bodyFontFamily } from "../typography/fonts";
+import { useResolvedFontFamily } from "../typography/font-loading-provider";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {
@@ -316,6 +316,9 @@ function ElementContent({
   element: CanvasElementModel;
   fontScale?: SharedValue<number>;
 }) {
+  const resolvedFontFamily = useResolvedFontFamily(
+    element.type === "text" ? element.fontStyle : undefined,
+  );
   if (element.type === "image") {
     return <ImageElement testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
@@ -333,11 +336,10 @@ function ElementContent({
       <Image contentFit="contain" source={frame.source} style={styles.image} testID={`canvas-frame-${element.id}`} />
     ) : null;
   }
-  const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
   return (
     <AnimatedText
       color={element.color}
-      fontFamily={font?.family ?? bodyFontFamily}
+      fontFamily={resolvedFontFamily}
       fontScale={fontScale}
       fontSize={element.fontSize}
       text={element.text}

@@ -40,7 +40,7 @@
 - [ ] 礼品管理者停用礼品后，已发布共享媒体不可再读取，私有 R2 对象已删除。
 - [ ] `GIFT_SHARING_ENABLED=false` 时，礼品读取、认领、发布和新验证码均返回暂停提示；管理员仍可停用受影响礼品。
 
-> 当前首批 Beta 只验收 iOS。Android App Links 与 Android 真机验收在后续 Backlog 中单独完成，不得用本清单宣称 Android 已通过。
+> 当前产品只支持并验收 iPhone / iOS。Android 不在当前及可预见产品计划内，本清单不包含 Android 构建、App Links 或真机验收。
 
 ## 7. 事实核对（与上架材料一致）
 

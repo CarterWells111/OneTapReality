@@ -4,16 +4,6 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development-android": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
-      }
-    },
     "development": {
       "autoIncrement": true,
       "developmentClient": true,

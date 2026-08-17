@@ -9,7 +9,7 @@ jest.mock("expo-router", () => {
   };
   return { Stack };
 });
-jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
+jest.mock("expo-font", () => ({ loadAsync: jest.fn(() => new Promise(() => undefined)) }));
 jest.mock("expo-sqlite", () => {
   const { View } = require("react-native");
   return { SQLiteProvider: ({ children }: { children: React.ReactNode }) => <View testID="sqlite-provider">{children}</View> };
@@ -40,6 +40,22 @@ jest.mock("../src/storage/memory-repository", () => ({ migrateDbIfNeeded: jest.f
 import RootLayout from "../src/app/_layout";
 
 describe("RootLayout", () => {
+  it("renders immediately without waiting for local fonts", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("stack")).toBeTruthy();
+  });
+
+  it("registers nested route groups only at the root stack boundary", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.getByTestId("screen-memory")).toBeTruthy();
+    expect(screen.getByTestId("screen-recycle-bin")).toBeTruthy();
+    expect(screen.queryByTestId("screen-memory/new")).toBeNull();
+    expect(screen.queryByTestId("screen-memory/[id]")).toBeNull();
+    expect(screen.queryByTestId("screen-recycle-bin/index")).toBeNull();
+  });
+
   it("makes the local profile available around memory screens", async () => {
     const screen = await render(<RootLayout />);
 

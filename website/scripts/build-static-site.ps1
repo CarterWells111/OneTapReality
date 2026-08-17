@@ -32,8 +32,6 @@ $pagesRedirects = @'
 $pagesHeaders = @'
 /.well-known/apple-app-site-association
   Content-Type: application/json
-/.well-known/assetlinks.json
-  Content-Type: application/json
 '@
 [System.IO.File]::WriteAllText((Join-Path $outputRoot "_headers"), $pagesHeaders, [System.Text.UTF8Encoding]::new($false))
 
@@ -80,6 +78,5 @@ $workerSource = $workerTemplate.Replace("__STATIC_SITE_PAGES__", (ConvertTo-Json
 $workerSource = $workerSource.Replace("__STATIC_SITE_STYLES__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot "styles.css"))) -Compress))
 $workerSource = $workerSource.Replace("__STATIC_SITE_ASSETS__", (ConvertTo-Json -InputObject $staticAssets -Compress -Depth 3))
 $workerSource = $workerSource.Replace("__APPLE_APP_SITE_ASSOCIATION__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot ".well-known\\apple-app-site-association"))) -Compress))
-$workerSource = $workerSource.Replace("__ANDROID_ASSET_LINKS__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot ".well-known\\assetlinks.json"))) -Compress))
 $workerSource = $workerSource.Replace("__APP_LINK_FALLBACK__", (ConvertTo-Json -InputObject ([System.IO.File]::ReadAllText((Join-Path $siteRoot "open-app\\index.html"))) -Compress))
 [System.IO.File]::WriteAllText((Join-Path $outputRoot "server\\index.js"), $workerSource, [System.Text.UTF8Encoding]::new($false))

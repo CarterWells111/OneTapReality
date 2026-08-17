@@ -6,7 +6,7 @@
 
 NFC 标签只保存 HTTPS URL；服务端只保存加 pepper 的 token 哈希，不读取或保存卡片 UID。礼品永久停用时，访问立即撤销，私有 R2 媒体由维护任务重试删除。
 
-生产验收必须使用 iOS/Android Development Build 或生产构建，并验证 `/.well-known/apple-app-site-association` 与 `/.well-known/assetlinks.json`。Android `assetlinks.json` 需要 release keystore SHA-256；在该值配置完成前，不应宣称 Android App Link 已验收。
+生产验收必须使用 iOS Development Build、TestFlight 或生产构建，并验证 `/.well-known/apple-app-site-association`。当前产品仅支持 iPhone / iOS，不生成 Android `assetlinks.json`，也不宣称支持 Android NFC 或 App Links。
 
 ## Alpha staging 隔离
 

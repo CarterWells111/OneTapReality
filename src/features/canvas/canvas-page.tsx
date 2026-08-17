@@ -1,11 +1,9 @@
 import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
-import { useFonts } from "expo-font";
 
 import { canvasBackgrounds } from "./canvas-assets";
 import { CanvasElement } from "./canvas-element";
 import { colors } from "../../components/ui";
-import { canvasEditorFontSources } from "../typography/fonts";
 import type { CanvasLayout } from "../../types/memory";
 
 type ElementPatch = {
@@ -56,7 +54,6 @@ export function CanvasPage({
 }: CanvasPageProps) {
   // 编辑器、阅读器、分享导出都经 CanvasPage 渲染：在这里加载全部画布字体，
   // 保证重开相册阅读时文字仍使用所选字体（expo-font 对已注册字体幂等）。
-  useFonts(canvasEditorFontSources);
   const { width } = useWindowDimensions();
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
   const canvasHeight = height ?? canvasWidth / displayAspectRatio;

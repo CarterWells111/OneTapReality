@@ -7,7 +7,7 @@
 
 > 2026-08-16 只读核对通过：Railway staging API Service 的 `GIFT_SHARING_ENABLED=true` 与 `GIFT_URL_ORIGIN=https://staging.onetapreality.com` 均符合预期；核对过程未读取或记录 Secret，未修改变量、未触发部署。
 
-> 当前准入范围：首批 Beta 仅支持 iPhone / iOS。Android 仍未完成且不得对外宣称支持，但不阻断本轮 iOS 实体卡验收。
+> 当前准入范围：产品仅支持 iPhone / iOS。Android 不在当前及可预见产品计划内，也不属于本轮验收范围。
 
 ## 环境隔离矩阵
 
@@ -16,7 +16,7 @@
 | API Service | 生产 Railway Service | `onetapreality-staging.up.railway.app`（独立 Railway Service） | ✅ 已建立并通过 health 检查 |
 | PostgreSQL | 生产数据库 | `OneTapStagingDB`（独立，`RUN_DB_MIGRATIONS=true`） | ✅ 已建立，schemaVersion 7 |
 | R2 bucket | 生产私有 bucket | `onetapreality-staging`（域名账号内独立私有 bucket，token 已轮换） | ✅ 已建立并通过 `verify-r2` 连通性验证 |
-| 域名 | `onetapreality.com` | `staging.onetapreality.com`（Cloudflare Pages）/ `api-staging.onetapreality.com`（Railway） | ✅ DNS、网页与 iOS AASA 已验证；Android 为后续非阻塞 Backlog |
+| 域名 | `onetapreality.com` | `staging.onetapreality.com`（Cloudflare Pages）/ `api-staging.onetapreality.com`（Railway） | ✅ DNS、网页与 iOS AASA 已验证；不发布 Android App Links |
 | Secrets | 生产 peppers / 清理密钥 / Resend key | 独立 `DEVICE_TOKEN_PEPPER` / `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET` / R2 凭据（Resend 待配） | ✅ 已配置（值脱敏） |
 | 发件人 | `support@onetapreality.com` | `staging@onetapreality.com`（独立 key） | ✅ 已配置并验证收信 |
 | 邮箱白名单 | 空（不限制） | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | ✅ 已验证（白名单外 403） |

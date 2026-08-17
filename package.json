@@ -89,7 +89,6 @@
     "beta:preflight:ios": "node scripts/check-ios-beta-readiness.cjs",
     "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
