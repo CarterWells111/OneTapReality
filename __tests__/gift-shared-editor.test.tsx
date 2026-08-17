@@ -2,9 +2,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 
 const mockStart = jest.fn();
 const mockFinish = jest.fn();
+const mockStartOwned = jest.fn();
+const mockFinishOwned = jest.fn();
 
 jest.mock("../src/services/backend/api-client", () => ({
-  BackendApiClient: jest.fn(() => ({ startInvitedGiftPublish: mockStart, finishInvitedGiftPublish: mockFinish })),
+  BackendApiClient: jest.fn(() => ({
+    startInvitedGiftPublish: mockStart,
+    finishInvitedGiftPublish: mockFinish,
+    startOwnedGiftPublish: mockStartOwned,
+    finishOwnedGiftPublish: mockFinishOwned,
+  })),
   BackendApiError: class BackendApiError extends Error {
     status: number;
     code: string;
@@ -39,6 +46,8 @@ describe("SharedAlbumEditor", () => {
     jest.clearAllMocks();
     mockStart.mockResolvedValue({ publicationId: "pub-1", uploads: [{ position: 1, uploadUrl: "https://upload.test/new", objectKey: "server-key" }], coverUpload: null });
     mockFinish.mockResolvedValue({ albumId: "album-1" });
+    mockStartOwned.mockResolvedValue({ publicationId: "owned-pub", uploads: [], coverUpload: null });
+    mockFinishOwned.mockResolvedValue({ albumId: "album-1" });
     global.fetch = jest.fn(async (url: any) => url === "file:///new.jpg"
       ? ({ ok: true, blob: async () => new Blob(["new"], { type: "image/jpeg" }) })
       : ({ ok: true })) as any;
@@ -60,6 +69,18 @@ describe("SharedAlbumEditor", () => {
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
     expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
     expect(onPublished).toHaveBeenCalled();
+  });
+
+  it("uses the owner publication API while keeping the same canvas editor payload", async () => {
+    const ownedAlbum = { ...album, role: "owner" };
+    render(<SharedAlbumEditor accessToken="token" album={ownedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("发布新版本"));
+    await waitFor(() => expect(mockFinishOwned).toHaveBeenCalledWith("token", "gift-1", "owned-pub"));
+    expect(mockStartOwned).toHaveBeenCalledWith("token", "gift-1", expect.objectContaining({
+      baseVersion: 4,
+      media: [{ position: 0, mediaId: "media-1" }],
+    }));
+    expect(mockStart).not.toHaveBeenCalled();
   });
 
   it("encodes existing and new layout cover images as reloadable stable media refs", async () => {

@@ -84,6 +84,17 @@ describe("gift owner member management", () => {
     expect(mockStartOwnedGiftPublish.mock.calls[0][2]).toEqual(expect.objectContaining({ baseVersion: expectedBaseVersion }));
   });
 
+  it("preselects the local album passed from its detail page and exposes direct shared editing", async () => {
+    const memory = { id: "memory-1", title: "Trip", city: "London", travelDate: "2026-08-16", photoUris: [], pages: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
+    mockUseLocalSearchParams.mockReturnValue({ id: "gift-1", memoryId: memory.id });
+    mockMemories.mockReturnValue([memory]);
+    mockGetOwnedGiftManagement.mockResolvedValue({ ...management(), album: { id: "album-1", title: "Trip", sourceMemoryId: memory.id, publishedAt: "2026-08-16T00:00:00.000Z", version: 3, mediaCount: 0 } });
+    render(<GiftManagementScreen />);
+    await screen.findByText("已选择：Trip");
+    fireEvent.press(screen.getByText("编辑当前共享相册"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/gifts/shared/gift-1?access=owner");
+  });
+
   it("shows pending request details and reloads management after approval", async () => {
     mockListOwnedGiftManagementRequests.mockResolvedValueOnce([
       { id: "pending-1", action: "change_member_role", targetEmail: viewer.email, targetRole: "editor", status: "pending", createdAt: "2026-08-16T01:02:00.000Z", decidedAt: null },

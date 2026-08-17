@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
@@ -39,6 +39,16 @@ describe("my gifts account gate", () => {
     render(<MyGiftsScreen />);
     await waitFor(() => expect(mockListOwnedGifts).toHaveBeenCalledWith("account-token"));
     await waitFor(() => expect(mockListInvitedGifts).toHaveBeenCalledWith("account-token"));
+  });
+
+  it("carries a selected local album into owner gift management", async () => {
+    mockUseLocalSearchParams.mockReturnValue({ memoryId: "memory-1" });
+    mockListOwnedGifts.mockResolvedValue([{ id: "gift-1", status: "bound", claimedAt: null, album: null }]);
+    mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "owner-1", email: "owner@example.com", isAdmin: false } }, signOut: jest.fn() });
+    render(<MyGiftsScreen />);
+    await screen.findByText("管理");
+    fireEvent.press(screen.getByText("管理"));
+    expect(mockPush).toHaveBeenCalledWith("/gifts/gift-1?memoryId=memory-1");
   });
 
   it("shows invited album covers and auto-opens the cover page from an NFC open param", async () => {

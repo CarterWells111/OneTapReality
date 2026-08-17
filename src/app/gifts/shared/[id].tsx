@@ -12,7 +12,7 @@ import { BackendApiClient, type InvitedGiftAlbum } from "../../../services/backe
 
 export default function SharedGiftDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, access } = useLocalSearchParams<{ id: string; access?: string }>();
   const { isAuthReady, session } = useAuth();
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [status, setStatus] = React.useState("正在读取分享相册…");
@@ -26,7 +26,7 @@ export default function SharedGiftDetailScreen() {
   const [loadedContextKey, setLoadedContextKey] = React.useState<string | null>(null);
   const requestInFlight = React.useRef(false);
   const requestGeneration = React.useRef(0);
-  const contextKey = session && id ? `${id}\u0000${session.user.id}\u0000${session.accessToken}` : null;
+  const contextKey = session && id ? `${id}\u0000${access === "owner" ? "owner" : "invited"}\u0000${session.user.id}\u0000${session.accessToken}` : null;
   const contextKeyRef = React.useRef(contextKey);
   contextKeyRef.current = contextKey;
 
@@ -48,7 +48,9 @@ export default function SharedGiftDetailScreen() {
       return;
     }
     try {
-      const result = await client.getInvitedGiftAlbum(id, session.accessToken);
+      const result = access === "owner"
+        ? await client.getOwnedGiftAlbum(id, session.accessToken)
+        : await client.getInvitedGiftAlbum(id, session.accessToken);
       if (generation !== requestGeneration.current) return;
       setAlbum(result);
       if (result.role === "editor") {
@@ -63,7 +65,7 @@ export default function SharedGiftDetailScreen() {
       setStatus("无法读取此分享相册，请检查网络后重试。");
       setLoadFailed(true);
     }
-  }, [client, contextKey, id, router, session]);
+  }, [access, client, contextKey, id, router, session]);
 
   React.useEffect(() => {
     if (isAuthReady) void load();
@@ -72,6 +74,7 @@ export default function SharedGiftDetailScreen() {
   if (!isAuthReady || !session) return null;
 
   const coverImage = album?.cover?.readUrl ?? null;
+  const canEdit = album?.role === "owner" || album?.role === "editor";
   const requestManagement = async (input: { action: "delete_album" | "remove_member" | "change_member_role"; targetEmail?: string; targetRole?: "viewer" | "editor" }) => {
     if (!session || !id || !contextKey || loadedContextKey !== contextKey || requestInFlight.current) return;
     const generation = requestGeneration.current;
@@ -101,7 +104,7 @@ export default function SharedGiftDetailScreen() {
 
 
       {album ? (
-        editing && album.role === "editor" ? (
+        editing && canEdit ? (
           <SharedAlbumEditor
             accessToken={session.accessToken}
             album={album}
@@ -117,6 +120,7 @@ export default function SharedGiftDetailScreen() {
           <>
             <PageReader pages={mapSharedAlbumToStoryPages(album)} />
             <View style={styles.actions}>
+              {canEdit ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
               <AppButton label="返回纪念品" onPress={() => router.back()} />
             </View>
           </>
@@ -136,7 +140,7 @@ export default function SharedGiftDetailScreen() {
             </Text>
             <View style={styles.actions}>
               <AppButton label="打开相册" onPress={() => setOpened(true)} />
-              {album.role === "editor" ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
+              {canEdit ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
               <AppButton label="返回纪念品" tone="secondary" onPress={() => router.back()} />
             </View>
           </>

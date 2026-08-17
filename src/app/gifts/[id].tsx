@@ -32,7 +32,7 @@ function isNonOwnerRole(role: GiftMemberRole): role is "viewer" | "editor" {
 
 export default function GiftManagementScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, memoryId } = useLocalSearchParams<{ id: string; memoryId?: string }>();
   const { session } = useAuth();
   const { memories } = useMemories();
   const client = React.useMemo(() => new BackendApiClient(), []);
@@ -69,7 +69,7 @@ export default function GiftManagementScreen() {
       setMembers(result.members.map((member) => ({ email: member.email, role: member.role })));
       setAlbum(result.album ? { title: result.album.title, sourceMemoryId: result.album.sourceMemoryId, version: result.album.version } : null);
       setManagementRequests(requests.filter((request) => request.status === "pending"));
-      setSelectedMemoryId((current) => current ?? result.album?.sourceMemoryId ?? null);
+      setSelectedMemoryId((current) => current ?? (typeof memoryId === "string" ? memoryId : null) ?? result.album?.sourceMemoryId ?? null);
       setAuthorizedContextKey(managementContextKey);
       setMessage("仅你可管理此礼品。每件礼品最多 3 个访问邮箱（含你）。");
     } catch {
@@ -81,7 +81,7 @@ export default function GiftManagementScreen() {
     } finally {
       if (canCommit()) setManagementLoaded(true);
     }
-  }, [client, id, managementContextKey, router, session]);
+  }, [client, id, managementContextKey, memoryId, router, session]);
 
   React.useEffect(() => {
     let active = true;
@@ -313,6 +313,7 @@ export default function GiftManagementScreen() {
           label={album ? "更新共享相册" : "发布共享相册"}
           onPress={() => void publish()}
         />
+        {album ? <AppButton label="编辑当前共享相册" tone="warm" onPress={() => router.push(`/gifts/shared/${encodeURIComponent(id)}?access=owner` as never)} /> : null}
       </PaperCard>
     </Section>
 

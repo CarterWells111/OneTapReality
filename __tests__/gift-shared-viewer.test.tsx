@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 const mockGetInvitedGiftAlbum = jest.fn();
+const mockGetOwnedGiftAlbum = jest.fn();
+const mockListTargets = jest.fn();
 const mockUseAuth = jest.fn();
 const mockRouter = { back: mockBack, replace: mockReplace };
 let mockParams = { id: "gift-1" };
@@ -13,7 +15,11 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/services/backend/api-client", () => ({
-  BackendApiClient: jest.fn(() => ({ getInvitedGiftAlbum: mockGetInvitedGiftAlbum })),
+  BackendApiClient: jest.fn(() => ({
+    getInvitedGiftAlbum: mockGetInvitedGiftAlbum,
+    getOwnedGiftAlbum: mockGetOwnedGiftAlbum,
+    listInvitedGiftManagementTargets: mockListTargets,
+  })),
 }));
 jest.mock("../src/features/canvas/page-reader", () => {
   const React = require("react");
@@ -46,6 +52,8 @@ describe("shared gift album viewer", () => {
     jest.clearAllMocks();
     mockParams = { id: "gift-1" };
     mockGetInvitedGiftAlbum.mockResolvedValue(album);
+    mockGetOwnedGiftAlbum.mockResolvedValue({ ...album, role: "owner" });
+    mockListTargets.mockResolvedValue([]);
     mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "user-1", email: "viewer@example.com", isAdmin: false } }, signOut: jest.fn() });
   });
 
@@ -70,6 +78,24 @@ describe("shared gift album viewer", () => {
     await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
     fireEvent.press(screen.getByText("编辑共享相册"));
     expect(screen.getByTestId("shared-editor")).toBeTruthy();
+  });
+
+  it("keeps the editor entry visible after an editor opens the full album", async () => {
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
+    render(<SharedGiftDetailScreen />);
+    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
+    fireEvent.press(screen.getByText("打开相册"));
+    expect(screen.getByTestId("reader")).toBeTruthy();
+    fireEvent.press(screen.getByText("编辑共享相册"));
+    expect(screen.getByTestId("shared-editor")).toBeTruthy();
+  });
+
+  it("loads the owner snapshot and offers the same editor", async () => {
+    mockParams = { id: "gift-1", access: "owner" } as typeof mockParams & { access: string };
+    render(<SharedGiftDetailScreen />);
+    await waitFor(() => expect(mockGetOwnedGiftAlbum).toHaveBeenCalledWith("gift-1", "account-token"));
+    expect(mockGetInvitedGiftAlbum).not.toHaveBeenCalled();
+    expect(screen.getByText("编辑共享相册")).toBeTruthy();
   });
 
   it("returns to the souvenir list from the cover", async () => {

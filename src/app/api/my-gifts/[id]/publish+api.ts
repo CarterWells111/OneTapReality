@@ -1,4 +1,4 @@
-import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError } from "../../../../server/gifts/repository";
+import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, resolveExistingGiftMedia } from "../../../../server/gifts/repository";
 import { getR2MediaStoreFromEnvironment } from "../../../../server/gifts/r2-media";
 import { requireOwnedGift } from "../../../../server/gifts/owner-access";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
@@ -13,10 +13,14 @@ export async function POST(request: Request, { id }: { id: string }): Promise<Re
     const publicationId = crypto.randomUUID();
     const now = new Date();
     const body = await request.json() as SharedPublishBody;
-    const { baseVersion, payload } = prepareSharedPublication(body as unknown as SharedPublishBody, id, publicationId);
+    const { baseVersion, payload, existingMedia } = prepareSharedPublication(body as unknown as SharedPublishBody, id, publicationId, { allowExistingMedia: true });
+    const newMedia = [...payload.media];
+    const resolved = await resolveExistingGiftMedia(db, id, baseVersion, existingMedia);
+    if (!resolved) throw new ApiError(400, "gift_media_reference_invalid", "Existing media must belong to the current shared album");
+    payload.media.push(...resolved);
     const expiresAt = new Date(now.getTime() + 15 * 60_000).toISOString();
     await createGiftPublishSession(db, { id: publicationId, giftId: id, ownerEmail: email, baseVersion, payload, createdAt: now.toISOString(), expiresAt });
-    const uploads = await Promise.all(payload.media.map(async (media) => ({ position: media.position, objectKey: media.objectKey, uploadUrl: await store.createUploadUrl(media) })));
+    const uploads = await Promise.all(newMedia.map(async (media) => ({ position: media.position, objectKey: media.objectKey, uploadUrl: await store.createUploadUrl(media) })));
     const coverUpload = payload.cover ? { uploadUrl: await store.createUploadUrl(payload.cover) } : null;
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ publicationId, uploads, coverUpload, expiresAt }, { status: 201 });

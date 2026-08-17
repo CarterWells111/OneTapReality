@@ -48,7 +48,7 @@ export type SharedAlbumCover = {
 };
 
 export type InvitedGiftAlbum = {
-  role: "viewer" | "editor";
+  role: GiftMemberRole;
   title: string;
   pages: { position: number; page: unknown }[];
   media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[];
@@ -154,6 +154,10 @@ export class BackendApiClient {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/manage`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
+  getOwnedGiftAlbum(id: string, accessToken: string): Promise<InvitedGiftAlbum> {
+    return this.send<InvitedGiftAlbum>(`/api/my-gifts/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
   listOwnedGiftMembers(accessToken: string, id: string) {
     return this.send<{ members: { email: string; role: GiftMemberRole; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
@@ -170,7 +174,7 @@ export class BackendApiClient {
     await this.send<null>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email }) });
   }
 
-  startOwnedGiftPublish(accessToken: string, id: string, payload: { baseVersion: number; sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: { position: number; contentType: string; byteSize: number }[]; cover?: { contentType: string; byteSize: number } | null }) {
+  startOwnedGiftPublish(accessToken: string, id: string, payload: { baseVersion: number; sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: ({ position: number; mediaId: string } | { position: number; contentType: string; byteSize: number })[]; cover?: { contentType: string; byteSize: number } | null }) {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
