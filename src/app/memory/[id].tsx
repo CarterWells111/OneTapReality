@@ -70,6 +70,13 @@ export default function MemoryDetailScreen() {
           <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
         </View>
         <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
+        {!isSample ? (
+          <View style={styles.localActions}>
+            <AppButton label="编辑相册" onPress={() => router.push({ pathname: "/memory/[id]/edit", params: { id: memory.id } })} />
+            <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ pages: memory.pages, title: memory.title })} />
+            <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
+          </View>
+        ) : null}
         <PageReader pages={memory.pages} />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
@@ -87,6 +94,7 @@ const styles = StyleSheet.create({
   summaryMemoryTitle: { color: colors.ink, flexShrink: 1, fontSize: 17, fontWeight: "800" },
   summaryMeta: { color: colors.muted, fontSize: 13, fontWeight: "700" },
   readerLead: { color: colors.muted, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
+  localActions: { gap: 10 },
 });
 
 /** Apple 风格分享按钮（方框+箭头），用于 header。 */

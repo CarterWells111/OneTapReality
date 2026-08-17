@@ -1,7 +1,9 @@
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 
 const mockGetMemoryById = jest.fn();
+const mockPush = jest.fn();
+const mockShare = jest.fn();
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -13,7 +15,7 @@ jest.mock("expo-router", () => {
       ),
     },
     useLocalSearchParams: () => ({ id: "memory-canvas" }),
-    useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+    useRouter: () => ({ push: mockPush, replace: jest.fn() }),
   };
 });
 
@@ -21,9 +23,12 @@ jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ deleteMemory: jest.fn(), getMemoryById: mockGetMemoryById }),
 }));
 
+jest.mock("../src/features/export/share-action-sheet", () => ({ showShareActionSheet: (...args: unknown[]) => mockShare(...args) }));
+
 import MemoryDetailScreen from "../src/app/memory/[id]";
 
 describe("MemoryDetailScreen canvas rendering", () => {
+  beforeEach(() => jest.clearAllMocks());
   it("renders saved canvas layouts and keeps the page heading available", async () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas",
@@ -60,5 +65,21 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(StyleSheet.flatten(screen.getByTestId("canvas-element-title").props.style)).toMatchObject({
       transform: [{ rotate: "0.25rad" }],
     });
+  });
+
+  it("shows explicit local edit, share, and gift binding actions without consulting shared roles", () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [{ id: "cover", position: 0, kind: "cover", headline: "Cover", body: "", layout: { aspectRatio: 0.75, elements: [] } }],
+    });
+    const view = render(<MemoryDetailScreen />);
+
+    fireEvent.press(view.getByText("编辑相册"));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/memory/[id]/edit", params: { id: "memory-canvas" } });
+    fireEvent.press(view.getByText("分享相册"));
+    expect(mockShare).toHaveBeenCalled();
+    fireEvent.press(view.getByText("绑定到礼品"));
+    expect(mockPush).toHaveBeenCalledWith("/gifts?memoryId=memory-canvas");
   });
 });

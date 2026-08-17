@@ -198,11 +198,16 @@ describe("editor shared publication contract", () => {
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "validation_failed" }) }));
   });
 
-  it.each([
-    ["owned", (req: Request) => ownedPOST(req, { id: "gift-1" })],
-    ["token", (req: Request) => tokenPOST(req, { token: "token" })],
-  ] as const)("rejects existing media references at the %s owner publish entry", async (_name, invoke) => {
-    const response = await invoke(request("POST", { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ position: 0, mediaId: "media-1" }] }));
+  it("lets the account owner reuse media after server-side gift/version validation", async () => {
+    const response = await ownedPOST(request("POST", { baseVersion: 0, sourceMemoryId: "shared:gift-1", title: "Trip", pages: [], media: [{ position: 0, mediaId: "media-1" }] }), { id: "gift-1" });
+    expect(response.status).toBe(201);
+    expect(mockResolveExisting).toHaveBeenCalledWith(expect.anything(), "gift-1", 0, [{ position: 0, mediaId: "media-1" }]);
+    const body = await response.json() as { uploads: unknown[] };
+    expect(body.uploads).toEqual([]);
+  });
+
+  it("continues to reject existing media references at the legacy token owner publish entry", async () => {
+    const response = await tokenPOST(request("POST", { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ position: 0, mediaId: "media-1" }] }), { token: "token" });
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "validation_failed" }) }));
   });

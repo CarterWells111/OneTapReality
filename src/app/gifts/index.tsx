@@ -21,7 +21,7 @@ function CoverThumb({ uri, title }: { uri?: string | null; title: string }) {
 
 export default function MyGiftsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ open?: string }>();
+  const params = useLocalSearchParams<{ open?: string; memoryId?: string }>();
   const { isAuthReady, session } = useAuth();
   const [message, setMessage] = React.useState("正在读取你的纪念品…");
   const [owned, setOwned] = React.useState<OwnedGift[]>([]);
@@ -105,7 +105,10 @@ export default function MyGiftsScreen() {
                   {item.album ? `版本 ${item.album.version} · 可管理` : "管理相册、邀请成员、发布更新"}
                 </Text>
               </View>
-              <AppButton label="管理" onPress={() => router.push(`/gifts/${item.id}` as never)} />
+              <AppButton
+                label="管理"
+                onPress={() => router.push(`/gifts/${item.id}${typeof params.memoryId === "string" ? `?memoryId=${encodeURIComponent(params.memoryId)}` : ""}` as never)}
+              />
             </View>
           ))}
         </Section>

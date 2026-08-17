@@ -1,5 +1,5 @@
 import * as React from "react";
-import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -15,6 +15,60 @@ import { headingFontFamily } from "../typography/fonts";
 import type { StoryPage } from "../../types/memory";
 
 const serifFont = headingFontFamily;
+
+type PageReaderLayerBufferProps = {
+  current: StoryPage;
+  currentIsRight: boolean;
+  currentStyle?: StyleProp<ViewStyle>;
+  incoming?: StoryPage;
+  incomingIsRight?: boolean;
+  incomingStyle?: StyleProp<ViewStyle>;
+  pageHeight: number;
+  pageWidth: number;
+};
+
+export function PageReaderLayerBuffer({
+  current,
+  currentIsRight,
+  currentStyle,
+  incoming,
+  incomingIsRight = false,
+  incomingStyle,
+  pageHeight,
+  pageWidth,
+}: PageReaderLayerBufferProps) {
+  const layers = [
+    { isCurrent: true, isRight: currentIsRight, page: current, style: currentStyle },
+    ...(incoming ? [{ isCurrent: false, isRight: incomingIsRight, page: incoming, style: incomingStyle }] : []),
+  ];
+
+  return layers.map(({ isCurrent, isRight, page, style }) => {
+    const isCover = page.kind === "cover";
+    return (
+      <Animated.View
+        key={page.id}
+        pointerEvents={isCurrent ? "auto" : "none"}
+        style={[styles.pageLayer, style]}
+        testID={isCurrent ? "reader-page" : "reader-page-incoming"}
+      >
+        {page.layout ? (
+          <CanvasPage
+            height={pageHeight}
+            interactive={false}
+            layout={page.layout}
+            pageSide={isRight ? "right" : "left"}
+            width={pageWidth}
+          />
+        ) : (
+          <View style={[styles.textPage, isCover && { backgroundColor: page.coverColor ?? "#EFE2CF" }, { height: pageHeight, width: pageWidth }]}>
+            <Text selectable style={styles.pageHeadline}>{page.headline}</Text>
+            <Text selectable style={styles.pageBody}>{page.body}</Text>
+          </View>
+        )}
+      </Animated.View>
+    );
+  });
+}
 
 /**
  * 只读的左右滑动翻页阅读器：整页滑出后再切换，无回弹。
@@ -90,24 +144,6 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
     return null;
   }
 
-  const renderPage = (page: StoryPage, isRight: boolean) => {
-    const isCover = page.kind === "cover";
-    return page.layout ? (
-      <CanvasPage
-        height={pageHeight}
-        interactive={false}
-        layout={page.layout}
-        pageSide={isRight ? "right" : "left"}
-        width={pageWidth}
-      />
-    ) : (
-      <View style={[styles.textPage, isCover && { backgroundColor: page.coverColor ?? "#EFE2CF" }, { height: pageHeight, width: pageWidth }]}>
-        <Text selectable style={styles.pageHeadline}>{page.headline}</Text>
-        <Text selectable style={styles.pageBody}>{page.body}</Text>
-      </View>
-    );
-  };
-
   const isRightPage = index % 2 === 0;
   const incomingIsRight = pending ? pending.targetIndex % 2 === 0 : false;
 
@@ -119,14 +155,16 @@ export function PageReader({ pages }: { pages: StoryPage[] }) {
       <View style={styles.stage}>
         <GestureDetector gesture={pan}>
           <View style={{ height: pageHeight, width: pageWidth }}>
-            <Animated.View style={[styles.pageLayer, currentStyle]} testID="reader-page">
-              {renderPage(current, isRightPage)}
-            </Animated.View>
-            {incoming ? (
-              <Animated.View pointerEvents="none" style={[styles.pageLayer, incomingStyle]}>
-                {renderPage(incoming, incomingIsRight)}
-              </Animated.View>
-            ) : null}
+            <PageReaderLayerBuffer
+              current={current}
+              currentIsRight={isRightPage}
+              currentStyle={currentStyle}
+              incoming={incoming}
+              incomingIsRight={incomingIsRight}
+              incomingStyle={incomingStyle}
+              pageHeight={pageHeight}
+              pageWidth={pageWidth}
+            />
           </View>
         </GestureDetector>
       </View>

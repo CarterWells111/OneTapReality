@@ -59,6 +59,7 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
   const [stale, setStale] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const inFlight = React.useRef(false);
+  const isOwner = album.role === "owner";
 
   const publish = async () => {
     if (inFlight.current || stale) return;
@@ -90,7 +91,7 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
         coverBlob = await response.blob();
       }
       const refs = new Map(sources.map((source, position) => [source.uri, { position, ...(source.existingId ? { mediaId: source.existingId } : {}) }]));
-      const publication = await client.startInvitedGiftPublish(giftId, accessToken, {
+      const publishPayload = {
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
         title: album.title,
@@ -99,7 +100,10 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
           ? { position, mediaId: source.existingId }
           : { position, contentType: source.contentType!, byteSize: source.byteSize! }),
         cover: coverBlob ? { contentType: coverBlob.type || album.cover!.contentType, byteSize: coverBlob.size } : null,
-      });
+      };
+      const publication = isOwner
+        ? await client.startOwnedGiftPublish(accessToken, giftId, publishPayload)
+        : await client.startInvitedGiftPublish(giftId, accessToken, publishPayload);
       for (const upload of publication.uploads) {
         const source = sources[upload.position];
         if (!source || source.existingId) throw new Error("上传清单不完整。");
@@ -117,7 +121,8 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
         });
         if (!response.ok) throw new Error("封面上传失败。");
       }
-      await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
+      if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
+      else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
       await onPublished();
     } catch (error) {
       if (error instanceof BackendApiError && error.status === 403) {
