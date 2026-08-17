@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
+import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 
 import { canvasBackgrounds } from "./canvas-assets";
-import { CanvasElement } from "./canvas-element";
+import { CanvasElement, type CanvasElementStylePreview } from "./canvas-element";
 import { colors } from "../../components/ui";
 import type { CanvasLayout } from "../../types/memory";
 
@@ -24,6 +25,10 @@ type CanvasPageProps = {
   flatEdges?: boolean;
   height?: number;
   layout: CanvasLayout;
+  coverColorPreview?: SharedValue<string>;
+  stylePreview?: CanvasElementStylePreview & {
+    elementId: string;
+  };
   selectedElementId?: string;
   onPressBlank?: () => void;
   onInteractElement?: (id: string) => void;
@@ -41,6 +46,8 @@ export function CanvasPage({
   flatEdges = false,
   height,
   layout,
+  coverColorPreview,
+  stylePreview,
   selectedElementId,
   onPressBlank,
   onInteractElement,
@@ -65,6 +72,10 @@ export function CanvasPage({
     }
     return left.zIndex - right.zIndex;
   });
+  const interactionZIndex = layout.elements.reduce(
+    (maximum, element) => Number.isFinite(element.zIndex) ? Math.max(maximum, element.zIndex) : maximum,
+    0,
+  ) + 1;
   const canPressBlank = interactive && onPressBlank !== undefined;
   const background = canvasBackgrounds.find((asset) => asset.id === layout.backgroundId);
   const coverSolidColor = layout.coverColor ?? undefined;
@@ -86,6 +97,7 @@ export function CanvasPage({
         flatEdges && styles.flatEdges,
       ]}
       testID="album-canvas">
+      {coverColorPreview ? <CoverColorPreview value={coverColorPreview} /> : null}
       {background ? (
         <Image
           contentFit="cover"
@@ -111,10 +123,12 @@ export function CanvasPage({
           canvasWidth={canvasWidth}
           element={element}
           interactive={interactive}
+          interactionZIndex={interactive && element.id === selectedElementId ? interactionZIndex : undefined}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
           onInteract={onInteractElement}
           selectionContext={selectedElementId}
+          stylePreview={element.id === stylePreview?.elementId ? stylePreview : undefined}
           onSelect={onSelectElement}
           onTransformStart={interactive ? onTransformStart : undefined}
           onTransformEnd={interactive ? onTransformEnd : undefined}
@@ -122,6 +136,17 @@ export function CanvasPage({
         />
       ))}
     </Pressable>
+  );
+}
+
+function CoverColorPreview({ value }: { value: SharedValue<string> }) {
+  const animatedStyle = useAnimatedStyle(() => ({ backgroundColor: value.value }));
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, animatedStyle]}
+      testID="canvas-cover-color-preview"
+    />
   );
 }
 

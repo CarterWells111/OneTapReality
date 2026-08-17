@@ -79,7 +79,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(screen.getByText("外滩的风")).toBeTruthy();
     const canvasStyle = StyleSheet.flatten(screen.getByTestId("album-canvas").props.style);
     expect(canvasStyle.height / canvasStyle.width).toBeCloseTo(4 / 3);
-    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-title").props.style)).toMatchObject({
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-frame-title").props.style)).toMatchObject({
       transform: [{ rotate: "0.25rad" }],
     });
     expect(mockPageReader).toHaveBeenCalledWith(expect.objectContaining({ pages: expect.any(Array) }));

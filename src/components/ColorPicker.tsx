@@ -4,8 +4,10 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
+  type SharedValue,
 } from "react-native-reanimated";
 
 import { colors } from "./ui";
@@ -118,8 +120,12 @@ export function hsvToHex(hsv: HSV): string {
 type ColorPickerProps = {
   /** 当前 Hex 颜色值 */
   value: string;
-  /** 颜色变更回调 */
-  onChange: (hex: string) => void;
+  /** 连续手势被系统取消时通知调用方，不提交页面数据。 */
+  onCancel?: () => void;
+  /** 连续手势结束或离散输入完成时提交一次。 */
+  onCommit: (hex: string) => void;
+  /** 可选外部共享值：连续手势仅在 UI 线程更新它。 */
+  previewValue?: SharedValue<string>;
   /**
   /**
    * 外层滚动容器的引用：传入后色盘手势与滚动共存（色盘内拖动色相/明度
@@ -140,13 +146,40 @@ const RING = 3;
  * 提供饱和度‑明度方块 + 色相条 + RGB 数值输入 + 十六进制输入 +
  * 大块颜色预览。所有转换在 UI 线程执行，无桥接延迟。
  */
-export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
-  const currentRgb = hexToRgb(value);
+const VALID_HEX = /^#[0-9A-F]{6}$/i;
+
+function normalizeHex(value: string) {
+  return value.toUpperCase();
+}
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
+
+export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef }: ColorPickerProps) {
+  const safeValue = VALID_HEX.test(value) ? normalizeHex(value) : "#000000";
+  const currentRgb = hexToRgb(safeValue);
   const currentHsv = rgbToHsv(currentRgb);
+  const commitRef = React.useRef(onCommit);
+  commitRef.current = onCommit;
+  const cancelRef = React.useRef(onCancel);
+  cancelRef.current = onCancel;
 
   const hue = useSharedValue(currentHsv.h);
   const saturation = useSharedValue(currentHsv.s);
   const brightness = useSharedValue(currentHsv.v);
+  const localPreviewValue = useSharedValue(safeValue);
+  const localPreviewRef = React.useRef(localPreviewValue);
+  const stablePreviewValue = previewValue ?? localPreviewRef.current;
+  const gestureStartValue = useSharedValue(safeValue);
+  const gestureStartRef = React.useRef(gestureStartValue);
+  const stableGestureStart = gestureStartRef.current;
+  const [rgbDraft, setRgbDraft] = React.useState(() => ({
+    b: String(currentRgb.b),
+    g: String(currentRgb.g),
+    r: String(currentRgb.r),
+  }));
+  const [hexDraft, setHexDraft] = React.useState(safeValue);
+  const submittedRgbRef = React.useRef<Partial<Record<keyof RGB, boolean>>>({});
+  const submittedHexRef = React.useRef(false);
 
   // RNGH 类型只接受其内部手势/组件引用，无法表达 ScrollView 实例；
   // 运行时即原生滚动手势（官方推荐用法），此处仅做类型桥接。
@@ -156,19 +189,32 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
 
   // 响应外部 value 变化（例如点击预设色块后）
   React.useEffect(() => {
-    const next = rgbToHsv(hexToRgb(value));
+    const nextRgb = hexToRgb(safeValue);
+    const next = rgbToHsv(nextRgb);
     hue.value = next.h;
     saturation.value = next.s;
     brightness.value = next.v;
-  }, [value, hue, saturation, brightness]);
+    stablePreviewValue.value = safeValue;
+  }, [safeValue, hue, saturation, brightness, stablePreviewValue]);
+
+  React.useEffect(() => {
+    const nextRgb = hexToRgb(safeValue);
+    setRgbDraft({ b: String(nextRgb.b), g: String(nextRgb.g), r: String(nextRgb.r) });
+    setHexDraft(safeValue);
+  }, [safeValue]);
 
   // 布局引用 —— 在 UI 线程测量后写入
   const svLayout = useSharedValue({ x: 0, y: 0, w: SV_SIZE, h: SV_SIZE });
   const hueLayout = useSharedValue({ x: 0, w: HUE_BAR_WIDTH });
 
-  const emitChange = (h: number, s: number, v: number) => {
-    onChange(hsvToHex({ h, s, v }));
-  };
+  const emitCommit = React.useCallback((hex: string) => {
+    if (VALID_HEX.test(hex)) {
+      commitRef.current(normalizeHex(hex));
+    }
+  }, []);
+  const emitCancel = React.useCallback(() => {
+    cancelRef.current?.();
+  }, []);
 
   // ---- SV 方块手势 ----
   // 在 ScrollView 内时与滚动共存：色盘上的拖动归色盘，色盘外的滚动归滚动。
@@ -177,12 +223,13 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
     : Gesture.Pan();
   svPan
     .onBegin((e) => {
+      stableGestureStart.value = stablePreviewValue.value;
       const layout = svLayout.value;
       const sx = Math.max(0, Math.min(1, e.x / layout.w));
       const sy = Math.max(0, Math.min(1, 1 - e.y / layout.h));
       saturation.value = sx;
       brightness.value = sy;
-      runOnJS(emitChange)(hue.value, sx, sy);
+      stablePreviewValue.value = hsvToHex({ h: hue.value, s: sx, v: sy });
     })
     .onChange((e) => {
       const layout = svLayout.value;
@@ -190,7 +237,19 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
       const sy = Math.max(0, Math.min(1, 1 - e.y / layout.h));
       saturation.value = sx;
       brightness.value = sy;
-      runOnJS(emitChange)(hue.value, sx, sy);
+      stablePreviewValue.value = hsvToHex({ h: hue.value, s: sx, v: sy });
+    })
+    .onFinalize((_event, success) => {
+      if (success === false) {
+        const restored = rgbToHsv(hexToRgb(stableGestureStart.value));
+        hue.value = restored.h;
+        saturation.value = restored.s;
+        brightness.value = restored.v;
+        stablePreviewValue.value = stableGestureStart.value;
+        runOnJS(emitCancel)();
+        return;
+      }
+      runOnJS(emitCommit)(hsvToHex({ h: hue.value, s: saturation.value, v: brightness.value }));
     });
 
   // ---- Hue 条手势 ----
@@ -199,16 +258,29 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
     : Gesture.Pan();
   huePan
     .onBegin((e) => {
+      stableGestureStart.value = stablePreviewValue.value;
       const layout = hueLayout.value;
       const hx = Math.max(0, Math.min(360, (e.x / layout.w) * 360));
       hue.value = hx;
-      runOnJS(emitChange)(hx, saturation.value, brightness.value);
+      stablePreviewValue.value = hsvToHex({ h: hx, s: saturation.value, v: brightness.value });
     })
     .onChange((e) => {
       const layout = hueLayout.value;
       const hx = Math.max(0, Math.min(360, (e.x / layout.w) * 360));
       hue.value = hx;
-      runOnJS(emitChange)(hx, saturation.value, brightness.value);
+      stablePreviewValue.value = hsvToHex({ h: hx, s: saturation.value, v: brightness.value });
+    })
+    .onFinalize((_event, success) => {
+      if (success === false) {
+        const restored = rgbToHsv(hexToRgb(stableGestureStart.value));
+        hue.value = restored.h;
+        saturation.value = restored.s;
+        brightness.value = restored.v;
+        stablePreviewValue.value = stableGestureStart.value;
+        runOnJS(emitCancel)();
+        return;
+      }
+      runOnJS(emitCommit)(hsvToHex({ h: hue.value, s: saturation.value, v: brightness.value }));
     });
 
   // ---- 动画样式（UI 线程） ----
@@ -229,20 +301,50 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
     };
   });
 
+  const hueColorProps = useAnimatedProps(() => ({
+    fill: hsvToHex({ h: hue.value, s: 1, v: 1 }),
+  }));
+
+  const previewStyle = useAnimatedStyle(() => ({
+    backgroundColor: stablePreviewValue.value,
+  }));
+
   // ---- RGB / Hex 输入 ----
-  const emitRgb = (ch: keyof RGB, text: string) => {
-    const num = Math.max(0, Math.min(255, parseInt(text, 10) || 0));
-    const next = { ...hexToRgb(value), [ch]: num };
-    onChange(rgbToHex(next));
+  const commitRgb = (ch: keyof RGB, source: "blur" | "submit") => {
+    if (source === "blur" && submittedRgbRef.current[ch]) {
+      submittedRgbRef.current[ch] = false;
+      return;
+    }
+    submittedRgbRef.current[ch] = source === "submit";
+    const parsed = Number(rgbDraft[ch]);
+    if (!Number.isFinite(parsed) || rgbDraft[ch].trim() === "") {
+      setRgbDraft((current) => ({ ...current, [ch]: String(currentRgb[ch]) }));
+      return;
+    }
+    const num = Math.max(0, Math.min(255, Math.round(parsed)));
+    const next = { ...currentRgb, [ch]: num };
+    const nextHex = rgbToHex(next);
+    stablePreviewValue.value = nextHex;
+    emitCommit(nextHex);
+    setRgbDraft((current) => ({ ...current, [ch]: String(num) }));
   };
 
-  const emitHex = (v: string) => {
-    const clean = v.startsWith("#") ? v : `#${v}`;
-    // 允许中间态输入（如 "#FF"）
-    onChange(clean.length <= 7 ? clean : value);
+  const commitHex = (source: "blur" | "submit") => {
+    if (source === "blur" && submittedHexRef.current) {
+      submittedHexRef.current = false;
+      return;
+    }
+    submittedHexRef.current = source === "submit";
+    const clean = hexDraft.startsWith("#") ? hexDraft : `#${hexDraft}`;
+    if (!VALID_HEX.test(clean)) {
+      setHexDraft(safeValue);
+      return;
+    }
+    const normalized = normalizeHex(clean);
+    setHexDraft(normalized);
+    stablePreviewValue.value = normalized;
+    emitCommit(normalized);
   };
-
-  const hueColor = hsvToHex({ h: currentHsv.h, s: 1, v: 1 });
 
   return (
     <View style={styles.container}>
@@ -267,7 +369,7 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
                 <Stop offset="1" stopColor="#000000" stopOpacity={1} />
               </LinearGradient>
             </Defs>
-            <Rect fill={hueColor} height={SV_SIZE} width={SV_SIZE} rx={12} />
+            <AnimatedRect animatedProps={hueColorProps} height={SV_SIZE} width={SV_SIZE} rx={12} />
             <Rect fill="url(#sv-white)" height={SV_SIZE} width={SV_SIZE} rx={12} />
             <Rect fill="url(#sv-black)" height={SV_SIZE} width={SV_SIZE} rx={12} />
           </Svg>
@@ -322,10 +424,17 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
               inputMode="numeric"
               keyboardType="number-pad"
               maxLength={3}
-              onChangeText={(t) => emitRgb(ch, t)}
+              onBlur={() => commitRgb(ch, "blur")}
+              onChangeText={(text) => {
+                if (/^\d*$/.test(text)) {
+                  submittedRgbRef.current[ch] = false;
+                  setRgbDraft((current) => ({ ...current, [ch]: text }));
+                }
+              }}
+              onSubmitEditing={() => commitRgb(ch, "submit")}
               selectTextOnFocus
               style={styles.rgbField}
-              value={String(currentRgb[ch])}
+              value={rgbDraft[ch]}
             />
           </View>
         ))}
@@ -333,15 +442,23 @@ export function ColorPicker({ value, onChange, scrollRef }: ColorPickerProps) {
 
       {/* ── Hex + 预览 ── */}
       <View style={styles.hexRow}>
-        <View style={[styles.previewBlock, { backgroundColor: value }]} />
+        <Animated.View style={[styles.previewBlock, previewStyle]} />
         <TextInput
           accessibilityLabel="十六进制颜色值"
           autoCapitalize="none"
           maxLength={7}
-          onChangeText={emitHex}
+          onBlur={() => commitHex("blur")}
+          onChangeText={(next) => {
+            const clean = next.startsWith("#") ? next : `#${next}`;
+            if (/^#[0-9A-F]{0,6}$/i.test(clean)) {
+              submittedHexRef.current = false;
+              setHexDraft(clean.toUpperCase());
+            }
+          }}
+          onSubmitEditing={() => commitHex("submit")}
           selectTextOnFocus
           style={styles.hexField}
-          value={value.toUpperCase()}
+          value={hexDraft}
         />
       </View>
     </View>

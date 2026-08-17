@@ -4,9 +4,17 @@ const mockDatabase = { name: "local" };
 const mockClaimUnownedMemories = jest.fn();
 const mockListMemories = jest.fn();
 const mockUseAuth = jest.fn();
+const mockGetMemoryEditDraft = jest.fn();
+const mockSaveMemoryEditDraft = jest.fn();
+const mockClearMemoryEditDraft = jest.fn();
 
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
+jest.mock("../src/storage/memory-edit-draft-repository", () => ({
+  clearMemoryEditDraft: (...args: unknown[]) => mockClearMemoryEditDraft(...args),
+  getMemoryEditDraft: (...args: unknown[]) => mockGetMemoryEditDraft(...args),
+  saveMemoryEditDraft: (...args: unknown[]) => mockSaveMemoryEditDraft(...args),
+}));
 jest.mock("../src/storage/memory-repository", () => ({
   claimUnownedMemories: (...args: unknown[]) => mockClaimUnownedMemories(...args),
   clearMemories: jest.fn(),
@@ -25,6 +33,7 @@ jest.mock("../src/storage/memory-repository", () => ({
 }));
 
 import { MemoriesProvider, useMemories } from "../src/features/memories/memories-provider";
+import type { Memory, StoryPage } from "../src/types/memory";
 
 let captured: ReturnType<typeof useMemories> | undefined;
 function Capture() { captured = useMemories(); return null; }
@@ -70,5 +79,40 @@ describe("MemoriesProvider account gate", () => {
 
     await act(async () => { resolveFirst?.([{ id: "a-memory", pages: [], photoUris: [] }]); });
     expect(captured?.memories).toEqual([expect.objectContaining({ id: "b-memory" })]);
+  });
+
+  it("scopes every recovery draft operation to the normalized current account", async () => {
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: { id: "owner", email: " Owner@Example.COM ", isAdmin: false } });
+    mockGetMemoryEditDraft.mockResolvedValue([]);
+    mockSaveMemoryEditDraft.mockResolvedValue(undefined);
+    mockClearMemoryEditDraft.mockResolvedValue(undefined);
+    const memory = {
+      id: "memory-1",
+      title: "Album",
+      city: "hangzhou",
+      travelDate: "2026-08-10",
+      photoUris: [],
+      pages: [],
+      createdAt: "2026-08-10T10:00:00.000Z",
+      updatedAt: "2026-08-10T11:00:00.000Z",
+    } satisfies Memory;
+    const pages: StoryPage[] = [{
+      id: "page-1",
+      position: 0,
+      kind: "cover",
+      headline: "Cover",
+      body: "Body",
+    }];
+
+    render(<MemoriesProvider><Capture /></MemoriesProvider>);
+    await waitFor(() => expect(captured?.isReady).toBe(true));
+
+    await expect(captured!.getMemoryEditDraft(memory)).resolves.toEqual([]);
+    await captured!.saveMemoryEditDraft(memory, pages);
+    await captured!.clearMemoryEditDraft(memory.id);
+
+    expect(mockGetMemoryEditDraft).toHaveBeenCalledWith(mockDatabase, memory, "owner@example.com");
+    expect(mockSaveMemoryEditDraft).toHaveBeenCalledWith(mockDatabase, memory, pages, "owner@example.com");
+    expect(mockClearMemoryEditDraft).toHaveBeenCalledWith(mockDatabase, memory.id, "owner@example.com");
   });
 });

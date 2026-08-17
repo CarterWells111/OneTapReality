@@ -6,6 +6,11 @@ import { useAuth } from "../auth/auth-provider";
 import { normalizeLocalAccountKey } from "../auth/local-account";
 import { cleanupMigratedLegacyPhotoUris, deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, findMigratedLegacyPhotoUris, persistPhotoUriStrict } from "./photo-persistence";
 import {
+  clearMemoryEditDraft as clearMemoryEditDraftInDb,
+  getMemoryEditDraft as getMemoryEditDraftFromDb,
+  saveMemoryEditDraft as saveMemoryEditDraftInDb,
+} from "../../storage/memory-edit-draft-repository";
+import {
   clearMemories,
   claimUnownedMemories,
   createDraft as createDraftInDb,
@@ -37,6 +42,9 @@ type MemoriesContextValue = {
   discardDraft: (id: string) => Promise<void>;
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   updateDraftPages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
+  getMemoryEditDraft: (memory: Memory) => Promise<StoryPage[] | null>;
+  saveMemoryEditDraft: (memory: Memory, pages: StoryPage[]) => Promise<void>;
+  clearMemoryEditDraft: (memoryId: string) => Promise<void>;
   persistSelectedPhoto: (memoryId: string, uri: string) => Promise<string>;
   discardMemory: (id: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
@@ -233,6 +241,25 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [db, requireAccountKey]
   );
 
+  const getMemoryEditDraft = React.useCallback(
+    async (memory: Memory) => getMemoryEditDraftFromDb(db, memory, requireAccountKey()),
+    [db, requireAccountKey],
+  );
+
+  const saveMemoryEditDraft = React.useCallback(
+    async (memory: Memory, pages: StoryPage[]) => {
+      await saveMemoryEditDraftInDb(db, memory, pages, requireAccountKey());
+    },
+    [db, requireAccountKey],
+  );
+
+  const clearMemoryEditDraft = React.useCallback(
+    async (memoryId: string) => {
+      await clearMemoryEditDraftInDb(db, memoryId, requireAccountKey());
+    },
+    [db, requireAccountKey],
+  );
+
   const persistSelectedPhoto = React.useCallback(
     async (memoryId: string, uri: string) => persistPhotoUriStrict(uri, requireAccountKey(), memoryId),
     [requireAccountKey],
@@ -288,6 +315,9 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardDraft,
       updatePages,
       updateDraftPages,
+      getMemoryEditDraft,
+      saveMemoryEditDraft,
+      clearMemoryEditDraft,
       persistSelectedPhoto,
       discardMemory,
       deleteMemory,
@@ -304,15 +334,18 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardMemory,
       discardDraft,
       getDraftById,
+      getMemoryEditDraft,
       isReady,
       listDiscarded,
       memories,
       restoreMemory,
       retryDraft,
       saveDraft,
+      saveMemoryEditDraft,
       updatePages,
       updateDraftPages,
       persistSelectedPhoto,
+      clearMemoryEditDraft,
     ]
   );
 

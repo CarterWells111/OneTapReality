@@ -343,7 +343,7 @@ export default function NewMemoryScreen() {
             <Text selectable style={styles.sheetTitle}>自定封面颜色</Text>
             <ColorPicker
               value={coverColor}
-              onChange={(hex) => {
+              onCommit={(hex) => {
                 setCoverColor(hex);
                 setCoverImage(undefined);
               }}

@@ -1,61 +1,305 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { ScrollView, StyleSheet, Text } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppButton, colors } from "../../../components/ui";
+import { useAuth } from "../../../features/auth/auth-provider";
+import { normalizeLocalAccountKey } from "../../../features/auth/local-account";
 import { BookCanvasEditor } from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
+import { localDiagnostics } from "../../../features/diagnostics/local-diagnostics";
+import {
+  type AutosaveQueueState,
+} from "../../../features/memories/autosave-queue";
+import {
+  acquireMemoryEditRecoveryQueue,
+  type MemoryEditRecoveryQueueLease,
+} from "../../../features/memories/memory-edit-recovery-queue";
 import { useMemories } from "../../../features/memories/memories-provider";
 import type { Memory, StoryPage } from "../../../types/memory";
+
+type CompletedFormalSave = {
+  cursor: { pageId: string; index: number };
+  loadKey: string;
+  memoryId: string;
+  sessionToken: number;
+};
+
+type LoadedFallbackDraft = {
+  loadKey: string;
+  memory: Memory | null;
+};
 
 export default function EditMemoryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getDraftById, getMemoryById, persistSelectedPhoto, updatePages } = useMemories();
+  const { user } = useAuth();
+  const accountKey = user ? normalizeLocalAccountKey(user.email) : "signed-out";
+  const {
+    clearMemoryEditDraft,
+    getDraftById,
+    getMemoryById,
+    getMemoryEditDraft,
+    persistSelectedPhoto,
+    saveMemoryEditDraft,
+    updatePages,
+  } = useMemories();
   const savedMemory = getMemoryById(id);
-  const [loadedDraft, setLoadedDraft] = React.useState<Memory | null>(null);
-  const memory = savedMemory ?? loadedDraft ?? undefined;
+  const fallbackDraftLoadKey = `${accountKey}:${id}`;
+  const [loadedDraft, setLoadedDraft] = React.useState<LoadedFallbackDraft | null>(null);
+  const loadedDraftMemory = loadedDraft?.loadKey === fallbackDraftLoadKey
+    ? loadedDraft.memory
+    : null;
+  const memory = savedMemory ?? loadedDraftMemory ?? undefined;
+  const isSavedMemory = Boolean(savedMemory);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [isFormalSaveCompleted, setIsFormalSaveCompleted] = React.useState(false);
+  const loadIdentity = `${accountKey}:${id}:${isSavedMemory ? "saved" : "draft"}`;
+  const candidateBaseVersion = memory?.updatedAt ?? "pending";
+  const loadBaseVersionRef = React.useRef({ identity: loadIdentity, version: candidateBaseVersion });
+  if (loadBaseVersionRef.current.identity !== loadIdentity
+    || (!isSaving
+      && !isFormalSaveCompleted
+      && loadBaseVersionRef.current.version !== candidateBaseVersion)) {
+    loadBaseVersionRef.current = { identity: loadIdentity, version: candidateBaseVersion };
+  }
+  const loadKey = `${loadIdentity}:${loadBaseVersionRef.current.version}`;
   const [pages, setPages] = React.useState<StoryPage[]>([]);
   const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [isSaving, setIsSaving] = React.useState(false);
   const [isTransformPending, setIsTransformPending] = React.useState(false);
+  const [isRecoveryLoading, setIsRecoveryLoading] = React.useState(true);
+  const [recoveryReadError, setRecoveryReadError] = React.useState(false);
+  const [didRecover, setDidRecover] = React.useState(false);
+  const [editorSessionToken, setEditorSessionToken] = React.useState<number | null>(null);
+  const [recoveryState, setRecoveryState] = React.useState<AutosaveQueueState>({ status: "saved" });
+  const activePageRef = React.useRef(activePage);
+  const clearMemoryEditDraftRef = React.useRef(clearMemoryEditDraft);
+  const completedFormalSaveRef = React.useRef<CompletedFormalSave | null>(null);
+  const getMemoryEditDraftRef = React.useRef(getMemoryEditDraft);
+  const initializedLoadKeyRef = React.useRef<string | null>(null);
   const isMountedRef = React.useRef(true);
+  const editorCommitLockedRef = React.useRef(false);
+  const editorSessionGenerationRef = React.useRef(0);
+  const isTransformPendingRef = React.useRef(false);
+  const loadGenerationRef = React.useRef(0);
+  const memoryRef = React.useRef(memory);
+  const pagesRef = React.useRef(pages);
+  const queueLeaseRef = React.useRef<MemoryEditRecoveryQueueLease | null>(null);
+  const queueUnsubscribeRef = React.useRef<(() => void) | null>(null);
+  const retryRecoveryReadRef = React.useRef<(() => void) | null>(null);
   const saveInFlightRef = React.useRef(false);
+  const saveMemoryEditDraftRef = React.useRef(saveMemoryEditDraft);
   const saveGenerationRef = React.useRef(0);
+  const updatePagesRef = React.useRef(updatePages);
+  const currentLoadKeyRef = React.useRef(loadKey);
+
+  activePageRef.current = activePage;
+  clearMemoryEditDraftRef.current = clearMemoryEditDraft;
+  getMemoryEditDraftRef.current = getMemoryEditDraft;
+  memoryRef.current = memory;
+  pagesRef.current = pages;
+  saveMemoryEditDraftRef.current = saveMemoryEditDraft;
+  updatePagesRef.current = updatePages;
+  currentLoadKeyRef.current = loadKey;
 
   React.useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      loadGenerationRef.current += 1;
+      editorSessionGenerationRef.current += 1;
       saveGenerationRef.current += 1;
+      saveInFlightRef.current = false;
+      isTransformPendingRef.current = false;
+      retryRecoveryReadRef.current = null;
+      queueUnsubscribeRef.current?.();
+      queueUnsubscribeRef.current = null;
+      queueLeaseRef.current?.release();
+      queueLeaseRef.current = null;
     };
   }, []);
 
   React.useEffect(() => {
     if (savedMemory) {
+      setLoadedDraft(null);
       return;
     }
-    let isMounted = true;
+    let active = true;
     void getDraftById(id)
       .then((draft) => {
-        if (isMounted) {
-          setLoadedDraft(draft);
-        }
+        if (active) setLoadedDraft({ loadKey: fallbackDraftLoadKey, memory: draft });
       })
       .catch(() => undefined);
     return () => {
-      isMounted = false;
+      active = false;
     };
-  }, [getDraftById, id, savedMemory]);
+  }, [fallbackDraftLoadKey, getDraftById, id, savedMemory]);
 
   React.useEffect(() => {
-    if (memory) {
-      setPages(canvasPages(memory.pages));
+    const loadedMemory = memoryRef.current;
+    const invalidateSession = () => {
+      loadGenerationRef.current += 1;
+      editorSessionGenerationRef.current += 1;
+      saveGenerationRef.current += 1;
+      saveInFlightRef.current = false;
+      isTransformPendingRef.current = false;
+      retryRecoveryReadRef.current = null;
+      queueUnsubscribeRef.current?.();
+      queueUnsubscribeRef.current = null;
+      queueLeaseRef.current?.release();
+      queueLeaseRef.current = null;
+      editorCommitLockedRef.current = false;
+      setEditorSessionToken(null);
+      setIsFormalSaveCompleted(false);
+      if (isMountedRef.current) {
+        setIsSaving(false);
+        setIsTransformPending(false);
+        setSaveError(null);
+        setRecoveryReadError(false);
+      }
+    };
+    if (!loadedMemory) {
+      initializedLoadKeyRef.current = null;
+      invalidateSession();
+      setIsRecoveryLoading(true);
+      setPages([]);
+      return;
     }
-  }, [memory]);
+    if (initializedLoadKeyRef.current === loadKey) return;
 
-  if (!memory || pages.length === 0) {
+    initializedLoadKeyRef.current = loadKey;
+    invalidateSession();
+    const generation = loadGenerationRef.current;
+    const sessionToken = editorSessionGenerationRef.current;
+    completedFormalSaveRef.current = null;
+    activePageRef.current = null;
+    setActivePage(null);
+    setDidRecover(false);
+    setIsRecoveryLoading(true);
+    setRecoveryReadError(false);
+    setPages([]);
+    setRecoveryState({ status: "saved" });
+
+    if (!isSavedMemory) {
+      const initialPages = canvasPages(loadedMemory.pages);
+      pagesRef.current = initialPages;
+      setPages(initialPages);
+      setIsRecoveryLoading(false);
+      setEditorSessionToken(sessionToken);
+      return;
+    }
+
+    const saveRecoveryForSession = saveMemoryEditDraftRef.current;
+    const queueLease = acquireMemoryEditRecoveryQueue(loadKey, async (snapshot) => {
+      try {
+        await saveRecoveryForSession(loadedMemory, snapshot);
+      } catch (error) {
+        localDiagnostics.emit("recovery_write_failed", {
+          code: "write_failed",
+          memoryId: loadedMemory.id,
+        });
+        throw error;
+      }
+    });
+    queueLeaseRef.current = queueLease;
+    const queue = queueLease.queue;
+    setRecoveryState(queue.getState());
+    queueUnsubscribeRef.current = queue.subscribe((state) => {
+      if (isMountedRef.current && generation === loadGenerationRef.current) {
+        setRecoveryState(state);
+      }
+    });
+
+    const latestSnapshot = queueLease.getLatestSnapshot();
+    if (latestSnapshot) {
+      const initialPages = canvasPages(latestSnapshot);
+      pagesRef.current = initialPages;
+      setPages(initialPages);
+      setDidRecover(true);
+      setIsRecoveryLoading(false);
+      setEditorSessionToken(sessionToken);
+      retryRecoveryReadRef.current = null;
+      localDiagnostics.emit("recovery_restored", {
+        memoryId: loadedMemory.id,
+        source: "memory",
+      });
+      return;
+    }
+
+    const getRecoveryForSession = getMemoryEditDraftRef.current;
+    const readRecovery = () => {
+      if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
+      setIsRecoveryLoading(true);
+      setRecoveryReadError(false);
+      void queue.waitForIdle().then(() => getRecoveryForSession(loadedMemory)).then((recoveredPages) => {
+        if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
+        const initialPages = canvasPages(recoveredPages ?? loadedMemory.pages);
+        pagesRef.current = initialPages;
+        setPages(initialPages);
+        setDidRecover(recoveredPages !== null);
+        setIsRecoveryLoading(false);
+        setEditorSessionToken(sessionToken);
+        retryRecoveryReadRef.current = null;
+        if (recoveredPages !== null) {
+          localDiagnostics.emit("recovery_restored", {
+            memoryId: loadedMemory.id,
+            source: "sqlite",
+          });
+        }
+      })
+      .catch(() => {
+        if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
+        setIsRecoveryLoading(false);
+        setRecoveryReadError(true);
+      });
+    };
+    retryRecoveryReadRef.current = () => {
+      queue.retry();
+      readRecovery();
+    };
+    readRecovery();
+  }, [isSavedMemory, loadKey, memory?.id]);
+
+  const changePages = React.useCallback((nextPages: StoryPage[]) => {
+    if (!isMountedRef.current
+      || editorSessionToken === null
+      || editorSessionToken !== editorSessionGenerationRef.current
+      || currentLoadKeyRef.current !== loadKey
+      || editorCommitLockedRef.current) {
+      return;
+    }
+    const stablePages = canvasPages(nextPages);
+    pagesRef.current = stablePages;
+    setPages(stablePages);
+    queueLeaseRef.current?.enqueue(stablePages);
+  }, [editorSessionToken, loadKey]);
+
+  const changeActivePage = React.useCallback((cursor: { pageId: string; index: number }) => {
+    if (!isMountedRef.current
+      || editorSessionToken === null
+      || editorSessionToken !== editorSessionGenerationRef.current
+      || currentLoadKeyRef.current !== loadKey
+      || editorCommitLockedRef.current) {
+      return;
+    }
+    activePageRef.current = cursor;
+    setActivePage(cursor);
+  }, [editorSessionToken, loadKey]);
+
+  const changeTransformPending = React.useCallback((pending: boolean) => {
+    if (!isMountedRef.current
+      || editorSessionToken === null
+      || editorSessionToken !== editorSessionGenerationRef.current
+      || currentLoadKeyRef.current !== loadKey
+      || editorCommitLockedRef.current) {
+      return;
+    }
+    isTransformPendingRef.current = pending;
+    setIsTransformPending(pending);
+  }, [editorSessionToken, loadKey]);
+
+  if (!memory) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
         <Text selectable style={styles.muted}>正在读取可编辑的旅行册…</Text>
@@ -63,34 +307,136 @@ export default function EditMemoryScreen() {
     );
   }
 
+  if (isRecoveryLoading || pages.length === 0) {
+    if (recoveryReadError) {
+      return (
+        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+          <Pressable
+            accessibilityLiveRegion="polite"
+            accessibilityRole="button"
+            onPress={() => retryRecoveryReadRef.current?.()}
+          >
+            <Text selectable style={styles.error}>读取未保存编辑失败，点击重试。</Text>
+          </Pressable>
+        </ScrollView>
+      );
+    }
+    return (
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+        <Text accessibilityLiveRegion="polite" role="status" selectable style={styles.muted}>
+          正在读取未保存的编辑…
+        </Text>
+      </ScrollView>
+    );
+  }
+
   const save = async () => {
-    if (saveInFlightRef.current) {
+    const sessionToken = editorSessionToken;
+    const sessionLoadKey = loadKey;
+    const sessionMemory = memoryRef.current;
+    if (saveInFlightRef.current
+      || isTransformPendingRef.current
+      || sessionToken === null
+      || sessionToken !== editorSessionGenerationRef.current
+      || sessionLoadKey !== currentLoadKeyRef.current
+      || !sessionMemory) {
       return;
     }
+    const recoveryLease = queueLeaseRef.current;
+    const recoveryQueue = recoveryLease?.queue ?? null;
+    const updatePagesForSession = updatePagesRef.current;
+    const clearRecoveryForSession = clearMemoryEditDraftRef.current;
+    const routerForSession = router;
     saveInFlightRef.current = true;
+    editorCommitLockedRef.current = true;
     const generation = ++saveGenerationRef.current;
+    const isCurrentSave = () => (
+      isMountedRef.current
+      && generation === saveGenerationRef.current
+      && sessionToken === editorSessionGenerationRef.current
+      && sessionLoadKey === currentLoadKeyRef.current
+    );
     setIsSaving(true);
     setSaveError(null);
+    localDiagnostics.emit("formal_save_started", { memoryId: sessionMemory.id });
     try {
-      await updatePages(memory, canvasPages(pages));
-      if (!isMountedRef.current || generation !== saveGenerationRef.current) {
+      let completedSave = completedFormalSaveRef.current;
+      if (completedSave
+        && (completedSave.sessionToken !== sessionToken || completedSave.loadKey !== sessionLoadKey)) {
         return;
       }
-      const cursor = activePage ?? { pageId: pages[0].id, index: 0 };
-      router.replace({
+      if (!completedSave) {
+        try {
+          await recoveryQueue?.waitForIdle();
+        } catch {
+          // Explicit formal save is the fallback when the recovery queue failed.
+        }
+        if (!isCurrentSave()) return;
+        if (isTransformPendingRef.current) return;
+        const latestPages = canvasPages(pagesRef.current);
+        const cursor = activePageRef.current ?? { pageId: latestPages[0].id, index: 0 };
+        try {
+          await updatePagesForSession(sessionMemory, latestPages);
+          localDiagnostics.emit("formal_persistence_succeeded", {
+            memoryId: sessionMemory.id,
+          });
+        } catch (error) {
+          localDiagnostics.emit("formal_persistence_failed", {
+            code: "write_failed",
+            memoryId: sessionMemory.id,
+          });
+          throw error;
+        }
+        if (!isCurrentSave()) return;
+        await recoveryQueue?.clearAndWait();
+        if (!isCurrentSave()) return;
+        completedSave = {
+          cursor,
+          loadKey: sessionLoadKey,
+          memoryId: sessionMemory.id,
+          sessionToken,
+        };
+        completedFormalSaveRef.current = completedSave;
+        setIsFormalSaveCompleted(true);
+      }
+
+      try {
+        await clearRecoveryForSession(completedSave.memoryId);
+        localDiagnostics.emit("recovery_clear_succeeded", {
+          memoryId: completedSave.memoryId,
+        });
+      } catch (error) {
+        localDiagnostics.emit("recovery_clear_failed", {
+          code: "clear_failed",
+          memoryId: completedSave.memoryId,
+        });
+        throw error;
+      }
+      if (!isCurrentSave()) return;
+      recoveryLease?.clearLatestSnapshot();
+      const latestCursor = activePageRef.current ?? completedSave.cursor;
+      localDiagnostics.emit("navigation_boundary", { memoryId: completedSave.memoryId });
+      routerForSession.replace({
         pathname: "/memory/[id]",
-        params: { id: memory.id, pageId: cursor.pageId, pageIndex: String(cursor.index) },
+        params: {
+          id: completedSave.memoryId,
+          pageId: latestCursor.pageId,
+          pageIndex: String(latestCursor.index),
+        },
       });
     } catch {
-      if (isMountedRef.current && generation === saveGenerationRef.current) {
-        setSaveError("保存失败，请稍后重试。");
+      if (isCurrentSave()) {
+        setSaveError(completedFormalSaveRef.current
+          ? "旅行册已保存，但未能清除恢复副本，请重试。"
+          : "保存失败，请稍后重试。");
       }
     } finally {
-      if (generation === saveGenerationRef.current) {
+      if (generation === saveGenerationRef.current
+        && sessionToken === editorSessionGenerationRef.current
+        && sessionLoadKey === currentLoadKeyRef.current) {
         saveInFlightRef.current = false;
-        if (isMountedRef.current) {
-          setIsSaving(false);
-        }
+        if (!completedFormalSaveRef.current) editorCommitLockedRef.current = false;
+        if (isMountedRef.current) setIsSaving(false);
       }
     }
   };
@@ -100,13 +446,32 @@ export default function EditMemoryScreen() {
       <Text selectable style={styles.muted}>
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
-      <BookCanvasEditor
-        onActivePageChange={setActivePage}
-        onPagesChange={(nextPages) => setPages(nextPages)}
-        onTransformPendingChange={setIsTransformPending}
-        pages={pages}
-        persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
-      />
+      {didRecover ? (
+        <Text accessibilityLiveRegion="polite" role="status" selectable style={styles.recovered}>
+          已恢复上次未保存的编辑
+        </Text>
+      ) : null}
+      <View pointerEvents={isSaving || isFormalSaveCompleted ? "none" : "auto"}>
+        <BookCanvasEditor
+          onActivePageChange={changeActivePage}
+          onPagesChange={changePages}
+          onTransformPendingChange={changeTransformPending}
+          pages={pages}
+          persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
+        />
+      </View>
+      {recoveryState.status === "error" ? (
+        <Pressable
+          accessibilityLiveRegion="polite"
+          accessibilityRole="button"
+          onPress={() => {
+            localDiagnostics.emit("recovery_write_retried", { memoryId: memory.id });
+            queueLeaseRef.current?.queue.retry();
+          }}
+        >
+          <Text selectable style={styles.error}>未保存编辑的恢复副本写入失败，点击重试。</Text>
+        </Pressable>
+      ) : null}
       {saveError ? (
         <Text accessibilityLiveRegion="polite" accessibilityRole="alert" selectable style={styles.error}>
           {saveError}
@@ -115,7 +480,9 @@ export default function EditMemoryScreen() {
       <AppButton
         disabled={isSaving || isTransformPending}
         label={isSaving ? "正在保存…" : "保存画布"}
-        onPress={() => void save()}
+        onPress={() => {
+          void save().catch(() => undefined);
+        }}
       />
     </ScrollView>
   );
@@ -124,5 +491,6 @@ export default function EditMemoryScreen() {
 const styles = StyleSheet.create({
   content: { gap: 16, paddingBottom: 28, paddingTop: 14 },
   muted: { color: colors.muted, lineHeight: 22, paddingHorizontal: 20 },
+  recovered: { color: colors.muted, fontWeight: "700", paddingHorizontal: 20 },
   error: { color: colors.danger, paddingHorizontal: 20 },
 });
