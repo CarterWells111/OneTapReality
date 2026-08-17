@@ -9,7 +9,6 @@ const sitePages = __STATIC_SITE_PAGES__;
 const siteStyles = __STATIC_SITE_STYLES__;
 const siteAssets = __STATIC_SITE_ASSETS__;
 const appleAppSiteAssociation = __APPLE_APP_SITE_ASSOCIATION__;
-const androidAssetLinks = __ANDROID_ASSET_LINKS__;
 const appLinkFallback = __APP_LINK_FALLBACK__;
 
 const headers = {
@@ -50,10 +49,6 @@ export default {
 
     if (path === "/.well-known/apple-app-site-association") {
       return response(appleAppSiteAssociation, "application/json; charset=utf-8");
-    }
-
-    if (path === "/.well-known/assetlinks.json") {
-      return response(androidAssetLinks, "application/json; charset=utf-8");
     }
 
     const page = resolveSitePage(path, sitePages, appLinkFallback);

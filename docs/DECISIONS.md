@@ -1,8 +1,18 @@
 # 决策记录
 
+## 2026-08-17：产品与原生发布范围收敛为 iPhone / iOS
+
+OneTapReality 当前及可预见计划仅支持 iPhone / iOS，不再把 Android 作为后续 Backlog 或待重新评估平台。本决策取代此前“第 3–4 周重新评估 Android”、保留 Android package、Android App Links 与 Android development build 的旧规则。
+
+- Expo 配置不再声明 Android package、adaptive icon 或 intent filters；EAS 与 npm 不再提供 Android 专用构建/启动入口。
+- 网站只发布 Apple AASA，不再生成或提供 `assetlinks.json`。实体礼品继续使用同一 HTTPS URL，并只通过 iOS Universal Links 与网页回退进入产品。
+- React Native 依赖与业务代码中的无害 Android 平台判断可保留作为兼容实现，不代表测试、发布或支持 Android，也不得出现在对外能力承诺中。
+- Android 图标素材暂作为未引用历史文件保留。Expo Go 可能显示依赖自身的 Android 通用提示；照片权限与 NFC 的完整验收只在 iOS Development Build/TestFlight 进行。
+- iOS Bundle ID、`luyi.db`、账号隔离、staging/production 隔离及本地升级保留保证不变。不新增第三方服务、支付或分析。
+
 ## 2026-08-17：登录页使用原生键盘避让与空白点击收起
 
-登录页不得让系统键盘遮挡邮箱、验证码或提交按钮。页面使用 React Native 原生 `KeyboardAvoidingView` 与可滚动内容容器，在 iOS 上按 `padding` 避让、在 Android 上沿用系统 resize；不新增第三方 keyboard-aware 依赖。点击页面或登录卡片内的非交互空白区域调用 `Keyboard.dismiss()`，输入框和按钮交互不得被误判为空白点击。邮箱输入在验证码出现后支持“下一步”聚焦验证码，出现前显示“完成”并关闭键盘；iOS 验证码数字键盘额外提供可见的原生输入附件“完成”按钮，页面拖动也可关闭键盘。
+登录页不得让系统键盘遮挡邮箱、验证码或提交按钮。页面使用 React Native 原生 `KeyboardAvoidingView` 与可滚动内容容器，在 iOS 上按 `padding` 避让；保留的 Android 分支仅是无害兼容实现，不构成发布或支持承诺。不新增第三方 keyboard-aware 依赖。点击页面或登录卡片内的非交互空白区域调用 `Keyboard.dismiss()`，输入框和按钮交互不得被误判为空白点击。邮箱输入在验证码出现后支持“下一步”聚焦验证码，出现前显示“完成”并关闭键盘；iOS 验证码数字键盘额外提供可见的原生输入附件“完成”按钮，页面拖动也可关闭键盘。
 
 ## 2026-08-17：保存相册后返回刚刚编辑的页面
 
@@ -496,3 +506,9 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 - 保留现有页面字体映射与视觉样式，不改变主视觉、标题和正文字体角色。
 - 本地字体资源收敛为 `XiMaiXiHuan.ttf`、`ChaoHuaTitleA.ttf`、`ChaoHuaTypewriter.ttf`、`MaoKenZhuYuan.ttf` 和 `LXGWNeoZhiSongPlus.ttf` 五个文件；其余字体资源删除。
 - 相册编辑页仅提供上述五款字体，不新增远程字体、第三方服务、依赖或客户端秘密。
+# 2026-08-17：本地字体非阻塞后台加载
+
+- App 首屏不得等待自定义字体；目标字体尚未注册时使用系统临时字体，页面、相册阅读和编辑立即可用。
+- 五个本地字体在 App 启动后通过单一后台队列串行加载；用户选择尚未就绪的字体时，该字体提升为队首，但相册数据仍保存目标字体 ID，不保存临时字体。
+- 用户主动选择未加载字体时显示可关闭的加载进度提示；关闭只隐藏提示，不取消后台任务。加载完成后画布自动切换到目标字体。
+- 加载失败继续使用系统临时字体并允许重试；不新增远程字体、第三方服务、分析、账号数据或新的持久化字段。

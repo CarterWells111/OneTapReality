@@ -54,7 +54,7 @@ describe("OneTapReality brand copy", () => {
     expect(expo.version).toBe("1.1.0");
     expect(expo.slug).toBe("onetapreality");
     expect(expo.scheme).toBe("onetapreality");
-    expect(expo.android.adaptiveIcon.backgroundColor).toBe("#F7F2EA");
+    expect(expo.android).toBeUndefined();
     const imagePickerPlugin = expo.plugins.find((plugin: unknown) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
     expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Allow OneTapReality to access your selected photos to create albums.");
     expect(expo.plugins).toContainEqual(

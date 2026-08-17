@@ -37,19 +37,13 @@ describe("Expo Router production origin", () => {
     expect(fs.existsSync(path.resolve(__dirname, "..", "assets/expo.icon/Assets/onetapreality-icon.png"))).toBe(true);
   });
 
-  it("registers production and staging gift links for both native platforms", () => {
+  it("registers production and staging gift links for iOS only", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
     expect(expoConfig.ios.associatedDomains).toContain("applinks:onetapreality.com");
     expect(expoConfig.ios.associatedDomains).toContain("applinks:staging.onetapreality.com");
-    expect(expoConfig.android.package).toBe("com.onetapreality.app");
-    expect(expoConfig.android.intentFilters).toEqual(expect.arrayContaining([
-      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/gift" })]) }),
-      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "onetapreality.com", pathPrefix: "/activate" })]) }),
-      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "staging.onetapreality.com", pathPrefix: "/gift" })]) }),
-      expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ host: "staging.onetapreality.com", pathPrefix: "/activate" })]) }),
-    ]));
+    expect(expoConfig.android).toBeUndefined();
   });
 
   it("configures the NFC native module with the TAG-only iOS entitlement", () => {
@@ -93,17 +87,12 @@ describe("Expo Router production origin", () => {
     }));
   });
 
-  it("provides an internal Android development client profile for NFC device testing", () => {
+  it("does not expose Android build or local start entry points", () => {
     const easConfig = require("../eas.json");
+    const packageConfig = require("../package.json");
 
-    expect(easConfig.build["development-android"]).toEqual(expect.objectContaining({
-      developmentClient: true,
-      distribution: "internal",
-      env: expect.objectContaining({
-        EXPO_PUBLIC_API_ORIGIN: "https://api.onetapreality.com",
-      }),
-      android: expect.objectContaining({ buildType: "apk" }),
-    }));
+    expect(easConfig.build["development-android"]).toBeUndefined();
+    expect(packageConfig.scripts.android).toBeUndefined();
   });
 
   it("provides an isolated Alpha build that only exposes the staging API origin", () => {
@@ -124,7 +113,8 @@ describe("Expo Router production origin", () => {
 
     expect(rootLayout).toContain('databaseName="luyi.db"');
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
-    expect(expoConfig.android.package).toBe("com.onetapreality.app");
-    expect(Object.keys(easConfig.build)).toEqual(expect.arrayContaining(["development", "development-android", "preview", "alpha", "production"]));
+    expect(expoConfig.android).toBeUndefined();
+    expect(Object.keys(easConfig.build)).toEqual(expect.arrayContaining(["development", "preview", "alpha", "production"]));
+    expect(Object.keys(easConfig.build)).not.toContain("development-android");
   });
 });

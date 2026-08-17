@@ -79,7 +79,7 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 Alpha 必须使用独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单。staging Service 使用 `GIFT_URL_ORIGIN=https://staging.onetapreality.com`、独立 `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET`、受邀测试者的 `ALPHA_ALLOWED_EMAILS` 和 `GIFT_SHARING_ENABLED=true`。EAS `alpha` profile 只注入 `https://api-staging.onetapreality.com`。
 
-staging 域还必须部署同一发布签名对应的 `/.well-known/apple-app-site-association` 与 `/.well-known/assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
+staging 域还必须部署同一 iOS 发布标识对应的 `/.well-known/apple-app-site-association`；当前不部署 Android `assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
 
 ## 常见失败
 

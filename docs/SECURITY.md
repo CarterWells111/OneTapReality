@@ -20,7 +20,7 @@ Alpha 环境还须使用独立的 `GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`DE
 
 生产请求日志不得保留礼品 token 或查询字符串：`/gift/<token>` 与 `/api/gifts/<token>` 均记录为脱敏路径，日志仅保留时间、方法、状态码与延迟。
 
-App Link 部署必须提供 AASA 与 Android assetlinks 文件。发布前在真实 iOS/Android build 中验证，不以 Expo Go 的 NFC 模拟替代原生读写测试。
+Universal Link 部署必须提供 Apple AASA。发布前在真实 iOS Development Build/TestFlight 中验证，不以 Expo Go 替代原生 NFC 读写测试；当前产品不发布 Android App Links。
 # 2026-08-16 local account and viewer activation boundary
 
 Local memories, drafts, recycle-bin rows and sandbox photo directories are scoped by the normalized verified email. Signed-out clients do not mount protected local routes or execute repository writes. Cross-account identifiers are treated as not found, and local cleanup only targets the active account directory.
