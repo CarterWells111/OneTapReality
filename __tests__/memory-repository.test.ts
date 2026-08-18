@@ -11,6 +11,7 @@ import {
   listMemories,
   migrateDbIfNeeded,
   restoreDiscardedMemory,
+  replaceMemoryMediaSnapshot,
   saveMemory,
   saveDraft,
 } from "../src/storage/memory-repository";
@@ -54,6 +55,68 @@ const draftMemory = {
   updatedAt: "2026-07-22T10:00:00.000Z",
 };
 const accountKey = "owner@example.com";
+
+const mediaSnapshotMemory = {
+  ...draftMemory,
+  id: "media-memory",
+  updatedAt: "2026-08-17T12:00:00.000Z",
+  coverImage: "documents://photos/accounts/owner%40example.com/media-memory/cover.jpg",
+  photoUris: ["documents://photos/accounts/owner%40example.com/media-memory/photo.jpg"],
+  pages: [{
+    id: "media-page",
+    position: 0,
+    kind: "cover" as const,
+    headline: "New headline",
+    body: "New body",
+    photoUri: "documents://photos/accounts/owner%40example.com/media-memory/page.jpg",
+    layout: { aspectRatio: 1, elements: [{ id: "image", type: "image", uri: "documents://photos/accounts/owner%40example.com/media-memory/layout.jpg", x: 0, y: 0, width: 1, height: 1 }] },
+  }],
+};
+
+function createMediaSnapshotDatabase(options?: { ownerAccountKey?: string; failStatement?: string }) {
+  const state = {
+    memory: {
+      id: mediaSnapshotMemory.id,
+      ownerAccountKey: options?.ownerAccountKey ?? accountKey,
+      updatedAt: "old-updated-at",
+      coverImage: "old-cover.jpg",
+    },
+    photos: ["old-photo.jpg"],
+    pages: [{ id: "old-page", photoUri: "old-page.jpg", layoutJson: '{"old":true}' }],
+  };
+  const database = {
+    async withTransactionAsync(callback: () => Promise<void>) {
+      const before = structuredClone(state);
+      try {
+        await callback();
+      } catch (error) {
+        Object.assign(state, before);
+        throw error;
+      }
+    },
+    async runAsync(statement: string, ...parameters: unknown[]) {
+      if (options?.failStatement && statement.startsWith(options.failStatement)) {
+        throw new Error("injected statement failure");
+      }
+      if (statement.startsWith("UPDATE memories SET updatedAt")) {
+        if (state.memory.id !== parameters[2] || state.memory.ownerAccountKey !== parameters[3]) return { changes: 0 };
+        state.memory.updatedAt = String(parameters[0]);
+        state.memory.coverImage = parameters[1] == null ? undefined : String(parameters[1]);
+      } else if (statement.startsWith("DELETE FROM memory_photos")) {
+        state.photos = [];
+      } else if (statement.startsWith("INSERT INTO memory_photos")) {
+        state.photos.push(String(parameters[1]));
+      } else if (statement.startsWith("DELETE FROM story_pages")) {
+        state.pages = [];
+      } else if (statement.startsWith("INSERT INTO story_pages")) {
+        state.pages.push({ id: String(parameters[0]), photoUri: parameters[6] == null ? undefined : String(parameters[6]), layoutJson: String(parameters[7]) });
+      }
+      return { changes: 1 };
+    },
+  } as unknown as SQLiteDatabase;
+
+  return { database, state };
+}
 
 function createMemoryDatabase(options?: {
   columns?: string[];
@@ -350,5 +413,42 @@ describe("memory draft lifecycle repository", () => {
     const restored = await getMemory(database, "full-bleed-memory", accountKey);
 
     expect(restored?.pages[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
+  });
+
+  it("replaces an owned memory media snapshot atomically", async () => {
+    const { database, state } = createMediaSnapshotDatabase();
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).resolves.toBe(true);
+
+    expect(state).toEqual({
+      memory: expect.objectContaining({
+        updatedAt: mediaSnapshotMemory.updatedAt,
+        coverImage: mediaSnapshotMemory.coverImage,
+      }),
+      photos: mediaSnapshotMemory.photoUris,
+      pages: [expect.objectContaining({
+        id: "media-page",
+        photoUri: "documents://photos/accounts/owner%40example.com/media-memory/page.jpg",
+        layoutJson: JSON.stringify(mediaSnapshotMemory.pages[0].layout),
+      })],
+    });
+  });
+
+  it("rolls back every media field when a snapshot statement fails", async () => {
+    const { database, state } = createMediaSnapshotDatabase({ failStatement: "INSERT INTO story_pages" });
+    const before = structuredClone(state);
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).rejects.toThrow("injected statement failure");
+
+    expect(state).toEqual(before);
+  });
+
+  it("does not replace media owned by another account", async () => {
+    const { database, state } = createMediaSnapshotDatabase({ ownerAccountKey: "other@example.com" });
+    const before = structuredClone(state);
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).resolves.toBe(false);
+
+    expect(state).toEqual(before);
   });
 });

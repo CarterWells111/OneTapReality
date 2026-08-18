@@ -4,7 +4,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import { useAuth } from "../auth/auth-provider";
 import { normalizeLocalAccountKey } from "../auth/local-account";
-import { cleanupMigratedLegacyPhotoUris, deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, findMigratedLegacyPhotoUris, persistPhotoUriStrict } from "./photo-persistence";
+import { deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
   getMemoryEditDraft as getMemoryEditDraftFromDb,
@@ -26,6 +26,7 @@ import {
   saveMemory,
   updateMemoryPages,
   updateMemoryPhotos,
+  replaceMemoryMediaSnapshot,
 } from "../../storage/memory-repository";
 import type { Memory, MemoryDraftInput, StoryPage } from "../../types/memory";
 import { createMemory as createMemoryRecord } from "./memory-factory";
@@ -76,6 +77,15 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     return accountKey;
   }, [accountKey, isAuthReady]);
 
+  const hydrateForRuntime = React.useCallback(async (memory: Memory, owner: string): Promise<Memory> => {
+    const hydrated = await hydrateMemoryPhotoReferences(memory, owner);
+    if (hydrated.changed) {
+      const replaced = await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
+      if (!replaced) throw new Error("Album no longer belongs to the active account");
+    }
+    return hydrated.runtimeMemory;
+  }, [db]);
+
   /** 读取全部记忆并迁移旧照片 URI 到沙盒（best-effort，失败不阻塞列表）。 */
   const refresh = React.useCallback(async (requestedAccountKey?: string) => {
     const owner = requestedAccountKey ?? requireAccountKey();
@@ -108,11 +118,12 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const everyOwnedMemory = await listAllMemories(db, owner);
       await cleanupMigratedLegacyPhotoUris([...migratedLegacyUris], everyOwnedMemory);
     }
+    nextMemories = await Promise.all(nextMemories.map((memory) => hydrateForRuntime(memory, owner)));
     if (generation === refreshGeneration.current && currentAccountKey.current === owner) {
       setMemories(nextMemories);
       setIsReady(true);
     }
-  }, [db, requireAccountKey]);
+  }, [db, hydrateForRuntime, requireAccountKey]);
 
   React.useEffect(() => {
     refreshGeneration.current += 1;
@@ -200,8 +211,9 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       }));
       const nextDraft = { ...draft, pages: namespacedPages, updatedAt: new Date().toISOString() };
       const persisted = await ensureMemoryPhotosPersisted(nextDraft, owner);
-      await updateMemoryPages(db, persisted.memory, owner);
-      return persisted.memory;
+      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
+      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
+      return hydrated.runtimeMemory;
     },
     [db, requireAccountKey]
   );
@@ -222,7 +234,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         pages,
         updatedAt: new Date().toISOString(),
       }, owner);
-      await updateMemoryPages(db, persisted.memory, owner);
+      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
+      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
       await refresh();
     },
     [db, refresh, requireAccountKey]
@@ -236,7 +249,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         pages,
         updatedAt: new Date().toISOString(),
       }, owner);
-      await updateMemoryPages(db, persisted.memory, owner);
+      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
+      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
     },
     [db, requireAccountKey]
   );

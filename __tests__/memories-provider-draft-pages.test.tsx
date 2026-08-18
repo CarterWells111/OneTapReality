@@ -6,6 +6,8 @@ const mockDatabase = { name: "local" };
 const mockListMemories = jest.fn();
 const mockUpdateMemoryPages = jest.fn();
 const mockPersistPhotoUriStrict = jest.fn();
+const mockHydrateMemoryPhotoReferences = jest.fn();
+const mockReplaceMemoryMediaSnapshot = jest.fn();
 
 jest.mock("expo-sqlite", () => ({
   useSQLiteContext: () => mockDatabase,
@@ -19,6 +21,7 @@ jest.mock("../src/features/memories/photo-persistence", () => ({
   deleteMemoryPhotoDirectory: jest.fn(async () => undefined),
   ensureMemoryPhotosPersisted: jest.fn(async (memory) => ({ memory, changed: false })),
   findMigratedLegacyPhotoUris: jest.fn(() => []),
+  hydrateMemoryPhotoReferences: (...args: unknown[]) => mockHydrateMemoryPhotoReferences(...args),
   persistPhotoUriStrict: (...args: unknown[]) => mockPersistPhotoUriStrict(...args),
 }));
 
@@ -34,6 +37,7 @@ jest.mock("../src/storage/memory-repository", () => ({
   restoreDiscardedMemory: jest.fn(),
   saveDraft: jest.fn(),
   saveMemory: jest.fn(),
+  replaceMemoryMediaSnapshot: (...args: unknown[]) => mockReplaceMemoryMediaSnapshot(...args),
   updateMemoryPages: (...args: unknown[]) => mockUpdateMemoryPages(...args),
 }));
 
@@ -74,6 +78,13 @@ describe("MemoriesProvider draft page persistence", () => {
     jest.clearAllMocks();
     capturedMemories = undefined;
     mockListMemories.mockResolvedValue([]);
+    mockHydrateMemoryPhotoReferences.mockImplementation(async (memory) => ({
+      runtimeMemory: memory,
+      storageMemory: memory,
+      changed: false,
+      unresolved: [],
+    }));
+    mockReplaceMemoryMediaSnapshot.mockResolvedValue(true);
     mockUpdateMemoryPages.mockResolvedValue(undefined);
   });
 
@@ -89,7 +100,7 @@ describe("MemoriesProvider draft page persistence", () => {
       await capturedMemories!.updateDraftPages(draft, pages);
     });
 
-    expect(mockUpdateMemoryPages).toHaveBeenCalledWith(
+    expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(
       mockDatabase,
       expect.objectContaining({ id: "draft-1", pages }),
       "owner@example.com",
@@ -113,5 +124,23 @@ describe("MemoriesProvider draft page persistence", () => {
       "owner@example.com",
       "draft-1",
     );
+  });
+
+  it("hydrates storage references before exposing them and atomically writes a changed media snapshot", async () => {
+    const storageMemory = { ...draft, id: "saved-1", status: "saved" as const, photoUris: ["documents://photos/accounts/owner%40example.com/saved-1/1-photo.jpg"] };
+    const runtimeMemory = { ...storageMemory, photoUris: ["file:///current/Documents/photos/accounts/owner%40example.com/saved-1/1-photo.jpg"] };
+    mockListMemories.mockResolvedValueOnce([storageMemory]);
+    mockHydrateMemoryPhotoReferences.mockResolvedValueOnce({
+      runtimeMemory,
+      storageMemory,
+      changed: true,
+      unresolved: [],
+    });
+
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+    expect(capturedMemories?.memories).toEqual([runtimeMemory]);
+    expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(mockDatabase, storageMemory, "owner@example.com");
   });
 });
