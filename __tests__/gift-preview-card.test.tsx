@@ -19,4 +19,11 @@ describe("GiftPreviewCard", () => {
     expect(view.getByText("送给：待填写")).toBeTruthy();
     expect(view.getByText("写一句想对 TA 说的话")).toBeTruthy();
   });
+
+  it("shows an accessible placeholder instead of mounting a missing local photo token", () => {
+    const view = render(<GiftPreviewCard coverUri="missing-local-photo://gift-cover" cityName="杭州" templateName="一起出发" />);
+
+    expect(view.getByLabelText("本地照片缺失").props.accessibilityRole).toBe("image");
+    expect(view.queryByTestId("gift-cover")).toBeNull();
+  });
 });

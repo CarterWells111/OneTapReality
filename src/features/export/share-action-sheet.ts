@@ -8,10 +8,13 @@ import {
   exportAsTralbumFormat,
 } from "./export-service";
 import { capturePagesAsImages } from "./page-capture-provider";
+import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../memories/local-photo-integrity";
 import type { CanvasImageElement, CanvasTextElement, StoryPage } from "../../types/memory";
 
 type ShareTarget = {
+  coverImage?: string;
   pages: StoryPage[];
+  photoUris?: string[];
   title: string;
 };
 
@@ -28,7 +31,7 @@ const EXPORT_OPTIONS: { label: string; format: ExportFormat }[] = [
 ];
 
 export async function showShareActionSheet(target: ShareTarget) {
-  const { pages, title } = target;
+  const { title } = target;
 
   Alert.alert(
     "分享旅行手账",
@@ -36,14 +39,19 @@ export async function showShareActionSheet(target: ShareTarget) {
     [
       ...EXPORT_OPTIONS.map((opt) => ({
         text: opt.label,
-        onPress: () => handleExport(opt.format, pages, title),
+        onPress: () => handleExport(opt.format, target),
       })),
       { text: "取消", style: "cancel" as const },
     ],
   );
 }
 
-async function handleExport(format: ExportFormat, pages: StoryPage[], title: string) {
+async function handleExport(format: ExportFormat, target: ShareTarget) {
+  const { pages, title } = target;
+  if (hasMissingLocalPhotos({ coverImage: target.coverImage, pages, photoUris: target.photoUris ?? [] })) {
+    Alert.alert("无法导出", MISSING_LOCAL_PHOTO_ACTION_MESSAGE);
+    return;
+  }
   try {
     switch (format) {
       case "pdf":

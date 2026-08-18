@@ -4,6 +4,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import { useAuth } from "../auth/auth-provider";
 import { normalizeLocalAccountKey } from "../auth/local-account";
+import { isMissingPhotoToken } from "./photo-references";
 import { deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
@@ -18,14 +19,11 @@ import {
   discardDraft as discardDraftInDb,
   discardMemory as discardMemoryInDb,
   getDraft,
-  listAllMemories,
   listDiscardedMemories,
   listMemories,
   restoreDiscardedMemory,
   saveDraft as saveDraftInDb,
   saveMemory,
-  updateMemoryPages,
-  updateMemoryPhotos,
   replaceMemoryMediaSnapshot,
 } from "../../storage/memory-repository";
 import type { Memory, MemoryDraftInput, StoryPage } from "../../types/memory";
@@ -62,6 +60,34 @@ function buildId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function restoreKnownMissingPhotoTokens(memory: Memory, baseline: ReadonlyMap<string, string>): Memory {
+  const restoreUri = (uri: string | undefined): string | undefined => {
+    if (uri && isMissingPhotoToken(uri)) {
+      const stored = baseline.get(uri);
+      if (!stored) throw new Error("Unknown missing local photo token");
+      return stored;
+    }
+    return uri;
+  };
+  return {
+    ...memory,
+    coverImage: restoreUri(memory.coverImage),
+    photoUris: memory.photoUris.map((uri) => restoreUri(uri) ?? uri),
+    pages: memory.pages.map((page) => ({
+      ...page,
+      photoUri: restoreUri(page.photoUri),
+      coverImage: restoreUri(page.coverImage),
+      layout: page.layout ? {
+        ...page.layout,
+        coverImage: restoreUri(page.layout.coverImage),
+        elements: page.layout.elements.map((element) => (
+          element.type === "image" ? { ...element, uri: restoreUri(element.uri) ?? element.uri } : element
+        )),
+      } : undefined,
+    })),
+  };
+}
+
 export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
   const { isAuthReady, user } = useAuth();
@@ -69,6 +95,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const [memories, setMemories] = React.useState<Memory[]>([]);
   const [isReady, setIsReady] = React.useState(false);
   const refreshGeneration = React.useRef(0);
+  const missingPhotoBaselines = React.useRef(new Map<string, Map<string, string>>());
   const currentAccountKey = React.useRef<string | null>(accountKey);
   currentAccountKey.current = accountKey;
 
@@ -77,56 +104,50 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     return accountKey;
   }, [accountKey, isAuthReady]);
 
+  const baselineKey = React.useCallback((owner: string, memoryId: string) => `${owner}\0${memoryId}`, []);
+
+  const recordHydration = React.useCallback((memoryId: string, owner: string, hydrated: Awaited<ReturnType<typeof hydrateMemoryPhotoReferences>>) => {
+    const baseline = new Map<string, string>();
+    for (const unresolved of hydrated.unresolved) baseline.set(unresolved.token, unresolved.storedReference);
+    missingPhotoBaselines.current.set(baselineKey(owner, memoryId), baseline);
+    return hydrated;
+  }, [baselineKey]);
+
+  const baselineFor = React.useCallback(
+    (owner: string, memoryId: string) => missingPhotoBaselines.current.get(baselineKey(owner, memoryId)) ?? new Map<string, string>(),
+    [baselineKey],
+  );
+
+  const hydrateForStorage = React.useCallback(async (memory: Memory, owner: string) => (
+    recordHydration(memory.id, owner, await hydrateMemoryPhotoReferences(memory, owner))
+  ), [recordHydration]);
+
   const hydrateForRuntime = React.useCallback(async (memory: Memory, owner: string): Promise<Memory> => {
-    const hydrated = await hydrateMemoryPhotoReferences(memory, owner);
+    const hydrated = await hydrateForStorage(memory, owner);
     if (hydrated.changed) {
       const replaced = await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
       if (!replaced) throw new Error("Album no longer belongs to the active account");
     }
     return hydrated.runtimeMemory;
-  }, [db]);
+  }, [db, hydrateForStorage]);
 
-  /** 读取全部记忆并迁移旧照片 URI 到沙盒（best-effort，失败不阻塞列表）。 */
+  /** 读取当前账号的记忆，并以原子快照迁移照片引用。 */
   const refresh = React.useCallback(async (requestedAccountKey?: string) => {
     const owner = requestedAccountKey ?? requireAccountKey();
     const generation = ++refreshGeneration.current;
     await claimUnownedMemories(db, owner);
-    let nextMemories = await listMemories(db, owner);
-    let migratedAny = false;
-    const migratedLegacyUris = new Set<string>();
-    for (const memory of nextMemories) {
-      try {
-        const result = await ensureMemoryPhotosPersisted(memory, owner);
-        if (result.changed) {
-          migratedAny = true;
-          await updateMemoryPhotos(db, result.memory.id, result.memory.photoUris, owner);
-          await updateMemoryPages(db, {
-            ...result.memory,
-            updatedAt: result.memory.updatedAt,
-          }, owner);
-          for (const uri of findMigratedLegacyPhotoUris(memory, result.memory)) migratedLegacyUris.add(uri);
-        }
-      } catch (error) {
-        console.warn("[MemoriesProvider] 照片持久化迁移失败，跳过：", error);
-      }
-    }
-    if (migratedAny) {
-      // 迁移写入后再读一次，保证返回给 UI 的是持久化后的 URI
-      nextMemories = await listMemories(db, owner);
-    }
-    if (migratedLegacyUris.size > 0) {
-      const everyOwnedMemory = await listAllMemories(db, owner);
-      await cleanupMigratedLegacyPhotoUris([...migratedLegacyUris], everyOwnedMemory);
-    }
-    nextMemories = await Promise.all(nextMemories.map((memory) => hydrateForRuntime(memory, owner)));
+    const runtimeMemories = await Promise.all(
+      (await listMemories(db, owner)).map((memory) => hydrateForRuntime(memory, owner)),
+    );
     if (generation === refreshGeneration.current && currentAccountKey.current === owner) {
-      setMemories(nextMemories);
+      setMemories(runtimeMemories);
       setIsReady(true);
     }
   }, [db, hydrateForRuntime, requireAccountKey]);
 
   React.useEffect(() => {
     refreshGeneration.current += 1;
+    missingPhotoBaselines.current.clear();
     setMemories([]);
     if (!isAuthReady) {
       setIsReady(false);
@@ -157,11 +178,12 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
       const memory = createMemoryRecord({ id: buildId(), now, input, pages });
       const persisted = await ensureMemoryPhotosPersisted(memory, owner);
-      await saveMemory(db, persisted.memory, owner);
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      await saveMemory(db, hydrated.storageMemory, owner);
       await refresh();
-      return persisted.memory;
+      return hydrated.runtimeMemory;
     },
-    [db, refresh, requireAccountKey]
+    [db, hydrateForStorage, refresh, requireAccountKey]
   );
 
   const createDraft = React.useCallback(
@@ -176,16 +198,18 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
       const memory = createMemoryRecord({ id: buildId(), now, input, pages });
       const persisted = await ensureMemoryPhotosPersisted(memory, owner);
-      await createDraftInDb(db, persisted.memory, owner);
-      return { ...persisted.memory, status: "draft" as const };
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      await createDraftInDb(db, hydrated.storageMemory, owner);
+      return { ...hydrated.runtimeMemory, status: "draft" as const };
     },
-    [db, requireAccountKey]
+    [db, hydrateForStorage, requireAccountKey]
   );
 
-  const getDraftById = React.useCallback(
-    async (id: string) => getDraft(db, id, requireAccountKey()),
-    [db, requireAccountKey]
-  );
+  const getDraftById = React.useCallback(async (id: string) => {
+    const owner = requireAccountKey();
+    const draft = await getDraft(db, id, owner);
+    return draft ? hydrateForRuntime(draft, owner) : null;
+  }, [db, hydrateForRuntime, requireAccountKey]);
 
   const saveDraft = React.useCallback(
     async (id: string) => {
@@ -209,13 +233,15 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         ...page,
         id: `${id}:${page.id}`,
       }));
-      const nextDraft = { ...draft, pages: namespacedPages, updatedAt: new Date().toISOString() };
+      const nextDraft = restoreKnownMissingPhotoTokens({ ...draft, pages: namespacedPages, updatedAt: new Date().toISOString() }, baselineFor(owner, id));
       const persisted = await ensureMemoryPhotosPersisted(nextDraft, owner);
-      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
-      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      if (!await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner)) {
+        throw new Error("Album no longer belongs to the active account");
+      }
       return hydrated.runtimeMemory;
     },
-    [db, requireAccountKey]
+    [baselineFor, db, hydrateForStorage, requireAccountKey]
   );
 
   const discardDraft = React.useCallback(
@@ -229,42 +255,61 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const updatePages = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
       const owner = requireAccountKey();
-      const persisted = await ensureMemoryPhotosPersisted({
+      const persisted = await ensureMemoryPhotosPersisted(restoreKnownMissingPhotoTokens({
         ...memory,
         pages,
         updatedAt: new Date().toISOString(),
-      }, owner);
-      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
-      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
+      }, baselineFor(owner, memory.id)), owner);
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      if (!await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner)) {
+        throw new Error("Album no longer belongs to the active account");
+      }
       await refresh();
     },
-    [db, refresh, requireAccountKey]
+    [baselineFor, db, hydrateForStorage, refresh, requireAccountKey]
   );
 
   const updateDraftPages = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
       const owner = requireAccountKey();
-      const persisted = await ensureMemoryPhotosPersisted({
+      const persisted = await ensureMemoryPhotosPersisted(restoreKnownMissingPhotoTokens({
         ...memory,
         pages,
         updatedAt: new Date().toISOString(),
-      }, owner);
-      const hydrated = await hydrateMemoryPhotoReferences(persisted.memory, owner);
-      await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
+      }, baselineFor(owner, memory.id)), owner);
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      if (!await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner)) {
+        throw new Error("Album no longer belongs to the active account");
+      }
     },
-    [db, requireAccountKey]
+    [baselineFor, db, hydrateForStorage, requireAccountKey]
   );
 
-  const getMemoryEditDraft = React.useCallback(
-    async (memory: Memory) => getMemoryEditDraftFromDb(db, memory, requireAccountKey()),
-    [db, requireAccountKey],
-  );
+  const getMemoryEditDraft = React.useCallback(async (memory: Memory) => {
+    const owner = requireAccountKey();
+    const pages = await getMemoryEditDraftFromDb(db, memory, owner);
+    if (!pages) return null;
+    const hydrated = await hydrateForStorage(
+      restoreKnownMissingPhotoTokens({ ...memory, pages }, baselineFor(owner, memory.id)),
+      owner,
+    );
+    if (hydrated.changed) {
+      await saveMemoryEditDraftInDb(db, memory, hydrated.storageMemory.pages, owner);
+    }
+    return hydrated.runtimeMemory.pages;
+  }, [baselineFor, db, hydrateForStorage, requireAccountKey]);
 
   const saveMemoryEditDraft = React.useCallback(
     async (memory: Memory, pages: StoryPage[]) => {
-      await saveMemoryEditDraftInDb(db, memory, pages, requireAccountKey());
+      const owner = requireAccountKey();
+      const persisted = await ensureMemoryPhotosPersisted(
+        restoreKnownMissingPhotoTokens({ ...memory, pages }, baselineFor(owner, memory.id)),
+        owner,
+      );
+      const hydrated = await hydrateForStorage(persisted.memory, owner);
+      await saveMemoryEditDraftInDb(db, memory, hydrated.storageMemory.pages, owner);
     },
-    [db, requireAccountKey],
+    [baselineFor, db, hydrateForStorage, requireAccountKey],
   );
 
   const clearMemoryEditDraft = React.useCallback(
@@ -304,10 +349,10 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     await refresh();
   }, [db, refresh, requireAccountKey]);
 
-  const listDiscarded = React.useCallback(
-    async () => listDiscardedMemories(db, requireAccountKey()),
-    [db, requireAccountKey]
-  );
+  const listDiscarded = React.useCallback(async () => {
+    const owner = requireAccountKey();
+    return Promise.all((await listDiscardedMemories(db, owner)).map((memory) => hydrateForRuntime(memory, owner)));
+  }, [db, hydrateForRuntime, requireAccountKey]);
 
   const restoreMemory = React.useCallback(
     async (id: string) => {

@@ -67,4 +67,44 @@ describe("travel-book share action sheet", () => {
 
     expect(alertSpy).toHaveBeenLastCalledWith("导出失败", "printer unavailable");
   });
+
+  it("blocks export before capture when a local photo is missing", async () => {
+    await showShareActionSheet({
+      title: "Broken trip",
+      pages: [{ id: "page-1", kind: "photo", headline: "", body: "", position: 0, photoUri: "missing-local-photo://gone" }],
+    });
+    const buttons = alertSpy.mock.calls[0][2] ?? [];
+    const pdfOption = buttons.find((button) => button.text === "导出为 PDF");
+    if (!pdfOption?.onPress) throw new Error("PDF export action is missing");
+    await pdfOption.onPress();
+
+    expect(mockCapturePagesAsImages).not.toHaveBeenCalled();
+    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenLastCalledWith("无法导出", expect.stringContaining("缺失"));
+  });
+
+  it("blocks export before capture when a top-level photo reference is missing", async () => {
+    await showShareActionSheet({
+      title: "Broken cover",
+      pages: [],
+      photoUris: ["missing-local-photo://photo-list"],
+      coverImage: "missing-local-photo://cover",
+    });
+    const buttons = alertSpy.mock.calls[0][2] ?? [];
+    const pdfOption = buttons.find((button) => button.text === "导出为 PDF");
+    if (!pdfOption?.onPress) throw new Error("PDF export action is missing");
+    await pdfOption.onPress();
+
+    expect(mockCapturePagesAsImages).not.toHaveBeenCalled();
+    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
+    expect(mockCopyAsync).not.toHaveBeenCalled();
+
+    const tralbumOption = buttons.find((button) => button.text === "导出为 .tralbum 格式");
+    if (!tralbumOption?.onPress) throw new Error("Tralbum export action is missing");
+    await tralbumOption.onPress();
+
+    expect(mockCapturePagesAsImages).not.toHaveBeenCalled();
+    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
+    expect(mockCopyAsync).not.toHaveBeenCalled();
+  });
 });

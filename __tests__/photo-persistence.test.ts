@@ -306,4 +306,42 @@ describe("hydrateMemoryPhotoReferences", () => {
       expect.objectContaining({ storedReference: staleUri }),
     ]);
   });
+
+  it("assigns a distinct missing token to every unresolved photo occurrence", async () => {
+    const staleUri = "file:///var/mobile/Containers/Data/Application/old/Documents/photos/accounts/owner%40example.com/memory-1/123-photo.jpg";
+    getInfoAsyncMock.mockResolvedValue({ exists: false, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({
+        photoUris: [staleUri, staleUri],
+        pages: [{
+          id: "p1",
+          position: 0,
+          kind: "photo",
+          headline: "title",
+          body: "body",
+          photoUri: staleUri,
+        }],
+      }),
+      "owner@example.com",
+    );
+
+    expect(result.runtimeMemory.photoUris[0]).not.toBe(result.runtimeMemory.photoUris[1]);
+    expect(result.runtimeMemory.photoUris).not.toContain(result.runtimeMemory.pages[0].photoUri);
+    expect(new Set(result.unresolved.map(({ token }) => token)).size).toBe(3);
+  });
+
+  it("does not copy another account's app-owned photo into the current album", async () => {
+    const foreignUri = "file:///data/user/0/com.app/documents/photos/accounts/other%40example.com/memory-1/123-photo.jpg";
+    getInfoAsyncMock.mockResolvedValue({ exists: true, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({ photoUris: [foreignUri], pages: [] }),
+      "owner@example.com",
+    );
+
+    expect(copyAsyncMock).not.toHaveBeenCalled();
+    expect(result.runtimeMemory.photoUris[0]).toMatch(/^missing-local-photo:\/\//);
+    expect(result.storageMemory.photoUris).toEqual([foreignUri]);
+  });
 });

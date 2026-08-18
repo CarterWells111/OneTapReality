@@ -41,4 +41,10 @@ describe("PhotoStrip", () => {
 
     expect(onChange).toHaveBeenCalledWith(["file://two", "file://one"]);
   });
+
+  it("renders a local missing-photo placeholder instead of a strip image", async () => {
+    const view = await render(<PhotoStrip photoUris={["missing-local-photo://strip"]} onChange={jest.fn()} />);
+
+    expect(view.getByLabelText("本地照片缺失")).toBeTruthy();
+  });
 });

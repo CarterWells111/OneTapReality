@@ -47,7 +47,9 @@ export default function MemoriesHomeScreen() {
     // 取第一个选中的记忆做导出
     const memory = selected[0];
     showShareActionSheet({
+      coverImage: memory.coverImage,
       pages: memory.pages,
+      photoUris: memory.photoUris,
       title: memory.title,
     });
   };

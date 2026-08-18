@@ -32,11 +32,11 @@ export type PhotoHydrationResult = {
   runtimeMemory: Memory;
   storageMemory: Memory;
   changed: boolean;
-  unresolved: Array<{
+  unresolved: {
     token: `missing-local-photo://${string}`;
     location: PhotoLocation;
     storedReference: string;
-  }>;
+  }[];
 };
 
 async function getPhotosDirectory(accountKey: string, memoryId: string): Promise<string> {
@@ -52,6 +52,10 @@ function getAccountPhotosDirectory(accountKey: string): string {
 function isLegacySandboxPhotoUri(uri: string): boolean {
   const photosRoot = `${FileSystem.documentDirectory}photos/`;
   return uri.startsWith(photosRoot) && !uri.startsWith(`${photosRoot}accounts/`);
+}
+
+function isAccountScopedPhotoUri(uri: string): boolean {
+  return uri.startsWith("file://") && uri.includes("/photos/accounts/");
 }
 
 export async function deleteMemoryPhotoDirectory(accountKey: string, memoryId: string): Promise<void> {
@@ -157,7 +161,7 @@ async function hydratePhotoUri(uri: string, accountKey: string, memoryId: string
     return { runtime: token, storage: uri, token };
   };
   if (isMissingPhotoToken(uri)) {
-    return { runtime: uri, storage: uri, token: uri };
+    return { runtime: uri, storage: uri, token: uri as `missing-local-photo://${string}` };
   }
 
   const canonicalRuntime = resolveCanonicalPhotoReference(uri, accountKey, memoryId);
@@ -180,6 +184,11 @@ async function hydratePhotoUri(uri: string, accountKey: string, memoryId: string
     }
     return missing();
   }
+
+  // An app-owned account directory is never an external import source. If it
+  // did not validate for this exact account and album above, copying it would
+  // turn a stale or foreign reference into a cross-account photo leak.
+  if (isAccountScopedPhotoUri(uri)) return missing();
 
   try {
     const runtime = await persistPhotoUriStrict(uri, accountKey, memoryId);
@@ -225,7 +234,14 @@ export async function hydrateMemoryPhotoReferences(
     if (!uri) return { runtime: uri, storage: uri };
     const result = hydrated.get(uri)!;
     if (result.storage !== uri) changed = true;
-    if (result.token) unresolved.push({ token: result.token, location, storedReference: uri });
+    if (result.token) {
+      // A single stored URI can occur in several independent locations. Each
+      // occurrence needs its own UI token so a later edit/reorder can restore
+      // the exact stored reference from the provider baseline.
+      const token = createMissingPhotoToken();
+      unresolved.push({ token, location, storedReference: uri });
+      return { runtime: token, storage: result.storage };
+    }
     return { runtime: result.runtime, storage: result.storage };
   };
 
@@ -313,15 +329,10 @@ export async function cleanupMigratedLegacyPhotoUris(
   candidates: readonly string[],
   memories: readonly Memory[],
 ): Promise<void> {
-  const referenced = new Set(memories.flatMap(collectMemoryPhotoUris));
-  for (const uri of new Set(candidates)) {
-    if (!isLegacySandboxPhotoUri(uri) || referenced.has(uri)) continue;
-    try {
-      await FileSystem.deleteAsync(uri, { idempotent: true });
-    } catch (error) {
-      console.warn("[photo-persistence] 无法清理已迁移的旧照片：", error);
-    }
-  }
+  // Pre-account files may still be referenced by another account, draft, or recycle-bin row.
+  // A global reference scan is intentionally outside this account-scoped migration.
+  void candidates;
+  void memories;
 }
 
 /**

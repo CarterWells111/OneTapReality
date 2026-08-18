@@ -21,6 +21,15 @@ describe("StorySpread", () => {
     expect(view.getByText("Morning")).toBeTruthy();
   });
 
+  it("renders a local missing-photo placeholder without mounting the page image", async () => {
+    const view = await render(
+      <StorySpread page={{ id: "photo", position: 1, kind: "photo", headline: "Missing", body: "", photoUri: "missing-local-photo://page" }} />
+    );
+
+    expect(view.getByLabelText("本地照片缺失")).toBeTruthy();
+    expect(view.queryByTestId("story-photo")).toBeNull();
+  });
+
   it("renders a closing page without requiring an image", async () => {
     const view = await render(
       <StorySpread page={{ id: "closing", position: 2, kind: "closing", headline: "See you next time", body: "The end" }} />

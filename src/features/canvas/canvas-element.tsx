@@ -13,6 +13,7 @@ import { canvasFrames, canvasStickers } from "./canvas-assets";
 import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-element-geometry";
 import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
+import { isMissingPhotoToken } from "../memories/photo-references";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {
@@ -464,9 +465,9 @@ function ElementContent({
  */
 function ImageElement({ testID, uri }: { testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
-  if (failed) {
+  if (isMissingPhotoToken(uri) || failed) {
     return (
-      <View style={styles.imagePlaceholder} testID="canvas-image-placeholder">
+      <View accessibilityLabel="本地照片缺失" accessibilityRole="image" accessible style={styles.imagePlaceholder} testID={isMissingPhotoToken(uri) ? "canvas-missing-image-placeholder" : "canvas-image-placeholder"}>
         <Text style={styles.imagePlaceholderGlyph}>🖼</Text>
         <Text style={styles.imagePlaceholderText}>照片丢失</Text>
       </View>

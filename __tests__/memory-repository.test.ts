@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import type { Memory } from "../src/types/memory";
 
 import {
   createDraft,
@@ -56,7 +57,7 @@ const draftMemory = {
 };
 const accountKey = "owner@example.com";
 
-const mediaSnapshotMemory = {
+const mediaSnapshotMemory: Memory = {
   ...draftMemory,
   id: "media-memory",
   updatedAt: "2026-08-17T12:00:00.000Z",
@@ -69,12 +70,16 @@ const mediaSnapshotMemory = {
     headline: "New headline",
     body: "New body",
     photoUri: "documents://photos/accounts/owner%40example.com/media-memory/page.jpg",
-    layout: { aspectRatio: 1, elements: [{ id: "image", type: "image", uri: "documents://photos/accounts/owner%40example.com/media-memory/layout.jpg", x: 0, y: 0, width: 1, height: 1 }] },
+    layout: { aspectRatio: 1, elements: [{ id: "image", type: "image", uri: "documents://photos/accounts/owner%40example.com/media-memory/layout.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }] },
   }],
 };
 
 function createMediaSnapshotDatabase(options?: { ownerAccountKey?: string; failStatement?: string }) {
-  const state = {
+  const state: {
+    memory: { id: string; ownerAccountKey: string; updatedAt: string; coverImage?: string };
+    photos: string[];
+    pages: Array<{ id: string; photoUri?: string; layoutJson: string }>;
+  } = {
     memory: {
       id: mediaSnapshotMemory.id,
       ownerAccountKey: options?.ownerAccountKey ?? accountKey,
