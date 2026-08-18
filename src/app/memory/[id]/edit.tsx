@@ -32,7 +32,11 @@ type LoadedFallbackDraft = {
 
 export default function EditMemoryScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, pageId, pageIndex } = useLocalSearchParams<{
+    id: string;
+    pageId?: string | string[];
+    pageIndex?: string | string[];
+  }>();
   const { user } = useAuth();
   const accountKey = user ? normalizeLocalAccountKey(user.email) : "signed-out";
   const {
@@ -416,7 +420,7 @@ export default function EditMemoryScreen() {
       recoveryLease?.clearLatestSnapshot();
       const latestCursor = activePageRef.current ?? completedSave.cursor;
       localDiagnostics.emit("navigation_boundary", { memoryId: completedSave.memoryId });
-      routerForSession.replace({
+      routerForSession.dismissTo({
         pathname: "/memory/[id]",
         params: {
           id: completedSave.memoryId,
@@ -453,6 +457,8 @@ export default function EditMemoryScreen() {
       ) : null}
       <View pointerEvents={isSaving || isFormalSaveCompleted ? "none" : "auto"}>
         <BookCanvasEditor
+          fallbackIndex={parseFallbackIndex(pageIndex)}
+          initialPageId={typeof pageId === "string" ? pageId : undefined}
           onActivePageChange={changeActivePage}
           onPagesChange={changePages}
           onTransformPendingChange={changeTransformPending}
@@ -486,6 +492,12 @@ export default function EditMemoryScreen() {
       />
     </ScrollView>
   );
+}
+
+function parseFallbackIndex(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) return 0;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
 }
 
 const styles = StyleSheet.create({

@@ -117,7 +117,10 @@ describe("MemoryDetailScreen canvas rendering", () => {
     const view = render(<MemoryDetailScreen />);
 
     fireEvent.press(view.getByText("编辑相册"));
-    expect(mockPush).toHaveBeenCalledWith({ pathname: "/memory/[id]/edit", params: { id: "memory-canvas" } });
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/memory/[id]/edit",
+      params: { id: "memory-canvas", pageId: "cover", pageIndex: "0" },
+    });
     fireEvent.press(view.getByText("分享相册"));
     expect(mockShare).toHaveBeenCalled();
     fireEvent.press(view.getByText("绑定到礼品"));

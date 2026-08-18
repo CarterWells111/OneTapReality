@@ -54,6 +54,8 @@ import type { StoryPage } from "../../types/memory";
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
 type BookCanvasEditorProps = {
+  fallbackIndex?: number;
+  initialPageId?: string;
   onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
   onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
   onTransformPendingChange?: (pending: boolean) => void;
@@ -72,6 +74,12 @@ function resolveCoverColor(page: StoryPage | undefined) {
 
 function isValidFontSize(value: number) {
   return Number.isFinite(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
+  const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
+  if (idIndex >= 0) return idIndex;
+  return Math.max(0, Math.min(fallbackIndex, Math.max(0, pages.length - 1)));
 }
 
 type BookCanvasEditorLayerBufferProps = {
@@ -134,6 +142,8 @@ function buildCanvasId(prefix: string) {
 }
 
 export function BookCanvasEditor({
+  fallbackIndex = 0,
+  initialPageId,
   onActivePageChange,
   onPagesChange,
   onTransformPendingChange,
@@ -158,8 +168,9 @@ export function BookCanvasEditor({
   const stableColorPreview = colorPreviewRef.current;
   const stableFontSizePreview = fontSizePreviewRef.current;
   const stableCoverColorPreview = coverColorPreviewRef.current;
-  const [currentIndex, setCurrentIndex] = React.useState(0);
-  const activePageIdRef = React.useRef(pages[0]?.id);
+  const initialPageIndex = resolveInitialPageIndex(pages, initialPageId, fallbackIndex);
+  const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
+  const activePageIdRef = React.useRef(pages[initialPageIndex]?.id);
   const activePageChangeRef = React.useRef(onActivePageChange);
   const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
   const pagesRef = React.useRef(pages);

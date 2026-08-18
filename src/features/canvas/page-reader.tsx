@@ -86,10 +86,11 @@ export function PageReaderLayerBuffer({
 type PageReaderProps = {
   fallbackIndex?: number;
   initialPageId?: string;
+  onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
   pages: StoryPage[];
 };
 
-export function PageReader({ fallbackIndex = 0, initialPageId, pages }: PageReaderProps) {
+export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChange, pages }: PageReaderProps) {
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(width - 40, 280), 360);
   const pageHeight = (pageWidth * 4) / 3;
@@ -102,8 +103,11 @@ export function PageReader({ fallbackIndex = 0, initialPageId, pages }: PageRead
   const [activePageId, setActivePageId] = React.useState(pages[initialIndex]?.id);
   const [pending, setPending] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const restorationRef = React.useRef({ fallbackIndex, initialPageId });
+  const activePageChangeRef = React.useRef(onActivePageChange);
+  const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
   const pagesRef = React.useRef(pages);
   pagesRef.current = pages;
+  activePageChangeRef.current = onActivePageChange;
 
   const activeIndex = activePageId ? pages.findIndex((page) => page.id === activePageId) : -1;
   const index = activeIndex >= 0 ? activeIndex : clampPageIndex(fallbackIndex, pages.length);
@@ -137,6 +141,16 @@ export function PageReader({ fallbackIndex = 0, initialPageId, pages }: PageRead
   React.useEffect(() => () => {
     stableTurnGeneration.value += 1;
   }, [stableTurnGeneration]);
+
+  React.useEffect(() => {
+    const pageId = pages[index]?.id;
+    if (!pageId) return;
+    const cursor = { pageId, index };
+    const lastCursor = lastReportedCursorRef.current;
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) return;
+    lastReportedCursorRef.current = cursor;
+    activePageChangeRef.current?.(cursor);
+  }, [index, pages]);
 
   const commit = React.useCallback((targetPageId: string, generation: number) => {
     if (generation !== stableTurnGeneration.value) {

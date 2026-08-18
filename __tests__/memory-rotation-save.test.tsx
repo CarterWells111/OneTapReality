@@ -47,7 +47,7 @@ const mockMemory: Memory = {
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "memory-1" }),
-  useRouter: () => ({ back: mockBack, replace: mockReplace }),
+  useRouter: () => ({ back: mockBack, dismissTo: mockReplace }),
 }));
 
 jest.mock("../src/features/auth/auth-provider", () => ({

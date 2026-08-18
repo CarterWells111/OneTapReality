@@ -32,10 +32,12 @@ const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text") => voi
 const mockTransformPendingCallbacks: Array<(pending: boolean) => void> = [];
 let mockAccountEmail = "owner@example.com";
 let mockRouteId = "memory-1";
+let mockRoutePageId: string | undefined;
+let mockRoutePageIndex: string | undefined;
 
 jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ id: mockRouteId }),
-  useRouter: () => ({ back: mockBack, replace: mockReplace }),
+  useLocalSearchParams: () => ({ id: mockRouteId, pageId: mockRoutePageId, pageIndex: mockRoutePageIndex }),
+  useRouter: () => ({ back: mockBack, dismissTo: mockReplace }),
 }));
 
 jest.mock("../src/features/auth/auth-provider", () => ({
@@ -45,7 +47,8 @@ jest.mock("../src/features/auth/auth-provider", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text, View } = require("react-native");
-  return { BookCanvasEditor: ({ onActivePageChange, onPagesChange, onTransformPendingChange, pages }: {
+  return { BookCanvasEditor: ({ initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }: {
+    initialPageId?: string;
     onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
     onPagesChange: (pages: StoryPage[], reason: "text") => void;
     onTransformPendingChange?: (pending: boolean) => void;
@@ -57,7 +60,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     }, []);
     return (
       <View testID="album-canvas">
-        <Text testID="current-headline">{pages[0]?.headline}</Text>
+        <Text testID="current-headline">{pages.find((page) => page.id === initialPageId)?.headline ?? pages[0]?.headline}</Text>
         <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "page-2", index: 1 })} />
         <Button
           title="edit first page"
@@ -179,6 +182,8 @@ describe("EditMemoryScreen", () => {
     mockTransformPendingCallbacks.length = 0;
     mockAccountEmail = "owner@example.com";
     mockRouteId = "memory-1";
+    mockRoutePageId = undefined;
+    mockRoutePageIndex = undefined;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);

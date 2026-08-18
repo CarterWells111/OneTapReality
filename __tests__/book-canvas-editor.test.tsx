@@ -41,12 +41,13 @@ const pages: StoryPage[] = [
   { id: "page-2", position: 1, kind: "closing", headline: "Last page", body: "Last body" },
 ];
 
-function EditorHarness({ onChange = () => undefined, persistSelectedPhoto }: {
+function EditorHarness({ initialPageId, onChange = () => undefined, persistSelectedPhoto }: {
+  initialPageId?: string;
   onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => void;
   persistSelectedPhoto?: (uri: string) => Promise<string>;
 }) {
   const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
-  return <BookCanvasEditor pages={currentPages} persistSelectedPhoto={persistSelectedPhoto} onPagesChange={(nextPages, reason) => {
+  return <BookCanvasEditor initialPageId={initialPageId} pages={currentPages} persistSelectedPhoto={persistSelectedPhoto} onPagesChange={(nextPages, reason) => {
     setCurrentPages(nextPages);
     onChange(nextPages, reason);
   }} />;
@@ -223,6 +224,13 @@ describe("BookCanvasEditor", () => {
       pageId: "page-1",
       property: "fontSize",
     });
+  });
+
+  it("opens on the requested page instead of always starting at the cover", () => {
+    const screen = render(<EditorHarness initialPageId="page-2" />);
+
+    expect(screen.getByTestId("canvas-element-page-2:headline")).toBeTruthy();
+    expect(screen.queryByTestId("canvas-element-page-1:headline")).toBeNull();
   });
 
   it("opens the text editor via the edit button after double press", () => {
