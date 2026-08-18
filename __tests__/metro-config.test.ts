@@ -2,6 +2,18 @@ import { execFileSync } from "node:child_process";
 import { join, sep } from "node:path";
 
 describe("Metro configuration", () => {
+  it("treats SQLite WebAssembly as an asset instead of JavaScript source", () => {
+    const program = "const config = require('./metro.config'); process.stdout.write(JSON.stringify({ assetExts: config.resolver.assetExts, sourceExts: config.resolver.sourceExts }));";
+    const output = execFileSync(process.execPath, ["-e", program], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    const extensions = JSON.parse(output) as { assetExts: string[]; sourceExts: string[] };
+
+    expect(extensions.assetExts).toContain("wasm");
+    expect(extensions.sourceExts).not.toContain("wasm");
+  });
+
   it("blocks generated and cache directories from Metro's file crawl", () => {
     const excludedDirectories = [
       ".pnpm-store",
