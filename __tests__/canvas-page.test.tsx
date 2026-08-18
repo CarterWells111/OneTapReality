@@ -31,6 +31,13 @@ const layout: CanvasLayout = {
 };
 
 describe("CanvasPage", () => {
+  it("renders a local missing-photo placeholder instead of mounting a layout cover image", () => {
+    const screen = render(<CanvasPage interactive={false} layout={{ aspectRatio: 0.75, coverImage: "missing-local-photo://layout-cover", elements: [] }} width={300} />);
+
+    expect(screen.getByLabelText("本地照片缺失")).toBeTruthy();
+    expect(screen.queryByTestId("canvas-cover-image")).toBeNull();
+  });
+
   it("renders elements and selects an interactive element only after a double press", () => {
     const onSelect = jest.fn();
     const screen = render(<CanvasPage layout={layout} selectedElementId="caption-1" onSelectElement={onSelect} />);

@@ -58,7 +58,7 @@ export default function MemoryDetailScreen() {
     ? undefined
     : () => (
         <View style={styles.headerActions}>
-          <ShareButton onPress={() => showShareActionSheet({ pages: memory.pages, title: memory.title })} />
+          <ShareButton onPress={() => showShareActionSheet({ coverImage: memory.coverImage, pages: memory.pages, photoUris: memory.photoUris, title: memory.title })} />
           <IconButton
             accessibilityLabel="编辑旅行册"
             icon="edit"
@@ -88,7 +88,7 @@ export default function MemoryDetailScreen() {
         {!isSample ? (
           <View style={styles.localActions}>
             <AppButton label="编辑相册" onPress={openEditor} />
-            <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ pages: memory.pages, title: memory.title })} />
+            <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ coverImage: memory.coverImage, pages: memory.pages, photoUris: memory.photoUris, title: memory.title })} />
             <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
           </View>
         ) : null}

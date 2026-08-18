@@ -16,7 +16,7 @@ jest.mock("expo-image", () => {
   const { View } = require("react-native") as typeof import("react-native");
 
   return {
-    Image: ({ testID }: { testID?: string }) => {
+    Image: ({ testID, source }: { testID?: string; source?: unknown }) => {
       React.useEffect(() => {
         if (!testID?.startsWith("canvas-image-")) return undefined;
         mockImageMounts.set(testID, (mockImageMounts.get(testID) ?? 0) + 1);
@@ -24,6 +24,9 @@ jest.mock("expo-image", () => {
           mockImageUnmounts.set(testID, (mockImageUnmounts.get(testID) ?? 0) + 1);
         };
       }, [testID]);
+      // The native Image mock only needs a host node for lifecycle assertions.
+      // `View` deliberately has no `source` prop.
+      void source;
       return <View testID={testID} />;
     },
   };
@@ -129,5 +132,16 @@ describe("CanvasElement host lifecycle", () => {
     fireEvent.press(screen.getByTestId("canvas-element-photo-1"));
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("renders a labeled local placeholder instead of loading a missing photo token", () => {
+    const missing = { ...imageElement, uri: "missing-local-photo://gone" };
+    const screen = render(
+      <CanvasElement canvasHeight={400} canvasWidth={300} element={missing} interactive={false} isSelected={false} onSelect={() => undefined} selectionContext={undefined} />,
+    );
+
+    expect(screen.getByTestId("canvas-missing-image-placeholder")).toBeTruthy();
+    expect(screen.getByLabelText("本地照片缺失").props.accessibilityRole).toBe("image");
+    expect(screen.queryByTestId("canvas-image-photo-1")).toBeNull();
   });
 });

@@ -1,5 +1,11 @@
 # 决策记录
 
+## 2026-08-17：本地相册照片只持久化容器相对引用
+
+本地相册不得把包含 iOS 应用容器 UUID 的绝对 `file://` URI 作为长期照片标识写入数据库。应用复制照片到当前账号和相册专属的 `Documents/photos/accounts/...` 目录后，只保存从 `Documents` 开始计算的规范相对引用；展示、编辑、导出和礼品发布前再基于当前 `FileSystem.documentDirectory` 解析。这样 TestFlight/App Store 更新导致容器根路径变化时，数据库引用仍然有效。
+
+旧绝对 URI 在读取时按 `photos/accounts/...` 或旧 `photos/...` 后缀重定位到当前 Documents，并在确认文件存在后写回相对引用。无法重定位的临时 URI 不得被伪装为已恢复；新选择照片必须在复制且验证目标文件存在后才能写入相册，失败时保留编辑态并明确提示。退出登录、账号切换和普通应用更新不得删除照片；只有用户永久删除相册、清空该账号本地数据或卸载应用时才超出保留保证。该变更不上传本地原件，不改变账号隔离、共享权限或环境隔离。
+
 ## 2026-08-17：产品与原生发布范围收敛为 iPhone / iOS
 
 OneTapReality 当前及可预见计划仅支持 iPhone / iOS，不再把 Android 作为后续 Backlog 或待重新评估平台。本决策取代此前“第 3–4 周重新评估 Android”、保留 Android package、Android App Links 与 Android development build 的旧规则。
