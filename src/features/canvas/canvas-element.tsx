@@ -53,6 +53,14 @@ const finiteOr = (value: number, fallback: number) =>
   Number.isFinite(value) ? value : fallback;
 
 /**
+ * Resolve the interaction layer on the React thread. Reanimated worklets must
+ * only consume the resulting primitive, never call a regular JS helper.
+ */
+export function resolveCanvasInteractionZIndex(isSelected: boolean, interactionZIndex: number | undefined, baseZIndex: number) {
+  return isSelected && Number.isFinite(interactionZIndex) ? interactionZIndex : baseZIndex;
+}
+
+/**
  * 根据手势结束后的绝对位置和尺寸计算元素新状态。
  * 元素允许越界（部分超出画布），保留最小尺寸防止消失。
  * 对于文字元素，仅在双指捏合/旋转等整体缩放操作时同步 fontSize；
@@ -169,6 +177,7 @@ export function CanvasElement({
     width: canvasWidth,
     height: canvasHeight,
   });
+  const resolvedZIndex = resolveCanvasInteractionZIndex(isSelected, interactionZIndex, baseGeometry.zIndex);
 
   React.useEffect(() => {
     lastPressAt.current = null;
@@ -339,7 +348,7 @@ export function CanvasElement({
     width: elemW.value * gestureScale.value,
     height: elemH.value * gestureScale.value,
     transform: [{ rotate: `${baseRotation.value + gestureRotation.value}rad` }],
-    zIndex: isSelected ? finiteOr(interactionZIndex ?? baseGeometry.zIndex, baseGeometry.zIndex) : baseGeometry.zIndex,
+    zIndex: resolvedZIndex,
   }));
 
   const handlePress = () => {
@@ -364,9 +373,12 @@ export function CanvasElement({
           importantForAccessibility={interactive ? "auto" : "no"}
           onPress={interactive ? handlePress : undefined}
           pointerEvents={interactive ? "auto" : "none"}
-          style={styles.touchTarget}
+          style={[
+            styles.touchTarget,
+            isSelected && element.type === "image" && styles.selectedPhotoTouchTarget,
+          ]}
           testID={`canvas-element-${element.id}`}>
-          <View style={styles.contentContainer} testID={`canvas-element-content-${element.id}`}>
+          {element.type === "image" ? (
             <ElementContent
               canvasHeight={canvasHeight}
               canvasWidth={canvasWidth}
@@ -374,9 +386,19 @@ export function CanvasElement({
               fontScale={fontScale}
               stylePreview={stylePreview}
             />
-          </View>
+          ) : (
+            <View style={styles.contentContainer} testID={`canvas-element-content-${element.id}`}>
+              <ElementContent
+                canvasHeight={canvasHeight}
+                canvasWidth={canvasWidth}
+                element={element}
+                fontScale={fontScale}
+                stylePreview={stylePreview}
+              />
+            </View>
+          )}
         </Pressable>
-        {isSelected ? (
+        {isSelected && element.type !== "image" ? (
           <View
             pointerEvents="none"
             style={styles.selectionOverlay}
@@ -384,7 +406,7 @@ export function CanvasElement({
           />
         ) : null}
         {/* 选中时显示四角拖拽手柄 */}
-        {isSelected ? (
+        {isSelected && element.type !== "image" ? (
           <SelectionHandles
             activeGestureCount={activeGestureCount}
             elemH={elemH}
@@ -529,6 +551,7 @@ function AnimatedText({
 const styles = StyleSheet.create({
   positioned: { position: "absolute" },
   touchTarget: { flex: 1 },
+  selectedPhotoTouchTarget: { borderColor: "#B76545", borderRadius: 8, borderWidth: 2, overflow: "hidden" },
   contentContainer: { borderRadius: 8, flex: 1, overflow: "hidden" },
   selectionOverlay: {
     borderColor: "#B76545",

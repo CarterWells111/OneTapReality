@@ -3,11 +3,18 @@ import {
   composeCanvasGestureRotation,
   finalizeCanvasGesture,
   nextCanvasGestureGeneration,
+  resolveCanvasInteractionZIndex,
   shouldApplyCanvasGestureCommit,
 } from "../src/features/canvas/canvas-element";
 import { nextCanvasHandleGeneration } from "../src/features/canvas/selection-handles";
 
 describe("canvas gesture finalization", () => {
+  it("resolves the selected layer before entering the UI-thread animation worklet", () => {
+    expect(resolveCanvasInteractionZIndex(true, 12, 3)).toBe(12);
+    expect(resolveCanvasInteractionZIndex(true, Number.NaN, 3)).toBe(3);
+    expect(resolveCanvasInteractionZIndex(false, 12, 3)).toBe(3);
+  });
+
   it("does not decrement an active gesture for a recognizer that never started", () => {
     expect(finalizeCanvasGesture(false, 1)).toEqual({ activeGestureCount: 1, shouldCommit: false });
     expect(finalizeCanvasGesture(true, 2)).toEqual({ activeGestureCount: 1, shouldCommit: false });

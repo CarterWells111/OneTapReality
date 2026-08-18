@@ -74,19 +74,16 @@ describe("CanvasElement host lifecycle", () => {
     const screen = render(renderElement(false));
     const initialFrame = screen.getByTestId("canvas-element-frame-photo-1");
     const initialPressTarget = screen.getByTestId("canvas-element-photo-1");
-    const initialContent = screen.getByTestId("canvas-element-content-photo-1");
     const initialImage = screen.getByTestId("canvas-image-photo-1");
 
     screen.rerender(renderElement(true));
     expect(screen.getByTestId("canvas-element-frame-photo-1")).toBe(initialFrame);
     expect(screen.getByTestId("canvas-element-photo-1")).toBe(initialPressTarget);
-    expect(screen.getByTestId("canvas-element-content-photo-1")).toBe(initialContent);
     expect(screen.getByTestId("canvas-image-photo-1")).toBe(initialImage);
 
     screen.rerender(renderElement(false));
     expect(screen.getByTestId("canvas-element-frame-photo-1")).toBe(initialFrame);
     expect(screen.getByTestId("canvas-element-photo-1")).toBe(initialPressTarget);
-    expect(screen.getByTestId("canvas-element-content-photo-1")).toBe(initialContent);
     expect(screen.getByTestId("canvas-image-photo-1")).toBe(initialImage);
     expect(mockImageMounts.get("canvas-image-photo-1")).toBe(1);
     expect(mockImageUnmounts.get("canvas-image-photo-1") ?? 0).toBe(0);

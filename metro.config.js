@@ -3,9 +3,9 @@ const path = require("node:path");
 
 const config = getDefaultConfig(__dirname);
 
-// expo-sqlite Web 端通过 Worker 使用 wa-sqlite (WASM)，
-// Metro 默认不识别 .wasm 扩展名，需手动加入 sourceExts
-config.resolver.sourceExts = [...config.resolver.sourceExts, 'wasm'];
+// expo-sqlite Web 端通过 Worker 加载 wa-sqlite (WASM)。WASM 是静态二进制资源，
+// 而不是 Metro 应尝试解析的 JavaScript 源文件。
+config.resolver.assetExts = [...config.resolver.assetExts, 'wasm'];
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const ignoredDirectoryNames = [

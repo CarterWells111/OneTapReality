@@ -108,10 +108,9 @@ describe("CanvasPage", () => {
     expect(readOnlyFrame).toMatchObject(interactiveFrame);
   });
 
-  it("uses one clipped content container without consuming selected text width", () => {
+  it("uses a clipped text content container without consuming selected text width", () => {
     const interactiveScreen = render(<CanvasPage interactive layout={layout} selectedElementId="caption-1" width={300} />);
     const selectedContent = StyleSheet.flatten(interactiveScreen.getByTestId("canvas-element-content-caption-1").props.style);
-    const imageContent = StyleSheet.flatten(interactiveScreen.getByTestId("canvas-element-content-photo-1").props.style);
     const selectionOverlay = interactiveScreen.getByTestId("canvas-element-selection-caption-1");
     const selectionPointerEvents = selectionOverlay.props.pointerEvents;
     const selectionStyle = StyleSheet.flatten(selectionOverlay.props.style);
@@ -119,10 +118,8 @@ describe("CanvasPage", () => {
 
     const readOnlyScreen = render(<CanvasPage interactive={false} layout={layout} width={300} />);
     const readOnlyTextContent = StyleSheet.flatten(readOnlyScreen.getByTestId("canvas-element-content-caption-1").props.style);
-    const readOnlyImageContent = StyleSheet.flatten(readOnlyScreen.getByTestId("canvas-element-content-photo-1").props.style);
 
     expect(selectedContent).toEqual(readOnlyTextContent);
-    expect(imageContent).toEqual(readOnlyImageContent);
     expect(selectedContent).toMatchObject({ flex: 1, borderRadius: 8, overflow: "hidden" });
     expect(selectionPointerEvents).toBe("none");
     expect(selectionStyle).toMatchObject({
@@ -162,6 +159,18 @@ describe("CanvasPage", () => {
     expect(StyleSheet.flatten(screen.getByTestId("canvas-element-frame-sticker-1").props.style).zIndex).toBe(50);
   });
 
+  it("uses the legacy direct photo host without a dynamic wrapper or selection overlay", () => {
+    const screen = render(<CanvasPage interactive layout={{ ...layout, elements: [layout.elements[0]] }} selectedElementId="photo-1" width={300} />);
+
+    expect(screen.queryByTestId("canvas-element-selection-photo-1")).toBeNull();
+    expect(screen.queryByTestId("canvas-element-content-photo-1")).toBeNull();
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-photo-1").props.style)).toMatchObject({
+      borderColor: "#B76545",
+      borderWidth: 2,
+    });
+    expect(screen.queryByTestId("begin-canvas-handle-transform")).toBeNull();
+  });
+
   it("commits the sanitized finite base patch when canvas dimensions are zero", () => {
     const onTransformEnd = jest.fn();
     const onTransformStart = jest.fn();
@@ -169,10 +178,10 @@ describe("CanvasPage", () => {
       <CanvasPage
         height={0}
         interactive
-        layout={{ ...layout, elements: [layout.elements[0]] }}
+        layout={{ ...layout, elements: [layout.elements[1]] }}
         onTransformEnd={onTransformEnd}
         onTransformStart={onTransformStart}
-        selectedElementId="photo-1"
+        selectedElementId="caption-1"
         width={0}
       />,
     );
@@ -181,11 +190,11 @@ describe("CanvasPage", () => {
     fireEvent.press(screen.getByTestId("commit-canvas-transform"));
 
     expect(onTransformStart).toHaveBeenCalledTimes(1);
-    expect(onTransformEnd).toHaveBeenCalledWith("photo-1", {
-      x: 0.08,
-      y: 0.08,
-      width: 0.84,
-      height: 0.5,
+    expect(onTransformEnd).toHaveBeenCalledWith("caption-1", {
+      x: 0.1,
+      y: 0.65,
+      width: 0.8,
+      height: 0.1,
       rotation: 0,
     });
     expect(Object.values(onTransformEnd.mock.calls[0][1]).every(Number.isFinite)).toBe(true);
