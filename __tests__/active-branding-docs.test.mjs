@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -34,7 +34,7 @@ test('decision log defines local recovery drafts for unsaved canvas edits', asyn
     nextHeading === -1 ? undefined : nextHeading,
   );
 
-  assert.match(recoveryDecision, /保存画布.*更新正式相册/);
+  assert.match(recoveryDecision, /保存当前修改.*保存并退出画布.*更新正式相册/);
   assert.match(recoveryDecision, /仅保存在当前设备.*账号隔离.*相册隔离/);
   assert.match(recoveryDecision, /不上传.*不改变正式相册.*不纳入礼品共享快照/);
   assert.match(recoveryDecision, /正式相册版本不匹配.*丢弃恢复草稿/);

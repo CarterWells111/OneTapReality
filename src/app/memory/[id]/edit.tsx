@@ -334,7 +334,7 @@ export default function EditMemoryScreen() {
     );
   }
 
-  const save = async () => {
+  const save = async ({ navigate }: { navigate: boolean }) => {
     const sessionToken = editorSessionToken;
     const sessionLoadKey = loadKey;
     const sessionMemory = memoryRef.current;
@@ -420,14 +420,20 @@ export default function EditMemoryScreen() {
       recoveryLease?.clearLatestSnapshot();
       const latestCursor = activePageRef.current ?? completedSave.cursor;
       localDiagnostics.emit("navigation_boundary", { memoryId: completedSave.memoryId });
-      routerForSession.dismissTo({
-        pathname: "/memory/[id]",
-        params: {
-          id: completedSave.memoryId,
-          pageId: latestCursor.pageId,
-          pageIndex: String(latestCursor.index),
-        },
-      });
+      if (navigate) {
+        routerForSession.dismissTo({
+          pathname: "/memory/[id]",
+          params: {
+            id: completedSave.memoryId,
+            pageId: latestCursor.pageId,
+            pageIndex: String(latestCursor.index),
+          },
+        });
+      } else {
+        completedFormalSaveRef.current = null;
+        editorCommitLockedRef.current = false;
+        setIsFormalSaveCompleted(false);
+      }
     } catch {
       if (isCurrentSave()) {
         setSaveError(completedFormalSaveRef.current
@@ -485,9 +491,17 @@ export default function EditMemoryScreen() {
       ) : null}
       <AppButton
         disabled={isSaving || isTransformPending}
-        label={isSaving ? "正在保存…" : "保存画布"}
+        label={isSaving ? "正在保存…" : "保存当前修改"}
         onPress={() => {
-          void save().catch(() => undefined);
+          void save({ navigate: false }).catch(() => undefined);
+        }}
+        tone="secondary"
+      />
+      <AppButton
+        disabled={isSaving || isTransformPending}
+        label={isSaving ? "正在保存…" : "保存并退出画布"}
+        onPress={() => {
+          void save({ navigate: true }).catch(() => undefined);
         }}
       />
     </ScrollView>
