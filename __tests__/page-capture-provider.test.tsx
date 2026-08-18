@@ -38,7 +38,7 @@ describe("PageCaptureProvider", () => {
           headline: "Summer",
           body: "Hangzhou",
           position: 0,
-          layout: { coverColor: "#EFE2CF", elements: [] },
+          layout: { aspectRatio: 3 / 4, coverColor: "#EFE2CF", elements: [] },
         },
       ], 360, 480);
     });
