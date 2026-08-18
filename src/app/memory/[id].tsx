@@ -93,7 +93,7 @@ export default function MemoryDetailScreen() {
           </View>
         ) : null}
         <PageReader
-          fallbackIndex={fallbackIndex}
+          fallbackIndex={parseFallbackIndex(pageIndex)}
           initialPageId={typeof pageId === "string" ? pageId : undefined}
           onActivePageChange={setActivePage}
           pages={memory.pages}

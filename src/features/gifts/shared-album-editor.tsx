@@ -12,7 +12,8 @@ type Props = {
   album: InvitedGiftAlbum;
   giftId: string;
   onAccessLost: () => void;
-  onPublished: () => void | Promise<void>;
+  onPublished: (cursor: { pageId: string; index: number }) => void | Promise<void>;
+  onReload?: () => void | Promise<void>;
 };
 
 type MediaSource = { uri: string; existingId?: string; contentType?: string; byteSize?: number };
@@ -52,18 +53,23 @@ function snapshotPage(page: StoryPage, positions: Map<string, { position: number
   };
 }
 
-export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, onPublished }: Props) {
+export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, onPublished, onReload }: Props) {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [pages, setPages] = React.useState(() => mapSharedAlbumToStoryPages(album));
   const [busy, setBusy] = React.useState(false);
   const [stale, setStale] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const inFlight = React.useRef(false);
+  const activePage = React.useRef({ pageId: pages[0]?.id ?? "", index: 0 });
+  const handleActivePageChange = React.useCallback((cursor: { pageId: string; index: number }) => {
+    activePage.current = cursor;
+  }, []);
   const isOwner = album.role === "owner";
 
   const publish = async () => {
     if (inFlight.current || stale) return;
     inFlight.current = true;
+    const publishCursor = activePage.current;
     setBusy(true);
     setMessage("");
     try {
@@ -123,7 +129,7 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
       }
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
-      await onPublished();
+      await onPublished(publishCursor);
     } catch (error) {
       if (error instanceof BackendApiError && error.status === 403) {
         setPages([]);
@@ -141,9 +147,9 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
   };
 
   return <View style={{ gap: 12 }}>
-    <BookCanvasEditor pages={pages} onPagesChange={(nextPages) => setPages(nextPages)} />
+    <BookCanvasEditor pages={pages} onActivePageChange={handleActivePageChange} onPagesChange={(nextPages) => setPages(nextPages)} />
     {message ? <Text style={{ color: colors.muted, fontFamily: bodyFont }}>{message}</Text> : null}
     <AppButton disabled={busy || stale} label={busy ? "正在发布…" : "发布新版本"} onPress={() => void publish()} />
-    {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onPublished()} /> : null}
+    {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onReload?.()} /> : null}
   </View>;
 }

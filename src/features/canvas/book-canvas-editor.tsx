@@ -48,6 +48,7 @@ import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
+import { localDiagnostics } from "../diagnostics/local-diagnostics";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
@@ -62,17 +63,82 @@ type BookCanvasEditorProps = {
   persistSelectedPhoto?: (uri: string) => Promise<string>;
 };
 
-function buildCanvasId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
+const MIN_FONT_SIZE = 2;
+const MAX_FONT_SIZE = 40;
+const DEFAULT_COVER_COLOR = "#EFE2CF";
+
+function resolveCoverColor(page: StoryPage | undefined) {
+  return page?.layout?.coverColor ?? page?.coverColor ?? DEFAULT_COVER_COLOR;
+}
+
+function isValidFontSize(value: number) {
+  return Number.isFinite(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
 }
 
 function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
   const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
-  if (idIndex >= 0) {
-    return idIndex;
-  }
-  const safeFallbackIndex = Number.isSafeInteger(fallbackIndex) ? fallbackIndex : 0;
-  return Math.max(0, Math.min(safeFallbackIndex, Math.max(0, pages.length - 1)));
+  if (idIndex >= 0) return idIndex;
+  return Math.max(0, Math.min(fallbackIndex, Math.max(0, pages.length - 1)));
+}
+
+type BookCanvasEditorLayerBufferProps = {
+  current: StoryPage;
+  currentCanvasProps: React.ComponentProps<typeof CanvasPage>;
+  currentIsRight: boolean;
+  currentStyle: React.ComponentProps<typeof Animated.View>["style"];
+  incoming?: StoryPage;
+  incomingIsRight?: boolean;
+  incomingStyle: React.ComponentProps<typeof Animated.View>["style"];
+  pageHeight: number;
+  pageWidth: number;
+};
+
+export function BookCanvasEditorLayerBuffer({
+  current,
+  currentCanvasProps,
+  currentIsRight,
+  currentStyle,
+  incoming,
+  incomingIsRight = false,
+  incomingStyle,
+  pageHeight,
+  pageWidth,
+}: BookCanvasEditorLayerBufferProps) {
+  const layers = [
+    { isCurrent: true, isRight: currentIsRight, page: current, style: currentStyle },
+    ...(incoming ? [{ isCurrent: false, isRight: incomingIsRight, page: incoming, style: incomingStyle }] : []),
+  ];
+
+  return layers.map(({ isCurrent, isRight, page, style }) => (
+    <Animated.View
+      key={page.id}
+      pointerEvents={isCurrent ? "auto" : "none"}
+      style={[
+        styles.pageShadow,
+        styles.pageLayer,
+        isRight ? styles.rightPageShadow : styles.leftPageShadow,
+        style,
+      ]}
+      testID={isCurrent ? "book-page" : "book-page-incoming"}>
+      <CanvasPage
+        {...(isCurrent ? currentCanvasProps : {})}
+        height={pageHeight}
+        interactive={isCurrent}
+        layout={isCurrent ? currentCanvasProps.layout : page.layout!}
+        pageSide={isRight ? "right" : "left"}
+        width={pageWidth}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.spine, isRight ? styles.spineLeft : styles.spineRight]}
+      />
+    </Animated.View>
+  ));
+}
+
+function buildCanvasId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function BookCanvasEditor({
@@ -89,10 +155,28 @@ export function BookCanvasEditor({
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
+  const turnGeneration = useSharedValue(0);
+  const turnGenerationRef = React.useRef(turnGeneration);
+  const stableTurnGeneration = turnGenerationRef.current;
   const pagePanBlocked = useSharedValue(false);
+  const colorPreviewValue = useSharedValue("#000000");
+  const fontSizePreviewValue = useSharedValue(16);
+  const coverColorPreviewValue = useSharedValue(DEFAULT_COVER_COLOR);
+  const colorPreviewRef = React.useRef(colorPreviewValue);
+  const fontSizePreviewRef = React.useRef(fontSizePreviewValue);
+  const coverColorPreviewRef = React.useRef(coverColorPreviewValue);
+  const stableColorPreview = colorPreviewRef.current;
+  const stableFontSizePreview = fontSizePreviewRef.current;
+  const stableCoverColorPreview = coverColorPreviewRef.current;
   const initialPageIndex = resolveInitialPageIndex(pages, initialPageId, fallbackIndex);
   const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
-  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const activePageIdRef = React.useRef(pages[initialPageIndex]?.id);
+  const activePageChangeRef = React.useRef(onActivePageChange);
+  const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
+  const pagesRef = React.useRef(pages);
+  pagesRef.current = pages;
+  activePageChangeRef.current = onActivePageChange;
+  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
   const [menuMode, setMenuMode] = React.useState<"font" | "size" | "color" | null>(null); // 打开的面板；null = 文字编辑态
@@ -104,20 +188,59 @@ export function BookCanvasEditor({
     onPagesChange(restoredPages, "structure");
   });
 
+  const activePageIndex = activePageIdRef.current
+    ? pages.findIndex((page) => page.id === activePageIdRef.current)
+    : -1;
+  const validCurrentIndex = activePageIndex >= 0
+    ? activePageIndex
+    : Math.min(currentIndex, Math.max(0, pages.length - 1));
+  const currentPage = pages[validCurrentIndex];
+  const currentPageId = currentPage?.id;
+  if (currentPage && activePageIndex < 0) {
+    activePageIdRef.current = currentPage.id;
+  }
+
+  const initializeCoverPreview = React.useCallback((page: StoryPage | undefined) => {
+    stableCoverColorPreview.value = resolveCoverColor(page);
+  }, [stableCoverColorPreview]);
+
   React.useEffect(() => {
-    if (currentIndex >= pages.length) {
-      setCurrentIndex(Math.max(0, pages.length - 1));
+    if (currentIndex !== validCurrentIndex) {
+      setCurrentIndex(validCurrentIndex);
       setSelectedElementId(undefined);
     }
-  }, [currentIndex, pages.length]);
-
-  const currentPage = pages[currentIndex] ?? pages[0];
+  }, [currentIndex, validCurrentIndex]);
 
   React.useEffect(() => {
-    if (currentPage) {
-      onActivePageChange?.({ pageId: currentPage.id, index: currentIndex });
+    initializeCoverPreview(currentPage);
+  }, [currentPage, currentPageId, initializeCoverPreview]);
+
+  React.useEffect(() => {
+    if (!currentPageId) {
+      return;
     }
-  }, [currentIndex, currentPage, onActivePageChange]);
+    const cursor = { pageId: currentPageId, index: validCurrentIndex };
+    const lastCursor = lastReportedCursorRef.current;
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) {
+      return;
+    }
+    lastReportedCursorRef.current = cursor;
+    activePageChangeRef.current?.(cursor);
+  }, [currentPageId, validCurrentIndex]);
+
+  React.useEffect(() => {
+    if (pendingTurn && !pages.some((page) => page.id === pendingTurn.targetPageId)) {
+      stableTurnGeneration.value += 1;
+      setPendingTurn(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+    }
+  }, [pages, pendingTurn, stableTurnGeneration, translateX, turnDir]);
+
+  React.useEffect(() => () => {
+    stableTurnGeneration.value += 1;
+  }, [stableTurnGeneration]);
+
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
@@ -172,14 +295,23 @@ export function BookCanvasEditor({
     discardPendingText();
   }, [discardPendingText, pendingTextId]);
 
-  const commitTurn = React.useCallback((targetIndex: number) => {
-    discardPendingText();
-    setSelectedElementId(undefined);
-    setCurrentIndex(targetIndex);
+  const commitTurn = React.useCallback((targetPageId: string, generation: number) => {
+    if (generation !== stableTurnGeneration.value) {
+      return;
+    }
+    stableTurnGeneration.value += 1;
+    const targetIndex = pagesRef.current.findIndex((page) => page.id === targetPageId);
+    if (targetIndex >= 0) {
+      initializeCoverPreview(pagesRef.current[targetIndex]);
+      discardPendingText();
+      setSelectedElementId(undefined);
+      activePageIdRef.current = targetPageId;
+      setCurrentIndex(targetIndex);
+    }
     setPendingTurn(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [discardPendingText, translateX, turnDir]);
+  }, [discardPendingText, initializeCoverPreview, stableTurnGeneration, translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
     .enabled(pendingTurn === null)
@@ -198,8 +330,8 @@ export function BookCanvasEditor({
       if (pagePanBlocked.value) {
         return;
       }
-      const outsideStart = (currentIndex === 0 && event.translationX > 0)
-        || (currentIndex === pages.length - 1 && event.translationX < 0);
+      const outsideStart = (validCurrentIndex === 0 && event.translationX > 0)
+        || (validCurrentIndex === pages.length - 1 && event.translationX < 0);
       translateX.value = outsideStart ? event.translationX * 0.22 : event.translationX;
     })
     .onFinalize((event) => {
@@ -209,21 +341,27 @@ export function BookCanvasEditor({
         return;
       }
       const decision = resolvePageTurn({
-        currentIndex,
+        currentIndex: validCurrentIndex,
         pageCount: pages.length,
         pageWidth,
         translationX: event.translationX,
         velocityX: event.velocityX,
       });
       if (decision.shouldTurn && decision.direction !== 0) {
+        const targetPageId = pages[decision.targetIndex]?.id;
+        if (!targetPageId) {
+          return;
+        }
+        stableTurnGeneration.value += 1;
+        const generation = stableTurnGeneration.value;
         turnDir.value = decision.direction;
-        runOnJS(setPendingTurn)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        runOnJS(setPendingTurn)({ direction: decision.direction, generation, targetPageId });
         translateX.value = withTiming(
           -decision.direction * pageWidth,
           { duration: 260 },
           (finished) => {
             if (finished) {
-              runOnJS(commitTurn)(decision.targetIndex);
+              runOnJS(commitTurn)(targetPageId, generation);
             }
           },
         );
@@ -232,13 +370,14 @@ export function BookCanvasEditor({
       }
     }), [
       commitTurn,
-      currentIndex,
+      validCurrentIndex,
       pageHeight,
       pagePanBlocked,
       pageWidth,
-      pages.length,
+      pages,
       pendingTurn,
       selectedElement,
+      stableTurnGeneration,
       translateX,
       turnDir,
     ]);
@@ -261,6 +400,67 @@ export function BookCanvasEditor({
     reason: BookEditorChangeReason,
   ) => {
     changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);
+  };
+
+  const commitElementColor = (elementId: string, color: string) => {
+    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    const normalizedColor = color.toUpperCase();
+    if (VALID_HEX_COLOR.test(normalizedColor) && element?.type === "text") {
+      if (normalizedColor === element.color.toUpperCase()) {
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: currentPage.id,
+          property: "color",
+        });
+        return;
+      }
+      updateElement(elementId, { color: normalizedColor }, "structure");
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: currentPage.id,
+        property: "color",
+      });
+      return;
+    }
+    stableColorPreview.value = element?.type === "text" ? element.color : "#000000";
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: currentPage.id,
+      property: "color",
+    });
+  };
+
+  const commitElementFontSize = (elementId: string, fontSize: number) => {
+    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    if (isValidFontSize(fontSize) && element?.type === "text") {
+      if (fontSize === element.fontSize) {
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: currentPage.id,
+          property: "fontSize",
+        });
+        return;
+      }
+      updateElement(elementId, { fontSize }, "structure");
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: currentPage.id,
+        property: "fontSize",
+      });
+      return;
+    }
+    stableFontSizePreview.value = element?.type === "text" ? element.fontSize : MIN_FONT_SIZE;
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: currentPage.id,
+      property: "fontSize",
+    });
   };
 
   const addSticker = (stickerId = getCanvasStickers(stickerCategory)[0]?.id ?? canvasStickers[0].id) => {
@@ -310,9 +510,12 @@ export function BookCanvasEditor({
     setSelectedElementId(undefined);
   };
 
-  const isRightPage = currentIndex % 2 === 0;
-  const incomingPage = pendingTurn ? pages[pendingTurn.targetIndex] : undefined;
-  const incomingIsRight = pendingTurn ? pendingTurn.targetIndex % 2 === 0 : false;
+  const isRightPage = validCurrentIndex % 2 === 0;
+  const incomingIndex = pendingTurn
+    ? pages.findIndex((page) => page.id === pendingTurn.targetPageId)
+    : -1;
+  const incomingPage = incomingIndex >= 0 ? pages[incomingIndex] : undefined;
+  const incomingIsRight = incomingIndex >= 0 ? incomingIndex % 2 === 0 : false;
 
   return (
     <View style={styles.editor}>
@@ -347,8 +550,14 @@ export function BookCanvasEditor({
           onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
           onClose={() => setManagerOpen(false)}
           onJumpToPage={(index) => {
+            stableTurnGeneration.value += 1;
+            setPendingTurn(null);
+            translateX.value = 0;
+            turnDir.value = 0;
+            initializeCoverPreview(pages[index]);
             discardPendingText();
             setSelectedElementId(undefined);
+            activePageIdRef.current = pages[index]?.id;
             setCurrentIndex(index);
           }}
           pages={pages}
@@ -358,25 +567,17 @@ export function BookCanvasEditor({
       <View style={styles.bookStage}>
         <GestureDetector gesture={pagePan}>
           <View style={{ height: pageHeight, width: pageWidth }}>
-            <Animated.View
-              style={[
-                styles.pageShadow,
-                styles.pageLayer,
-                isRightPage ? styles.rightPageShadow : styles.leftPageShadow,
-                currentPageStyle,
-              ]}
-              testID="book-page">
-              <CanvasPage
-                height={pageHeight}
-                layout={currentPage.layout}
-                onInteractElement={handleElementInteraction}
-                onPressBlank={() => {
+            <BookCanvasEditorLayerBuffer
+              current={currentPage}
+              currentCanvasProps={{
+                onInteractElement: handleElementInteraction,
+                onPressBlank: () => {
                   discardPendingText();
                   setSelectedElementId(undefined);
                   setEditingElementId(undefined);
                   setMenuMode(null);
-                }}
-                onSelectElement={(id) => {
+                },
+                onSelectElement: (id) => {
                   // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
                   // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
                   if (pendingTextId !== undefined && id !== pendingTextId) {
@@ -389,51 +590,32 @@ export function BookCanvasEditor({
                   }
                   setSelectedElementId(id);
                   // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
-                }}
-                onTransformEnd={(elementId, patch) => {
+                },
+                onTransformEnd: (elementId, patch) => {
                   handleElementInteraction(elementId);
                   updateElement(elementId, patch, "transform");
-                }}
-                onTransformSettled={() => onTransformPendingChange?.(false)}
-                onTransformStart={() => onTransformPendingChange?.(true)}
-                pageSide={isRightPage ? "right" : "left"}
-                selectedElementId={selectedElementId}
-                width={pageWidth}
-              />
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.spine,
-                  isRightPage ? styles.spineLeft : styles.spineRight,
-                ]}
-              />
-            </Animated.View>
-
-            {incomingPage?.layout ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.pageShadow,
-                  styles.pageLayer,
-                  incomingIsRight ? styles.rightPageShadow : styles.leftPageShadow,
-                  incomingPageStyle,
-                ]}>
-                <CanvasPage
-                  height={pageHeight}
-                  interactive={false}
-                  layout={incomingPage.layout}
-                  pageSide={incomingIsRight ? "right" : "left"}
-                  width={pageWidth}
-                />
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.spine,
-                    incomingIsRight ? styles.spineLeft : styles.spineRight,
-                  ]}
-                />
-              </Animated.View>
-            ) : null}
+                },
+                onTransformSettled: () => onTransformPendingChange?.(false),
+                onTransformStart: () => onTransformPendingChange?.(true),
+                coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
+                  ? stableCoverColorPreview
+                  : undefined,
+                selectedElementId,
+                stylePreview: editingElement?.type === "text" && menuMode === "color"
+                  ? { color: stableColorPreview, elementId: editingElement.id }
+                  : editingElement?.type === "text" && menuMode === "size"
+                    ? { elementId: editingElement.id, fontSize: stableFontSizePreview }
+                    : undefined,
+                layout: currentPage.layout,
+              }}
+              currentIsRight={isRightPage}
+              currentStyle={currentPageStyle}
+              incoming={incomingPage?.layout ? incomingPage : undefined}
+              incomingIsRight={incomingIsRight}
+              incomingStyle={incomingPageStyle}
+              pageHeight={pageHeight}
+              pageWidth={pageWidth}
+            />
           </View>
         </GestureDetector>
       </View>
@@ -464,6 +646,7 @@ export function BookCanvasEditor({
       {/* 上下文菜单：字体/字号/颜色面板，由工具栏按钮触发；关闭后回到文字编辑态 */}
       {menuMode !== null && editingElement?.type === "text" ? (
         <ElementContextMenu
+          colorPreview={stableColorPreview}
           element={editingElement}
           elementFrame={{
             x: editingElement.x * pageWidth,
@@ -471,10 +654,33 @@ export function BookCanvasEditor({
             width: editingElement.width * pageWidth,
             height: editingElement.height * pageHeight,
           }}
-          onChangeColor={(color) => updateElement(editingElement.id, { color }, "structure")}
-          onChangeFont={(fontStyle) => updateElement(editingElement.id, { fontStyle }, "structure")}
-          onChangeSize={(fontSize) => updateElement(editingElement.id, { fontSize }, "structure")}
-          onClose={() => setMenuMode(null)}
+          onCancelColor={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "color",
+            });
+          }}
+          onCancelSize={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "fontSize",
+            });
+          }}
+          onChangeColor={(color) => commitElementColor(editingElement.id, color)}
+          onChangeFont={(fontStyle) => {
+            updateElement(editingElement.id, { fontStyle }, "structure");
+          }}
+          onChangeSize={(fontSize) => commitElementFontSize(editingElement.id, fontSize)}
+          onClose={() => {
+            stableColorPreview.value = editingElement.color;
+            stableFontSizePreview.value = editingElement.fontSize;
+            setMenuMode(null);
+          }}
+          fontSizePreview={stableFontSizePreview}
           initialMode={menuMode}
           visible={true}
         />
@@ -492,6 +698,7 @@ export function BookCanvasEditor({
         }}
         onColor={() => {
           if (selectedElement?.type === "text") {
+            stableColorPreview.value = selectedElement.color;
             setMenuMode("color");
             setEditingElementId(selectedElement.id);
           }
@@ -527,6 +734,7 @@ export function BookCanvasEditor({
         onPickBackground={() => setAssetTrayMode("background")}
         onSize={() => {
           if (selectedElement?.type === "text") {
+            stableFontSizePreview.value = selectedElement.fontSize;
             setMenuMode("size");
             setEditingElementId(selectedElement.id);
           }
@@ -575,6 +783,7 @@ export function BookCanvasEditor({
               label="封面"
               onPress={() => {
                 discardPendingText();
+                initializeCoverPreview(currentPage);
                 setAssetTrayMode("cover");
               }}
             />
@@ -624,10 +833,40 @@ export function BookCanvasEditor({
         ) : assetTrayMode === "cover" ? (
           <View style={styles.coverTray}>
             <ColorPicker
-              value={currentPage.coverColor ?? "#EFE2CF"}
-              onChange={(hex) => {
-                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, hex), "structure");
+              value={resolveCoverColor(currentPage)}
+              onCancel={() => {
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "cancel",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
               }}
+              onCommit={(hex) => {
+                const normalizedColor = hex.toUpperCase();
+                if (!VALID_HEX_COLOR.test(normalizedColor)) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "cancel",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                if (normalizedColor === resolveCoverColor(currentPage).toUpperCase()) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "no_op",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, normalizedColor), "structure");
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "commit",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
+              }}
+              previewValue={stableCoverColorPreview}
             />
             <View style={styles.coverImageRow}>
               <Pressable

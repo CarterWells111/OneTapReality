@@ -4,6 +4,8 @@ import { bodyFontFamily } from "../typography/fonts";
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
 
+export const MAX_NORMALIZED_ELEMENT_SIZE = 1;
+
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
   return {
@@ -19,8 +21,8 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
         id: occurrence === 1 ? element.id : `${element.id}-${occurrence}`,
         x: clamp(element.x, -0.95, 0.95),
         y: clamp(element.y, -0.95, 0.95),
-        width: clamp(element.width, 0.03, 0.95),
-        height: clamp(element.height, 0.03, 0.95),
+        width: clamp(element.width, 0.03, MAX_NORMALIZED_ELEMENT_SIZE),
+        height: clamp(element.height, 0.03, MAX_NORMALIZED_ELEMENT_SIZE),
       } as CanvasElement;
       return normalized.type === "text"
         ? {

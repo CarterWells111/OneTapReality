@@ -10,6 +10,22 @@ import {
 import { canvasPages } from "../src/features/canvas/editor-pages";
 import type { StoryPage } from "../src/types/memory";
 
+let mockContextMenuProps: Record<string, unknown> | undefined;
+const mockEmitDiagnostic = jest.fn();
+
+jest.mock("../src/features/diagnostics/local-diagnostics", () => ({
+  localDiagnostics: { emit: (...args: unknown[]) => mockEmitDiagnostic(...args) },
+}));
+
+jest.mock("../src/features/canvas/element-context-menu", () => ({
+  ElementContextMenu: (props: Record<string, unknown>) => {
+    const React = require("react") as typeof import("react");
+    const { View } = require("react-native") as typeof import("react-native");
+    mockContextMenuProps = props;
+    return React.createElement(View, { testID: "mock-element-context-menu" });
+  },
+}));
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 jest.mock("expo-image-picker", () => ({
@@ -37,6 +53,19 @@ function EditorHarness({ initialPageId, onChange = () => undefined, persistSelec
   }} />;
 }
 
+function CursorHarness({ onActivePageChange }: {
+  onActivePageChange: jest.Mock;
+}) {
+  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
+  return (
+    <BookCanvasEditor
+      pages={currentPages}
+      onActivePageChange={onActivePageChange}
+      onPagesChange={(nextPages) => setCurrentPages(nextPages)}
+    />
+  );
+}
+
 const editorLabel = "编辑选中文字";
 const stickerCategory = "贴纸 2";
 const stickerChoice = "添加贴纸 2-01";
@@ -50,6 +79,150 @@ describe("BookCanvasEditor", () => {
     launchImageLibraryMock.mockResolvedValue({
       canceled: false,
       assets: [{ uri: "file:///temporary.jpg" }],
+    });
+    mockContextMenuProps = undefined;
+  });
+
+  function openStyleMenu(screen: ReturnType<typeof render>, label: "颜色" | "字号") {
+    const headline = screen.getByTestId("canvas-element-page-1:headline");
+    const nowSpy = jest.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+    fireEvent.press(headline);
+    fireEvent.press(headline);
+    fireEvent.press(screen.getByText(label));
+    nowSpy.mockRestore();
+    return headline;
+  }
+
+  it("owns a stable text-color shared preview and commits it once", () => {
+    const enqueueRecovery = jest.fn();
+    const screen = render(<EditorHarness onChange={enqueueRecovery} />);
+    const headline = openStyleMenu(screen, "颜色");
+
+    const previewValue = mockContextMenuProps?.colorPreview as { value: string } | undefined;
+    const committedColor = previewValue?.value;
+    const menuPropsBeforePreview = mockContextMenuProps;
+    expect(previewValue).toBeDefined();
+    expect(mockContextMenuProps?.onPreviewColor).toBeUndefined();
+    act(() => { previewValue!.value = "#123456"; });
+
+    expect(enqueueRecovery).not.toHaveBeenCalled();
+    expect(mockContextMenuProps).toBe(menuPropsBeforePreview);
+    expect(screen.getByTestId("canvas-element-page-1:headline")).toBe(headline);
+    expect(screen.getByText("颜色")).toBeTruthy();
+
+    act(() => {
+      (mockContextMenuProps?.onChangeColor as ((color: string) => void) | undefined)?.("#12");
+    });
+    expect(enqueueRecovery).not.toHaveBeenCalled();
+
+    mockEmitDiagnostic.mockClear();
+    act(() => {
+      (mockContextMenuProps?.onCancelColor as (() => void) | undefined)?.();
+    });
+    expect(enqueueRecovery).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "cancel",
+      pageId: "page-1",
+      property: "color",
+    });
+
+    act(() => {
+      (mockContextMenuProps?.onChangeColor as ((color: string) => void) | undefined)?.(committedColor!.toLowerCase());
+    });
+    expect(enqueueRecovery).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "no_op",
+      pageId: "page-1",
+      property: "color",
+    });
+
+    act(() => {
+      (mockContextMenuProps?.onChangeColor as ((color: string) => void) | undefined)?.("#123456");
+    });
+
+    expect(enqueueRecovery).toHaveBeenCalledTimes(1);
+    const committedPages = enqueueRecovery.mock.calls[0][0] as StoryPage[];
+    expect(committedPages[0].layout?.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "page-1:headline", color: "#123456" }),
+    ]));
+    expect(mockEmitDiagnostic).toHaveBeenLastCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "commit",
+      pageId: "page-1",
+      property: "color",
+    });
+
+    fireEvent.press(screen.getByText("↩"));
+    expect(enqueueRecovery).toHaveBeenCalledTimes(2);
+    const restoredPages = enqueueRecovery.mock.calls[1][0] as StoryPage[];
+    expect(restoredPages[0].layout?.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "page-1:headline", color: committedColor }),
+    ]));
+    fireEvent.press(screen.getByText("↩"));
+    expect(enqueueRecovery).toHaveBeenCalledTimes(2);
+  });
+
+  it("owns a stable font-size shared preview and rejects invalid final sizes", () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} />);
+    const headline = openStyleMenu(screen, "字号");
+
+    const previewValue = mockContextMenuProps?.fontSizePreview as { value: number } | undefined;
+    const committedFontSize = previewValue?.value;
+    const menuPropsBeforePreview = mockContextMenuProps;
+    expect(previewValue).toBeDefined();
+    expect(mockContextMenuProps?.onPreviewSize).toBeUndefined();
+    act(() => { previewValue!.value = 28; });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(mockContextMenuProps).toBe(menuPropsBeforePreview);
+    expect(screen.getByTestId("canvas-element-page-1:headline")).toBe(headline);
+
+    act(() => {
+      (mockContextMenuProps?.onChangeSize as ((size: number) => void) | undefined)?.(Number.NaN);
+      (mockContextMenuProps?.onChangeSize as ((size: number) => void) | undefined)?.(200);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    mockEmitDiagnostic.mockClear();
+    act(() => {
+      (mockContextMenuProps?.onCancelSize as (() => void) | undefined)?.();
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "cancel",
+      pageId: "page-1",
+      property: "fontSize",
+    });
+
+    act(() => {
+      (mockContextMenuProps?.onChangeSize as ((size: number) => void) | undefined)?.(committedFontSize!);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(mockEmitDiagnostic).toHaveBeenCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "no_op",
+      pageId: "page-1",
+      property: "fontSize",
+    });
+
+    act(() => {
+      (mockContextMenuProps?.onChangeSize as ((size: number) => void) | undefined)?.(28);
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const committedPages = onChange.mock.calls[0][0] as StoryPage[];
+    expect(committedPages[0].layout?.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "page-1:headline", fontSize: 28 }),
+    ]));
+    expect(mockEmitDiagnostic).toHaveBeenLastCalledWith("style_transaction_finalized", {
+      elementId: "page-1:headline",
+      outcome: "commit",
+      pageId: "page-1",
+      property: "fontSize",
     });
   });
 
@@ -147,6 +320,97 @@ describe("BookCanvasEditor", () => {
     expect(screen.getByLabelText("完成页面管理")).toBeTruthy();
     expect(screen.getByTestId("page-cell-0")).toBeTruthy();
     expect(screen.getByTestId("page-cell-1")).toBeTruthy();
+  });
+
+  it("reports the stable page cursor after jumping to a page from page management", () => {
+    const onActivePageChange = jest.fn();
+    const screen = render(<CursorHarness onActivePageChange={onActivePageChange} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    fireEvent.press(screen.getAllByText("打开")[1]);
+
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-2", index: 1 });
+  });
+
+  it("reports only a valid consistent cursor when pages shrink past the active index", () => {
+    const onActivePageChange = jest.fn();
+    const threePages = canvasPages([
+      ...pages,
+      { id: "page-3", position: 2, kind: "photo", headline: "Third page", body: "Third body" },
+    ]);
+    const view = render(
+      <BookCanvasEditor
+        pages={threePages}
+        onActivePageChange={onActivePageChange}
+        onPagesChange={() => undefined}
+      />,
+    );
+
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[2]);
+    onActivePageChange.mockClear();
+
+    view.rerender(
+      <BookCanvasEditor
+        pages={threePages.slice(0, 1)}
+        onActivePageChange={onActivePageChange}
+        onPagesChange={() => undefined}
+      />,
+    );
+
+    expect(onActivePageChange).toHaveBeenCalledTimes(1);
+    expect(onActivePageChange).toHaveBeenCalledWith({ pageId: "page-1", index: 0 });
+  });
+
+  it("keeps the active page by id across reorder and clamps its old index only after deletion", () => {
+    const onActivePageChange = jest.fn();
+    const threePages = canvasPages([
+      ...pages,
+      { id: "page-3", position: 2, kind: "photo", headline: "Third page", body: "Third body" },
+    ]);
+    const view = render(
+      <BookCanvasEditor pages={threePages} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[1]);
+    onActivePageChange.mockClear();
+
+    const reordered = [threePages[1], threePages[0], threePages[2]];
+    view.rerender(
+      <BookCanvasEditor pages={reordered} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-2", index: 0 });
+
+    onActivePageChange.mockClear();
+    view.rerender(
+      <BookCanvasEditor pages={reordered.slice(1)} onActivePageChange={onActivePageChange} onPagesChange={() => undefined} />,
+    );
+    expect(onActivePageChange).toHaveBeenLastCalledWith({ pageId: "page-1", index: 0 });
+  });
+
+  it("deduplicates cursor notifications while retaining the latest callback", () => {
+    const firstCallback = jest.fn();
+    const latestCallback = jest.fn();
+    const initialPages = canvasPages(pages);
+    const view = render(
+      <BookCanvasEditor pages={initialPages} onActivePageChange={firstCallback} onPagesChange={() => undefined} />,
+    );
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+
+    view.rerender(
+      <BookCanvasEditor
+        pages={[{ ...initialPages[0], headline: "Updated" }, initialPages[1]]}
+        onActivePageChange={latestCallback}
+        onPagesChange={() => undefined}
+      />,
+    );
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    expect(latestCallback).not.toHaveBeenCalled();
+
+    fireEvent.press(view.getByLabelText("打开页面管理"));
+    fireEvent.press(view.getAllByText("打开")[1]);
+    expect(latestCallback).toHaveBeenCalledTimes(1);
+    expect(latestCallback).toHaveBeenCalledWith({ pageId: "page-2", index: 1 });
   });
 
   it("adds a selected photo only after it is copied to permanent storage", async () => {

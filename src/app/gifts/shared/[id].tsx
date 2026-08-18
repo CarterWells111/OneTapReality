@@ -19,6 +19,7 @@ export default function SharedGiftDetailScreen() {
   const [album, setAlbum] = React.useState<InvitedGiftAlbum | null>(null);
   const [opened, setOpened] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
+  const [readerCursor, setReaderCursor] = React.useState<{ pageId: string; index: number } | null>(null);
   const [targets, setTargets] = React.useState<{ email: string; role: "viewer" | "editor" }[]>([]);
   const [requestBusy, setRequestBusy] = React.useState(false);
   const [requestMessage, setRequestMessage] = React.useState("");
@@ -30,11 +31,15 @@ export default function SharedGiftDetailScreen() {
   const contextKeyRef = React.useRef(contextKey);
   contextKeyRef.current = contextKey;
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (options?: { openAt?: { pageId: string; index: number } }) => {
+    const loadContextKey = contextKey;
+    if (loadContextKey !== contextKeyRef.current) return;
     const generation = ++requestGeneration.current;
+    const current = () => generation === requestGeneration.current && loadContextKey === contextKeyRef.current;
     setAlbum(null);
     setOpened(false);
     setEditing(false);
+    setReaderCursor(null);
     setTargets([]);
     setRequestMessage("");
     setLoadedContextKey(null);
@@ -51,21 +56,36 @@ export default function SharedGiftDetailScreen() {
       const result = access === "owner"
         ? await client.getOwnedGiftAlbum(id, session.accessToken)
         : await client.getInvitedGiftAlbum(id, session.accessToken);
-      if (generation !== requestGeneration.current) return;
-      setAlbum(result);
+      if (!current()) return;
+      let nextTargets: { email: string; role: "viewer" | "editor" }[] = [];
       if (result.role === "editor") {
-        const nextTargets = await client.listInvitedGiftManagementTargets(id, session.accessToken);
-        if (generation !== requestGeneration.current) return;
-        setTargets(nextTargets);
-      } else setTargets([]);
-      setLoadedContextKey(contextKey);
+        nextTargets = await client.listInvitedGiftManagementTargets(id, session.accessToken);
+        if (!current()) return;
+      }
+      setAlbum(result);
+      setTargets(nextTargets);
+      setLoadedContextKey(loadContextKey);
       setStatus("");
+      if (options?.openAt) {
+        setReaderCursor(options.openAt);
+        setOpened(true);
+      }
     } catch {
-      if (generation !== requestGeneration.current) return;
+      if (!current()) return;
       setStatus("无法读取此分享相册，请检查网络后重试。");
       setLoadFailed(true);
     }
   }, [access, client, contextKey, id, router, session]);
+  const handlePublished = React.useCallback(async (cursor: { pageId: string; index: number }) => {
+    if (contextKey !== contextKeyRef.current) return;
+    await load({ openAt: cursor });
+  }, [contextKey, load]);
+  const handleAccessLost = React.useCallback(() => {
+    if (contextKey !== contextKeyRef.current) return;
+    setEditing(false);
+    setAlbum(null);
+    setStatus("编辑权限已被移除，请返回纪念品列表。");
+  }, [contextKey]);
 
   React.useEffect(() => {
     if (isAuthReady) void load();
@@ -73,8 +93,9 @@ export default function SharedGiftDetailScreen() {
   }, [isAuthReady, load]);
   if (!isAuthReady || !session) return null;
 
-  const coverImage = album?.cover?.readUrl ?? null;
-  const canEdit = album?.role === "owner" || album?.role === "editor";
+  const visibleAlbum = loadedContextKey === contextKey ? album : null;
+  const coverImage = visibleAlbum?.cover?.readUrl ?? null;
+  const canEdit = visibleAlbum?.role === "owner" || visibleAlbum?.role === "editor";
   const requestManagement = async (input: { action: "delete_album" | "remove_member" | "change_member_role"; targetEmail?: string; targetRole?: "viewer" | "editor" }) => {
     if (!session || !id || !contextKey || loadedContextKey !== contextKey || requestInFlight.current) return;
     const generation = requestGeneration.current;
@@ -89,7 +110,7 @@ export default function SharedGiftDetailScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
-      <ScreenTitle title={album?.title ?? "分享相册"} caption="SHARED WITH YOU" />
+      <ScreenTitle title={visibleAlbum?.title ?? "分享相册"} caption="SHARED WITH YOU" />
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
       {loadFailed && session && id ? <AppButton label="重试" tone="secondary" onPress={() => void load()} /> : null}
@@ -103,22 +124,23 @@ export default function SharedGiftDetailScreen() {
       </PaperCard></Section> : null}
 
 
-      {album ? (
+      {visibleAlbum ? (
         editing && canEdit ? (
           <SharedAlbumEditor
             accessToken={session.accessToken}
-            album={album}
+            album={visibleAlbum}
             giftId={id}
-            onAccessLost={() => {
-              setEditing(false);
-              setAlbum(null);
-              setStatus("编辑权限已被移除，请返回纪念品列表。");
-            }}
-            onPublished={load}
+            onAccessLost={handleAccessLost}
+            onPublished={handlePublished}
+            onReload={load}
           />
         ) : opened ? (
           <>
-            <PageReader pages={mapSharedAlbumToStoryPages(album)} />
+            <PageReader
+              fallbackIndex={readerCursor?.index}
+              initialPageId={readerCursor?.pageId}
+              pages={mapSharedAlbumToStoryPages(visibleAlbum)}
+            />
             <View style={styles.actions}>
               {canEdit ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
               <AppButton label="返回纪念品" onPress={() => router.back()} />
@@ -131,12 +153,12 @@ export default function SharedGiftDetailScreen() {
                 <Image contentFit="cover" source={{ uri: coverImage }} style={styles.coverImage} testID="album-cover-image" />
               ) : (
                 <View style={[styles.coverImage, styles.coverFallback]}>
-                  <Text selectable style={styles.coverFallbackTitle}>{album.title}</Text>
+                  <Text selectable style={styles.coverFallbackTitle}>{visibleAlbum.title}</Text>
                 </View>
               )}
             </View>
             <Text selectable style={styles.coverMeta}>
-              版本 {album.version} · {new Date(album.publishedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
+              版本 {visibleAlbum.version} · {new Date(visibleAlbum.publishedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
             </Text>
             <View style={styles.actions}>
               <AppButton label="打开相册" onPress={() => setOpened(true)} />

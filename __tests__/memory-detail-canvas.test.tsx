@@ -1,11 +1,11 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 
 const mockGetMemoryById = jest.fn();
 const mockPush = jest.fn();
 const mockShare = jest.fn();
 const mockPageReader = jest.fn();
-let mockSearchParams: { id: string; pageId?: string; pageIndex?: string } = { id: "memory-canvas" };
+let mockSearchParams: { id: string; pageId?: string | string[]; pageIndex?: string | string[] } = { id: "memory-canvas" };
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -79,34 +79,36 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(screen.getByText("外滩的风")).toBeTruthy();
     const canvasStyle = StyleSheet.flatten(screen.getByTestId("album-canvas").props.style);
     expect(canvasStyle.height / canvasStyle.width).toBeCloseTo(4 / 3);
-    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-title").props.style)).toMatchObject({
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-frame-title").props.style)).toMatchObject({
       transform: [{ rotate: "0.25rad" }],
     });
+    expect(mockPageReader).toHaveBeenCalledWith(expect.objectContaining({ pages: expect.any(Array) }));
   });
 
-  it("opens the editor on the currently read page", () => {
+  it.each([
+    [{ id: "memory-canvas", pageId: "page-2", pageIndex: "1" }, "page-2", 1],
+    [{ id: "memory-canvas", pageId: "missing", pageIndex: "-1" }, "missing", 0],
+    [{ id: "memory-canvas", pageIndex: "Infinity" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "1.5" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: ["1"] }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "0x10" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "1e2" }, undefined, 0],
+    [{ id: "memory-canvas", pageIndex: "9007199254740992" }, undefined, 0],
+    [{ id: "memory-canvas", pageId: ["page-2"], pageIndex: "1" }, undefined, 1],
+  ])("passes defensive restoration params to the page reader", (params, initialPageId, fallbackIndex) => {
+    mockSearchParams = params;
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
       createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
-      pages: [
-        { id: "cover", position: 0, kind: "cover", headline: "Cover", body: "", layout: { aspectRatio: 0.75, elements: [] } },
-        { id: "closing", position: 1, kind: "closing", headline: "Closing", body: "", layout: { aspectRatio: 0.75, elements: [] } },
-      ],
+      pages: [{ id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" }],
     });
-    const view = render(<MemoryDetailScreen />);
 
-    const readerProps = mockPageReader.mock.calls.at(-1)?.[0] as { onActivePageChange?: (cursor: { pageId: string; index: number }) => void };
-    expect(readerProps.onActivePageChange).toEqual(expect.any(Function));
-    act(() => readerProps.onActivePageChange?.({ pageId: "closing", index: 1 }));
+    render(<MemoryDetailScreen />);
 
-    fireEvent.press(view.getByText("编辑相册"));
-    expect(mockPush).toHaveBeenCalledWith({
-      pathname: "/memory/[id]/edit",
-      params: { id: "memory-canvas", pageId: "closing", pageIndex: "1" },
-    });
+    expect(mockPageReader).toHaveBeenCalledWith(expect.objectContaining({ initialPageId, fallbackIndex }));
   });
 
-  it("shows explicit local share and gift binding actions without consulting shared roles", () => {
+  it("shows explicit local edit, share, and gift binding actions without consulting shared roles", () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
       createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
@@ -114,6 +116,11 @@ describe("MemoryDetailScreen canvas rendering", () => {
     });
     const view = render(<MemoryDetailScreen />);
 
+    fireEvent.press(view.getByText("编辑相册"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/memory/[id]/edit",
+      params: { id: "memory-canvas", pageId: "cover", pageIndex: "0" },
+    });
     fireEvent.press(view.getByText("分享相册"));
     expect(mockShare).toHaveBeenCalled();
     fireEvent.press(view.getByText("绑定到礼品"));

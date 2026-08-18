@@ -96,44 +96,74 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
+  const turnGeneration = useSharedValue(0);
+  const turnGenerationRef = React.useRef(turnGeneration);
+  const stableTurnGeneration = turnGenerationRef.current;
   const initialIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
-  const [index, setIndex] = React.useState(initialIndex);
-  const [pending, setPending] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const [activePageId, setActivePageId] = React.useState(pages[initialIndex]?.id);
+  const [pending, setPending] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const restorationRef = React.useRef({ fallbackIndex, initialPageId });
+  const activePageChangeRef = React.useRef(onActivePageChange);
   const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
+  const pagesRef = React.useRef(pages);
+  pagesRef.current = pages;
+  activePageChangeRef.current = onActivePageChange;
+
+  const activeIndex = activePageId ? pages.findIndex((page) => page.id === activePageId) : -1;
+  const index = activeIndex >= 0 ? activeIndex : clampPageIndex(fallbackIndex, pages.length);
 
   React.useEffect(() => {
     const restorationChanged = restorationRef.current.initialPageId !== initialPageId
       || restorationRef.current.fallbackIndex !== fallbackIndex;
     restorationRef.current = { fallbackIndex, initialPageId };
+
     if (restorationChanged) {
-      setIndex(resolveRestoredIndex(pages, initialPageId, fallbackIndex));
+      stableTurnGeneration.value += 1;
+      const restoredIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
+      setActivePageId(pages[restoredIndex]?.id);
       setPending(null);
-    } else if (index >= pages.length) {
-      setIndex(Math.max(0, pages.length - 1));
+      translateX.value = 0;
+      turnDir.value = 0;
+      return;
     }
-  }, [fallbackIndex, index, initialPageId, pages]);
+
+    if (activeIndex < 0) {
+      setActivePageId(pages[clampPageIndex(fallbackIndex, pages.length)]?.id);
+    }
+    if (pending && !pages.some((page) => page.id === pending.targetPageId)) {
+      stableTurnGeneration.value += 1;
+      setPending(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+    }
+  }, [activeIndex, fallbackIndex, initialPageId, pages, pending, stableTurnGeneration, translateX, turnDir]);
+
+  React.useEffect(() => () => {
+    stableTurnGeneration.value += 1;
+  }, [stableTurnGeneration]);
 
   React.useEffect(() => {
     const pageId = pages[index]?.id;
-    if (!pageId) {
-      return;
-    }
+    if (!pageId) return;
     const cursor = { pageId, index };
     const lastCursor = lastReportedCursorRef.current;
-    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) {
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) return;
+    lastReportedCursorRef.current = cursor;
+    activePageChangeRef.current?.(cursor);
+  }, [index, pages]);
+
+  const commit = React.useCallback((targetPageId: string, generation: number) => {
+    if (generation !== stableTurnGeneration.value) {
       return;
     }
-    lastReportedCursorRef.current = cursor;
-    onActivePageChange?.(cursor);
-  }, [index, onActivePageChange, pages]);
-
-  const commit = React.useCallback((targetIndex: number) => {
-    setIndex(targetIndex);
+    stableTurnGeneration.value += 1;
+    if (pagesRef.current.some((page) => page.id === targetPageId)) {
+      setActivePageId(targetPageId);
+    }
     setPending(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [translateX, turnDir]);
+  }, [stableTurnGeneration, translateX, turnDir]);
 
   const pan = React.useMemo(() => Gesture.Pan()
     .enabled(pending === null)
@@ -153,21 +183,27 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
         velocityX: event.velocityX,
       });
       if (decision.shouldTurn && decision.direction !== 0) {
+        stableTurnGeneration.value += 1;
+        const generation = stableTurnGeneration.value;
         turnDir.value = decision.direction;
-        runOnJS(setPending)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        const targetPageId = pages[decision.targetIndex]?.id;
+        if (!targetPageId) {
+          return;
+        }
+        runOnJS(setPending)({ direction: decision.direction, generation, targetPageId });
         translateX.value = withTiming(
           -decision.direction * pageWidth,
           { duration: 260 },
           (finished) => {
             if (finished) {
-              runOnJS(commit)(decision.targetIndex);
+              runOnJS(commit)(targetPageId, generation);
             }
           },
         );
       } else {
         translateX.value = withTiming(0, { duration: 160 });
       }
-    }), [commit, index, pageWidth, pages.length, pending, translateX, turnDir]);
+    }), [commit, index, pageWidth, pages, pending, stableTurnGeneration, translateX, turnDir]);
 
   const currentStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -177,14 +213,17 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
   }));
 
   const current = pages[index] ?? pages[0];
-  const incoming = pending ? pages[pending.targetIndex] : undefined;
+  const incomingIndex = pending
+    ? pages.findIndex((page) => page.id === pending.targetPageId)
+    : -1;
+  const incoming = incomingIndex >= 0 ? pages[incomingIndex] : undefined;
 
   if (!current) {
     return null;
   }
 
   const isRightPage = index % 2 === 0;
-  const incomingIsRight = pending ? pending.targetIndex % 2 === 0 : false;
+  const incomingIsRight = incomingIndex >= 0 ? incomingIndex % 2 === 0 : false;
 
   return (
     <View style={styles.reader}>
