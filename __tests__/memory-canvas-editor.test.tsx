@@ -1,4 +1,4 @@
-import {
+﻿import {
   act,
   fireEvent,
   render,
@@ -8,6 +8,7 @@ import {
   addCanvasPage,
   addStickerToPage,
   addTextToPage,
+  canvasPages,
   deleteCanvasPage,
   duplicateCanvasElement,
   moveCanvasPage,
@@ -172,6 +173,34 @@ describe("canvas page editing model", () => {
     const selected = Array.from({ length: 12 }, (_, index) => `file://photo-${index}.jpg`);
 
     expect(toggleCanvasPhotoSelection(selected, "file://photo-12.jpg")).toEqual(selected);
+  });
+
+  it("normalizes the formal canvas snapshot before it can be written and reloaded", () => {
+    const snapshot = canvasPages([{
+      ...legacyPages[0],
+      layout: {
+        aspectRatio: 1,
+        elements: [{
+          id: "photo-outside",
+          type: "image",
+          uri: "file://west-lake.jpg",
+          x: 2,
+          y: -2,
+          width: 2,
+          height: -1,
+          rotation: 0.2,
+          zIndex: 1,
+        }],
+      },
+    }]);
+
+    expect(snapshot[0].layout?.elements[0]).toMatchObject({
+      x: 0.95,
+      y: -0.95,
+      width: 1,
+      height: 0.03,
+      rotation: 0.2,
+    });
   });
 });
 
@@ -354,7 +383,7 @@ describe("EditMemoryScreen", () => {
 
     const remounted = render(<EditMemoryScreen />);
     expect(await remounted.findByTestId("current-headline")).toHaveTextContent("最新编辑");
-    await act(async () => fireEvent.press(remounted.getByText("保存画布")));
+    await act(async () => fireEvent.press(remounted.getByText("保存并退出画布")));
     expect(mockUpdatePages).not.toHaveBeenCalled();
     await act(async () => resolveFirstWrite?.());
 
@@ -381,7 +410,7 @@ describe("EditMemoryScreen", () => {
     });
 
     expect(screen.queryByTestId("album-canvas")).toBeNull();
-    expect(screen.queryByText("保存画布")).toBeNull();
+    expect(screen.queryByText("保存并退出画布")).toBeNull();
     expect(mockUpdatePages).not.toHaveBeenCalled();
     expect(mockClearMemoryEditDraft).not.toHaveBeenCalled();
     await act(async () => fireEvent.press(retry));
@@ -416,7 +445,7 @@ describe("EditMemoryScreen", () => {
     await act(async () => rejectDraftB?.(new Error("lookup failed")));
 
     expect(screen.queryByTestId("album-canvas")).toBeNull();
-    expect(screen.queryByText("保存画布")).toBeNull();
+    expect(screen.queryByText("保存并退出画布")).toBeNull();
     expect(mockUpdatePages).not.toHaveBeenCalled();
     expect(mockGetDraftById).toHaveBeenLastCalledWith("draft-b");
   });
@@ -460,7 +489,7 @@ describe("EditMemoryScreen", () => {
     mockUpdatePages.mockRejectedValueOnce(new Error("save failed"));
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
     expect(screen.getByText("保存失败，请稍后重试。")).toBeTruthy();
 
     mockRouteId = "memory-2";
@@ -478,7 +507,7 @@ describe("EditMemoryScreen", () => {
 
     await screen.findByTestId("album-canvas");
     fireEvent.press(screen.getByText("report second page"));
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
@@ -493,13 +522,25 @@ describe("EditMemoryScreen", () => {
     expect(mockBack).not.toHaveBeenCalled();
   });
 
+  it("formally saves in place and keeps the editor available for further changes", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+
+    expect(mockUpdatePages).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByTestId("album-canvas")).toBeTruthy();
+    expect(screen.getByText("保存并退出画布")).toBeTruthy();
+  });
+
   it("stays on the edit screen when persistence fails", async () => {
     mockUpdatePages.mockRejectedValue(new Error("save failed"));
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
 
     await act(async () => {
-      fireEvent.press(screen.getByText("保存画布"));
+      fireEvent.press(screen.getByText("保存并退出画布"));
     });
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
@@ -507,7 +548,7 @@ describe("EditMemoryScreen", () => {
     expect(errorMessage.props.accessibilityRole).toBe("alert");
     expect(errorMessage.props.accessibilityLiveRegion).toBe("polite");
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
-    expect(screen.getByText("保存画布")).toBeTruthy();
+    expect(screen.getByText("保存并退出画布")).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(mockBack).not.toHaveBeenCalled();
   });
@@ -517,7 +558,7 @@ describe("EditMemoryScreen", () => {
     mockUpdatePages.mockReturnValue(new Promise<void>((resolve) => { resolveUpdate = resolve; }));
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
-    const saveButton = screen.getByText("保存画布");
+    const saveButton = screen.getByText("保存并退出画布");
 
     await act(async () => {
       fireEvent.press(saveButton);
@@ -538,7 +579,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
 
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     screen.unmount();
     await act(async () => settle?.());
@@ -568,7 +609,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
     fireEvent.press(screen.getByText("edit first page"));
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockUpdatePages).not.toHaveBeenCalled();
     await act(async () => resolveRecovery?.());
@@ -600,7 +641,7 @@ describe("EditMemoryScreen", () => {
     await screen.findByTestId("album-canvas");
     fireEvent.press(screen.getByText("edit first page"));
     await act(async () => {
-      fireEvent.press(screen.getByText("保存画布"));
+      fireEvent.press(screen.getByText("保存并退出画布"));
     });
 
     expect(mockSaveMemoryEditDraft).toHaveBeenCalledTimes(1);
@@ -625,7 +666,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
     fireEvent.press(screen.getByText("edit first page"));
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
@@ -635,7 +676,7 @@ describe("EditMemoryScreen", () => {
       code: "clear_failed",
       memoryId: "memory-1",
     });
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockClearMemoryEditDraft).toHaveBeenCalledTimes(2);
@@ -652,7 +693,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
     fireEvent.press(screen.getByText("edit first page"));
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     providerMemory = {
       ...memory,
@@ -662,7 +703,7 @@ describe("EditMemoryScreen", () => {
       updatedAt: "2026-07-22T11:00:00.000Z",
     };
     screen.rerender(<EditMemoryScreen />);
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockSaveMemoryEditDraft).toHaveBeenCalledTimes(1);
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
@@ -727,21 +768,21 @@ describe("EditMemoryScreen", () => {
       .mockResolvedValueOnce(undefined);
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
 
     mockRouteId = "memory-2";
     providerMemory = memoryB;
     screen.rerender(<EditMemoryScreen />);
     await screen.findByText("相册 B");
-    const memoryBSave = screen.getByRole("button", { name: "保存画布" });
+    const memoryBSave = screen.getByRole("button", { name: "保存并退出画布" });
     expect(memoryBSave.props.accessibilityState.disabled).toBe(false);
     await act(async () => resolveMemoryA?.());
 
     expect(mockClearMemoryEditDraft).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "保存画布" }).props.accessibilityState.disabled).toBe(false);
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    expect(screen.getByRole("button", { name: "保存并退出画布" }).props.accessibilityState.disabled).toBe(false);
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
     expect(mockUpdatePages).toHaveBeenCalledTimes(2);
     expect(mockUpdatePages.mock.calls[1][0].id).toBe("memory-2");
     expect(mockClearMemoryEditDraft).toHaveBeenCalledWith("memory-2");
@@ -761,17 +802,17 @@ describe("EditMemoryScreen", () => {
     await screen.findByTestId("album-canvas");
     const oldTransformCallback = mockTransformPendingCallbacks[0];
     await act(async () => oldTransformCallback(true));
-    expect(screen.getByRole("button", { name: "保存画布" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "保存并退出画布" }).props.accessibilityState.disabled).toBe(true);
 
     mockRouteId = "memory-2";
     providerMemory = memoryB;
     screen.rerender(<EditMemoryScreen />);
     await screen.findByText("相册 B");
-    expect(screen.getByRole("button", { name: "保存画布" }).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "保存并退出画布" }).props.accessibilityState.disabled).toBe(false);
     await act(async () => oldTransformCallback(true));
 
-    expect(screen.getByRole("button", { name: "保存画布" }).props.accessibilityState.disabled).toBe(false);
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    expect(screen.getByRole("button", { name: "保存并退出画布" }).props.accessibilityState.disabled).toBe(false);
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockUpdatePages.mock.calls[0][0].id).toBe("memory-2");
   });
@@ -786,7 +827,7 @@ describe("EditMemoryScreen", () => {
     fireEvent.press(screen.getByText("edit first page"));
     await act(async () => undefined);
     const capturedCallback = mockPageChangeCallbacks[0];
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     await act(async () => capturedCallback(
       legacyPages.map((page, index) => index === 0 ? { ...page, headline: "保存中迟到" } : page),
@@ -814,7 +855,7 @@ describe("EditMemoryScreen", () => {
       name: "未保存编辑的恢复副本写入失败，点击重试。",
     });
 
-    await act(async () => fireEvent.press(screen.getByText("保存画布")));
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);
     expect(mockUpdatePages.mock.calls[0][1][0].headline).toBe("本地编辑");

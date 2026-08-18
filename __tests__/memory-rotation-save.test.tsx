@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+﻿import { act, fireEvent, render } from "@testing-library/react-native";
 
 import type { Memory, StoryPage } from "../src/types/memory";
 
@@ -113,13 +113,13 @@ describe("memory canvas rotation saving", () => {
 
     fireEvent.press(screen.getByText("begin rotation"));
     await act(async () => {
-      fireEvent.press(screen.getByText("保存画布"));
+      fireEvent.press(screen.getByText("保存并退出画布"));
     });
     expect(mockUpdatePages).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByText("finish rotation"));
     await act(async () => {
-      fireEvent.press(screen.getByText("保存画布"));
+      fireEvent.press(screen.getByText("保存并退出画布"));
     });
 
     expect(mockUpdatePages).toHaveBeenCalledTimes(1);

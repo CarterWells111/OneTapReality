@@ -1,5 +1,5 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
-import { createLegacyLayout } from "./canvas-layout";
+import { createLegacyLayout, normalizeLayout } from "./canvas-layout";
 import { bodyFontFamily } from "../typography/fonts";
 import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasStickerId, StoryPage } from "../../types/memory";
 
@@ -20,7 +20,7 @@ const normalizePositions = (pages: StoryPage[]) => pages.map((page, position) =>
 
 const withLayout = (page: StoryPage): StoryPage => ({
   ...page,
-  layout: page.layout ?? createLegacyLayout(page),
+  layout: normalizeLayout(page.layout ?? createLegacyLayout(page)),
 });
 
 function updatePage(pages: StoryPage[], pageId: string, update: (page: StoryPage) => StoryPage) {
