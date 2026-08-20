@@ -5,7 +5,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppButton, colors } from "../../../components/ui";
 import { useAuth } from "../../../features/auth/auth-provider";
 import { normalizeLocalAccountKey } from "../../../features/auth/local-account";
-import { BookCanvasEditor } from "../../../features/canvas/book-canvas-editor";
+import {
+  BookCanvasEditor,
+  type BookCanvasEditorHandle,
+} from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
 import { localDiagnostics } from "../../../features/diagnostics/local-diagnostics";
 import {
@@ -78,6 +81,7 @@ export default function EditMemoryScreen() {
   const [editorSessionToken, setEditorSessionToken] = React.useState<number | null>(null);
   const [recoveryState, setRecoveryState] = React.useState<AutosaveQueueState>({ status: "saved" });
   const activePageRef = React.useRef(activePage);
+  const editorRef = React.useRef<BookCanvasEditorHandle>(null);
   const clearMemoryEditDraftRef = React.useRef(clearMemoryEditDraft);
   const completedFormalSaveRef = React.useRef<CompletedFormalSave | null>(null);
   const getMemoryEditDraftRef = React.useRef(getMemoryEditDraft);
@@ -115,6 +119,7 @@ export default function EditMemoryScreen() {
       editorSessionGenerationRef.current += 1;
       saveGenerationRef.current += 1;
       saveInFlightRef.current = false;
+      editorRef.current?.releaseSaveLock();
       isTransformPendingRef.current = false;
       retryRecoveryReadRef.current = null;
       queueUnsubscribeRef.current?.();
@@ -153,6 +158,7 @@ export default function EditMemoryScreen() {
       queueUnsubscribeRef.current = null;
       queueLeaseRef.current?.release();
       queueLeaseRef.current = null;
+      editorRef.current?.releaseSaveLock();
       editorCommitLockedRef.current = false;
       setEditorSessionToken(null);
       setIsFormalSaveCompleted(false);
@@ -339,7 +345,6 @@ export default function EditMemoryScreen() {
     const sessionLoadKey = loadKey;
     const sessionMemory = memoryRef.current;
     if (saveInFlightRef.current
-      || isTransformPendingRef.current
       || sessionToken === null
       || sessionToken !== editorSessionGenerationRef.current
       || sessionLoadKey !== currentLoadKeyRef.current
@@ -370,15 +375,28 @@ export default function EditMemoryScreen() {
         return;
       }
       if (!completedSave) {
+        const prepared = await editorRef.current?.prepareSave();
+        if (!isCurrentSave()) return;
+        if (!prepared) {
+          setSaveError("正在完成编辑，请稍后重试。");
+          return;
+        }
+        isTransformPendingRef.current = false;
+        setIsTransformPending(false);
+        const preparedDiffersFromParent = prepared.pages !== pagesRef.current;
+        const latestPages = canvasPages(prepared.pages);
+        const cursor = prepared.cursor;
+        pagesRef.current = latestPages;
+        activePageRef.current = cursor;
+        setPages(latestPages);
+        setActivePage(cursor);
+        if (preparedDiffersFromParent) recoveryQueue?.enqueue(latestPages);
         try {
           await recoveryQueue?.waitForIdle();
         } catch {
           // Explicit formal save is the fallback when the recovery queue failed.
         }
         if (!isCurrentSave()) return;
-        if (isTransformPendingRef.current) return;
-        const latestPages = canvasPages(pagesRef.current);
-        const cursor = activePageRef.current ?? { pageId: latestPages[0].id, index: 0 };
         try {
           await updatePagesForSession(sessionMemory, latestPages);
           localDiagnostics.emit("formal_persistence_succeeded", {
@@ -418,20 +436,20 @@ export default function EditMemoryScreen() {
       }
       if (!isCurrentSave()) return;
       recoveryLease?.clearLatestSnapshot();
-      const latestCursor = activePageRef.current ?? completedSave.cursor;
       localDiagnostics.emit("navigation_boundary", { memoryId: completedSave.memoryId });
       if (navigate) {
         routerForSession.dismissTo({
           pathname: "/memory/[id]",
           params: {
             id: completedSave.memoryId,
-            pageId: latestCursor.pageId,
-            pageIndex: String(latestCursor.index),
+            pageId: completedSave.cursor.pageId,
+            pageIndex: String(completedSave.cursor.index),
           },
         });
       } else {
         completedFormalSaveRef.current = null;
         editorCommitLockedRef.current = false;
+        editorRef.current?.releaseSaveLock();
         setIsFormalSaveCompleted(false);
       }
     } catch {
@@ -445,14 +463,21 @@ export default function EditMemoryScreen() {
         && sessionToken === editorSessionGenerationRef.current
         && sessionLoadKey === currentLoadKeyRef.current) {
         saveInFlightRef.current = false;
-        if (!completedFormalSaveRef.current) editorCommitLockedRef.current = false;
+        if (!completedFormalSaveRef.current && editorCommitLockedRef.current) {
+          editorCommitLockedRef.current = false;
+          editorRef.current?.releaseSaveLock();
+        }
         if (isMountedRef.current) setIsSaving(false);
       }
     }
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      testID="memory-canvas-edit-scroll">
       <Text selectable style={styles.muted}>
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
@@ -470,6 +495,7 @@ export default function EditMemoryScreen() {
           onTransformPendingChange={changeTransformPending}
           pages={pages}
           persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
+          ref={editorRef}
         />
       </View>
       {recoveryState.status === "error" ? (

@@ -29,8 +29,12 @@ const mockSaveMemoryEditDraft = jest.fn();
 const mockClearMemoryEditDraft = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
 const mockEmitDiagnostic = jest.fn();
+const mockReleaseSaveLock = jest.fn();
 const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text") => void> = [];
 const mockTransformPendingCallbacks: Array<(pending: boolean) => void> = [];
+let mockPreparedPages: StoryPage[] | undefined;
+let mockPreparedCursor = { pageId: "cover-1", index: 0 };
+let mockPrepareSaveReturnsNull = false;
 let mockAccountEmail = "owner@example.com";
 let mockRouteId = "memory-1";
 let mockRoutePageId: string | undefined;
@@ -46,15 +50,28 @@ jest.mock("../src/features/auth/auth-provider", () => ({
 }));
 
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
-  const React = require("react");
+  const React = require("react") as typeof import("react");
   const { Button, Text, View } = require("react-native");
-  return { BookCanvasEditor: ({ initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }: {
+  type MockHandle = {
+    prepareSave: () => Promise<{ cursor: { pageId: string; index: number }; pages: StoryPage[] } | null>;
+    releaseSaveLock: () => void;
+  };
+  const BookCanvasEditor = React.forwardRef<MockHandle, {
     initialPageId?: string;
     onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
     onPagesChange: (pages: StoryPage[], reason: "text") => void;
     onTransformPendingChange?: (pending: boolean) => void;
     pages: StoryPage[];
-  }) => {
+  }>(function MockBookCanvasEditor({ initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
+    React.useImperativeHandle(ref, () => ({
+      prepareSave: async () => mockPrepareSaveReturnsNull
+        ? null
+        : {
+            cursor: mockPreparedCursor,
+            pages: mockPreparedPages ?? pages,
+          },
+      releaseSaveLock: mockReleaseSaveLock,
+    }), [pages]);
     React.useEffect(() => {
       mockPageChangeCallbacks.push(onPagesChange);
       if (onTransformPendingChange) mockTransformPendingCallbacks.push(onTransformPendingChange);
@@ -62,7 +79,10 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     return (
       <View testID="album-canvas">
         <Text testID="current-headline">{pages.find((page) => page.id === initialPageId)?.headline ?? pages[0]?.headline}</Text>
-        <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "page-2", index: 1 })} />
+        <Button title="report second page" onPress={() => {
+          mockPreparedCursor = { pageId: "page-2", index: 1 };
+          onActivePageChange?.(mockPreparedCursor);
+        }} />
         <Button
           title="edit first page"
           onPress={() => onPagesChange(
@@ -79,7 +99,8 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
         />
       </View>
     );
-  } };
+  });
+  return { BookCanvasEditor };
 });
 
 jest.mock("../src/features/memories/memories-provider", () => ({
@@ -213,6 +234,9 @@ describe("EditMemoryScreen", () => {
     mockRouteId = "memory-1";
     mockRoutePageId = undefined;
     mockRoutePageIndex = undefined;
+    mockPreparedPages = undefined;
+    mockPreparedCursor = { pageId: "cover-1", index: 0 };
+    mockPrepareSaveReturnsNull = false;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);
@@ -520,6 +544,51 @@ describe("EditMemoryScreen", () => {
       params: { id: "memory-1", pageId: "page-2", pageIndex: "1" },
     });
     expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("persists the editor-prepared pages and cursor instead of older parent refs", async () => {
+    mockPreparedPages = canvasPages(legacyPages).map((page, index) => index === 0
+      ? {
+          ...page,
+          layout: {
+            ...page.layout!,
+            elements: page.layout!.elements.map((element) => element.type === "text"
+              ? { ...element, color: "#123456", fontSize: 28, height: 0.25, text: "第一行\n第二行" }
+              : element),
+          },
+        }
+      : page);
+    mockPreparedCursor = { pageId: "closing-1", index: 1 };
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
+
+    expect(mockUpdatePages).toHaveBeenCalledWith(memory, mockPreparedPages);
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: "/memory/[id]",
+      params: { id: "memory-1", pageId: "closing-1", pageIndex: "1" },
+    });
+  });
+
+  it("does not persist when the editor cannot finish preparing its snapshot", async () => {
+    mockPrepareSaveReturnsNull = true;
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
+
+    expect(mockUpdatePages).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByText("正在完成编辑，请稍后重试。")).toBeTruthy();
+    expect(mockReleaseSaveLock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps save taps available while a text input owns the keyboard", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    expect(screen.getByTestId("memory-canvas-edit-scroll").props.keyboardShouldPersistTaps).toBe("handled");
   });
 
   it("formally saves in place and keeps the editor available for further changes", async () => {

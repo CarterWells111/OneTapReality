@@ -66,13 +66,23 @@ jest.mock("../src/features/memories/memories-provider", () => ({
   }),
 }));
 
-jest.mock("../src/features/canvas/book-canvas-editor", () => ({
-  BookCanvasEditor: ({ onPagesChange, onTransformPendingChange, persistSelectedPhoto }: {
+jest.mock("../src/features/canvas/book-canvas-editor", () => {
+  const React = require("react") as typeof import("react");
+  const { Button, View } = jest.requireActual("react-native");
+  type MockHandle = {
+    prepareSave: () => Promise<{ cursor: { pageId: string; index: number }; pages: StoryPage[] }>;
+    releaseSaveLock: () => void;
+  };
+  const BookCanvasEditor = React.forwardRef<MockHandle, {
     onPagesChange: (nextPages: StoryPage[], reason: "transform") => void;
     onTransformPendingChange?: (pending: boolean) => void;
+    pages: StoryPage[];
     persistSelectedPhoto?: (uri: string) => Promise<string>;
-  }) => {
-    const { Button, View } = jest.requireActual("react-native");
+  }>(function MockBookCanvasEditor({ onPagesChange, onTransformPendingChange, pages, persistSelectedPhoto }, ref) {
+    React.useImperativeHandle(ref, () => ({
+      prepareSave: async () => ({ cursor: { pageId: pages[0]?.id ?? "", index: 0 }, pages }),
+      releaseSaveLock: () => undefined,
+    }), [pages]);
     return (
       <View>
         <Button title="begin rotation" onPress={() => onTransformPendingChange?.(true)} />
@@ -93,8 +103,9 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => ({
         />
       </View>
     );
-  },
-}));
+  });
+  return { BookCanvasEditor };
+});
 
 import EditMemoryScreen from "../src/app/memory/[id]/edit";
 
