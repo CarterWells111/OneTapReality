@@ -19,6 +19,7 @@ const mockGestureHandlers: Record<string, {
   end?: (event?: MockGestureEvent, success?: boolean) => void;
 }> = {};
 const mockTapGestures: Array<typeof mockGestureHandlers.pan> = [];
+const mockTapMaxDistances: number[] = [];
 const mockRunOnJS = jest.fn();
 const mockSharedValues: Array<{ value: unknown }> = [];
 const mockDecayConfigs: Array<{ clamp?: readonly [number, number]; velocity?: number }> = [];
@@ -76,6 +77,7 @@ jest.mock("react-native-gesture-handler", () => {
     gesture.onEnd = (callback: (event?: MockGestureEvent, success?: boolean) => void) => { gesture.end = callback; return gesture; };
     gesture.numberOfTaps = () => gesture;
     gesture.maxDelay = () => gesture;
+    gesture.maxDistance = (distance: number) => { mockTapMaxDistances.push(distance); return gesture; };
     gesture.maxPointers = (count: number) => { mockPanMaxPointers = count; return gesture; };
     return gesture;
   };
@@ -109,6 +111,7 @@ describe("CityMap workspace gestures", () => {
     jest.clearAllMocks();
     mockSharedValues.splice(0, mockSharedValues.length);
     mockTapGestures.splice(0, mockTapGestures.length);
+    mockTapMaxDistances.splice(0, mockTapMaxDistances.length);
     mockDecayConfigs.splice(0, mockDecayConfigs.length);
     mockDecayCallbacks.splice(0, mockDecayCallbacks.length);
     mockAnimatedReactionCalls = 0;
@@ -272,6 +275,12 @@ describe("CityMap workspace gestures", () => {
     });
 
     expect(onCityPress).toHaveBeenCalledWith("shenzhen");
+  });
+
+  it("configures matching tap distances so a drag cannot become a city tap", async () => {
+    await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={jest.fn()} />);
+
+    expect(mockTapMaxDistances).toEqual([10, 10]);
   });
 
   // 画布 transform 以视图中心为原点缩放，双击定焦必须按 (点 - 中心) 计算，

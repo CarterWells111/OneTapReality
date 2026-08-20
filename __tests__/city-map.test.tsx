@@ -218,6 +218,18 @@ describe("CityMap", () => {
     expect(resolveWorkspaceMarkerHit({ x: 0, y: 0 }, viewport, size, adapter.markers)).toBeUndefined();
   });
 
+  it.each([{ height: 844, width: 0 }, { height: 0, width: 390 }])(
+    "does not resolve a marker before the workspace has a usable size",
+    (size) => {
+      expect(resolveWorkspaceMarkerHit(
+        { x: 0, y: 0 },
+        { scale: 2, translateX: 0, translateY: 0 },
+        size,
+        new OfflineChinaMapAdapter().markers,
+      )).toBeUndefined();
+    },
+  );
+
   it("avoids object spread in the UI-thread label collision worklet", () => {
     const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
 

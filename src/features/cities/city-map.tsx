@@ -76,6 +76,7 @@ const overviewMapDimensions = Object.freeze({
 const markerTargetSize = 44;
 const markerVisualSize = 8;
 const workspaceMarkerHitRadius = markerTargetSize / 2;
+const workspaceTapMaxDistance = 10;
 const markerLabelWidth = 88;
 const markerLabelHeight = 20;
 const markerSvgScale = chinaMapCoordinateSpace.width / overviewMapDimensions.width;
@@ -191,6 +192,7 @@ export function resolveWorkspaceMarkerHit(
   markers: readonly CityMapMarker[],
 ): City | undefined {
   "worklet";
+  if (size.width <= 0 || size.height <= 0) return undefined;
   const hitRadiusSquared = workspaceMarkerHitRadius * workspaceMarkerHitRadius;
   let nearestCity: City | undefined;
   let nearestDistanceSquared = hitRadiusSquared;
@@ -675,6 +677,7 @@ function WorkspaceCityMap({
 
   const cityTap = Gesture.Tap()
     .enabled(variant === "workspace" && interactive && Boolean(onCityPress))
+    .maxDistance(workspaceTapMaxDistance)
     .onEnd((event, success) => {
       if (!success || !onCityPress) return;
       const city = resolveWorkspaceMarkerHit({ x: event.x, y: event.y }, {
@@ -688,6 +691,7 @@ function WorkspaceCityMap({
   const doubleTap = Gesture.Tap()
     .enabled(variant === "workspace")
     .numberOfTaps(2)
+    .maxDistance(workspaceTapMaxDistance)
     .maxDelay(280)
     .onEnd((event, success) => {
       if (!success) return;
