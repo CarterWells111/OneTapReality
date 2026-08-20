@@ -21,7 +21,9 @@ const mockGestureHandlers: Record<string, {
 const mockRunOnJS = jest.fn();
 const mockSharedValues: Array<{ value: unknown }> = [];
 const mockDecayConfigs: Array<{ clamp?: readonly [number, number]; velocity?: number }> = [];
+const mockDecayCallbacks: Array<(finished?: boolean) => void> = [];
 let mockAnimatedReactionCalls = 0;
+let mockPanMaxPointers: number | undefined;
 
 jest.mock("react-native-reanimated", () => {
   const { View } = require("react-native");
@@ -49,9 +51,9 @@ jest.mock("react-native-reanimated", () => {
     },
     FadeIn: { duration: () => undefined },
     FadeOut: { duration: () => undefined },
-    withDecay: (config: { clamp?: readonly [number, number]; velocity?: number }, callback?: () => void) => {
+    withDecay: (config: { clamp?: readonly [number, number]; velocity?: number }, callback?: (finished?: boolean) => void) => {
       mockDecayConfigs.push(config);
-      callback?.();
+      if (callback) mockDecayCallbacks.push(callback);
       if (!config.clamp) return config.velocity ?? 0;
       return Math.min(Math.max(config.velocity ?? 0, config.clamp[0]), config.clamp[1]);
     },
@@ -73,6 +75,7 @@ jest.mock("react-native-gesture-handler", () => {
     gesture.onEnd = (callback: (event?: MockGestureEvent, success?: boolean) => void) => { gesture.end = callback; return gesture; };
     gesture.numberOfTaps = () => gesture;
     gesture.maxDelay = () => gesture;
+    gesture.maxPointers = (count: number) => { mockPanMaxPointers = count; return gesture; };
     return gesture;
   };
   return {
@@ -99,7 +102,9 @@ describe("CityMap workspace gestures", () => {
     jest.clearAllMocks();
     mockSharedValues.splice(0, mockSharedValues.length);
     mockDecayConfigs.splice(0, mockDecayConfigs.length);
+    mockDecayCallbacks.splice(0, mockDecayCallbacks.length);
     mockAnimatedReactionCalls = 0;
+    mockPanMaxPointers = undefined;
   });
 
   it("does not start the UI-thread label worklet for the static overview map", async () => {
@@ -176,7 +181,7 @@ describe("CityMap workspace gestures", () => {
     await act(async () => {
       mockGestureHandlers.pan.begin?.();
       mockGestureHandlers.pan.update?.({ translationX: 30, translationY: -20 });
-      mockGestureHandlers.pan.finalize?.({ velocityX: 900, velocityY: -700 });
+      mockGestureHandlers.pan.end?.({ velocityX: 900, velocityY: -700 }, true);
     });
 
     expect(mockDecayConfigs).toEqual([
@@ -185,7 +190,64 @@ describe("CityMap workspace gestures", () => {
     ]);
     expect(Math.abs(mockDecayConfigs[0].velocity ?? 0)).toBeLessThanOrEqual(1600);
     expect(Math.abs(mockDecayConfigs[1].velocity ?? 0)).toBeLessThanOrEqual(1600);
+    expect(mockRunOnJS).not.toHaveBeenCalled();
+    await act(async () => {
+      mockDecayCallbacks[1]?.(true);
+    });
+    expect(mockRunOnJS).not.toHaveBeenCalled();
+    await act(async () => {
+      mockDecayCallbacks[0]?.(true);
+    });
     expect(mockRunOnJS).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for a horizontal decay to settle and ignores cancelled pan animations", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+      mockGestureHandlers.pan.begin?.();
+      mockGestureHandlers.pan.end?.({ velocityX: 900, velocityY: 0 }, true);
+    });
+
+    await act(async () => {
+      mockDecayCallbacks[1]?.(true);
+    });
+    expect(mockRunOnJS).not.toHaveBeenCalled();
+    await act(async () => {
+      mockDecayCallbacks[0]?.(true);
+    });
+    expect(mockRunOnJS).toHaveBeenCalledTimes(1);
+
+    mockRunOnJS.mockClear();
+    mockDecayConfigs.splice(0, mockDecayConfigs.length);
+    mockDecayCallbacks.splice(0, mockDecayCallbacks.length);
+    await act(async () => {
+      mockGestureHandlers.pan.end?.({ velocityX: 500, velocityY: 400 }, false);
+    });
+    expect(mockDecayConfigs).toHaveLength(0);
+    expect(mockRunOnJS).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh labels when either pan decay axis is interrupted", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+      mockGestureHandlers.pan.begin?.();
+      mockGestureHandlers.pan.end?.({ velocityX: 700, velocityY: 600 }, true);
+      mockDecayCallbacks[0]?.(false);
+      mockDecayCallbacks[1]?.(true);
+    });
+    expect(mockRunOnJS).not.toHaveBeenCalled();
+  });
+
+  it("limits pan to one pointer so pinch exclusively owns two-finger translation", async () => {
+    await render(<CityMap stats={stats} variant="workspace" />);
+
+    expect(mockPanMaxPointers).toBe(1);
   });
 
   // 画布 transform 以视图中心为原点缩放，双击定焦必须按 (点 - 中心) 计算，

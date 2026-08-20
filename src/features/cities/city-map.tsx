@@ -476,6 +476,7 @@ function WorkspaceCityMap({
   const scale = useSharedValue(1);
   const panStartX = useSharedValue(0);
   const panStartY = useSharedValue(0);
+  const panDecayAxesRemaining = useSharedValue(0);
   const pinchStartScale = useSharedValue(1);
   const pinchStartX = useSharedValue(0);
   const pinchStartY = useSharedValue(0);
@@ -534,6 +535,7 @@ function WorkspaceCityMap({
 
   const pan = Gesture.Pan()
     .enabled(variant === "workspace")
+    .maxPointers(1)
     .onBegin(() => {
       panStartX.value = translateX.value;
       panStartY.value = translateY.value;
@@ -547,21 +549,41 @@ function WorkspaceCityMap({
       translateX.value = next.translateX;
       translateY.value = next.translateY;
     })
-    .onFinalize((event) => {
+    .onEnd((event, success) => {
+      if (!success) return;
       const size = { height: mapHeight.value, width: mapWidth.value };
       const limits = getWorkspaceTranslationLimits(scale.value, size);
+      panDecayAxesRemaining.value = 2;
       translateX.value = withDecay({
         clamp: [-limits.x, limits.x],
         deceleration: 0.985,
         velocity: boundedGestureVelocity(event.velocityX),
         velocityFactor: 0.35,
+      }, (finished) => {
+        if (!finished || panDecayAxesRemaining.value <= 0) {
+          panDecayAxesRemaining.value = -1;
+          return;
+        }
+        panDecayAxesRemaining.value -= 1;
+        if (panDecayAxesRemaining.value !== 0) return;
+        runOnJS(settleVisibleLabels)({
+          scale: scale.value,
+          translateX: translateX.value,
+          translateY: translateY.value,
+        }, size);
       });
       translateY.value = withDecay({
         clamp: [-limits.y, limits.y],
         deceleration: 0.985,
         velocity: boundedGestureVelocity(event.velocityY),
         velocityFactor: 0.35,
-      }, () => {
+      }, (finished) => {
+        if (!finished || panDecayAxesRemaining.value <= 0) {
+          panDecayAxesRemaining.value = -1;
+          return;
+        }
+        panDecayAxesRemaining.value -= 1;
+        if (panDecayAxesRemaining.value !== 0) return;
         runOnJS(settleVisibleLabels)({
           scale: scale.value,
           translateX: translateX.value,
