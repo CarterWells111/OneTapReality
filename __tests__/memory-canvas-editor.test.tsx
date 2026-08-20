@@ -57,12 +57,17 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     releaseSaveLock: () => void;
   };
   const BookCanvasEditor = React.forwardRef<MockHandle, {
+    fallbackIndex?: number;
     initialPageId?: string;
     onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
     onPagesChange: (pages: StoryPage[], reason: "text") => void;
     onTransformPendingChange?: (pending: boolean) => void;
     pages: StoryPage[];
-  }>(function MockBookCanvasEditor({ initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
+  }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
+    const [currentPageId, setCurrentPageId] = React.useState(() => (
+      pages.find((page) => page.id === initialPageId)?.id
+      ?? pages[Math.min(fallbackIndex, Math.max(0, pages.length - 1))]?.id
+    ));
     React.useImperativeHandle(ref, () => ({
       prepareSave: async () => mockPrepareSaveReturnsNull
         ? null
@@ -78,9 +83,10 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     }, []);
     return (
       <View testID="album-canvas">
-        <Text testID="current-headline">{pages.find((page) => page.id === initialPageId)?.headline ?? pages[0]?.headline}</Text>
+        <Text testID="current-headline">{pages.find((page) => page.id === currentPageId)?.headline ?? pages[0]?.headline}</Text>
         <Button title="report second page" onPress={() => {
           mockPreparedCursor = { pageId: "page-2", index: 1 };
+          setCurrentPageId(mockPreparedCursor.pageId);
           onActivePageChange?.(mockPreparedCursor);
         }} />
         <Button
@@ -614,6 +620,28 @@ describe("EditMemoryScreen", () => {
     expect(mockReplace).not.toHaveBeenCalled();
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(screen.getByText("保存并退出画布")).toBeTruthy();
+  });
+
+  it("keeps the active page when an in-place save refreshes the memory version", async () => {
+    let providerMemory = memory;
+    mockGetMemoryById.mockImplementation(() => providerMemory);
+    mockPreparedCursor = { pageId: "closing-1", index: 1 };
+    mockUpdatePages.mockImplementation(async (_memory: Memory, nextPages: StoryPage[]) => {
+      providerMemory = {
+        ...memory,
+        pages: nextPages,
+        updatedAt: "2026-07-22T10:01:00.000Z",
+      };
+    });
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+    screen.rerender(<EditMemoryScreen />);
+
+    expect(await screen.findByTestId("current-headline")).toHaveTextContent("下次再见");
+    expect(mockGetMemoryEditDraft).toHaveBeenCalledTimes(2);
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("stays on the edit screen when persistence fails", async () => {

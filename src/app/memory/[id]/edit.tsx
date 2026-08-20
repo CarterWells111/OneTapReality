@@ -97,6 +97,10 @@ export default function EditMemoryScreen() {
   const pagesRef = React.useRef(pages);
   const queueLeaseRef = React.useRef<MemoryEditRecoveryQueueLease | null>(null);
   const queueUnsubscribeRef = React.useRef<(() => void) | null>(null);
+  const restorationCursorRef = React.useRef<{
+    identity: string;
+    cursor: { pageId: string; index: number };
+  } | null>(null);
   const retryRecoveryReadRef = React.useRef<(() => void) | null>(null);
   const saveInFlightRef = React.useRef(false);
   const saveMemoryEditDraftRef = React.useRef(saveMemoryEditDraft);
@@ -295,8 +299,9 @@ export default function EditMemoryScreen() {
       return;
     }
     activePageRef.current = cursor;
+    restorationCursorRef.current = { cursor, identity: loadIdentity };
     setActivePage(cursor);
-  }, [editorSessionToken, loadKey]);
+  }, [editorSessionToken, loadIdentity, loadKey]);
 
   const changeTransformPending = React.useCallback((pending: boolean) => {
     if (!isMountedRef.current
@@ -392,6 +397,7 @@ export default function EditMemoryScreen() {
         const cursor = prepared.cursor;
         pagesRef.current = latestPages;
         activePageRef.current = cursor;
+        restorationCursorRef.current = { cursor, identity: loadIdentity };
         setPages(latestPages);
         setActivePage(cursor);
         if (preparedDiffersFromParent) recoveryQueue?.enqueue(latestPages);
@@ -492,8 +498,12 @@ export default function EditMemoryScreen() {
       ) : null}
       <View pointerEvents={isSaving || isFormalSaveCompleted ? "none" : "auto"}>
         <BookCanvasEditor
-          fallbackIndex={parseFallbackIndex(pageIndex)}
-          initialPageId={typeof pageId === "string" ? pageId : undefined}
+          fallbackIndex={restorationCursorRef.current?.identity === loadIdentity
+            ? restorationCursorRef.current.cursor.index
+            : parseFallbackIndex(pageIndex)}
+          initialPageId={restorationCursorRef.current?.identity === loadIdentity
+            ? restorationCursorRef.current.cursor.pageId
+            : typeof pageId === "string" ? pageId : undefined}
           onActivePageChange={changeActivePage}
           onPagesChange={changePages}
           onTransformPendingChange={changeTransformPending}
