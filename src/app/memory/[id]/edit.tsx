@@ -119,7 +119,6 @@ export default function EditMemoryScreen() {
       editorSessionGenerationRef.current += 1;
       saveGenerationRef.current += 1;
       saveInFlightRef.current = false;
-      editorRef.current?.releaseSaveLock();
       isTransformPendingRef.current = false;
       retryRecoveryReadRef.current = null;
       queueUnsubscribeRef.current?.();
