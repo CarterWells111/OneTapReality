@@ -124,6 +124,8 @@ type ColorPickerProps = {
   onCancel?: () => void;
   /** 连续手势结束或离散输入完成时提交一次。 */
   onCommit: (hex: string) => void;
+  /** 输入过程中仅上报完整有效的颜色草稿，不触发提交。 */
+  onDraftChange?: (hex: string | undefined) => void;
   /** 可选外部共享值：连续手势仅在 UI 线程更新它。 */
   previewValue?: SharedValue<string>;
   /**
@@ -152,9 +154,24 @@ function normalizeHex(value: string) {
   return value.toUpperCase();
 }
 
+function resolveRgbDraft(draft: Record<keyof RGB, string>) {
+  const complete = (["r", "g", "b"] as const).every((key) => (
+    draft[key].trim() !== ""
+    && Number.isInteger(Number(draft[key]))
+    && Number(draft[key]) >= 0
+    && Number(draft[key]) <= 255
+  ));
+  if (!complete) return undefined;
+  return rgbToHex({
+    r: Number(draft.r),
+    g: Number(draft.g),
+    b: Number(draft.b),
+  });
+}
+
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef }: ColorPickerProps) {
+export function ColorPicker({ value, onCancel, onCommit, onDraftChange, previewValue, scrollRef }: ColorPickerProps) {
   const safeValue = VALID_HEX.test(value) ? normalizeHex(value) : "#000000";
   const currentRgb = hexToRgb(safeValue);
   const currentHsv = rgbToHsv(currentRgb);
@@ -162,6 +179,8 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
   commitRef.current = onCommit;
   const cancelRef = React.useRef(onCancel);
   cancelRef.current = onCancel;
+  const draftChangeRef = React.useRef(onDraftChange);
+  draftChangeRef.current = onDraftChange;
 
   const hue = useSharedValue(currentHsv.h);
   const saturation = useSharedValue(currentHsv.s);
@@ -177,6 +196,7 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
     g: String(currentRgb.g),
     r: String(currentRgb.r),
   }));
+  const rgbDraftRef = React.useRef(rgbDraft);
   const [hexDraft, setHexDraft] = React.useState(safeValue);
   const submittedRgbRef = React.useRef<Partial<Record<keyof RGB, boolean>>>({});
   const submittedHexRef = React.useRef(false);
@@ -199,7 +219,9 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
 
   React.useEffect(() => {
     const nextRgb = hexToRgb(safeValue);
-    setRgbDraft({ b: String(nextRgb.b), g: String(nextRgb.g), r: String(nextRgb.r) });
+    const nextDraft = { b: String(nextRgb.b), g: String(nextRgb.g), r: String(nextRgb.r) };
+    rgbDraftRef.current = nextDraft;
+    setRgbDraft(nextDraft);
     setHexDraft(safeValue);
   }, [safeValue]);
 
@@ -214,6 +236,9 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
   }, []);
   const emitCancel = React.useCallback(() => {
     cancelRef.current?.();
+  }, []);
+  const emitDraft = React.useCallback((hex: string | undefined) => {
+    draftChangeRef.current?.(hex && VALID_HEX.test(hex) ? normalizeHex(hex) : undefined);
   }, []);
 
   // ---- SV 方块手势 ----
@@ -428,7 +453,10 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
               onChangeText={(text) => {
                 if (/^\d*$/.test(text)) {
                   submittedRgbRef.current[ch] = false;
-                  setRgbDraft((current) => ({ ...current, [ch]: text }));
+                  const nextDraft = { ...rgbDraftRef.current, [ch]: text };
+                  rgbDraftRef.current = nextDraft;
+                  setRgbDraft(nextDraft);
+                  emitDraft(resolveRgbDraft(nextDraft));
                 }
               }}
               onSubmitEditing={() => commitRgb(ch, "submit")}
@@ -452,7 +480,9 @@ export function ColorPicker({ value, onCancel, onCommit, previewValue, scrollRef
             const clean = next.startsWith("#") ? next : `#${next}`;
             if (/^#[0-9A-F]{0,6}$/i.test(clean)) {
               submittedHexRef.current = false;
-              setHexDraft(clean.toUpperCase());
+              const normalized = clean.toUpperCase();
+              setHexDraft(normalized);
+              emitDraft(normalized);
             }
           }}
           onSubmitEditing={() => commitHex("submit")}

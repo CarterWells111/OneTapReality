@@ -128,6 +128,42 @@ describe("ColorPicker", () => {
     expect(onCommit).toHaveBeenCalledWith("#123456");
   });
 
+  it("reports only complete typed color drafts before blur", () => {
+    const onDraftChange = jest.fn();
+    const screen = render(
+      <ColorPicker value="#1C2C28" onCommit={() => undefined} onDraftChange={onDraftChange} />,
+    );
+    const input = screen.getByLabelText("十六进制颜色值");
+
+    fireEvent.changeText(input, "#12");
+    expect(onDraftChange).toHaveBeenLastCalledWith(undefined);
+    fireEvent.changeText(input, "#123456");
+    expect(onDraftChange).toHaveBeenLastCalledWith("#123456");
+  });
+
+  it("reports an RGB draft only when every channel is a valid integer", () => {
+    const onCommit = jest.fn();
+    const onDraftChange = jest.fn();
+    const screen = render(
+      <ColorPicker value="#1C2C28" onCommit={onCommit} onDraftChange={onDraftChange} />,
+    );
+    const red = screen.getByLabelText("颜色分量 R");
+    const green = screen.getByLabelText("颜色分量 G");
+    const blue = screen.getByLabelText("颜色分量 B");
+
+    fireEvent.changeText(red, "");
+    fireEvent.changeText(green, "");
+    fireEvent.changeText(blue, "");
+    fireEvent.changeText(red, "18");
+    fireEvent.changeText(green, "52");
+    expect(onDraftChange).toHaveBeenLastCalledWith(undefined);
+    fireEvent.changeText(blue, "86");
+    expect(onDraftChange).toHaveBeenLastCalledWith("#123456");
+    fireEvent.changeText(red, "999");
+    expect(onDraftChange).toHaveBeenLastCalledWith(undefined);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it("deduplicates a hex submit followed by blur and permits a later edit", () => {
     const onCommit = jest.fn();
     const screen = render(<ColorPicker value="#1C2C28" onCommit={onCommit} />);

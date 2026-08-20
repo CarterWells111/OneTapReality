@@ -148,6 +148,28 @@ describe("ElementContextMenu", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("reports a complete font-size draft before blur without committing it", () => {
+    const onFontSizeDraftChange = jest.fn();
+    const onChangeSize = jest.fn();
+    const screen = render(
+      <ElementContextMenu
+        element={textElement}
+        elementFrame={{ x: 20, y: 80, width: 120, height: 60 }}
+        initialMode="size"
+        onChangeColor={() => undefined}
+        onChangeFont={() => undefined}
+        onChangeSize={onChangeSize}
+        onClose={() => undefined}
+        onFontSizeDraftChange={onFontSizeDraftChange}
+        visible
+      />,
+    );
+
+    fireEvent.changeText(screen.getByLabelText("输入字号"), "28");
+    expect(onFontSizeDraftChange).toHaveBeenLastCalledWith(28);
+    expect(onChangeSize).not.toHaveBeenCalled();
+  });
+
   it("keeps font-size drag previews on the UI thread and queues one final commit", () => {
     const onChangeSize = jest.fn();
     const fontSizePreview = { value: 16 } as SharedValue<number>;
