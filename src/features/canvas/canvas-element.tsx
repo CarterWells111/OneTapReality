@@ -239,7 +239,10 @@ export function CanvasElement({
     commitGeneration = gestureGeneration.value,
     textFontScale = 1,
   ) => {
-    if (!shouldApplyCanvasGestureCommit(commitGeneration, gestureGeneration.value)) return;
+    if (!shouldApplyCanvasGestureCommit(commitGeneration, gestureGeneration.value)) {
+      onTransformSettled?.();
+      return;
+    }
     const patch = calculateCanvasTransformFromAbsolute(
       element, absoluteX, absoluteY, absoluteWidth, absoluteHeight, absoluteRotation,
       { width: canvasWidth, height: canvasHeight },

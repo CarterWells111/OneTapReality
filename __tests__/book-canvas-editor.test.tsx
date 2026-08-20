@@ -311,6 +311,72 @@ describe("BookCanvasEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("keeps a style-only new text after preparing and releasing an in-place save", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const onChange = jest.fn();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} onChange={onChange} />);
+
+    fireEvent.press(screen.getByText("添加文字"));
+    const addedPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
+    const addedText = addedPages[0].layout!.elements.find((element) => element.type === "text"
+      && !element.id.endsWith(":headline")
+      && !element.id.endsWith(":body"));
+    expect(addedText).toBeDefined();
+
+    fireEvent.press(screen.getByText("字号"));
+    act(() => {
+      (mockContextMenuProps?.onFontSizeDraftChange as ((value: number) => void) | undefined)?.(28);
+    });
+
+    let snapshot: Awaited<ReturnType<BookCanvasEditorHandle["prepareSave"]>>;
+    await act(async () => {
+      snapshot = await editorRef.current!.prepareSave();
+    });
+    expect(snapshot!.pages[0].layout!.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: addedText!.id, fontSize: 28 }),
+    ]));
+
+    act(() => editorRef.current!.releaseSaveLock());
+    fireEvent.press(screen.getByTestId("album-canvas"));
+
+    const pagesAfterBlankPress = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
+    expect(pagesAfterBlankPress[0].layout!.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: addedText!.id }),
+    ]));
+  });
+
+  it("consumes a prepared style draft instead of reapplying it to later page state", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const initialPages = canvasPages(pages);
+    const screen = render(
+      <BookCanvasEditor ref={editorRef} pages={initialPages} onPagesChange={() => undefined} />,
+    );
+    openStyleMenu(screen, "字号");
+    act(() => {
+      (mockContextMenuProps?.onFontSizeDraftChange as ((value: number) => void) | undefined)?.(28);
+      (mockContextMenuProps?.onClose as (() => void) | undefined)?.();
+    });
+
+    await expect(editorRef.current!.prepareSave()).resolves.toMatchObject({
+      pages: [expect.objectContaining({
+        layout: expect.objectContaining({
+          elements: expect.arrayContaining([
+            expect.objectContaining({ id: "page-1:headline", fontSize: 28 }),
+          ]),
+        }),
+      }), expect.anything()],
+    });
+    act(() => editorRef.current!.releaseSaveLock());
+
+    screen.rerender(
+      <BookCanvasEditor ref={editorRef} pages={initialPages} onPagesChange={() => undefined} />,
+    );
+    const laterSnapshot = await editorRef.current!.prepareSave();
+    expect(laterSnapshot!.pages[0].layout!.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "page-1:headline", fontSize: 22 }),
+    ]));
+  });
+
   it("prepares the page-manager jump cursor synchronously", async () => {
     const editorRef = React.createRef<BookCanvasEditorHandle>();
     const screen = render(<SaveBoundaryHarness editorRef={editorRef} />);

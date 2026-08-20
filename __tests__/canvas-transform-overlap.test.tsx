@@ -98,7 +98,19 @@ describe("overlapping canvas transforms", () => {
 
   it("composes a second pinch before the delayed first commit reaches JS", () => {
     const onTransformEnd = jest.fn();
-    render(<CanvasPage interactive layout={layout} onTransformEnd={onTransformEnd} selectedElementId="photo-1" width={300} />);
+    const onTransformSettled = jest.fn();
+    const onTransformStart = jest.fn();
+    render(
+      <CanvasPage
+        interactive
+        layout={layout}
+        onTransformEnd={onTransformEnd}
+        onTransformSettled={onTransformSettled}
+        onTransformStart={onTransformStart}
+        selectedElementId="photo-1"
+        width={300}
+      />,
+    );
 
     act(() => {
       fireGestureHandler(getByGestureTestId("canvas-element-pinch-photo-1"), [
@@ -118,6 +130,8 @@ describe("overlapping canvas transforms", () => {
     expect(onTransformEnd).not.toHaveBeenCalled();
     flushRunOnJSQueue();
 
+    expect(onTransformStart).toHaveBeenCalledTimes(2);
+    expect(onTransformSettled).toHaveBeenCalledTimes(2);
     expect(onTransformEnd).toHaveBeenCalledTimes(1);
     expect(onTransformEnd.mock.calls[0][1].width).toBeCloseTo(0.36);
     expect(onTransformEnd.mock.calls[0][1].height).toBeCloseTo(0.36);

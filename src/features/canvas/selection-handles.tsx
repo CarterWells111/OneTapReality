@@ -160,9 +160,12 @@ function HandleDot({
     .withTestId(`canvas-selection-handle-${corner}`)
     .onBegin(() => {
       "worklet";
+      const acquiresTransform = activeGestureCount.value === 0;
       gestureGeneration.value = nextCanvasHandleGeneration(gestureGeneration.value);
       activeGestureCount.value += 1;
-      runOnJS(onDragStart)();
+      if (acquiresTransform) {
+        runOnJS(onDragStart)();
+      }
       isActive.value = true;
       initX.value = posX.value;
       initY.value = posY.value;

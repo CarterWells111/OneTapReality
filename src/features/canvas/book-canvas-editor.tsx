@@ -389,12 +389,16 @@ export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCan
         styleDraft: menuDraft,
       });
       pagesRef.current = snapshot.pages;
+      pendingStyleDraftRef.current = undefined;
+      if (menuDraft) {
+        markPendingTextEdited(menuDraft.elementId);
+      }
       return snapshot;
     },
     releaseSaveLock() {
       saveBoundaryLockedRef.current = false;
     },
-  }), [stableColorPreview, stableFontSizePreview]);
+  }), [markPendingTextEdited, stableColorPreview, stableFontSizePreview]);
 
   const persistPickedPhoto = React.useCallback(async (uri: string) => {
     if (!persistSelectedPhoto) return uri;
