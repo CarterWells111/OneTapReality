@@ -235,4 +235,13 @@ describe("CityMap", () => {
 
     expect(source).not.toContain("{ ...candidate.model");
   });
+
+  it("keeps the city tap worklet closure free of the adapter instance", () => {
+    const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
+    const cityTapStart = source.indexOf("const cityTap = Gesture.Tap()");
+    const cityTapSource = source.slice(cityTapStart, source.indexOf("const doubleTap = Gesture.Tap()", cityTapStart));
+
+    expect(cityTapSource).toContain("workspaceMarkers");
+    expect(cityTapSource).not.toContain("adapter.");
+  });
 });

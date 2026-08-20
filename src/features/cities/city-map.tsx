@@ -510,6 +510,12 @@ function WorkspaceCityMap({
   onTargetReached,
 }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
+  const workspaceMarkers = React.useMemo<readonly CityMapMarker[]>(() => Object.freeze(adapter.markers.map((marker) => (
+    Object.freeze({
+      city: marker.city,
+      coordinate: Object.freeze({ x: marker.coordinate.x, y: marker.coordinate.y }),
+    })
+  ))), [adapter]);
   const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>({ height: 0, width: 0 });
   const [visibleLabels, setVisibleLabels] = React.useState<readonly ChinaPrefectureLabel[]>([]);
   const translateX = useSharedValue(0);
@@ -684,7 +690,7 @@ function WorkspaceCityMap({
         scale: scale.value,
         translateX: translateX.value,
         translateY: translateY.value,
-      }, { height: mapHeight.value, width: mapWidth.value }, adapter.markers);
+      }, { height: mapHeight.value, width: mapWidth.value }, workspaceMarkers);
       if (city) runOnJS(onCityPress)(city);
     });
 
@@ -762,7 +768,7 @@ function WorkspaceCityMap({
         </View>
 
         <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          {workspaceSize.width > 0 && workspaceSize.height > 0 ? [...adapter.markers]
+          {workspaceSize.width > 0 && workspaceSize.height > 0 ? [...workspaceMarkers]
             .sort((left, right) => left.coordinate.y - right.coordinate.y)
             .map((marker) => {
               const stat = statsByCity.get(marker.city) ?? {
