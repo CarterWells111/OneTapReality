@@ -584,6 +584,19 @@ describe("EditMemoryScreen", () => {
     expect(mockReleaseSaveLock).toHaveBeenCalledTimes(1);
   });
 
+  it("clears the temporary prepare warning after transform ownership settles", async () => {
+    mockPrepareSaveReturnsNull = true;
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+    expect(screen.getByText("正在完成编辑，请稍后重试。")).toBeTruthy();
+
+    act(() => mockTransformPendingCallbacks.at(-1)?.(false));
+
+    expect(screen.queryByText("正在完成编辑，请稍后重试。")).toBeNull();
+  });
+
   it("keeps save taps available while a text input owns the keyboard", async () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
@@ -620,6 +633,9 @@ describe("EditMemoryScreen", () => {
     expect(screen.getByText("保存并退出画布")).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(mockBack).not.toHaveBeenCalled();
+
+    act(() => mockTransformPendingCallbacks.at(-1)?.(false));
+    expect(screen.getByText("保存失败，请稍后重试。")).toBeTruthy();
   });
 
   it("coalesces rapid save presses into one persistence operation and one navigation", async () => {

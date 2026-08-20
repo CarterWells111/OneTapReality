@@ -48,4 +48,13 @@ describe("editor save transaction", () => {
     await expect(timedOut).resolves.toBe(false);
     jest.useRealTimers();
   });
+
+  it("reports pending until every transform owner has settled", () => {
+    const gate = createTransformSettleGate();
+    gate.begin();
+    gate.begin();
+
+    expect(gate.end()).toBe(true);
+    expect(gate.end()).toBe(false);
+  });
 });

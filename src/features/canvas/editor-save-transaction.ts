@@ -56,6 +56,7 @@ export function createTransformSettleGate(timeoutMs = 1_000) {
     end() {
       activeCount = Math.max(0, activeCount - 1);
       if (activeCount === 0) resolveAll(true);
+      return activeCount > 0;
     },
     isPending() {
       return activeCount > 0;

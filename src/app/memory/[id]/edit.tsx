@@ -33,6 +33,8 @@ type LoadedFallbackDraft = {
   memory: Memory | null;
 };
 
+const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
+
 export default function EditMemoryScreen() {
   const router = useRouter();
   const { id, pageId, pageIndex } = useLocalSearchParams<{
@@ -306,6 +308,9 @@ export default function EditMemoryScreen() {
     }
     isTransformPendingRef.current = pending;
     setIsTransformPending(pending);
+    if (!pending) {
+      setSaveError((current) => current === PREPARE_SAVE_PENDING_MESSAGE ? null : current);
+    }
   }, [editorSessionToken, loadKey]);
 
   if (!memory) {
@@ -377,7 +382,7 @@ export default function EditMemoryScreen() {
         const prepared = await editorRef.current?.prepareSave();
         if (!isCurrentSave()) return;
         if (!prepared) {
-          setSaveError("正在完成编辑，请稍后重试。");
+          setSaveError(PREPARE_SAVE_PENDING_MESSAGE);
           return;
         }
         isTransformPendingRef.current = false;

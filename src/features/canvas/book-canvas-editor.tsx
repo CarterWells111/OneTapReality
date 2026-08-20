@@ -775,8 +775,8 @@ export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCan
                   updateElement(elementId, patch, "transform");
                 },
                 onTransformSettled: () => {
-                  transformSettleGateRef.current.end();
-                  onTransformPendingChange?.(false);
+                  const pending = transformSettleGateRef.current.end();
+                  onTransformPendingChange?.(pending);
                 },
                 onTransformStart: () => {
                   transformSettleGateRef.current.begin();

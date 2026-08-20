@@ -175,6 +175,11 @@ export function CanvasElement({
   onTransformSettled,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
+  const transformCallbacksRef = React.useRef({ onTransformSettled, onTransformStart });
+  const transformMountedRef = React.useRef(true);
+  const transformOwnershipRef = React.useRef(false);
+  const transformSettledCallbackRef = React.useRef(onTransformSettled);
+  transformCallbacksRef.current = { onTransformSettled, onTransformStart };
   const baseGeometry = resolveCanvasElementGeometry(element, {
     width: canvasWidth,
     height: canvasHeight,
@@ -185,6 +190,19 @@ export function CanvasElement({
   React.useEffect(() => {
     lastPressAt.current = null;
   }, [interactive, selectionContext]);
+
+  React.useEffect(() => {
+    transformMountedRef.current = true;
+    return () => {
+      transformMountedRef.current = false;
+      if (transformOwnershipRef.current) {
+        transformOwnershipRef.current = false;
+        const settle = transformSettledCallbackRef.current;
+        transformSettledCallbackRef.current = undefined;
+        settle?.();
+      }
+    };
+  }, []);
 
   // ── 绝对位置共享值 ──
   const posX = useSharedValue(baseGeometry.left);
@@ -232,6 +250,21 @@ export function CanvasElement({
       pendingTextFontScale, pinchStartFontScale,
       fontScale, activeGestureCount]);
 
+  const acknowledgeTransformStart = () => {
+    if (!transformMountedRef.current || transformOwnershipRef.current) return;
+    transformOwnershipRef.current = true;
+    transformSettledCallbackRef.current = transformCallbacksRef.current.onTransformSettled;
+    transformCallbacksRef.current.onTransformStart?.();
+  };
+
+  const acknowledgeTransformSettled = () => {
+    if (!transformOwnershipRef.current) return;
+    transformOwnershipRef.current = false;
+    const settle = transformSettledCallbackRef.current;
+    transformSettledCallbackRef.current = undefined;
+    settle?.();
+  };
+
   const commitTransform = (
     absoluteX: number, absoluteY: number,
     absoluteWidth: number, absoluteHeight: number,
@@ -239,8 +272,12 @@ export function CanvasElement({
     commitGeneration = gestureGeneration.value,
     textFontScale = 1,
   ) => {
+    if (!transformMountedRef.current) {
+      acknowledgeTransformSettled();
+      return;
+    }
     if (!shouldApplyCanvasGestureCommit(commitGeneration, gestureGeneration.value)) {
-      onTransformSettled?.();
+      acknowledgeTransformSettled();
       return;
     }
     const patch = calculateCanvasTransformFromAbsolute(
@@ -265,11 +302,10 @@ export function CanvasElement({
     pinchStartFontScale.value = 1;
     fontScale.value = 1;
     onTransformEnd?.(element.id, patch);
-    onTransformSettled?.();
+    acknowledgeTransformSettled();
   };
 
   const acknowledgeInteraction = () => onInteract?.(element.id);
-  const acknowledgeTransformStart = () => onTransformStart?.();
 
   const beginGesture = (started: typeof panStarted) => {
     "worklet";
