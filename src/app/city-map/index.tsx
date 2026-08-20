@@ -10,7 +10,6 @@ import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
 import { cityContent } from "../../features/cities/city-content";
 import { cityRegistry, type City } from "../../types/city";
-import { checkinCities } from "../../features/cities/city-checkin-images";
 
 
 
@@ -46,12 +45,8 @@ export default function FullscreenCityMapScreen() {
   const searchInputRef = React.useRef<TextInput>(null);
 
   const handleCityPress = React.useCallback((city: City) => {
-    if (checkinCities.includes(city)) {
-      setCheckinCity(city);
-    } else {
-      router.push({ pathname: "/city/[city]", params: { city } });
-    }
-  }, [router]);
+    setCheckinCity(city);
+  }, []);
 
   const handleSearch = React.useCallback((text: string) => {
     setSearchText(text);

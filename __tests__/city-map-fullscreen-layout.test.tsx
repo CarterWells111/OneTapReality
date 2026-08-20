@@ -1,6 +1,37 @@
-import { render } from "@testing-library/react-native";
+import { act, render } from "@testing-library/react-native";
+
+import { cityRegistry } from "../src/types/city";
 
 const mockBack = jest.fn();
+const mockCityMap = jest.fn();
+
+jest.mock("../src/features/cities/city-map", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+
+  return {
+    CityMap: (props: unknown) => {
+      mockCityMap(props);
+      return React.createElement(View, {
+        style: { flex: 1, width: "100%" },
+        testID: "city-map-workspace",
+      });
+    },
+  };
+});
+
+jest.mock("../src/features/cities/city-checkin-modal", () => {
+  const React = require("react");
+  const { Text } = require("react-native");
+
+  return {
+    CityCheckinModal: ({ city }: { city: string }) => React.createElement(
+      Text,
+      { testID: "city-checkin-modal-city" },
+      city,
+    ),
+  };
+});
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
@@ -35,5 +66,23 @@ describe("FullscreenCityMapScreen", () => {
     expect(viewportStyle).toMatchObject({ flex: 1, padding: 4 });
     expect(workspaceStyle).toMatchObject({ flex: 1, width: "100%" });
     expect(workspaceStyle.aspectRatio).toBeUndefined();
+  });
+
+  it("opens the check-in modal for every product city pressed on the map", async () => {
+    const screen = await render(<FullscreenCityMapScreen />);
+
+    expect(cityRegistry).toHaveLength(36);
+
+    for (const city of cityRegistry) {
+      const latestCityMapProps = mockCityMap.mock.calls.at(-1)?.[0] as {
+        onCityPress: (id: typeof city.id) => void;
+      };
+
+      await act(async () => {
+        latestCityMapProps.onCityPress(city.id);
+      });
+
+      expect(screen.getByTestId("city-checkin-modal-city").props.children).toBe(city.id);
+    }
   });
 });
