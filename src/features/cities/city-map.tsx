@@ -75,6 +75,7 @@ const overviewMapDimensions = Object.freeze({
 });
 const markerTargetSize = 44;
 const markerVisualSize = 8;
+const workspaceMarkerHitRadius = markerTargetSize / 2;
 const markerLabelWidth = 88;
 const markerLabelHeight = 20;
 const markerSvgScale = chinaMapCoordinateSpace.width / overviewMapDimensions.width;
@@ -181,6 +182,29 @@ function computeMarkerScreenPosition(
     x: (baseX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX,
     y: (baseY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY,
   };
+}
+
+export function resolveWorkspaceMarkerHit(
+  point: Readonly<{ x: number; y: number }>,
+  viewport: WorkspaceViewport,
+  size: WorkspaceSize,
+  markers: readonly CityMapMarker[],
+): City | undefined {
+  "worklet";
+  const hitRadiusSquared = workspaceMarkerHitRadius * workspaceMarkerHitRadius;
+  let nearestCity: City | undefined;
+  let nearestDistanceSquared = hitRadiusSquared;
+  for (const marker of markers) {
+    const markerPoint = computeMarkerScreenPosition(marker, viewport, size);
+    const deltaX = point.x - markerPoint.x;
+    const deltaY = point.y - markerPoint.y;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared <= nearestDistanceSquared) {
+      nearestCity = marker.city;
+      nearestDistanceSquared = distanceSquared;
+    }
+  }
+  return nearestCity;
 }
 
 function boundedGestureVelocity(velocity: number | undefined) {
@@ -389,17 +413,19 @@ function AnimatedWorkspaceMarker({
       style={[styles.workspaceMarkerTarget, animatedStyle]}
       testID={`city-map-marker-dot-${marker.city}-${stat.intensity}`}
     >
-      <Pressable
+      <View
+        accessible
         accessibilityLabel={savedMemoryLabel(marker.city, stat.visitCount)}
         accessibilityRole="button"
-        onPress={interactive ? () => onCityPress?.(marker.city) : undefined}
-        style={({ pressed }) => [styles.workspaceMarkerPressable, { opacity: pressed ? 0.82 : 1 }]}
+        onAccessibilityTap={interactive ? () => onCityPress?.(marker.city) : undefined}
+        pointerEvents="none"
+        style={styles.workspaceMarkerPressable}
       >
         <Animated.View
           style={[styles.workspaceMarkerDot, { backgroundColor: token.fill, borderColor: token.border }]}
           testID={`city-map-marker-visual-${marker.city}`}
         />
-      </Pressable>
+      </View>
     </Animated.View>
   );
 }
@@ -647,6 +673,18 @@ function WorkspaceCityMap({
       runOnJS(settleVisibleLabels)(next, { height: mapHeight.value, width: mapWidth.value });
     });
 
+  const cityTap = Gesture.Tap()
+    .enabled(variant === "workspace" && interactive && Boolean(onCityPress))
+    .onEnd((event, success) => {
+      if (!success || !onCityPress) return;
+      const city = resolveWorkspaceMarkerHit({ x: event.x, y: event.y }, {
+        scale: scale.value,
+        translateX: translateX.value,
+        translateY: translateY.value,
+      }, { height: mapHeight.value, width: mapWidth.value }, adapter.markers);
+      if (city) runOnJS(onCityPress)(city);
+    });
+
   const doubleTap = Gesture.Tap()
     .enabled(variant === "workspace")
     .numberOfTaps(2)
@@ -688,7 +726,7 @@ function WorkspaceCityMap({
   }), [mapHeight, mapWidth, scale, translateX, translateY]);
 
   return (
-    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, doubleTap)}>
+    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, Gesture.Exclusive(doubleTap, cityTap))}>
       <View
         accessibilityLabel="离线中国城市旅行地图工作区"
         onLayout={onWorkspaceLayout}

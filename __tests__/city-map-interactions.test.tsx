@@ -18,6 +18,7 @@ const mockGestureHandlers: Record<string, {
   finalize?: (event?: MockGestureEvent) => void;
   end?: (event?: MockGestureEvent, success?: boolean) => void;
 }> = {};
+const mockTapGestures: Array<typeof mockGestureHandlers.pan> = [];
 const mockRunOnJS = jest.fn();
 const mockSharedValues: Array<{ value: unknown }> = [];
 const mockDecayConfigs: Array<{ clamp?: readonly [number, number]; velocity?: number }> = [];
@@ -82,7 +83,13 @@ jest.mock("react-native-gesture-handler", () => {
     Gesture: {
       Pan: () => { const gesture = createGesture(); mockGestureHandlers.pan = gesture; return gesture; },
       Pinch: () => { const gesture = createGesture(); mockGestureHandlers.pinch = gesture; return gesture; },
-      Tap: () => { const gesture = createGesture(); mockGestureHandlers.tap = gesture; return gesture; },
+      Tap: () => {
+        const gesture = createGesture();
+        mockTapGestures.push(gesture);
+        mockGestureHandlers.tap = gesture;
+        return gesture;
+      },
+      Exclusive: (...gestures: unknown[]) => ({ gestures }),
       Simultaneous: (...gestures: unknown[]) => ({ gestures }),
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) => <View>{children}</View>,
@@ -101,6 +108,7 @@ describe("CityMap workspace gestures", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSharedValues.splice(0, mockSharedValues.length);
+    mockTapGestures.splice(0, mockTapGestures.length);
     mockDecayConfigs.splice(0, mockDecayConfigs.length);
     mockDecayCallbacks.splice(0, mockDecayCallbacks.length);
     mockAnimatedReactionCalls = 0;
@@ -248,6 +256,22 @@ describe("CityMap workspace gestures", () => {
     await render(<CityMap stats={stats} variant="workspace" />);
 
     expect(mockPanMaxPointers).toBe(1);
+  });
+
+  it("routes a single tap through the nearest marker hit resolver", async () => {
+    const onCityPress = jest.fn();
+    const screen = await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={onCityPress} />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 844, width: 390, x: 0, y: 0 } },
+      });
+    });
+
+    await act(async () => {
+      mockTapGestures[0]?.end?.({ x: 285.48, y: 541.6 }, true);
+    });
+
+    expect(onCityPress).toHaveBeenCalledWith("shenzhen");
   });
 
   // 画布 transform 以视图中心为原点缩放，双击定焦必须按 (点 - 中心) 计算，

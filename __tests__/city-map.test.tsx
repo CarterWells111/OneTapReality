@@ -2,7 +2,8 @@ import { act, fireEvent, render } from "@testing-library/react-native";
 import { readFileSync } from "node:fs";
 import * as React from "react";
 
-import { CityMap, chinaMapCoordinateSpace, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, type CityStats } from "../src/features/cities";
+import { CityMap, chinaMapCoordinateSpace, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerHit, type CityStats } from "../src/features/cities";
+import { resolveNormalizedMapScreenPoint } from "../src/features/cities/city-label-layout";
 
 const stats: CityStats[] = [
   { city: "hangzhou", visitCount: 2, unlocked: true, isVisited: true, intensity: "medium" },
@@ -93,7 +94,7 @@ describe("CityMap", () => {
       });
     });
 
-    fireEvent.press(screen.getByLabelText("杭州，已保存 2 册旅行记忆"));
+    fireEvent(screen.getByLabelText("杭州，已保存 2 册旅行记忆"), "accessibilityTap");
 
     expect(onCityPress).toHaveBeenCalledWith("hangzhou");
   });
@@ -192,6 +193,29 @@ describe("CityMap", () => {
     expect(contextLabel.props.pointerEvents).toBe("none");
     expect(screen.queryByLabelText(/南通/)).toBeNull();
     expect(screen.getByLabelText("北京，已保存 0 册旅行记忆")).toBeTruthy();
+  });
+
+  it.each([2, 6])("resolves the nearest overlapping product marker at %dx zoom", (scale) => {
+    const size = { height: 844, width: 390 };
+    const adapter = new OfflineChinaMapAdapter();
+    const shenzhen = adapter.markers.find((marker) => marker.city === "shenzhen")!;
+    const hongkong = adapter.markers.find((marker) => marker.city === "hongkong")!;
+    const unpannedShenzhen = resolveNormalizedMapScreenPoint(shenzhen.coordinate, {
+      scale,
+      translateX: 0,
+      translateY: 0,
+    }, size);
+    const viewport = {
+      scale,
+      translateX: size.width / 2 - unpannedShenzhen.x,
+      translateY: size.height / 2 - unpannedShenzhen.y,
+    };
+    const shenzhenPoint = resolveNormalizedMapScreenPoint(shenzhen.coordinate, viewport, size);
+    const hongkongPoint = resolveNormalizedMapScreenPoint(hongkong.coordinate, viewport, size);
+
+    expect(resolveWorkspaceMarkerHit(shenzhenPoint, viewport, size, adapter.markers)).toBe("shenzhen");
+    expect(resolveWorkspaceMarkerHit(hongkongPoint, viewport, size, adapter.markers)).toBe("hongkong");
+    expect(resolveWorkspaceMarkerHit({ x: 0, y: 0 }, viewport, size, adapter.markers)).toBeUndefined();
   });
 
   it("avoids object spread in the UI-thread label collision worklet", () => {
