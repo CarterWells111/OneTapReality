@@ -33,7 +33,7 @@ export type CanvasElementStylePreview = {
 type CanvasElementProps = {
   canvasHeight: number;
   canvasWidth: number;
-  contentScale: number;
+  contentScale?: number;
   element: CanvasElementModel;
   interactive: boolean;
   interactionZIndex?: number;
@@ -161,7 +161,7 @@ export function calculateStickerTextStyle(
 export function CanvasElement({
   canvasHeight,
   canvasWidth,
-  contentScale,
+  contentScale = 1,
   element,
   interactive,
   interactionZIndex,
