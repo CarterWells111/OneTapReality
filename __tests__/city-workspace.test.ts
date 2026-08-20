@@ -1,6 +1,7 @@
 import { OfflineChinaMapAdapter } from "../src/features/cities/city-map-adapter";
 import {
   clampWorkspaceViewport,
+  getWorkspaceTranslationLimits,
   getCityWorkspaceLayout,
   reorderCityMemoryIds,
   resolveCityFocus,
@@ -8,9 +9,13 @@ import {
 
 describe("city workspace helpers", () => {
   it("clamps the workspace scale and translation to the visible map bounds", () => {
-    expect(clampWorkspaceViewport({ scale: 7, translateX: 900, translateY: -900 }, { height: 200, width: 300 })).toEqual({
+    const size = { height: 200, width: 300 };
+    const limits = getWorkspaceTranslationLimits(3.5, size);
+    expect(limits.x).toBeCloseTo(264.2, 1);
+    expect(limits.y).toBeCloseTo(250, 1);
+    expect(clampWorkspaceViewport({ scale: 7, translateX: 900, translateY: -900 }, size)).toEqual({
       scale: 3.5,
-      translateX: 375,
+      translateX: limits.x,
       translateY: -250,
     });
     expect(clampWorkspaceViewport({ scale: 0.2, translateX: 20, translateY: -20 }, { height: 200, width: 300 })).toEqual({

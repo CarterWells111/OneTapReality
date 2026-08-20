@@ -3,6 +3,7 @@ import {
   getCityStats,
 } from "../src/features/cities";
 import { createMemory } from "../src/features/memories/memory-factory";
+import { chinaMapMarkers } from "../src/features/cities/china-map-data";
 import { cities } from "../src/types/city";
 
 describe("city map domain data", () => {
@@ -63,8 +64,10 @@ describe("city map domain data", () => {
     expect(adapter.outline).toMatchObject({ id: "china-simplified", coordinateSpace: "relative" });
     expect(adapter.outline.points.length).toBeGreaterThan(3);
     expect(adapter.markers.map((marker) => marker.city)).toEqual(cities);
-    expect(adapter.markers.find((marker) => marker.city === "beijing")).toMatchObject({
-      coordinate: { x: expect.closeTo(0.753, 2), y: expect.closeTo(0.290, 2) },
+    const generatedBeijing = chinaMapMarkers.find((marker) => marker.city === "beijing");
+    expect(adapter.markers.find((marker) => marker.city === "beijing")?.coordinate).toEqual({
+      x: generatedBeijing?.x,
+      y: generatedBeijing?.y,
     });
     expect(adapter.cityFocus.taipei).toMatchObject({
       center: adapter.markers.find((marker) => marker.city === "taipei")?.coordinate,

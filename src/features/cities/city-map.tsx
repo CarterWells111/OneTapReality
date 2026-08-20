@@ -1,17 +1,45 @@
 import * as React from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import Svg, { Circle, G, Path } from "react-native-svg";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDecay,
+  withTiming,
+} from "react-native-reanimated";
+import Svg, { Circle, G, Path, Rect } from "react-native-svg";
 
 import { colors } from "../../components/ui";
-import { headingFontFamily } from "../typography/fonts";
 import type { City } from "../../types/memory";
-import { cityContent } from "./city-content";
+import { headingFontFamily } from "../typography/fonts";
+import {
+  resolveCityLabelEdgeOpacity,
+  resolveCityMapContentFrame,
+  resolveLabelZoomTier,
+  resolveNormalizedMapScreenPoint,
+  resolveVisibleCityLabels,
+} from "./city-label-layout";
 import { OfflineChinaMapAdapter, type CityMapFocus, type CityMapMarker } from "./city-map-adapter";
+import {
+  chinaMapAttribution,
+  chinaMapViewBox,
+  chinaPrefectureLabels,
+  chinaProvinces,
+  chinaSouthSeaInset,
+  type ChinaPrefectureLabel,
+} from "./china-map-data";
+import { cityContent } from "./city-content";
 import type { CityStats, CityVisitIntensity } from "./city-stats";
-import { clampWorkspaceViewport, resolveCityFocus, type WorkspaceSize, type WorkspaceViewport } from "./city-workspace";
-import { chinaMapViewBox, chinaProvinces } from "./china-map-data";
+import {
+  clampWorkspaceViewport,
+  getWorkspaceTranslationLimits,
+  resolveCityFocus,
+  type WorkspaceSize,
+  type WorkspaceViewport,
+} from "./city-workspace";
 
 type CityMapVariant = "overview" | "workspace";
 type CityMapProps = {
@@ -28,46 +56,62 @@ type CityMapProps = {
   onTargetReached?: () => void;
 };
 
+export type { CityMapProps, CityMapVariant };
+
 const markerTokens: Record<CityVisitIntensity, { fill: string; border: string }> = {
   none: { fill: colors.surface, border: colors.line },
   light: { fill: colors.accentSoft, border: colors.accent },
   medium: { fill: colors.accentSoft, border: colors.warmAccent },
   strong: { fill: colors.warmAccent, border: colors.ink },
 };
-// 概览图尺寸与新版地图 viewBox（1000×1171）同比例，避免 letterbox 导致标记与点击区错位
-const overviewMapDimensions = Object.freeze({ height: 351, width: 300 });
-const markerTargetSize = 44;
-const markerVisualSize = 8;
-const markerLabelFontSize = 11;
-const markerLabelWidth = 88;
-const markerLabelHeight = 20;
-export const workspaceLabelZoomThreshold = 1.8;
-const minimumReadableMarkerSize = 12;
-const chinaProvincesData = chinaProvinces as readonly { readonly id: string; readonly name: string; readonly path: string }[];
 
 const [minX, minY, width, height] = chinaMapViewBox.split(/\s+/).map(Number);
 export const chinaMapCoordinateSpace = Object.freeze({ height, minX, minY, width });
-const markerSvgScale = chinaMapCoordinateSpace.height / overviewMapDimensions.height;
+const overviewMapDimensions = Object.freeze({
+  height: 300 * chinaMapCoordinateSpace.height / chinaMapCoordinateSpace.width,
+  width: 300,
+});
+const markerTargetSize = 44;
+const markerVisualSize = 8;
+const markerLabelWidth = 88;
+const markerLabelHeight = 20;
+const markerSvgScale = chinaMapCoordinateSpace.width / overviewMapDimensions.width;
 const markerSvgRadius = markerVisualSize * markerSvgScale / 2;
-const markerTargetSvgSize = markerTargetSize * markerSvgScale;
-const markerLabelSvgFontSize = markerLabelFontSize * markerSvgScale;
-const markerLabelSvgOffsetY = (markerVisualSize / 2 + markerLabelFontSize) * markerSvgScale;
-const markerLabelSvgWidth = markerLabelWidth * markerSvgScale;
-const markerLabelCollisionPadding = 8;
+const chinaProvincesData = chinaProvinces as readonly { readonly id: string; readonly name: string; readonly path: string }[];
+const prefectureLabels = chinaPrefectureLabels;
+export const workspaceLabelZoomThreshold = 1.6;
 
 type MarkerFrame = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
-type CityMarkerLayout = { readonly anchor: { readonly x: number; readonly y: number }; readonly pressFrame: MarkerFrame; readonly labelFrame: MarkerFrame; readonly markerFrame: MarkerFrame };
-/**
- * 概览图的按压热区是按真实像素绝对定位的，而圆点由 SVG viewBox 自动铺满容器宽度。
- * 因此必须传入实测容器尺寸；沿用固定的 300×351 会让两者在任何非 300pt 宽的卡片上错位。
- */
+type CityMarkerLayout = {
+  readonly anchor: { readonly x: number; readonly y: number };
+  readonly pressFrame: MarkerFrame;
+  readonly labelFrame: MarkerFrame;
+  readonly markerFrame: MarkerFrame;
+};
+
+/** Resolve overview hit targets from the measured card instead of a design-time width. */
 export function resolveCityMarkerLayout(marker: CityMapMarker, size: WorkspaceSize = overviewMapDimensions): CityMarkerLayout {
   const anchor = { x: marker.coordinate.x * size.width, y: marker.coordinate.y * size.height };
-  const pressFrame = { height: markerTargetSize, width: markerTargetSize, x: anchor.x - markerTargetSize / 2, y: anchor.y - markerTargetSize / 2 };
+  const pressFrame = {
+    height: markerTargetSize,
+    width: markerTargetSize,
+    x: anchor.x - markerTargetSize / 2,
+    y: anchor.y - markerTargetSize / 2,
+  };
   return {
     anchor,
-    labelFrame: { height: markerLabelHeight, width: markerLabelWidth, x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), Math.max(0, size.width - markerLabelWidth)), y: Math.max(0, anchor.y - 30) },
-    markerFrame: { height: markerVisualSize, width: markerVisualSize, x: anchor.x - markerVisualSize / 2, y: anchor.y - markerVisualSize / 2 },
+    labelFrame: {
+      height: markerLabelHeight,
+      width: markerLabelWidth,
+      x: Math.min(Math.max(0, anchor.x - markerLabelWidth / 2), Math.max(0, size.width - markerLabelWidth)),
+      y: Math.max(0, anchor.y - 30),
+    },
+    markerFrame: {
+      height: markerVisualSize,
+      width: markerVisualSize,
+      x: anchor.x - markerVisualSize / 2,
+      y: anchor.y - markerVisualSize / 2,
+    },
     pressFrame,
   };
 }
@@ -80,106 +124,16 @@ export function resolveChinaMapCoordinate(marker: CityMapMarker) {
   };
 }
 
-/** 城市标记在新地图坐标系中的位置（新版数据直接以 0..1 归一化坐标给出）。 */
-function resolveMarkerSvgCoordinate(marker: CityMapMarker) {
-  "worklet";
-  return {
-    x: marker.coordinate.x * chinaMapCoordinateSpace.width,
-    y: marker.coordinate.y * chinaMapCoordinateSpace.height,
-  };
-}
-
 export function resolveChinaMapContentFrame(size: WorkspaceSize) {
   "worklet";
-  const scale = Math.min(size.width / chinaMapCoordinateSpace.width, size.height / chinaMapCoordinateSpace.height);
-  const mapWidth = chinaMapCoordinateSpace.width * scale;
-  const mapHeight = chinaMapCoordinateSpace.height * scale;
-  return { height: mapHeight, scale, width: mapWidth, x: (size.width - mapWidth) / 2, y: (size.height - mapHeight) / 2 };
+  return resolveCityMapContentFrame(size);
 }
-
-type WorkspaceMarkerModel = {
-  readonly dotSize: number;
-  readonly fontSize: number;
-  readonly onScreen: boolean;
-  readonly pressSize: number;
-  readonly showLabel: boolean;
-};
-
-type WorkspaceMarkerCandidate = {
-  readonly labelFrame: MarkerFrame;
-  readonly model: WorkspaceMarkerModel;
-};
-
-function labelFramesIntersect(first: MarkerFrame, second: MarkerFrame) {
-  "worklet";
-  return first.x < second.x + second.width + markerLabelCollisionPadding
-    && first.x + first.width + markerLabelCollisionPadding > second.x
-    && first.y < second.y + second.height + markerLabelCollisionPadding
-    && first.y + first.height + markerLabelCollisionPadding > second.y;
-}
-
-function resolveWorkspaceMarkerCandidate(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerCandidate {
-  "worklet";
-  const contentFrame = resolveChinaMapContentFrame(size);
-  const renderScale = contentFrame.scale * viewport.scale;
-  const dotSize = markerSvgRadius * 2 * renderScale;
-  const pressSize = markerTargetSvgSize * renderScale;
-  const fontSize = markerLabelSvgFontSize * renderScale;
-  const coordinate = resolveMarkerSvgCoordinate(marker);
-  const contentX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
-  const contentY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
-  const anchorX = (contentX - size.width / 2) * viewport.scale + size.width / 2 + viewport.translateX;
-  const anchorY = (contentY - size.height / 2) * viewport.scale + size.height / 2 + viewport.translateY;
-  const onScreen = anchorX + dotSize / 2 >= 0 && anchorX - dotSize / 2 <= size.width && anchorY + dotSize / 2 >= 0 && anchorY - dotSize / 2 <= size.height;
-  const labelFrame = {
-    height: fontSize * 1.25,
-    width: markerLabelSvgWidth * renderScale,
-    x: anchorX - markerLabelSvgWidth * renderScale / 2,
-    y: anchorY - markerLabelSvgOffsetY * renderScale - fontSize,
-  };
-  const labelOnScreen = labelFrame.x + labelFrame.width >= 0 && labelFrame.x <= size.width && labelFrame.y + labelFrame.height >= 0 && labelFrame.y <= size.height;
-  const showLabel = viewport.scale >= workspaceLabelZoomThreshold && dotSize >= minimumReadableMarkerSize && onScreen && labelOnScreen;
-  return { labelFrame, model: { dotSize, fontSize, onScreen, pressSize, showLabel } };
-}
-
-export function resolveWorkspaceMarkerModel(marker: CityMapMarker, viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel {
-  "worklet";
-  return resolveWorkspaceMarkerCandidate(marker, viewport, size).model;
-}
-
-export function resolveWorkspaceMarkerModels(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceMarkerModel[] {
-  "worklet";
-  const visibleLabelFrames: MarkerFrame[] = [];
-  return markers.map((marker) => {
-    const candidate = resolveWorkspaceMarkerCandidate(marker, viewport, size);
-    if (!candidate.model.showLabel || visibleLabelFrames.some((frame) => labelFramesIntersect(frame, candidate.labelFrame))) {
-      return {
-        dotSize: candidate.model.dotSize,
-        fontSize: candidate.model.fontSize,
-        onScreen: candidate.model.onScreen,
-        pressSize: candidate.model.pressSize,
-        showLabel: false,
-      };
-    }
-    visibleLabelFrames.push(candidate.labelFrame);
-    return candidate.model;
-  });
-}
-
-function resolveVisibleWorkspaceLabelCities(markers: readonly CityMapMarker[], viewport: WorkspaceViewport, size: WorkspaceSize): City[] {
-  const models = resolveWorkspaceMarkerModels(markers, viewport, size);
-  return markers.flatMap((marker, index) => models[index]?.showLabel ? [marker.city] : []);
-}
-
-export type { CityMapProps, CityMapVariant };
 
 function savedMemoryLabel(city: City, visitCount: number) {
   return `${cityContent[city].name}，已保存 ${visitCount} 册旅行记忆`;
 }
 
 function focusViewport(focus: CityMapFocus, size: WorkspaceSize): WorkspaceViewport {
-  // focus.center 是地图相对坐标（0..1）。考虑容器 letterbox（地图居中、按比例缩放），
-  // 把中心点映射到实际屏幕位置后计算平移量，保证目标城市位于视口中心。
   const contentFrame = resolveChinaMapContentFrame(size);
   const centerX = contentFrame.x + focus.center.x * contentFrame.width;
   const centerY = contentFrame.y + focus.center.y * contentFrame.height;
@@ -190,7 +144,11 @@ function focusViewport(focus: CityMapFocus, size: WorkspaceSize): WorkspaceViewp
   }, size);
 }
 
-function getWorkspaceFocus(adapter: OfflineChinaMapAdapter, initialCity: City | undefined, focus: CityMapFocus | undefined) {
+function getWorkspaceFocus(
+  adapter: OfflineChinaMapAdapter,
+  initialCity: City | undefined,
+  focus: CityMapFocus | undefined,
+) {
   return focus ?? (initialCity ? resolveCityFocus(adapter, initialCity) : adapter.initialFocus);
 }
 
@@ -203,19 +161,15 @@ export function getCityMapTransform(viewport: WorkspaceViewport) {
   ];
 }
 
-/**
- * 在 UI 线程上实时计算单个标记点的屏幕坐标（不含 React 状态依赖）。
- * 这是消除标记点拖动延迟的关键：使用 shared values 直接参与动画计算。
- */
 function computeMarkerScreenPosition(
   marker: CityMapMarker,
   viewport: WorkspaceViewport,
   size: WorkspaceSize,
-): { x: number; y: number } {
+) {
   "worklet";
   if (size.width <= 0 || size.height <= 0) return { x: 0, y: 0 };
   const contentFrame = resolveChinaMapContentFrame(size);
-  const coordinate = resolveMarkerSvgCoordinate(marker);
+  const coordinate = resolveChinaMapCoordinate(marker);
   const baseX = contentFrame.x + (coordinate.x - chinaMapCoordinateSpace.minX) * contentFrame.scale;
   const baseY = contentFrame.y + (coordinate.y - chinaMapCoordinateSpace.minY) * contentFrame.scale;
   return {
@@ -224,58 +178,118 @@ function computeMarkerScreenPosition(
   };
 }
 
+function boundedGestureVelocity(velocity: number | undefined) {
+  "worklet";
+  return Math.min(1600, Math.max(-1600, velocity ?? 0));
+}
+
+function ChinaMapArtwork({ onMapPress }: { readonly onMapPress?: () => void }) {
+  const inset = chinaSouthSeaInset.frame;
+  return (
+    <>
+      {chinaProvincesData.map((province) => (
+        <Path
+          d={province.path}
+          fill={colors.paper}
+          key={province.id}
+          onPress={onMapPress}
+          stroke={colors.accent}
+          strokeWidth={0.8}
+          testID={`china-province-${province.id}`}
+        />
+      ))}
+      <G testID="china-south-sea-inset" transform={`translate(${inset.x} ${inset.y})`}>
+        <Rect
+          fill={colors.surface}
+          fillOpacity={0.94}
+          height={inset.height}
+          onPress={onMapPress}
+          rx={5}
+          stroke={colors.accent}
+          strokeWidth={1.2}
+          width={inset.width}
+        />
+        <Path
+          d={chinaSouthSeaInset.path}
+          fill={colors.paper}
+          onPress={onMapPress}
+          stroke={colors.accent}
+          strokeWidth={0.75}
+          testID="china-south-sea-inset-path"
+        />
+      </G>
+    </>
+  );
+}
+
 // ─── Overview ────────────────────────────────────────────────────────
 
 function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
-  // 卡片实际宽度随屏幕与外层内边距变化，热区必须跟随实测尺寸而非固定的设计稿尺寸
   const [overviewSize, setOverviewSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
   const onOverviewLayout = React.useCallback((event: LayoutChangeEvent) => {
-    const { height, width } = event.nativeEvent.layout;
-    if (height <= 0 || width <= 0) return;
-    setOverviewSize((current) => current.height === height && current.width === width ? current : { height, width });
+    const { height: nextHeight, width: nextWidth } = event.nativeEvent.layout;
+    if (nextHeight <= 0 || nextWidth <= 0) return;
+    setOverviewSize((current) => current.height === nextHeight && current.width === nextWidth
+      ? current
+      : { height: nextHeight, width: nextWidth });
   }, []);
 
   return (
-    <View accessibilityLabel="离线中国城市旅行地图概览" onLayout={onOverviewLayout} style={{ aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height, backgroundColor: colors.accentSoft, borderRadius: 20, overflow: "hidden" }} testID="city-map-overview">
+    <View
+      accessibilityLabel="离线中国城市旅行地图概览"
+      onLayout={onOverviewLayout}
+      style={{
+        aspectRatio: overviewMapDimensions.width / overviewMapDimensions.height,
+        backgroundColor: colors.accentSoft,
+        borderRadius: 20,
+        overflow: "hidden",
+      }}
+      testID="city-map-overview"
+    >
       <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
-        {chinaProvincesData.map((province) => (
-          <Path
-            key={province.id}
-            d={province.path}
-            fill={colors.paper}
-            onPress={onMapPress}
-            stroke={colors.accent}
-            strokeWidth={0.8}
-            testID={`china-province-${province.id}`}
-          />
-        ))}
-        {/* 台湾省界已包含在数据中，无需手绘插画 */}
+        <ChinaMapArtwork onMapPress={onMapPress} />
         {adapter.markers.map((marker) => {
-          const { city } = marker;
-          const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
+          const stat = statsByCity.get(marker.city) ?? {
+            city: marker.city,
+            intensity: "none" as const,
+            isVisited: false,
+            unlocked: false,
+            visitCount: 0,
+          };
           const token = markerTokens[stat.intensity];
           const coordinate = resolveChinaMapCoordinate(marker);
           return (
-            <G key={city} testID={`city-map-marker-${city}-${stat.intensity}`}>
-              <Circle cx={coordinate.x} cy={coordinate.y} fill={token.fill} r={markerSvgRadius} stroke={token.border} strokeWidth={2 * markerSvgScale} />
+            <G key={marker.city} testID={`city-map-marker-${marker.city}-${stat.intensity}`}>
+              <Circle
+                cx={coordinate.x}
+                cy={coordinate.y}
+                fill={token.fill}
+                r={markerSvgRadius}
+                stroke={token.border}
+                strokeWidth={1.5 * markerSvgScale}
+              />
             </G>
           );
         })}
       </Svg>
 
-      {/* 标记点的可点击覆盖层 — 为每个城市标记提供无障碍按压目标 */}
       {adapter.markers.map((marker) => {
-        const { city } = marker;
-        const stat = statsByCity.get(city) ?? { city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
+        const stat = statsByCity.get(marker.city) ?? {
+          city: marker.city,
+          intensity: "none" as const,
+          isVisited: false,
+          unlocked: false,
+          visitCount: 0,
+        };
         const layout = resolveCityMarkerLayout(marker, overviewSize);
         return (
           <Pressable
-            accessibilityLabel={savedMemoryLabel(city, stat.visitCount)}
+            accessibilityLabel={savedMemoryLabel(marker.city, stat.visitCount)}
             accessibilityRole="button"
-            key={`${city}-target`}
-            onPress={interactive ? () => onCityPress?.(city) : undefined}
+            key={`${marker.city}-target`}
+            onPress={interactive ? () => onCityPress?.(marker.city) : undefined}
             style={({ pressed }) => ({
               height: layout.pressFrame.height,
               left: layout.pressFrame.x,
@@ -284,7 +298,7 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
               top: layout.pressFrame.y,
               width: layout.pressFrame.width,
             })}
-            testID={`city-map-marker-target-${city}-${stat.intensity}`}
+            testID={`city-map-marker-target-${marker.city}-${stat.intensity}`}
           />
         );
       })}
@@ -294,206 +308,310 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
           accessibilityLabel="全屏查看中国地图"
           accessibilityRole="button"
           onPress={onMapPress}
-          style={({ pressed }) => ({ backgroundColor: colors.surface, borderColor: colors.accent, borderRadius: 16, borderWidth: 1, bottom: 12, opacity: pressed ? 0.82 : 1, paddingHorizontal: 12, paddingVertical: 8, position: "absolute", right: 12 })}
+          style={({ pressed }) => ({
+            backgroundColor: colors.surface,
+            borderColor: colors.accent,
+            borderRadius: 16,
+            borderWidth: 1,
+            bottom: 12,
+            opacity: pressed ? 0.82 : 1,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            position: "absolute",
+            right: 12,
+          })}
         >
           <Text selectable style={{ color: colors.accent, fontSize: 13, fontWeight: "800" }}>全屏查看</Text>
         </Pressable>
       ) : null}
-      <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
+      <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
     </View>
   );
 }
 
-// ─── Workspace Animated Marker ──────────────────────────────────────
+// ─── Workspace overlays ─────────────────────────────────────────────
 
-const MARKER_DOT_SIZE = 8;
-const MARKER_LABEL_FONT_SIZE = 11;
-const MARKER_BASE_TARGET = 44;
+type SharedNumber = { value: number };
 
 type AnimatedMarkerProps = {
-  marker: CityMapMarker;
-  stat: CityStats;
-  showLabel: boolean;
-  interactive: boolean;
-  onCityPress?: (city: City) => void;
-  translateX: { value: number };
-  translateY: { value: number };
-  scale: { value: number };
-  mapWidth: { value: number };
-  mapHeight: { value: number };
+  readonly marker: CityMapMarker;
+  readonly stat: CityStats;
+  readonly interactive: boolean;
+  readonly onCityPress?: (city: City) => void;
+  readonly translateX: SharedNumber;
+  readonly translateY: SharedNumber;
+  readonly scale: SharedNumber;
+  readonly mapWidth: SharedNumber;
+  readonly mapHeight: SharedNumber;
 };
 
-/**
- * 单个工作区标记点组件 — 使用 useAnimatedStyle 在 UI 线程实时计算位置，
- * 消除与地图 SVG 之间的拖动延迟。
- */
 function AnimatedWorkspaceMarker({
-  marker, stat, showLabel, interactive, onCityPress,
-  translateX, translateY, scale, mapWidth, mapHeight,
+  marker,
+  stat,
+  interactive,
+  onCityPress,
+  translateX,
+  translateY,
+  scale,
+  mapWidth,
+  mapHeight,
 }: AnimatedMarkerProps) {
   const token = markerTokens[stat.intensity];
-
   const animatedStyle = useAnimatedStyle(() => {
-    const size: WorkspaceSize = { height: mapHeight.value, width: mapWidth.value };
-    const viewport: WorkspaceViewport = { scale: scale.value, translateX: translateX.value, translateY: translateY.value };
-    const pos = computeMarkerScreenPosition(marker, viewport, size);
-
-    // 点击热区固定 44px：不随缩放放大，避免高倍率下互相遮挡导致误点
-    const hitSize = MARKER_BASE_TARGET;
-
+    const size = { height: mapHeight.value, width: mapWidth.value };
+    const viewport = { scale: scale.value, translateX: translateX.value, translateY: translateY.value };
+    const position = computeMarkerScreenPosition(marker, viewport, size);
     return {
-      height: hitSize,
-      left: pos.x - hitSize / 2,
-      top: pos.y - hitSize / 2,
-      width: hitSize,
-    };
-  });
-
-  const animatedDotStyle = useAnimatedStyle(() => {
-    const size: WorkspaceSize = { height: mapHeight.value, width: mapWidth.value };
-    const viewport: WorkspaceViewport = { scale: scale.value, translateX: translateX.value, translateY: translateY.value };
-    const contentFrame = resolveChinaMapContentFrame(size);
-    const dotRenderSize = Math.max(4, MARKER_DOT_SIZE * contentFrame.scale * viewport.scale);
-    return {
-      borderRadius: dotRenderSize / 2,
-      height: dotRenderSize,
-      width: dotRenderSize,
+      height: markerTargetSize,
+      left: position.x - markerTargetSize / 2,
+      opacity: size.width > 0 && size.height > 0 ? 1 : 0,
+      top: position.y - markerTargetSize / 2,
+      width: markerTargetSize,
     };
   });
 
   return (
     <Animated.View
       accessible={false}
-      style={[{ alignItems: "center", justifyContent: "center", position: "absolute" }, animatedStyle]}
+      style={[styles.workspaceMarkerTarget, animatedStyle]}
       testID={`city-map-marker-dot-${marker.city}-${stat.intensity}`}
     >
       <Pressable
         accessibilityLabel={savedMemoryLabel(marker.city, stat.visitCount)}
         accessibilityRole="button"
         onPress={interactive ? () => onCityPress?.(marker.city) : undefined}
-        style={({ pressed }) => ({
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: pressed ? 0.82 : 1,
-        })}
+        style={({ pressed }) => [styles.workspaceMarkerPressable, { opacity: pressed ? 0.82 : 1 }]}
       >
-        <Animated.View style={[{
-          backgroundColor: token.fill,
-          borderColor: token.border,
-          borderWidth: 1.5,
-        }, animatedDotStyle]} />
-        {showLabel ? (
-          <Text
-            style={{
-              color: colors.ink,
-              fontFamily: headingFontFamily,
-              fontSize: MARKER_LABEL_FONT_SIZE,
-              fontWeight: "800",
-              position: "absolute",
-              textAlign: "center",
-              top: -MARKER_LABEL_FONT_SIZE - 4,
-              width: 88,
-            }}
-            testID={`city-map-label-${marker.city}`}
-          >
-            {cityContent[marker.city].name}
-          </Text>
-        ) : null}
+        <Animated.View
+          style={[styles.workspaceMarkerDot, { backgroundColor: token.fill, borderColor: token.border }]}
+          testID={`city-map-marker-visual-${marker.city}`}
+        />
       </Pressable>
+    </Animated.View>
+  );
+}
+
+function labelTextStyle(label: ChinaPrefectureLabel) {
+  if (label.isCapital) return { fontSize: 13, fontWeight: "700" as const };
+  if (label.productCity) return { fontSize: 12, fontWeight: "600" as const };
+  return { fontSize: 11, fontWeight: "400" as const };
+}
+
+function AnimatedPrefectureLabel({
+  label,
+  mapHeight,
+  mapWidth,
+  scale,
+  translateX,
+  translateY,
+}: {
+  readonly label: ChinaPrefectureLabel;
+  readonly mapHeight: SharedNumber;
+  readonly mapWidth: SharedNumber;
+  readonly scale: SharedNumber;
+  readonly translateX: SharedNumber;
+  readonly translateY: SharedNumber;
+}) {
+  const typography = labelTextStyle(label);
+  const width = Math.max(28, label.displayName.length * typography.fontSize + 10);
+  const height = typography.fontSize + 8;
+  const animatedStyle = useAnimatedStyle(() => {
+    const size = { height: mapHeight.value, width: mapWidth.value };
+    if (size.width <= 0 || size.height <= 0) return { opacity: 0 };
+    const point = resolveNormalizedMapScreenPoint(label.coordinate, {
+      scale: scale.value,
+      translateX: translateX.value,
+      translateY: translateY.value,
+    }, size);
+    return {
+      opacity: resolveCityLabelEdgeOpacity(point.x, point.y, size),
+      transform: [
+        { translateX: point.x - width / 2 },
+        { translateY: point.y - height / 2 },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden
+      accessible={false}
+      entering={FadeIn.duration(140)}
+      exiting={FadeOut.duration(140)}
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={[styles.prefectureLabel, { height, width }]}
+      testID={`city-map-prefecture-label-${label.adcode}`}
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, styles.prefectureLabelContent, animatedStyle]}>
+        <Text
+          accessible={false}
+          numberOfLines={1}
+          style={[styles.prefectureLabelText, typography]}
+        >
+          {label.displayName}
+        </Text>
+      </Animated.View>
     </Animated.View>
   );
 }
 
 // ─── Workspace ──────────────────────────────────────────────────────
 
-function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = false, onCityPress, onMapPress, targetCity, onTargetReached }: CityMapProps) {
+function WorkspaceCityMap({
+  stats,
+  variant,
+  initialCity,
+  focus,
+  interactive = false,
+  onCityPress,
+  targetCity,
+  onTargetReached,
+}: CityMapProps) {
   const adapter = React.useMemo(() => new OfflineChinaMapAdapter(), []);
-  const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>(overviewMapDimensions);
-  const initialViewport = variant === "workspace"
-    ? focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize)
-    : { scale: 1, translateX: 0, translateY: 0 };
-  const translateX = useSharedValue(initialViewport.translateX);
-  const translateY = useSharedValue(initialViewport.translateY);
-  const sc = useSharedValue(initialViewport.scale);
-  const panStartX = useSharedValue(initialViewport.translateX);
-  const panStartY = useSharedValue(initialViewport.translateY);
-  const pinchStartScale = useSharedValue(initialViewport.scale);
-  const mapWidth = useSharedValue(workspaceSize.width);
-  const mapHeight = useSharedValue(workspaceSize.height);
-  const [visibleLabelCities, setVisibleLabelCities] = React.useState<readonly City[]>(() => resolveVisibleWorkspaceLabelCities(adapter.markers, initialViewport, workspaceSize));
-  const animatingRef = React.useRef(false);
+  const [workspaceSize, setWorkspaceSize] = React.useState<WorkspaceSize>({ height: 0, width: 0 });
+  const [visibleLabels, setVisibleLabels] = React.useState<readonly ChinaPrefectureLabel[]>([]);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const panStartX = useSharedValue(0);
+  const panStartY = useSharedValue(0);
+  const pinchStartScale = useSharedValue(1);
+  const pinchStartX = useSharedValue(0);
+  const pinchStartY = useSharedValue(0);
+  const pinchStartFocalX = useSharedValue(0);
+  const pinchStartFocalY = useSharedValue(0);
+  const mapWidth = useSharedValue(0);
+  const mapHeight = useSharedValue(0);
+  const labelZoomTier = useSharedValue(-1);
 
-  const updateState = React.useCallback((next: WorkspaceViewport, size: WorkspaceSize) => {
-    setVisibleLabelCities(resolveVisibleWorkspaceLabelCities(adapter.markers, next, size));
-  }, [adapter]);
+  const settleVisibleLabels = React.useCallback((viewport: WorkspaceViewport, size: WorkspaceSize) => {
+    if (size.width <= 0 || size.height <= 0) {
+      setVisibleLabels([]);
+      return;
+    }
+    const nextTier = resolveLabelZoomTier(viewport.scale, labelZoomTier.value);
+    labelZoomTier.value = nextTier;
+    setVisibleLabels(resolveVisibleCityLabels(
+      prefectureLabels,
+      viewport,
+      size,
+      nextTier,
+    ));
+  }, [labelZoomTier]);
 
-  // targetCity 跳转动画
-  // shared values (translateX, translateY, sc) 是稳定 ref，不需要作为 deps
   React.useEffect(() => {
     if (!targetCity || workspaceSize.width <= 0 || workspaceSize.height <= 0) return;
     const cityFocus = adapter.cityFocus[targetCity];
     if (!cityFocus) return;
     const nextViewport = focusViewport(cityFocus, workspaceSize);
-    animatingRef.current = true;
     translateX.value = withTiming(nextViewport.translateX, { duration: 500 });
     translateY.value = withTiming(nextViewport.translateY, { duration: 500 });
-    sc.value = withTiming(nextViewport.scale, { duration: 500 }, () => {
-      animatingRef.current = false;
-      runOnJS(updateState)(nextViewport, workspaceSize);
+    scale.value = withTiming(nextViewport.scale, { duration: 500 }, () => {
+      runOnJS(settleVisibleLabels)(nextViewport, workspaceSize);
       if (onTargetReached) runOnJS(onTargetReached)();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetCity]);
+  }, [adapter, onTargetReached, scale, settleVisibleLabels, targetCity, translateX, translateY, workspaceSize]);
 
   React.useEffect(() => {
-    const nextViewport = variant === "workspace"
-      ? focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize)
-      : { scale: 1, translateX: 0, translateY: 0 };
+    if (workspaceSize.width <= 0 || workspaceSize.height <= 0) return;
+    const nextViewport = focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize);
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
-    sc.value = nextViewport.scale;
-    updateState(nextViewport, workspaceSize);
-  }, [adapter, focus, initialCity, sc, translateX, translateY, updateState, variant, workspaceSize]);
+    scale.value = nextViewport.scale;
+    settleVisibleLabels(nextViewport, workspaceSize);
+  }, [adapter, focus, initialCity, scale, settleVisibleLabels, translateX, translateY, workspaceSize]);
 
   const onWorkspaceLayout = React.useCallback((event: LayoutChangeEvent) => {
-    const { height: h, width: w } = event.nativeEvent.layout;
-    if (h <= 0 || w <= 0) return;
-    mapWidth.value = w;
-    mapHeight.value = h;
-    setWorkspaceSize((current) => current.height === h && current.width === w ? current : { height: h, width: w });
+    const { height: nextHeight, width: nextWidth } = event.nativeEvent.layout;
+    if (nextHeight <= 0 || nextWidth <= 0) return;
+    mapWidth.value = nextWidth;
+    mapHeight.value = nextHeight;
+    setWorkspaceSize((current) => current.height === nextHeight && current.width === nextWidth
+      ? current
+      : { height: nextHeight, width: nextWidth });
   }, [mapHeight, mapWidth]);
 
-  const pan = Gesture.Pan().enabled(variant === "workspace")
-    .onBegin(() => { panStartX.value = translateX.value; panStartY.value = translateY.value; })
+  const pan = Gesture.Pan()
+    .enabled(variant === "workspace")
+    .onBegin(() => {
+      panStartX.value = translateX.value;
+      panStartY.value = translateY.value;
+    })
     .onUpdate((event) => {
-      const next = clampWorkspaceViewport({ scale: sc.value, translateX: panStartX.value + event.translationX, translateY: panStartY.value + event.translationY }, { height: mapHeight.value, width: mapWidth.value });
+      const next = clampWorkspaceViewport({
+        scale: scale.value,
+        translateX: panStartX.value + event.translationX,
+        translateY: panStartY.value + event.translationY,
+      }, { height: mapHeight.value, width: mapWidth.value });
+      translateX.value = next.translateX;
+      translateY.value = next.translateY;
+    })
+    .onFinalize((event) => {
+      const size = { height: mapHeight.value, width: mapWidth.value };
+      const limits = getWorkspaceTranslationLimits(scale.value, size);
+      translateX.value = withDecay({
+        clamp: [-limits.x, limits.x],
+        deceleration: 0.985,
+        velocity: boundedGestureVelocity(event.velocityX),
+        velocityFactor: 0.35,
+      });
+      translateY.value = withDecay({
+        clamp: [-limits.y, limits.y],
+        deceleration: 0.985,
+        velocity: boundedGestureVelocity(event.velocityY),
+        velocityFactor: 0.35,
+      }, () => {
+        runOnJS(settleVisibleLabels)({
+          scale: scale.value,
+          translateX: translateX.value,
+          translateY: translateY.value,
+        }, size);
+      });
+    });
+
+  const pinch = Gesture.Pinch()
+    .enabled(variant === "workspace")
+    .onBegin((event) => {
+      pinchStartScale.value = scale.value;
+      pinchStartX.value = translateX.value;
+      pinchStartY.value = translateY.value;
+      pinchStartFocalX.value = event.focalX;
+      pinchStartFocalY.value = event.focalY;
+    })
+    .onUpdate((event) => {
+      const size = { height: mapHeight.value, width: mapWidth.value };
+      const boundedScale = clampWorkspaceViewport({
+        scale: pinchStartScale.value * event.scale,
+        translateX: 0,
+        translateY: 0,
+      }, size).scale;
+      const ratio = boundedScale / pinchStartScale.value;
+      const startFocusX = pinchStartFocalX.value - size.width / 2;
+      const startFocusY = pinchStartFocalY.value - size.height / 2;
+      const currentFocusX = event.focalX - size.width / 2;
+      const currentFocusY = event.focalY - size.height / 2;
+      const next = clampWorkspaceViewport({
+        scale: boundedScale,
+        translateX: currentFocusX - (startFocusX - pinchStartX.value) * ratio,
+        translateY: currentFocusY - (startFocusY - pinchStartY.value) * ratio,
+      }, size);
+      scale.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
     })
     .onFinalize(() => {
-      const next = clampWorkspaceViewport({ scale: sc.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
+      const next = clampWorkspaceViewport({
+        scale: scale.value,
+        translateX: translateX.value,
+        translateY: translateY.value,
+      }, { height: mapHeight.value, width: mapWidth.value });
+      scale.value = next.scale;
       translateX.value = next.translateX;
       translateY.value = next.translateY;
-      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
+      runOnJS(settleVisibleLabels)(next, { height: mapHeight.value, width: mapWidth.value });
     });
 
-  const pinch = Gesture.Pinch().enabled(variant === "workspace")
-    .onBegin(() => { pinchStartScale.value = sc.value; })
-    .onUpdate((event) => {
-      const next = clampWorkspaceViewport({ scale: pinchStartScale.value * event.scale, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
-      sc.value = next.scale;
-      translateX.value = next.translateX;
-      translateY.value = next.translateY;
-    })
-    .onFinalize(() => {
-      const next = clampWorkspaceViewport({ scale: sc.value, translateX: translateX.value, translateY: translateY.value }, { height: mapHeight.value, width: mapWidth.value });
-      sc.value = next.scale;
-      translateX.value = next.translateX;
-      translateY.value = next.translateY;
-      runOnJS(updateState)(next, { height: mapHeight.value, width: mapWidth.value });
-    });
-
-  // 双击放大（在捏合/平移之外补充点击缩放入口，模拟器与无触控板设备可用）
   const doubleTap = Gesture.Tap()
     .enabled(variant === "workspace")
     .numberOfTaps(2)
@@ -501,85 +619,155 @@ function WorkspaceCityMap({ stats, variant, initialCity, focus, interactive = fa
     .onEnd((event, success) => {
       if (!success) return;
       const size = { height: mapHeight.value, width: mapWidth.value };
-      const currentScale = sc.value;
+      const currentScale = scale.value;
       const nextScale = currentScale >= 2.4 ? 1 : Math.min(3.5, currentScale * 2);
-      // 以双击点为中心缩放（手指位置保持在地图上的同一点）。
-      // 画布 transform 以视图中心为原点：screen = (point - center) * scale + center + translate，
-      // 因此定焦量必须按“双击点相对中心的偏移”计算，用绝对坐标会整整差半个视口。
       const scaleRatio = nextScale / currentScale;
       const focusX = event.x - size.width / 2;
       const focusY = event.y - size.height / 2;
-      const nextTranslateX = focusX - (focusX - translateX.value) * scaleRatio;
-      const nextTranslateY = focusY - (focusY - translateY.value) * scaleRatio;
-      const next = clampWorkspaceViewport({ scale: nextScale, translateX: nextTranslateX, translateY: nextTranslateY }, size);
+      const next = clampWorkspaceViewport({
+        scale: nextScale,
+        translateX: focusX - (focusX - translateX.value) * scaleRatio,
+        translateY: focusY - (focusY - translateY.value) * scaleRatio,
+      }, size);
       translateX.value = withTiming(next.translateX, { duration: 200 });
       translateY.value = withTiming(next.translateY, { duration: 200 });
-      sc.value = withTiming(next.scale, { duration: 200 });
-      runOnJS(updateState)(next, size);
+      scale.value = withTiming(next.scale, { duration: 200 }, () => {
+        runOnJS(settleVisibleLabels)(next, size);
+      });
     });
 
   const statsByCity = new Map(stats.map((stat) => [stat.city, stat]));
   const animatedCanvasStyle = useAnimatedStyle(() => ({
-    transform: getCityMapTransform({ scale: sc.value, translateX: translateX.value, translateY: translateY.value }),
+    transform: getCityMapTransform({
+      scale: scale.value,
+      translateX: translateX.value,
+      translateY: translateY.value,
+    }),
   }));
-
-  // 共享值引用（只读传递，在 AnimatedWorkspaceMarker 中通过 useAnimatedStyle 消耗）
   const sharedValues = React.useMemo(() => ({
-    mapHeight, mapWidth, scale: sc, translateX, translateY,
-  }), [mapHeight, mapWidth, sc, translateX, translateY]);
+    mapHeight,
+    mapWidth,
+    scale,
+    translateX,
+    translateY,
+  }), [mapHeight, mapWidth, scale, translateX, translateY]);
 
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, doubleTap)}>
-      <View accessibilityLabel="离线中国城市旅行地图工作区" onLayout={onWorkspaceLayout} style={{ backgroundColor: colors.accentSoft, borderRadius: 16, flex: 1, overflow: "hidden", width: "100%" }} testID="city-map-workspace">
-        {/* 省份地图层：缩放跟随视口 */}
-        <Animated.View pointerEvents="none" testID="city-map-workspace-canvas" style={[StyleSheet.absoluteFill, animatedCanvasStyle]}>
+      <View
+        accessibilityLabel="离线中国城市旅行地图工作区"
+        onLayout={onWorkspaceLayout}
+        style={styles.workspace}
+        testID="city-map-workspace"
+      >
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, animatedCanvasStyle]}
+          testID="city-map-workspace-canvas"
+        >
           <Svg height="100%" preserveAspectRatio="xMidYMid meet" testID="city-map-content" width="100%" viewBox={chinaMapViewBox}>
-            {chinaProvincesData.map((province) => (
-              <Path
-                key={province.id}
-                d={province.path}
-                fill={colors.paper}
-                stroke={colors.accent}
-                strokeWidth={0.8}
-                testID={`china-province-${province.id}`}
-              />
-            ))}
+            <ChinaMapArtwork />
           </Svg>
         </Animated.View>
 
-        {/* 标记点层：Animated.View + useAnimatedStyle → 实时跟随手势，零延迟。
-            按城市屏幕 y 坐标升序渲染（上方标记在上层），避免下方标记热区遮挡上方点击。 */}
-        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-          {[...adapter.markers]
-            .sort((left, right) => left.coordinate.y - right.coordinate.y)
-            .map((marker) => {
-            const stat = statsByCity.get(marker.city) ?? { city: marker.city, visitCount: 0, unlocked: false, isVisited: false, intensity: "none" as const };
-            const showLabel = visibleLabelCities.includes(marker.city);
-            return (
-              <AnimatedWorkspaceMarker
-                interactive={interactive}
-                key={marker.city}
-                mapHeight={sharedValues.mapHeight}
-                mapWidth={sharedValues.mapWidth}
-                marker={marker}
-                onCityPress={onCityPress}
-                scale={sharedValues.scale}
-                showLabel={showLabel}
-                stat={stat}
-                translateX={sharedValues.translateX}
-                translateY={sharedValues.translateY}
-              />
-            );
-          })}
+        <View pointerEvents="none" style={StyleSheet.absoluteFill} testID="city-map-label-layer">
+          {visibleLabels.map((label) => (
+            <AnimatedPrefectureLabel
+              key={label.adcode}
+              label={label}
+              mapHeight={sharedValues.mapHeight}
+              mapWidth={sharedValues.mapWidth}
+              scale={sharedValues.scale}
+              translateX={sharedValues.translateX}
+              translateY={sharedValues.translateY}
+            />
+          ))}
         </View>
 
-        <Text selectable style={{ bottom: 10, color: colors.muted, fontSize: 10, left: 12, position: "absolute" }}>China provincial map · CC BY 4.0</Text>
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {workspaceSize.width > 0 && workspaceSize.height > 0 ? [...adapter.markers]
+            .sort((left, right) => left.coordinate.y - right.coordinate.y)
+            .map((marker) => {
+              const stat = statsByCity.get(marker.city) ?? {
+                city: marker.city,
+                intensity: "none" as const,
+                isVisited: false,
+                unlocked: false,
+                visitCount: 0,
+              };
+              return (
+                <AnimatedWorkspaceMarker
+                  interactive={interactive}
+                  key={marker.city}
+                  mapHeight={sharedValues.mapHeight}
+                  mapWidth={sharedValues.mapWidth}
+                  marker={marker}
+                  onCityPress={onCityPress}
+                  scale={sharedValues.scale}
+                  stat={stat}
+                  translateX={sharedValues.translateX}
+                  translateY={sharedValues.translateY}
+                />
+              );
+            }) : null}
+        </View>
+
+        <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
       </View>
     </GestureDetector>
   );
 }
 
-// ─── Public API ─────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  attribution: {
+    bottom: 8,
+    color: colors.muted,
+    fontSize: 9,
+    left: 10,
+    position: "absolute",
+    zIndex: 4,
+  },
+  prefectureLabel: {
+    position: "absolute",
+  },
+  prefectureLabelContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  prefectureLabelText: {
+    backgroundColor: "rgba(239, 226, 207, 0.78)",
+    borderRadius: 3,
+    color: colors.ink,
+    fontFamily: headingFontFamily,
+    overflow: "hidden",
+    paddingHorizontal: 3,
+    textAlign: "center",
+  },
+  workspace: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 16,
+    flex: 1,
+    overflow: "hidden",
+    width: "100%",
+  },
+  workspaceMarkerDot: {
+    borderRadius: markerVisualSize / 2,
+    borderWidth: 1.5,
+    height: markerVisualSize,
+    width: markerVisualSize,
+  },
+  workspaceMarkerPressable: {
+    alignItems: "center",
+    height: markerTargetSize,
+    justifyContent: "center",
+    width: markerTargetSize,
+  },
+  workspaceMarkerTarget: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "absolute",
+  },
+});
 
 export function CityMap(props: CityMapProps) {
   return props.variant === "overview" ? <OverviewCityMap {...props} /> : <WorkspaceCityMap {...props} />;

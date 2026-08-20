@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import * as React from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../../components/ui";
 import { CityMap } from "../../features/cities/city-map";
@@ -21,8 +21,21 @@ const citySearchEntries = cityRegistry
     name: cityContent[entry.id as City]?.name ?? entry.name,
   }));
 
+export function resolveFullscreenMapInsets(
+  insets: { readonly bottom: number; readonly top: number },
+  viewport: { readonly height: number; readonly width: number },
+) {
+  const portraitTopFallback = viewport.height > viewport.width ? 54 : 12;
+  return {
+    paddingBottom: Math.max(insets.bottom, 4),
+    paddingTop: Math.max(insets.top, portraitTopFallback),
+  };
+}
+
 export default function FullscreenCityMapScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const viewport = useWindowDimensions();
   const { memories } = useMemories();
   const cityStats = getCityStats(memories);
   const [targetCity, setTargetCity] = React.useState<City | undefined>(undefined);
@@ -64,7 +77,10 @@ export default function FullscreenCityMapScreen() {
   }, []);
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.screen} testID="fullscreen-city-map-screen">
+    <View
+      style={[styles.screen, resolveFullscreenMapInsets(insets, viewport)]}
+      testID="fullscreen-city-map-screen"
+    >
       {/* 头部：标题 + 搜索框 + 关闭 */}
       <View style={styles.header} testID="fullscreen-city-map-header">
         <View style={styles.headerLeft}>
@@ -151,7 +167,7 @@ export default function FullscreenCityMapScreen() {
           visible
         />
       ) : null}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -166,7 +182,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingBottom: 8,
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 8,
   },
   headerLeft: {
     gap: 3,
