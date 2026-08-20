@@ -48,6 +48,8 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
   const cellWidth = (containerWidth - GAP) / 2;
   const thumbHeight = (cellWidth * 4) / 3;
   const cellHeight = thumbHeight + LABEL_HEIGHT;
+  const editorPageWidth = Math.min(Math.max(width - 40, 280), 360);
+  const contentScale = cellWidth / editorPageWidth;
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [draggingIndex, setDraggingIndex] = React.useState<number | null>(null);
@@ -191,16 +193,29 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
                       style={[
                         styles.thumbWrap,
                         { height: thumbHeight, width: cellWidth },
-                        isSelected && styles.thumbSelected,
-                        isHovered && styles.thumbHovered,
                       ]}>
                       {page.layout ? (
-                        <CanvasPage height={thumbHeight} interactive={false} layout={page.layout} width={cellWidth} />
+                        <CanvasPage
+                          contentScale={contentScale}
+                          height={thumbHeight}
+                          interactive={false}
+                          layout={page.layout}
+                          width={cellWidth}
+                        />
                       ) : (
                         <View style={styles.thumbFallback}>
                           <Text numberOfLines={3} style={styles.thumbFallbackText}>{page.headline}</Text>
                         </View>
                       )}
+                      <View
+                        pointerEvents="none"
+                        style={[
+                          styles.thumbStateOverlay,
+                          isSelected && styles.thumbSelected,
+                          isHovered && styles.thumbHovered,
+                        ]}
+                        testID={`page-thumbnail-state-${page.id}`}
+                      />
                       {isSelected ? (
                         <View style={styles.checkBadge}>
                           <Text style={styles.checkBadgeText}>✓</Text>
@@ -284,10 +299,19 @@ const styles = StyleSheet.create({
   cell: { gap: 6 },
   cellDragging: { zIndex: 10 },
   thumbWrap: {
+    borderRadius: 14,
+    overflow: "hidden",
+    position: "relative",
+  },
+  thumbStateOverlay: {
     borderColor: colors.line,
     borderRadius: 14,
     borderWidth: 2,
-    overflow: "hidden",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   thumbSelected: { borderColor: colors.accent },
   thumbHovered: { borderColor: colors.warmAccent },

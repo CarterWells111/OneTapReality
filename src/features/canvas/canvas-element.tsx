@@ -33,6 +33,7 @@ export type CanvasElementStylePreview = {
 type CanvasElementProps = {
   canvasHeight: number;
   canvasWidth: number;
+  contentScale: number;
   element: CanvasElementModel;
   interactive: boolean;
   interactionZIndex?: number;
@@ -160,6 +161,7 @@ export function calculateStickerTextStyle(
 export function CanvasElement({
   canvasHeight,
   canvasWidth,
+  contentScale,
   element,
   interactive,
   interactionZIndex,
@@ -178,6 +180,7 @@ export function CanvasElement({
     height: canvasHeight,
   });
   const resolvedZIndex = resolveCanvasInteractionZIndex(isSelected, interactionZIndex, baseGeometry.zIndex);
+  const scaledTextBoxStyle = { borderRadius: 8 * contentScale };
 
   React.useEffect(() => {
     lastPressAt.current = null;
@@ -382,15 +385,17 @@ export function CanvasElement({
             <ElementContent
               canvasHeight={canvasHeight}
               canvasWidth={canvasWidth}
+              contentScale={contentScale}
               element={element}
               fontScale={fontScale}
               stylePreview={stylePreview}
             />
           ) : (
-            <View style={styles.contentContainer} testID={`canvas-element-content-${element.id}`}>
+            <View style={[styles.contentContainer, scaledTextBoxStyle]} testID={`canvas-element-content-${element.id}`}>
               <ElementContent
                 canvasHeight={canvasHeight}
                 canvasWidth={canvasWidth}
+                contentScale={contentScale}
                 element={element}
                 fontScale={fontScale}
                 stylePreview={stylePreview}
@@ -438,12 +443,14 @@ export function CanvasElement({
 function ElementContent({
   canvasHeight,
   canvasWidth,
+  contentScale,
   element,
   fontScale,
   stylePreview,
 }: {
   canvasHeight: number;
   canvasWidth: number;
+  contentScale: number;
   element: CanvasElementModel;
   fontScale?: SharedValue<number>;
   stylePreview?: CanvasElementStylePreview;
@@ -471,6 +478,7 @@ function ElementContent({
   return (
     <AnimatedText
       color={element.color}
+      contentScale={contentScale}
       fontFamily={resolvedFontFamily}
       fontScale={fontScale}
       fontSize={element.fontSize}
@@ -512,6 +520,7 @@ function ImageElement({ testID, uri }: { testID: string; uri: string }) {
  */
 function AnimatedText({
   color,
+  contentScale,
   fontFamily,
   fontSize,
   fontScale,
@@ -520,6 +529,7 @@ function AnimatedText({
   text,
 }: {
   color: string;
+  contentScale: number;
   fontFamily?: string;
   fontSize: number;
   fontScale?: SharedValue<number>;
@@ -529,10 +539,13 @@ function AnimatedText({
 }) {
   const animatedTextStyle = useAnimatedStyle(() => {
     const resolvedFontSize = previewFontSize?.value ?? fontSize;
+    const scaledFontSize = resolvedFontSize * (fontScale?.value ?? 1) * contentScale;
     return {
       color: previewColor?.value ?? color,
-      fontSize: resolvedFontSize * (fontScale?.value ?? 1),
-      lineHeight: Math.round(resolvedFontSize * (fontScale?.value ?? 1) * 1.28),
+      fontSize: scaledFontSize,
+      lineHeight: Math.round(scaledFontSize * 1.28),
+      paddingHorizontal: 4 * contentScale,
+      paddingVertical: 2 * contentScale,
     };
   });
 
@@ -564,7 +577,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   image: { flex: 1, width: "100%" },
-  text: { paddingHorizontal: 4, paddingVertical: 2 },
+  text: {},
   stickerFallback: { fontSize: 34, lineHeight: 40, textAlign: "center" },
   imagePlaceholder: {
     alignItems: "center",

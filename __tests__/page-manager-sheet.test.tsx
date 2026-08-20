@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
+import { StyleSheet } from "react-native";
 
 import { canvasPages } from "../src/features/canvas/editor-pages";
 import { PageManagerSheet } from "../src/features/canvas/page-manager-sheet";
@@ -36,5 +37,28 @@ describe("PageManagerSheet", () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0]).toHaveLength(3);
+  });
+
+  it("renders page state as an overlay without shrinking the thumbnail canvas", () => {
+    const screen = render(
+      <PageManagerSheet onChange={() => undefined} onClose={() => undefined} pages={pages} />,
+    );
+
+    const firstCanvasBefore = StyleSheet.flatten(screen.getAllByTestId("album-canvas")[0].props.style);
+    fireEvent.press(screen.getByLabelText("第 1 页"));
+    const stateOverlay = screen.getByTestId("page-thumbnail-state-a");
+
+    expect(stateOverlay.props.pointerEvents).toBe("none");
+    expect(StyleSheet.flatten(stateOverlay.props.style)).toMatchObject({
+      bottom: 0,
+      left: 0,
+      position: "absolute",
+      right: 0,
+      top: 0,
+    });
+    expect(StyleSheet.flatten(screen.getAllByTestId("album-canvas")[0].props.style)).toMatchObject({
+      height: firstCanvasBefore.height,
+      width: firstCanvasBefore.width,
+    });
   });
 });

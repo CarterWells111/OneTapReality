@@ -19,6 +19,7 @@ type ElementPatch = {
 };
 
 type CanvasPageProps = {
+  contentScale?: number;
   displayAspectRatio?: number;
   /**
    * 去掉圆角与描边，让背景/元素铺满整个矩形。
@@ -44,6 +45,7 @@ type CanvasPageProps = {
 };
 
 export function CanvasPage({
+  contentScale,
   displayAspectRatio = 3 / 4,
   flatEdges = false,
   height,
@@ -66,6 +68,9 @@ export function CanvasPage({
   const { width } = useWindowDimensions();
   const canvasWidth = requestedWidth ?? Math.min(Math.max(width - 40, 280), 420);
   const canvasHeight = height ?? canvasWidth / displayAspectRatio;
+  const safeContentScale = Number.isFinite(contentScale) && (contentScale ?? 0) > 0
+    ? contentScale as number
+    : 1;
   // 选中元素提升到最高视觉层级，防止被上层未选中元素阻挡触摸
   const elements = [...layout.elements].sort((left, right) => {
     if (interactive) {
@@ -125,6 +130,7 @@ export function CanvasPage({
         <CanvasElement
           canvasHeight={canvasHeight}
           canvasWidth={canvasWidth}
+          contentScale={safeContentScale}
           element={element}
           interactive={interactive}
           interactionZIndex={interactive && element.id === selectedElementId ? interactionZIndex : undefined}
