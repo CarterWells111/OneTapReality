@@ -994,4 +994,3 @@ git commit -m "docs: record canvas save snapshot invariant"
 ```
 
 Expected: the branch ends with focused commits and a clean tracked worktree. Do not push unless the user separately requests it.
-
