@@ -37,6 +37,8 @@ import {
   clampWorkspaceViewport,
   getWorkspaceTranslationLimits,
   resolveCityFocus,
+  workspaceMaxScale,
+  workspaceMinScale,
   type WorkspaceSize,
   type WorkspaceViewport,
 } from "./city-workspace";
@@ -134,6 +136,9 @@ function savedMemoryLabel(city: City, visitCount: number) {
 }
 
 function focusViewport(focus: CityMapFocus, size: WorkspaceSize): WorkspaceViewport {
+  if (focus.zoom <= workspaceMinScale) {
+    return { scale: workspaceMinScale, translateX: 0, translateY: 0 };
+  }
   const contentFrame = resolveChinaMapContentFrame(size);
   const centerX = contentFrame.x + focus.center.x * contentFrame.width;
   const centerY = contentFrame.y + focus.center.y * contentFrame.height;
@@ -181,6 +186,14 @@ function computeMarkerScreenPosition(
 function boundedGestureVelocity(velocity: number | undefined) {
   "worklet";
   return Math.min(1600, Math.max(-1600, velocity ?? 0));
+}
+
+export function resolveWorkspaceDoubleTapScale(currentScale: number) {
+  "worklet";
+  if (currentScale < 2) return 2;
+  if (currentScale < 4) return 4;
+  if (currentScale < workspaceMaxScale) return workspaceMaxScale;
+  return workspaceMinScale;
 }
 
 function ChinaMapArtwork({ onMapPress }: { readonly onMapPress?: () => void }) {
@@ -642,7 +655,7 @@ function WorkspaceCityMap({
       if (!success) return;
       const size = { height: mapHeight.value, width: mapWidth.value };
       const currentScale = scale.value;
-      const nextScale = currentScale >= 2.4 ? 1 : Math.min(3.5, currentScale * 2);
+      const nextScale = resolveWorkspaceDoubleTapScale(currentScale);
       const scaleRatio = nextScale / currentScale;
       const focusX = event.x - size.width / 2;
       const focusY = event.y - size.height / 2;

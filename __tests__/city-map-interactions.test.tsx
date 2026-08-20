@@ -141,7 +141,7 @@ describe("CityMap workspace gestures", () => {
       mockGestureHandlers.pinch.update?.({ focalX: 240, focalY: 160, scale: 4 });
     });
     expect(mockRunOnJS).not.toHaveBeenCalled();
-    expect(mockSharedValues[2]?.value).toBe(3.5);
+    expect(mockSharedValues[2]?.value).toBe(6);
     const canvasStyle = screen.getByTestId("city-map-workspace-canvas").props.style;
     expect(canvasStyle).toEqual(expect.any(Array));
     expect(canvasStyle[1].transform).toEqual([
@@ -268,6 +268,25 @@ describe("CityMap workspace gestures", () => {
     expect(mockSharedValues[2]?.value).toBe(2);
     expect(mockSharedValues[0]?.value).toBe(0);
     expect(mockSharedValues[1]?.value).toBe(0);
+  });
+
+  it("cycles double-tap zoom through 2x, 4x, 6x, then returns to 1x", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+    });
+
+    const scales: unknown[] = [];
+    for (let tap = 0; tap < 4; tap += 1) {
+      await act(async () => {
+        mockGestureHandlers.tap.end?.({ x: 240, y: 160 }, true);
+      });
+      scales.push(mockSharedValues[2]?.value);
+    }
+
+    expect(scales).toEqual([2, 4, 6, 1]);
   });
 
   it("shifts the canvas toward an off-centre double tap instead of slamming into the clamp", async () => {
