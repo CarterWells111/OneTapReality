@@ -5,6 +5,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import {
   BookCanvasEditor,
+  type BookCanvasEditorHandle,
   type BookEditorChangeReason,
 } from "../src/features/canvas/book-canvas-editor";
 import { canvasPages } from "../src/features/canvas/editor-pages";
@@ -25,6 +26,36 @@ jest.mock("../src/features/canvas/element-context-menu", () => ({
     return React.createElement(View, { testID: "mock-element-context-menu" });
   },
 }));
+
+jest.mock("../src/features/canvas/selection-handles", () => {
+  const React = require("react") as typeof import("react");
+  const { Pressable } = require("react-native") as typeof import("react-native");
+  return {
+    SelectionHandles: ({
+      elemH,
+      elemW,
+      onHandleDragEnd,
+      onHandleDragStart,
+    }: {
+      elemH: { value: number };
+      elemW: { value: number };
+      onHandleDragEnd: (generation: number) => void;
+      onHandleDragStart: () => void;
+    }) => React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(Pressable, { onPress: onHandleDragStart, testID: "begin-book-handle-transform" }),
+      React.createElement(Pressable, {
+        onPress: () => {
+          elemW.value /= 2;
+          elemH.value /= 2;
+          onHandleDragEnd(0);
+        },
+        testID: "commit-book-handle-transform",
+      }),
+    ),
+  };
+});
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -62,6 +93,23 @@ function CursorHarness({ onActivePageChange }: {
       pages={currentPages}
       onActivePageChange={onActivePageChange}
       onPagesChange={(nextPages) => setCurrentPages(nextPages)}
+    />
+  );
+}
+
+function SaveBoundaryHarness({ editorRef, onChange = () => undefined }: {
+  editorRef: React.RefObject<BookCanvasEditorHandle | null>;
+  onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => void;
+}) {
+  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
+  return (
+    <BookCanvasEditor
+      ref={editorRef}
+      pages={currentPages}
+      onPagesChange={(nextPages, reason) => {
+        setCurrentPages(nextPages);
+        onChange(nextPages, reason);
+      }}
     />
   );
 }
@@ -224,6 +272,78 @@ describe("BookCanvasEditor", () => {
       pageId: "page-1",
       property: "fontSize",
     });
+  });
+
+  it("prepares one snapshot containing multiline text and a closed style draft", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} />);
+    const headline = openStyleMenu(screen, "字号");
+
+    act(() => {
+      (mockContextMenuProps?.onFontSizeDraftChange as ((value: number) => void) | undefined)?.(28);
+    });
+    act(() => {
+      (mockContextMenuProps?.onClose as (() => void) | undefined)?.();
+    });
+    fireEvent.press(headline);
+    fireEvent.press(headline);
+    fireEvent.press(screen.getByText("编辑"));
+    fireEvent.changeText(screen.getByLabelText(editorLabel), "第一行\n第二行");
+
+    const snapshot = await editorRef.current!.prepareSave();
+    const savedText = snapshot!.pages[0].layout!.elements.find((element) => element.id === "page-1:headline");
+    expect(savedText).toMatchObject({ fontSize: 28, text: "第一行\n第二行" });
+  });
+
+  it("prepares the shared font-size preview while its style panel remains open", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const onChange = jest.fn();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} onChange={onChange} />);
+    openStyleMenu(screen, "字号");
+
+    const previewValue = mockContextMenuProps?.fontSizePreview as { value: number };
+    act(() => { previewValue.value = 30; });
+
+    const snapshot = await editorRef.current!.prepareSave();
+    expect(snapshot!.pages[0].layout!.elements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "page-1:headline", fontSize: 30 }),
+    ]));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("prepares the page-manager jump cursor synchronously", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} />);
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    fireEvent.press(screen.getAllByText("打开")[1]);
+
+    await expect(editorRef.current!.prepareSave()).resolves.toMatchObject({
+      cursor: { pageId: "page-2", index: 1 },
+    });
+  });
+
+  it("waits for an active transform and includes its final geometry", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} />);
+    const headline = screen.getByTestId("canvas-element-page-1:headline");
+    fireEvent.press(headline);
+    fireEvent.press(headline);
+    const original = canvasPages(pages)[0].layout!.elements.find((element) => element.id === "page-1:headline")!;
+
+    fireEvent.press(screen.getByTestId("begin-book-handle-transform"));
+    let resolved = false;
+    const pendingSnapshot = editorRef.current!.prepareSave().then((snapshot) => {
+      resolved = true;
+      return snapshot;
+    });
+    await act(async () => Promise.resolve());
+    expect(resolved).toBe(false);
+
+    fireEvent.press(screen.getByTestId("commit-book-handle-transform"));
+    const snapshot = await pendingSnapshot;
+    const savedText = snapshot!.pages[0].layout!.elements.find((element) => element.id === "page-1:headline")!;
+    expect(savedText.height).toBeCloseTo(original.height / 2);
+    expect(savedText.width).toBeCloseTo(original.width / 2);
   });
 
   it("opens on the requested page instead of always starting at the cover", () => {
