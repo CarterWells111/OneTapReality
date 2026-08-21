@@ -413,12 +413,28 @@ const provincePaths = projectedProvinces.map(({ id, name, polygons }) => {
   }
 });
 for (const provincePath of provincePaths) {
+  if (
+    provincePath.bounds.minX < 0
+    || provincePath.bounds.minY < 0
+    || provincePath.bounds.maxX > VIEWBOX_WIDTH
+    || provincePath.bounds.maxY > viewBoxHeight
+  ) {
+    throw new Error(`Province ${provincePath.id} final path bounds fall outside the map viewBox`);
+  }
   if (rectanglesOverlap(insetFrameBounds, provincePath.bounds)) {
     throw new Error(`South China Sea inset overlaps province ${provincePath.id}`);
   }
 }
 const provinces = provincePaths.map(({ id, name, path }) => ({ id, name, path }));
 const southSeaPathResult = toPath(southSeaPolygons, insetTransform);
+if (
+  southSeaPathResult.bounds.minX < 0
+  || southSeaPathResult.bounds.minY < 0
+  || southSeaPathResult.bounds.maxX > INSET_WIDTH
+  || southSeaPathResult.bounds.maxY > INSET_HEIGHT
+) {
+  throw new Error("South China Sea inset path bounds fall outside the inset viewBox");
+}
 const southSeaPath = southSeaPathResult.path;
 const markers = Object.entries(PRODUCT_CITY_COORDS).map(([city, longitudeLatitude]) => {
   const coordinate = normalizedMainCoordinate(albers(longitudeLatitude));
