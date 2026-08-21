@@ -107,8 +107,15 @@ describe("generated China map data", () => {
     expect(hainan?.path).toMatch(/^M/);
     expect(chinaSouthSeaInset.path).toMatch(/^M/);
     expect(pathCoordinates(chinaSouthSeaInset.path).length).toBeGreaterThan(2);
-    expect(parseViewBox(chinaSouthSeaInset.viewBox).width).toBeGreaterThan(0);
-    expect(parseViewBox(chinaSouthSeaInset.viewBox).height).toBeGreaterThan(0);
+    const insetViewBox = parseViewBox(chinaSouthSeaInset.viewBox);
+    expect(insetViewBox.width).toBeGreaterThan(0);
+    expect(insetViewBox.height).toBeGreaterThan(0);
+    for (const coordinate of pathCoordinates(chinaSouthSeaInset.path)) {
+      expect(coordinate.x).toBeGreaterThanOrEqual(insetViewBox.minX);
+      expect(coordinate.x).toBeLessThanOrEqual(insetViewBox.minX + insetViewBox.width);
+      expect(coordinate.y).toBeGreaterThanOrEqual(insetViewBox.minY);
+      expect(coordinate.y).toBeLessThanOrEqual(insetViewBox.minY + insetViewBox.height);
+    }
     expect(frame.x).toBe(16);
     expect(frame.y + frame.height).toBe(minY + height - 12);
     expect(frame.x).toBeGreaterThanOrEqual(minX);
@@ -157,6 +164,8 @@ describe("generated China map data", () => {
     expect(source).toContain("PRODUCT_CITY_COORDS");
     expect(source).toContain("const provincePaths = projectedProvinces.map");
     expect(source).toContain("provincePath.bounds");
+    expect(source).toContain("southSeaPathResult.bounds");
+    expect(source).toContain("provincePath.bounds.minX < 0");
     expect(source).not.toContain("transformedBounds(province.polygons, mainTransform)");
     expect(source).not.toMatch(/fetch\(|https\.get|axios/i);
   });
