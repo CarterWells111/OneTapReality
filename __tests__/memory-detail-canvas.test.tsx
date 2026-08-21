@@ -161,6 +161,62 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(view.getByText("页面预览")).toBeTruthy();
   });
 
+  it("issues a new restoration request when the same preview page is selected again", () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "Second page", body: "" },
+      ],
+    });
+    const view = render(<MemoryDetailScreen />);
+
+    fireEvent.press(view.getByText("页面预览"));
+    fireEvent.press(view.getByLabelText("打开第 2 页"));
+    expect(mockPageReader.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
+      fallbackIndex: 1,
+      initialPageId: "page-2",
+      restorationKey: 1,
+    }));
+
+    fireEvent.press(view.getByText("页面预览"));
+    fireEvent.press(view.getByLabelText("打开第 2 页"));
+    expect(mockPageReader.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
+      fallbackIndex: 1,
+      initialPageId: "page-2",
+      restorationKey: 2,
+    }));
+  });
+
+  it("keeps the reader restoration request unchanged when preview closes without a selection", () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "Second page", body: "" },
+      ],
+    });
+    const view = render(<MemoryDetailScreen />);
+    fireEvent.press(view.getByText("页面预览"));
+    fireEvent.press(view.getByLabelText("打开第 2 页"));
+    fireEvent.press(view.getByText("页面预览"));
+    mockPageReader.mockClear();
+
+    fireEvent.press(view.getByLabelText("关闭页面预览"));
+
+    expect(view.queryByText("页面预览 · 2 页")).toBeNull();
+    expect(mockPageReader).toHaveBeenCalled();
+    for (const [props] of mockPageReader.mock.calls) {
+      expect(props).toEqual(expect.objectContaining({
+        fallbackIndex: 1,
+        initialPageId: "page-2",
+        restorationKey: 1,
+      }));
+    }
+  });
+
   it("does not reuse a preview cursor after switching memory ids", () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas", title: "First album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
@@ -173,6 +229,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
     const view = render(<MemoryDetailScreen />);
     fireEvent.press(view.getByText("页面预览"));
     fireEvent.press(view.getByLabelText("打开第 2 页"));
+    mockPageReader.mockClear();
 
     mockSearchParams = { id: "memory-other" };
     mockGetMemoryById.mockReturnValue({
@@ -182,9 +239,17 @@ describe("MemoryDetailScreen canvas rendering", () => {
     });
     view.rerender(<MemoryDetailScreen />);
 
-    expect(mockPageReader).toHaveBeenLastCalledWith(expect.objectContaining({
-      fallbackIndex: 0,
-      initialPageId: undefined,
-    }));
+    expect(mockPageReader).toHaveBeenCalled();
+    for (const [props] of mockPageReader.mock.calls) {
+      expect(props).toEqual(expect.objectContaining({
+        fallbackIndex: 0,
+        initialPageId: undefined,
+        restorationKey: 0,
+      }));
+      expect(props).not.toEqual(expect.objectContaining({
+        fallbackIndex: 1,
+        initialPageId: "page-2",
+      }));
+    }
   });
 });

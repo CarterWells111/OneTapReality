@@ -29,10 +29,12 @@ export default function MemoryDetailScreen() {
     memoryId: string;
     pageId: string;
   } | null>(null);
+  const [previewRestorationKey, setPreviewRestorationKey] = React.useState(0);
 
   React.useEffect(() => {
     setIsPagePreviewOpen(false);
     setPreviewCursor(null);
+    setPreviewRestorationKey(0);
   }, [id]);
 
   if (!memory) {
@@ -113,6 +115,7 @@ export default function MemoryDetailScreen() {
           initialPageId={restoredPreviewCursor?.pageId ?? (typeof pageId === "string" ? pageId : undefined)}
           onActivePageChange={setActivePage}
           pages={memory.pages}
+          restorationKey={restoredPreviewCursor ? previewRestorationKey : 0}
         />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
@@ -126,6 +129,7 @@ export default function MemoryDetailScreen() {
             const target = memory.pages[index];
             if (target) {
               setPreviewCursor({ index, memoryId: memory.id, pageId: target.id });
+              setPreviewRestorationKey((current) => current + 1);
             }
           }}
           pages={memory.pages}

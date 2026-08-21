@@ -88,9 +88,10 @@ type PageReaderProps = {
   initialPageId?: string;
   onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
   pages: StoryPage[];
+  restorationKey?: number | string;
 };
 
-export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChange, pages }: PageReaderProps) {
+export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChange, pages, restorationKey }: PageReaderProps) {
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(Math.max(width - 40, 280), 360);
   const pageHeight = (pageWidth * 4) / 3;
@@ -102,7 +103,7 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
   const initialIndex = resolveRestoredIndex(pages, initialPageId, fallbackIndex);
   const [activePageId, setActivePageId] = React.useState(pages[initialIndex]?.id);
   const [pending, setPending] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
-  const restorationRef = React.useRef({ fallbackIndex, initialPageId });
+  const restorationRef = React.useRef({ fallbackIndex, initialPageId, restorationKey });
   const activePageChangeRef = React.useRef(onActivePageChange);
   const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
   const pagesRef = React.useRef(pages);
@@ -114,8 +115,9 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
 
   React.useEffect(() => {
     const restorationChanged = restorationRef.current.initialPageId !== initialPageId
-      || restorationRef.current.fallbackIndex !== fallbackIndex;
-    restorationRef.current = { fallbackIndex, initialPageId };
+      || restorationRef.current.fallbackIndex !== fallbackIndex
+      || restorationRef.current.restorationKey !== restorationKey;
+    restorationRef.current = { fallbackIndex, initialPageId, restorationKey };
 
     if (restorationChanged) {
       stableTurnGeneration.value += 1;
@@ -136,7 +138,7 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
       translateX.value = 0;
       turnDir.value = 0;
     }
-  }, [activeIndex, fallbackIndex, initialPageId, pages, pending, stableTurnGeneration, translateX, turnDir]);
+  }, [activeIndex, fallbackIndex, initialPageId, pages, pending, restorationKey, stableTurnGeneration, translateX, turnDir]);
 
   React.useEffect(() => () => {
     stableTurnGeneration.value += 1;

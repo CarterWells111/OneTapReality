@@ -131,6 +131,26 @@ describe("PageReader restoration", () => {
     expect(view.getByTestId("reader-page")).toHaveTextContent("p3");
   });
 
+  it("repositions when the restoration key changes but target props stay the same", async () => {
+    const pages = [page("p1", 0), page("p2", 1), page("p3", 2)];
+    const view = render(
+      <PageReader pages={pages} initialPageId="p1" fallbackIndex={0} restorationKey={0} />,
+    );
+
+    await act(async () => {
+      mockFinalizePageTurn?.({ translationX: -100, velocityX: -700 });
+      mockCompletePageTurn?.(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("reader-page")).toHaveTextContent("p2");
+
+    view.rerender(
+      <PageReader pages={pages} initialPageId="p1" fallbackIndex={0} restorationKey={1} />,
+    );
+
+    expect(view.getByTestId("reader-page")).toHaveTextContent("p1");
+  });
+
   it("commits an in-flight turn by page id after pages reorder", async () => {
     const initialPages = [page("p1", 0), page("p2", 1), page("p3", 2)];
     const view = render(<PageReader pages={initialPages} />);
