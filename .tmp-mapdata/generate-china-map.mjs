@@ -129,6 +129,17 @@ function boundsForPolygons(polygons) {
   return bounds;
 }
 
+function transformedBounds(polygons, transform) {
+  return boundsForPolygons(polygons.map((polygon) => polygon.map((ring) => ring.map(transform))));
+}
+
+function rectanglesOverlap(first, second) {
+  return first.minX < second.maxX
+    && second.minX < first.maxX
+    && first.minY < second.maxY
+    && second.minY < first.maxY;
+}
+
 function simplifyRing(ring, tolerance) {
   if (ring.length <= 3) return ring;
   const points = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
@@ -239,11 +250,38 @@ const insetTransform = ([x, y]) => [
   insetOffsetY + (insetBounds.maxY - y) * insetScale,
 ];
 const insetFrame = {
-  x: VIEWBOX_WIDTH - INSET_WIDTH - 16,
+  x: 16,
   y: viewBoxHeight - INSET_HEIGHT - 12,
   width: INSET_WIDTH,
   height: INSET_HEIGHT,
 };
+
+const insetFrameBounds = {
+  minX: insetFrame.x,
+  minY: insetFrame.y,
+  maxX: insetFrame.x + insetFrame.width,
+  maxY: insetFrame.y + insetFrame.height,
+};
+const viewBoxBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: VIEWBOX_WIDTH,
+  maxY: viewBoxHeight,
+};
+if (
+  insetFrameBounds.minX < viewBoxBounds.minX
+  || insetFrameBounds.minY < viewBoxBounds.minY
+  || insetFrameBounds.maxX > viewBoxBounds.maxX
+  || insetFrameBounds.maxY > viewBoxBounds.maxY
+) {
+  throw new Error("South China Sea inset frame must fit within the map viewBox");
+}
+for (const province of projectedProvinces) {
+  const provinceBounds = transformedBounds(province.polygons, mainTransform);
+  if (rectanglesOverlap(insetFrameBounds, provinceBounds)) {
+    throw new Error(`South China Sea inset overlaps province ${province.id}`);
+  }
+}
 
 const SHORT_NAME_OVERRIDES = Object.freeze({
   "152200": "兴安", "152500": "锡林郭勒", "152900": "阿拉善", "222400": "延边",
