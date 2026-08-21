@@ -44,10 +44,12 @@ type PageManagerSheetProps = PageManagerSheetBaseProps & (
   | {
       mode?: "manage";
       onChange: (pages: StoryPage[]) => void;
+      onDeleteAlbum?: never;
     }
   | {
       mode: "preview";
       onChange?: (pages: StoryPage[]) => void;
+      onDeleteAlbum?: () => void;
       onJumpToPage: (index: number) => void;
     }
 );
@@ -57,6 +59,7 @@ export function PageManagerSheet({
   pages,
   onChange,
   onClose,
+  onDeleteAlbum,
   onJumpToPage,
 }: PageManagerSheetProps) {
   const { width } = useWindowDimensions();
@@ -282,6 +285,18 @@ export function PageManagerSheet({
           </View>
         </ScrollView>
 
+        {isPreview && onDeleteAlbum ? (
+          <View style={[styles.previewActions, { paddingBottom: insets.bottom + 16 }]}>
+            <Pressable
+              accessibilityLabel="删除这册旅行记忆"
+              accessibilityRole="button"
+              onPress={onDeleteAlbum}
+              style={styles.deleteAlbumButton}>
+              <Text style={styles.deleteAlbumButtonText}>删除这册旅行记忆</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {isPreview ? null : (
           <View style={[styles.toolbar, { paddingBottom: insets.bottom + 16 }]}>
             {selectedIds.length > 0 ? (
@@ -373,6 +388,24 @@ const styles = StyleSheet.create({
   cellFooter: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   cellIndex: { color: colors.muted, fontSize: 12.5, fontWeight: "700" },
   cellOpen: { color: colors.accent, fontSize: 12.5, fontWeight: "800" },
+  previewActions: {
+    backgroundColor: colors.surface,
+    borderTopColor: colors.line,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: SHEET_PADDING,
+    paddingTop: 12,
+  },
+  deleteAlbumButton: {
+    alignItems: "center",
+    borderColor: colors.danger,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  deleteAlbumButtonText: { color: colors.danger, fontSize: 14, fontWeight: "800" },
   toolbar: {
     alignItems: "center",
     backgroundColor: colors.surface,
