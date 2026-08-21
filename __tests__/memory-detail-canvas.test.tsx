@@ -1,7 +1,7 @@
 import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { State } from "react-native-gesture-handler";
 import { fireGestureHandler, getByGestureTestId } from "react-native-gesture-handler/jest-utils";
-import { Alert, Modal, StyleSheet, type AlertButton } from "react-native";
+import { Alert, Modal, ScrollView, StyleSheet, type AlertButton } from "react-native";
 
 const mockGetMemoryById = jest.fn();
 const mockPush = jest.fn();
@@ -19,7 +19,7 @@ jest.mock("expo-router", () => {
   return {
     Stack: {
       Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) => (
-        <View>{options?.headerRight ? options.headerRight() : null}</View>
+        <View testID="memory-detail-header">{options?.headerRight ? options.headerRight() : null}</View>
       ),
     },
     useLocalSearchParams: () => mockSearchParams,
@@ -126,24 +126,33 @@ describe("MemoryDetailScreen canvas rendering", () => {
       pages: [{ id: "cover", position: 0, kind: "cover", headline: "Cover", body: "", layout: { aspectRatio: 0.75, elements: [] } }],
     });
     const view = render(<MemoryDetailScreen />);
+    const body = within(view.UNSAFE_getByType(ScrollView));
+    const header = within(view.getByTestId("memory-detail-header"));
 
-    expect(view.queryByLabelText("删除这册旅行记忆")).toBeNull();
-    expect(view.queryByText("编辑相册")).toBeNull();
-    expect(view.queryByText("分享相册")).toBeNull();
+    expect(header.getByLabelText("分享这册旅行记忆")).toBeTruthy();
+    expect(header.getByLabelText("编辑旅行册")).toBeTruthy();
+    expect(header.queryByLabelText("删除这册旅行记忆")).toBeNull();
+    expect(body.queryByLabelText("分享这册旅行记忆")).toBeNull();
+    expect(body.queryByLabelText("编辑旅行册")).toBeNull();
+    expect(body.queryByLabelText("删除这册旅行记忆")).toBeNull();
+    expect(body.queryByText("编辑相册")).toBeNull();
+    expect(body.queryByText("分享相册")).toBeNull();
 
-    fireEvent.press(view.getByLabelText("编辑旅行册"));
+    fireEvent.press(header.getByLabelText("编辑旅行册"));
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/memory/[id]/edit",
       params: { id: "memory-canvas", pageId: "cover", pageIndex: "0" },
     });
-    fireEvent.press(view.getByLabelText("分享这册旅行记忆"));
+    fireEvent.press(header.getByLabelText("分享这册旅行记忆"));
     expect(mockShare).toHaveBeenCalled();
 
     const orderedTestIds = view.getAllByTestId(/.*/)
       .map((instance) => instance.props.testID as string);
-    expect(orderedTestIds.indexOf("reader-page")).toBeLessThan(
-      orderedTestIds.indexOf("memory-detail-actions"),
-    );
+    const readerIndex = orderedTestIds.indexOf("reader-page");
+    const actionsIndex = orderedTestIds.indexOf("memory-detail-actions");
+    expect(readerIndex).toBeGreaterThanOrEqual(0);
+    expect(actionsIndex).toBeGreaterThanOrEqual(0);
+    expect(readerIndex).toBeLessThan(actionsIndex);
     expect(view.getByTestId("memory-detail-actions")).toHaveTextContent(/^页面预览绑定到礼品$/);
 
     fireEvent.press(view.getByText("绑定到礼品"));
@@ -180,16 +189,26 @@ describe("MemoryDetailScreen canvas rendering", () => {
     mockSearchParams = { id: "sample-hangzhou" };
 
     const view = render(<MemoryDetailScreen />);
+    const body = within(view.UNSAFE_getByType(ScrollView));
+    const header = within(view.getByTestId("memory-detail-header"));
 
-    expect(view.queryByLabelText("分享这册旅行记忆")).toBeNull();
-    expect(view.queryByLabelText("编辑旅行册")).toBeNull();
-    expect(view.queryByText("绑定到礼品")).toBeNull();
+    expect(header.queryByLabelText("分享这册旅行记忆")).toBeNull();
+    expect(header.queryByLabelText("编辑旅行册")).toBeNull();
+    expect(header.queryByLabelText("删除这册旅行记忆")).toBeNull();
+    expect(body.queryByLabelText("分享这册旅行记忆")).toBeNull();
+    expect(body.queryByLabelText("编辑旅行册")).toBeNull();
+    expect(body.queryByLabelText("删除这册旅行记忆")).toBeNull();
+    expect(body.queryByText("编辑相册")).toBeNull();
+    expect(body.queryByText("分享相册")).toBeNull();
+    expect(body.queryByText("绑定到礼品")).toBeNull();
 
     const orderedTestIds = view.getAllByTestId(/.*/)
       .map((instance) => instance.props.testID as string);
-    expect(orderedTestIds.indexOf("reader-page")).toBeLessThan(
-      orderedTestIds.indexOf("memory-detail-actions"),
-    );
+    const readerIndex = orderedTestIds.indexOf("reader-page");
+    const actionsIndex = orderedTestIds.indexOf("memory-detail-actions");
+    expect(readerIndex).toBeGreaterThanOrEqual(0);
+    expect(actionsIndex).toBeGreaterThanOrEqual(0);
+    expect(readerIndex).toBeLessThan(actionsIndex);
     expect(view.getByTestId("memory-detail-actions")).toHaveTextContent(/^页面预览用自己的照片创建$/);
 
     fireEvent.press(view.getByText("页面预览"));
