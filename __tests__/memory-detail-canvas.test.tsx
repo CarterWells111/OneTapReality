@@ -126,4 +126,65 @@ describe("MemoryDetailScreen canvas rendering", () => {
     fireEvent.press(view.getByText("绑定到礼品"));
     expect(mockPush).toHaveBeenCalledWith("/gifts?memoryId=memory-canvas");
   });
+
+  it("previews saved album pages without edit controls and opens the selected page", () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "Second page", body: "" },
+      ],
+    });
+    const view = render(<MemoryDetailScreen />);
+
+    fireEvent.press(view.getByText("页面预览"));
+
+    expect(view.getByText("页面预览 · 2 页")).toBeTruthy();
+    expect(view.queryByLabelText("添加页面")).toBeNull();
+    expect(view.queryByLabelText("删除所选页面")).toBeNull();
+
+    fireEvent.press(view.getByLabelText("打开第 2 页"));
+
+    expect(view.queryByText("页面预览 · 2 页")).toBeNull();
+    expect(mockPageReader).toHaveBeenLastCalledWith(expect.objectContaining({
+      fallbackIndex: 1,
+      initialPageId: "page-2",
+    }));
+  });
+
+  it("offers page preview for the built-in sample album", () => {
+    mockSearchParams = { id: "sample-hangzhou" };
+
+    const view = render(<MemoryDetailScreen />);
+
+    expect(view.getByText("页面预览")).toBeTruthy();
+  });
+
+  it("does not reuse a preview cursor after switching memory ids", () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "First album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "Second page", body: "" },
+      ],
+    });
+    const view = render(<MemoryDetailScreen />);
+    fireEvent.press(view.getByText("页面预览"));
+    fireEvent.press(view.getByLabelText("打开第 2 页"));
+
+    mockSearchParams = { id: "memory-other" };
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-other", title: "Other album", city: "hangzhou", travelDate: "2026-08-01", photoUris: [],
+      createdAt: "2026-08-01T10:00:00.000Z", updatedAt: "2026-08-01T10:00:00.000Z",
+      pages: [{ id: "other-cover", position: 0, kind: "cover", headline: "Other cover", body: "" }],
+    });
+    view.rerender(<MemoryDetailScreen />);
+
+    expect(mockPageReader).toHaveBeenLastCalledWith(expect.objectContaining({
+      fallbackIndex: 0,
+      initialPageId: undefined,
+    }));
+  });
 });

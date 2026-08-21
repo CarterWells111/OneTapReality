@@ -7,6 +7,7 @@ import { IconButton } from "../../components/icon-button";
 import { AppButton, colors, Tag } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
+import { PageManagerSheet } from "../../features/canvas/page-manager-sheet";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
@@ -22,6 +23,17 @@ export default function MemoryDetailScreen() {
   const isSample = id === sampleMemory.id;
   const memory = isSample ? sampleMemory : getMemoryById(id);
   const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
+  const [isPagePreviewOpen, setIsPagePreviewOpen] = React.useState(false);
+  const [previewCursor, setPreviewCursor] = React.useState<{
+    index: number;
+    memoryId: string;
+    pageId: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    setIsPagePreviewOpen(false);
+    setPreviewCursor(null);
+  }, [id]);
 
   if (!memory) {
     return (
@@ -34,6 +46,7 @@ export default function MemoryDetailScreen() {
   const city = cityContent[memory.city];
   const fallbackIndex = parseFallbackIndex(pageIndex);
   const fallbackPage = memory.pages[fallbackIndex] ?? memory.pages[0];
+  const restoredPreviewCursor = previewCursor?.memoryId === memory.id ? previewCursor : null;
   const openEditor = () => {
     const cursor = activePage ?? { pageId: fallbackPage?.id ?? "", index: fallbackIndex };
     router.push({
@@ -87,14 +100,17 @@ export default function MemoryDetailScreen() {
         <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
         {!isSample ? (
           <View style={styles.localActions}>
+            <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
             <AppButton label="编辑相册" onPress={openEditor} />
             <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ coverImage: memory.coverImage, pages: memory.pages, photoUris: memory.photoUris, title: memory.title })} />
             <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
           </View>
-        ) : null}
+        ) : (
+          <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
+        )}
         <PageReader
-          fallbackIndex={parseFallbackIndex(pageIndex)}
-          initialPageId={typeof pageId === "string" ? pageId : undefined}
+          fallbackIndex={restoredPreviewCursor?.index ?? fallbackIndex}
+          initialPageId={restoredPreviewCursor?.pageId ?? (typeof pageId === "string" ? pageId : undefined)}
           onActivePageChange={setActivePage}
           pages={memory.pages}
         />
@@ -102,6 +118,19 @@ export default function MemoryDetailScreen() {
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
         ) : null}
       </ScrollView>
+      {isPagePreviewOpen ? (
+        <PageManagerSheet
+          mode="preview"
+          onClose={() => setIsPagePreviewOpen(false)}
+          onJumpToPage={(index) => {
+            const target = memory.pages[index];
+            if (target) {
+              setPreviewCursor({ index, memoryId: memory.id, pageId: target.id });
+            }
+          }}
+          pages={memory.pages}
+        />
+      ) : null}
     </>
   );
 }
