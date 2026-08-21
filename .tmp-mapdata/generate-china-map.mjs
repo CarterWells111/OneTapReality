@@ -129,15 +129,18 @@ function boundsForPolygons(polygons) {
   return bounds;
 }
 
-function transformedBounds(polygons, transform) {
-  return boundsForPolygons(polygons.map((polygon) => polygon.map((ring) => ring.map(transform))));
+function boundsForPathPoints(points) {
+  if (points.length < 3 || points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) {
+    throw new Error("SVG path must contain at least three finite coordinates");
+  }
+  return boundsForPolygons([[points]]);
 }
 
 function rectanglesOverlap(first, second) {
-  return first.minX < second.maxX
-    && second.minX < first.maxX
-    && first.minY < second.maxY
-    && second.minY < first.maxY;
+  return first.minX <= second.maxX
+    && second.minX <= first.maxX
+    && first.minY <= second.maxY
+    && second.minY <= first.maxY;
 }
 
 function simplifyRing(ring, tolerance) {
@@ -177,6 +180,7 @@ function simplifyRing(ring, tolerance) {
 
 function toPath(polygons, transform) {
   const parts = [];
+  const finalPoints = [];
   for (const polygon of polygons) {
     for (const ring of polygon) {
       const projected = ring.map(transform);
@@ -195,14 +199,18 @@ function toPath(polygons, transform) {
         points = simplifyRing(projected, Math.hypot(width, height) * TOLERANCE_FRACTION);
       }
       if (points.length < 3) continue;
-      let path = `M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
-      for (let index = 1; index < points.length; index += 1) {
-        path += `L${points[index][0].toFixed(1)} ${points[index][1].toFixed(1)}`;
+      const fixedPoints = points.map(([x, y]) => [Number(x.toFixed(1)), Number(y.toFixed(1))]);
+      boundsForPathPoints(fixedPoints);
+      let path = `M${fixedPoints[0][0].toFixed(1)} ${fixedPoints[0][1].toFixed(1)}`;
+      for (let index = 1; index < fixedPoints.length; index += 1) {
+        path += `L${fixedPoints[index][0].toFixed(1)} ${fixedPoints[index][1].toFixed(1)}`;
       }
       parts.push(`${path}Z`);
+      finalPoints.push(...fixedPoints);
     }
   }
-  return parts.join("");
+  if (parts.length === 0) throw new Error("Cannot generate an empty SVG path");
+  return { path: parts.join(""), bounds: boundsForPathPoints(finalPoints) };
 }
 
 const projectedProvinces = provinceCollection.features.map((feature) => ({
@@ -276,13 +284,6 @@ if (
 ) {
   throw new Error("South China Sea inset frame must fit within the map viewBox");
 }
-for (const province of projectedProvinces) {
-  const provinceBounds = transformedBounds(province.polygons, mainTransform);
-  if (rectanglesOverlap(insetFrameBounds, provinceBounds)) {
-    throw new Error(`South China Sea inset overlaps province ${province.id}`);
-  }
-}
-
 const SHORT_NAME_OVERRIDES = Object.freeze({
   "152200": "兴安", "152500": "锡林郭勒", "152900": "阿拉善", "222400": "延边",
   "232700": "大兴安岭", "422800": "恩施", "433100": "湘西", "513200": "阿坝",
@@ -403,9 +404,22 @@ if (projectedProductCities.length !== expectedProductCities.length
   throw new Error("Every existing product city must map to one prefecture label");
 }
 
-const provinces = projectedProvinces.map(({ id, name, polygons }) => ({ id, name, path: toPath(polygons, mainTransform) }));
-const southSeaPath = toPath(southSeaPolygons, insetTransform);
-if (!southSeaPath) throw new Error("South China Sea inset path cannot be empty");
+const provincePaths = projectedProvinces.map(({ id, name, polygons }) => {
+  try {
+    const pathResult = toPath(polygons, mainTransform);
+    return { id, name, path: pathResult.path, bounds: pathResult.bounds };
+  } catch (error) {
+    throw new Error(`Province ${id} has invalid final SVG path: ${error.message}`);
+  }
+});
+for (const provincePath of provincePaths) {
+  if (rectanglesOverlap(insetFrameBounds, provincePath.bounds)) {
+    throw new Error(`South China Sea inset overlaps province ${provincePath.id}`);
+  }
+}
+const provinces = provincePaths.map(({ id, name, path }) => ({ id, name, path }));
+const southSeaPathResult = toPath(southSeaPolygons, insetTransform);
+const southSeaPath = southSeaPathResult.path;
 const markers = Object.entries(PRODUCT_CITY_COORDS).map(([city, longitudeLatitude]) => {
   const coordinate = normalizedMainCoordinate(albers(longitudeLatitude));
   if (!coordinateInsideMain(coordinate)) throw new Error(`Product city ${city} projects outside the main viewBox`);
