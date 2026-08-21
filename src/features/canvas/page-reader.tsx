@@ -168,6 +168,7 @@ export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChang
   }, [stableTurnGeneration, translateX, turnDir]);
 
   const pan = React.useMemo(() => Gesture.Pan()
+    .withTestId("page-reader-pan")
     .enabled(pending === null)
     .activeOffsetX([-12, 12])
     .failOffsetY([-18, 18])

@@ -8,7 +8,7 @@ jest.mock("react-native-gesture-handler", () => {
   const React = require("react") as typeof import("react");
   const chain = () => {
     const gesture: Record<string, unknown> = {};
-    for (const method of ["enabled", "activeOffsetX", "failOffsetY", "onUpdate"]) {
+    for (const method of ["enabled", "activeOffsetX", "failOffsetY", "onUpdate", "withTestId"]) {
       gesture[method] = () => gesture;
     }
     gesture.onFinalize = (callback: typeof mockFinalizePageTurn) => {

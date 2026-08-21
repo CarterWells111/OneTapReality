@@ -1,4 +1,6 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
+import { State } from "react-native-gesture-handler";
+import { fireGestureHandler, getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 import { StyleSheet } from "react-native";
 
 const mockGetMemoryById = jest.fn();
@@ -6,6 +8,8 @@ const mockPush = jest.fn();
 const mockShare = jest.fn();
 const mockPageReader = jest.fn();
 let mockSearchParams: { id: string; pageId?: string | string[]; pageIndex?: string | string[] } = { id: "memory-canvas" };
+
+jest.mock("react-native-reanimated", () => require("react-native-reanimated/mock"));
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -189,7 +193,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
     }));
   });
 
-  it("keeps the reader restoration request unchanged when preview closes without a selection", () => {
+  it("keeps the reader restoration request unchanged when preview closes without a selection", async () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
       createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
@@ -201,12 +205,29 @@ describe("MemoryDetailScreen canvas rendering", () => {
     const view = render(<MemoryDetailScreen />);
     fireEvent.press(view.getByText("页面预览"));
     fireEvent.press(view.getByLabelText("打开第 2 页"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("reader-page")).toHaveTextContent("Second page");
+
+    await act(async () => {
+      const readerPan = getByGestureTestId("page-reader-pan");
+      fireGestureHandler(readerPan, [
+        { state: State.BEGAN, translationX: 0, translationY: 0, velocityX: 0 },
+        { state: State.ACTIVE, translationX: 30, translationY: 0, velocityX: 700 },
+        { state: State.END, translationX: 100, translationY: 0, velocityX: 700 },
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("reader-page")).toHaveTextContent("Cover");
+
     fireEvent.press(view.getByText("页面预览"));
     mockPageReader.mockClear();
 
     fireEvent.press(view.getByLabelText("关闭页面预览"));
 
     expect(view.queryByText("页面预览 · 2 页")).toBeNull();
+    expect(view.getByTestId("reader-page")).toHaveTextContent("Cover");
     expect(mockPageReader).toHaveBeenCalled();
     for (const [props] of mockPageReader.mock.calls) {
       expect(props).toEqual(expect.objectContaining({
