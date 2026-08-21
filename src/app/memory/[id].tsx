@@ -80,12 +80,6 @@ export default function MemoryDetailScreen() {
             icon="edit"
             onPress={openEditor}
           />
-          <IconButton
-            accessibilityLabel="删除这册旅行记忆"
-            icon="trash"
-            onPress={confirmDelete}
-            tone="danger"
-          />
         </View>
       );
 
@@ -101,16 +95,6 @@ export default function MemoryDetailScreen() {
           <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
         </View>
         <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
-        {!isSample ? (
-          <View style={styles.localActions}>
-            <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
-            <AppButton label="编辑相册" onPress={openEditor} />
-            <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ coverImage: memory.coverImage, pages: memory.pages, photoUris: memory.photoUris, title: memory.title })} />
-            <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
-          </View>
-        ) : (
-          <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
-        )}
         <PageReader
           fallbackIndex={restoredPreviewCursor?.index ?? fallbackIndex}
           initialPageId={restoredPreviewCursor?.pageId ?? (typeof pageId === "string" ? pageId : undefined)}
@@ -118,14 +102,20 @@ export default function MemoryDetailScreen() {
           pages={memory.pages}
           restorationKey={`${memory.id}:${restoredPreviewCursor ? previewRestorationKey : 0}`}
         />
-        {isSample ? (
-          <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
-        ) : null}
+        <View style={styles.localActions} testID="memory-detail-actions">
+          <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
+          {isSample ? (
+            <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
+          ) : (
+            <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
+          )}
+        </View>
       </ScrollView>
       {isPagePreviewOpen ? (
         <PageManagerSheet
           mode="preview"
           onClose={() => setIsPagePreviewOpen(false)}
+          {...(!isSample ? { onDeleteAlbum: confirmDelete } : {})}
           onJumpToPage={(index) => {
             const target = memory.pages[index];
             if (target) {
