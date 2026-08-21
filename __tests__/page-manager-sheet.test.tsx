@@ -61,4 +61,47 @@ describe("PageManagerSheet", () => {
       width: firstCanvasBefore.width,
     });
   });
+
+  it("opens a page without changing pages in preview mode", () => {
+    const onChange = jest.fn();
+    const onClose = jest.fn();
+    const onJumpToPage = jest.fn();
+    const screen = render(
+      <PageManagerSheet
+        mode="preview"
+        onChange={onChange}
+        onClose={onClose}
+        onJumpToPage={onJumpToPage}
+        pages={pages}
+      />,
+    );
+
+    expect(screen.getByText("页面预览 · 2 页")).toBeTruthy();
+    expect(screen.getByText("点击页面即可打开")).toBeTruthy();
+    expect(screen.queryByLabelText("添加页面")).toBeNull();
+    expect(screen.queryByLabelText("删除所选页面")).toBeNull();
+    expect(screen.queryByLabelText("第 1 页")).toBeNull();
+
+    fireEvent.press(screen.getByLabelText("打开第 2 页"));
+
+    expect(onJumpToPage).toHaveBeenCalledWith(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("allows preview mode to omit onChange and close from the header", () => {
+    const onClose = jest.fn();
+    const screen = render(
+      <PageManagerSheet
+        mode="preview"
+        onClose={onClose}
+        onJumpToPage={() => undefined}
+        pages={pages}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("关闭页面预览"));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

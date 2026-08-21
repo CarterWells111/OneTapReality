@@ -34,16 +34,34 @@ function buildPageId() {
   return `page-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-type PageManagerSheetProps = {
+type PageManagerSheetBaseProps = {
   pages: StoryPage[];
-  onChange: (pages: StoryPage[]) => void;
   onClose: () => void;
   onJumpToPage?: (index: number) => void;
 };
 
-export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: PageManagerSheetProps) {
+type PageManagerSheetProps = PageManagerSheetBaseProps & (
+  | {
+      mode?: "manage";
+      onChange: (pages: StoryPage[]) => void;
+    }
+  | {
+      mode: "preview";
+      onChange?: (pages: StoryPage[]) => void;
+      onJumpToPage: (index: number) => void;
+    }
+);
+
+export function PageManagerSheet({
+  mode = "manage",
+  pages,
+  onChange,
+  onClose,
+  onJumpToPage,
+}: PageManagerSheetProps) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const isPreview = mode === "preview";
   const containerWidth = width - SHEET_PADDING * 2;
   const cellWidth = (containerWidth - GAP) / 2;
   const thumbHeight = (cellWidth * 4) / 3;
@@ -103,12 +121,12 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     setHoverIndex(null);
     hoverRef.current = null;
     if (target !== startIndex) {
-      onChange(reorderCanvasPages(pages, startIndex, target));
+      onChange?.(reorderCanvasPages(pages, startIndex, target));
     }
   };
 
   const addPage = () => {
-    onChange(addCanvasPage(pages, [], buildPageId()));
+    onChange?.(addCanvasPage(pages, [], buildPageId()));
   };
 
   const deleteSelected = () => {
@@ -120,7 +138,7 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     if (safeIds.length >= pages.length) {
       return;
     }
-    onChange(deleteCanvasPages(pages, safeIds));
+    onChange?.(deleteCanvasPages(pages, safeIds));
     setSelectedIds([]);
   };
 
@@ -134,17 +152,23 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
     <Modal animationType="slide" onRequestClose={onClose} transparent={false} visible>
       <GestureHandlerRootView style={styles.root}>
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-          <Text selectable style={styles.title}>页面管理 · {pages.length - 1} 页</Text>
+          <Text selectable style={styles.title}>
+            {isPreview ? `页面预览 · ${pages.length} 页` : `页面管理 · ${pages.length - 1} 页`}
+          </Text>
           <Pressable
-            accessibilityLabel="完成页面管理"
+            accessibilityLabel={isPreview ? "关闭页面预览" : "完成页面管理"}
             accessibilityRole="button"
             hitSlop={{ bottom: 12, left: 12, right: 12, top: 12 }}
             onPress={onClose}
             style={styles.headerButton}>
-            <Text style={styles.headerButtonText}>完成</Text>
+            <Text style={styles.headerButtonText}>{isPreview ? "关闭" : "完成"}</Text>
           </Pressable>
         </View>
-        <Text selectable style={styles.hint}>长按拖动可调整顺序；点选进入多选，底部可批量操作。管理时不会编辑页面内容。</Text>
+        <Text selectable style={styles.hint}>
+          {isPreview
+            ? "点击页面即可打开"
+            : "长按拖动可调整顺序；点选进入多选，底部可批量操作。管理时不会编辑页面内容。"}
+        </Text>
 
         <ScrollView contentContainerStyle={styles.gridContent}>
           <View style={styles.grid}>
@@ -154,6 +178,81 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
               const isSelected = selectedIds.includes(page.id);
               const isDragging = draggingIndex === actualIndex;
               const isHovered = hoverIndex === actualIndex && draggingIndex !== null && draggingIndex !== actualIndex;
+
+              const cell = (
+                <Animated.View
+                  style={[
+                    styles.cell,
+                    { width: cellWidth },
+                    isDragging && styles.cellDragging,
+                    isDragging && draggedStyle,
+                  ]}
+                  testID={`page-cell-${actualIndex}`}>
+                  <Pressable
+                    accessibilityLabel={isPreview
+                      ? `打开第 ${pageNumber} 页`
+                      : `第 ${pageNumber} 页${isSelected ? "，已选中" : ""}`}
+                    accessibilityRole="button"
+                    accessibilityState={isPreview ? undefined : { selected: isSelected }}
+                    onPress={isPreview
+                      ? () => {
+                          onJumpToPage?.(actualIndex);
+                          onClose();
+                        }
+                      : () => toggleSelect(page.id)}
+                    onLongPress={isPreview ? undefined : () => undefined}
+                    style={[
+                      styles.thumbWrap,
+                      { height: thumbHeight, width: cellWidth },
+                    ]}>
+                    {page.layout ? (
+                      <CanvasPage
+                        contentScale={contentScale}
+                        height={thumbHeight}
+                        interactive={false}
+                        layout={page.layout}
+                        width={cellWidth}
+                      />
+                    ) : (
+                      <View style={styles.thumbFallback}>
+                        <Text numberOfLines={3} style={styles.thumbFallbackText}>{page.headline}</Text>
+                      </View>
+                    )}
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.thumbStateOverlay,
+                        isSelected && styles.thumbSelected,
+                        isHovered && styles.thumbHovered,
+                      ]}
+                      testID={`page-thumbnail-state-${page.id}`}
+                    />
+                    {!isPreview && isSelected ? (
+                      <View style={styles.checkBadge}>
+                        <Text style={styles.checkBadgeText}>✓</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                  <View style={styles.cellFooter}>
+                    <Text style={styles.cellIndex}>{`第 ${pageNumber} 页`}</Text>
+                    {!isPreview && onJumpToPage ? (
+                      <Pressable
+                        accessibilityLabel={`打开第 ${pageNumber} 页`}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          onJumpToPage(actualIndex);
+                          onClose();
+                        }}>
+                        <Text style={styles.cellOpen}>打开</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </Animated.View>
+              );
+
+              if (isPreview) {
+                return <React.Fragment key={page.id}>{cell}</React.Fragment>;
+              }
 
               const pan = Gesture.Pan()
                 .activateAfterLongPress(200)
@@ -176,106 +275,48 @@ export function PageManagerSheet({ pages, onChange, onClose, onJumpToPage }: Pag
 
               return (
                 <GestureDetector gesture={pan} key={page.id}>
-                  <Animated.View
-                    style={[
-                      styles.cell,
-                      { width: cellWidth },
-                      isDragging && styles.cellDragging,
-                      isDragging && draggedStyle,
-                    ]}
-                    testID={`page-cell-${actualIndex}`}>
-                    <Pressable
-                      accessibilityLabel={`第 ${pageNumber} 页${isSelected ? "，已选中" : ""}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: isSelected }}
-                      onPress={() => toggleSelect(page.id)}
-                      onLongPress={() => undefined}
-                      style={[
-                        styles.thumbWrap,
-                        { height: thumbHeight, width: cellWidth },
-                      ]}>
-                      {page.layout ? (
-                        <CanvasPage
-                          contentScale={contentScale}
-                          height={thumbHeight}
-                          interactive={false}
-                          layout={page.layout}
-                          width={cellWidth}
-                        />
-                      ) : (
-                        <View style={styles.thumbFallback}>
-                          <Text numberOfLines={3} style={styles.thumbFallbackText}>{page.headline}</Text>
-                        </View>
-                      )}
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          styles.thumbStateOverlay,
-                          isSelected && styles.thumbSelected,
-                          isHovered && styles.thumbHovered,
-                        ]}
-                        testID={`page-thumbnail-state-${page.id}`}
-                      />
-                      {isSelected ? (
-                        <View style={styles.checkBadge}>
-                          <Text style={styles.checkBadgeText}>✓</Text>
-                        </View>
-                      ) : null}
-                    </Pressable>
-                    <View style={styles.cellFooter}>
-                      <Text style={styles.cellIndex}>{`第 ${pageNumber} 页`}</Text>
-                      {onJumpToPage ? (
-                        <Pressable
-                          accessibilityLabel={`打开第 ${pageNumber} 页`}
-                          accessibilityRole="button"
-                          onPress={() => {
-                            onJumpToPage(actualIndex);
-                            onClose();
-                          }}>
-                          <Text style={styles.cellOpen}>打开</Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  </Animated.View>
+                  {cell}
                 </GestureDetector>
               );
             })}
           </View>
         </ScrollView>
 
-        <View style={[styles.toolbar, { paddingBottom: insets.bottom + 16 }]}>
-          {selectedIds.length > 0 ? (
-            <>
-              <Text style={styles.toolbarCount}>已选 {selectedIds.length} 页</Text>
-              <Pressable
-                accessibilityLabel="取消选择"
-                accessibilityRole="button"
-                onPress={() => setSelectedIds([])}
-                style={styles.toolbarButton}>
-                <Text style={styles.toolbarButtonText}>取消选择</Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="删除所选页面"
-                accessibilityRole="button"
-                disabled={safeIds.length >= pages.length || safeIds.length === 0}
-                onPress={deleteSelected}
-                style={[styles.toolbarButton, selectedIds.length >= pages.length && styles.toolbarButtonDisabled]}>
-                <Text style={styles.toolbarDangerText}>删除所选</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <Text style={styles.toolbarHint}>点选页面开始多选</Text>
-              <Pressable
-                accessibilityLabel="添加页面"
-                accessibilityRole="button"
-                onPress={addPage}
-                style={styles.toolbarPrimary}>
-                <Text style={styles.toolbarPrimaryText}>添加页面</Text>
-              </Pressable>
-            </>
-          )}
-        </View>
+        {isPreview ? null : (
+          <View style={[styles.toolbar, { paddingBottom: insets.bottom + 16 }]}>
+            {selectedIds.length > 0 ? (
+              <>
+                <Text style={styles.toolbarCount}>已选 {selectedIds.length} 页</Text>
+                <Pressable
+                  accessibilityLabel="取消选择"
+                  accessibilityRole="button"
+                  onPress={() => setSelectedIds([])}
+                  style={styles.toolbarButton}>
+                  <Text style={styles.toolbarButtonText}>取消选择</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="删除所选页面"
+                  accessibilityRole="button"
+                  disabled={safeIds.length >= pages.length || safeIds.length === 0}
+                  onPress={deleteSelected}
+                  style={[styles.toolbarButton, selectedIds.length >= pages.length && styles.toolbarButtonDisabled]}>
+                  <Text style={styles.toolbarDangerText}>删除所选</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.toolbarHint}>点选页面开始多选</Text>
+                <Pressable
+                  accessibilityLabel="添加页面"
+                  accessibilityRole="button"
+                  onPress={addPage}
+                  style={styles.toolbarPrimary}>
+                  <Text style={styles.toolbarPrimaryText}>添加页面</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
       </GestureHandlerRootView>
     </Modal>
   );
