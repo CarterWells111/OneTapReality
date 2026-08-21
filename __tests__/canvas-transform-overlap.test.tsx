@@ -125,10 +125,10 @@ describe("overlapping canvas transforms", () => {
 
   it("lets a handle own its update before a delayed outer pan commit", () => {
     const onTransformEnd = jest.fn();
-    render(<CanvasPage interactive layout={layout} onTransformEnd={onTransformEnd} selectedElementId="photo-1" width={300} />);
+    render(<CanvasPage interactive layout={textLayout} onTransformEnd={onTransformEnd} selectedElementId="text-1" width={300} />);
 
     act(() => {
-      fireGestureHandler(getByGestureTestId("canvas-element-pan-photo-1"), [
+      fireGestureHandler(getByGestureTestId("canvas-element-pan-text-1"), [
         { state: State.BEGAN, translationX: 0, translationY: 0 },
         { state: State.ACTIVE, translationX: 0, translationY: 0 },
         { translationX: 30, translationY: 0 },

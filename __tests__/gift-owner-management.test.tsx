@@ -12,12 +12,14 @@ const mockUseAuth = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 const mockMemories = jest.fn();
 const mockRouter = { push: jest.fn(), replace: jest.fn() };
+const mockGetInfoAsync = jest.fn();
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockUseLocalSearchParams(),
   useRouter: () => mockRouter,
 }));
 jest.mock("expo-image", () => ({ Image: () => null }));
+jest.mock("expo-file-system/legacy", () => ({ getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args) }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/memories/memories-provider", () => ({ useMemories: () => ({ memories: mockMemories() }) }));
 jest.mock("../src/services/backend/api-client", () => ({
@@ -82,6 +84,34 @@ describe("gift owner member management", () => {
 
     await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
     expect(mockStartOwnedGiftPublish.mock.calls[0][2]).toEqual(expect.objectContaining({ baseVersion: expectedBaseVersion }));
+  });
+
+  it("blocks a new publication with missing local photos before requests or uploads", async () => {
+    const memory = { id: "memory-1", title: "Trip", city: "London", travelDate: "2026-08-16", photoUris: [], pages: [{ id: "page-1", kind: "photo", headline: "", body: "", position: 0, photoUri: "missing-local-photo://gone" }], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
+    mockMemories.mockReturnValue([memory]);
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText("Trip"));
+    expect(screen.getByLabelText("第 1 页照片，本地照片缺失")).toBeTruthy();
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await screen.findByText("相册中有缺失的本地照片。请重新选择照片后再继续。");
+    expect(mockStartOwnedGiftPublish).not.toHaveBeenCalled();
+    expect(mockGetInfoAsync).not.toHaveBeenCalled();
+  });
+
+  it("blocks a new publication when a top-level local photo is missing", async () => {
+    const memory = { id: "memory-1", title: "Trip", city: "London", travelDate: "2026-08-16", photoUris: ["missing-local-photo://photo-list"], pages: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
+    mockMemories.mockReturnValue([memory]);
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText("Trip"));
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await screen.findByText("相册中有缺失的本地照片。请重新选择照片后再继续。");
+    expect(mockStartOwnedGiftPublish).not.toHaveBeenCalled();
+    expect(mockGetInfoAsync).not.toHaveBeenCalled();
+    expect(mockGetInfoAsync).not.toHaveBeenCalled();
   });
 
   it("preselects the local album passed from its detail page and exposes direct shared editing", async () => {

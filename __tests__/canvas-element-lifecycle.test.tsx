@@ -16,7 +16,7 @@ jest.mock("expo-image", () => {
   const { View } = require("react-native") as typeof import("react-native");
 
   return {
-    Image: ({ testID }: { testID?: string }) => {
+    Image: ({ testID, source }: { testID?: string; source?: unknown }) => {
       React.useEffect(() => {
         if (!testID?.startsWith("canvas-image-")) return undefined;
         mockImageMounts.set(testID, (mockImageMounts.get(testID) ?? 0) + 1);
@@ -24,6 +24,9 @@ jest.mock("expo-image", () => {
           mockImageUnmounts.set(testID, (mockImageUnmounts.get(testID) ?? 0) + 1);
         };
       }, [testID]);
+      // The native Image mock only needs a host node for lifecycle assertions.
+      // `View` deliberately has no `source` prop.
+      void source;
       return <View testID={testID} />;
     },
   };
@@ -71,19 +74,16 @@ describe("CanvasElement host lifecycle", () => {
     const screen = render(renderElement(false));
     const initialFrame = screen.getByTestId("canvas-element-frame-photo-1");
     const initialPressTarget = screen.getByTestId("canvas-element-photo-1");
-    const initialContent = screen.getByTestId("canvas-element-content-photo-1");
     const initialImage = screen.getByTestId("canvas-image-photo-1");
 
     screen.rerender(renderElement(true));
     expect(screen.getByTestId("canvas-element-frame-photo-1")).toBe(initialFrame);
     expect(screen.getByTestId("canvas-element-photo-1")).toBe(initialPressTarget);
-    expect(screen.getByTestId("canvas-element-content-photo-1")).toBe(initialContent);
     expect(screen.getByTestId("canvas-image-photo-1")).toBe(initialImage);
 
     screen.rerender(renderElement(false));
     expect(screen.getByTestId("canvas-element-frame-photo-1")).toBe(initialFrame);
     expect(screen.getByTestId("canvas-element-photo-1")).toBe(initialPressTarget);
-    expect(screen.getByTestId("canvas-element-content-photo-1")).toBe(initialContent);
     expect(screen.getByTestId("canvas-image-photo-1")).toBe(initialImage);
     expect(mockImageMounts.get("canvas-image-photo-1")).toBe(1);
     expect(mockImageUnmounts.get("canvas-image-photo-1") ?? 0).toBe(0);
@@ -129,5 +129,16 @@ describe("CanvasElement host lifecycle", () => {
     fireEvent.press(screen.getByTestId("canvas-element-photo-1"));
 
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("renders a labeled local placeholder instead of loading a missing photo token", () => {
+    const missing = { ...imageElement, uri: "missing-local-photo://gone" };
+    const screen = render(
+      <CanvasElement canvasHeight={400} canvasWidth={300} element={missing} interactive={false} isSelected={false} onSelect={() => undefined} selectionContext={undefined} />,
+    );
+
+    expect(screen.getByTestId("canvas-missing-image-placeholder")).toBeTruthy();
+    expect(screen.getByLabelText("本地照片缺失").props.accessibilityRole).toBe("image");
+    expect(screen.queryByTestId("canvas-image-photo-1")).toBeNull();
   });
 });

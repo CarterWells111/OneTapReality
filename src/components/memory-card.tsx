@@ -2,6 +2,8 @@ import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
 
 import { cityContent } from "../features/cities/city-content";
+import { isMissingPhotoToken } from "../features/memories/photo-references";
+import { LocalMissingPhotoPlaceholder } from "./local-missing-photo-placeholder";
 import type { Memory } from "../types/memory";
 import { colors } from "./ui";
 
@@ -26,7 +28,9 @@ export function MemoryCard({ memory, onPress }: { memory: Memory; onPress?: () =
         padding: 12,
       })}
     >
-      {coverUri ? (
+      {coverUri && isMissingPhotoToken(coverUri) ? (
+        <LocalMissingPhotoPlaceholder style={{ borderRadius: 12, height: 76, width: 76 }} />
+      ) : coverUri ? (
         <Image
           contentFit="cover"
           source={{ uri: coverUri }}

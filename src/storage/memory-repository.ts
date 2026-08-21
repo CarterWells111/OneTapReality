@@ -306,6 +306,40 @@ export async function updateMemoryPages(
   });
 }
 
+/** Replaces every persisted media reference for one owned album as one snapshot. */
+export async function replaceMemoryMediaSnapshot(
+  db: SQLiteDatabase,
+  memory: Memory,
+  accountKey: string,
+): Promise<boolean> {
+  let replaced = false;
+  await db.withTransactionAsync(async () => {
+    const owned = await db.runAsync(
+      "UPDATE memories SET updatedAt = ?, coverImage = ? WHERE id = ? AND ownerAccountKey = ?",
+      memory.updatedAt,
+      memory.coverImage ?? null,
+      memory.id,
+      accountKey,
+    );
+    if (owned.changes === 0) return;
+
+    await db.runAsync("DELETE FROM memory_photos WHERE memory_id = ?", memory.id);
+    for (const [position, uri] of memory.photoUris.entries()) {
+      await db.runAsync(
+        "INSERT INTO memory_photos (memory_id, uri, position) VALUES (?, ?, ?)",
+        memory.id,
+        uri,
+        position,
+      );
+    }
+
+    await db.runAsync("DELETE FROM story_pages WHERE memory_id = ?", memory.id);
+    await writeStoryPages(db, memory.id, memory.pages);
+    replaced = true;
+  });
+  return replaced;
+}
+
 /** 整体替换某个记忆的 memory_photos 行（照片 URI 持久化迁移用）。 */
 export async function updateMemoryPhotos(
   db: SQLiteDatabase,

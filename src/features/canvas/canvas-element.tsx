@@ -13,6 +13,7 @@ import { canvasFrames, canvasStickers } from "./canvas-assets";
 import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-element-geometry";
 import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
+import { isMissingPhotoToken } from "../memories/photo-references";
 import type { CanvasElement as CanvasElementModel } from "../../types/memory";
 
 type ElementPatch = {
@@ -50,6 +51,14 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 
 const finiteOr = (value: number, fallback: number) =>
   Number.isFinite(value) ? value : fallback;
+
+/**
+ * Resolve the interaction layer on the React thread. Reanimated worklets must
+ * only consume the resulting primitive, never call a regular JS helper.
+ */
+export function resolveCanvasInteractionZIndex(isSelected: boolean, interactionZIndex: number | undefined, baseZIndex: number) {
+  return isSelected && Number.isFinite(interactionZIndex) ? interactionZIndex : baseZIndex;
+}
 
 /**
  * 根据手势结束后的绝对位置和尺寸计算元素新状态。
@@ -168,6 +177,7 @@ export function CanvasElement({
     width: canvasWidth,
     height: canvasHeight,
   });
+  const resolvedZIndex = resolveCanvasInteractionZIndex(isSelected, interactionZIndex, baseGeometry.zIndex);
 
   React.useEffect(() => {
     lastPressAt.current = null;
@@ -338,7 +348,7 @@ export function CanvasElement({
     width: elemW.value * gestureScale.value,
     height: elemH.value * gestureScale.value,
     transform: [{ rotate: `${baseRotation.value + gestureRotation.value}rad` }],
-    zIndex: isSelected ? finiteOr(interactionZIndex ?? baseGeometry.zIndex, baseGeometry.zIndex) : baseGeometry.zIndex,
+    zIndex: resolvedZIndex,
   }));
 
   const handlePress = () => {
@@ -363,9 +373,12 @@ export function CanvasElement({
           importantForAccessibility={interactive ? "auto" : "no"}
           onPress={interactive ? handlePress : undefined}
           pointerEvents={interactive ? "auto" : "none"}
-          style={styles.touchTarget}
+          style={[
+            styles.touchTarget,
+            isSelected && element.type === "image" && styles.selectedPhotoTouchTarget,
+          ]}
           testID={`canvas-element-${element.id}`}>
-          <View style={styles.contentContainer} testID={`canvas-element-content-${element.id}`}>
+          {element.type === "image" ? (
             <ElementContent
               canvasHeight={canvasHeight}
               canvasWidth={canvasWidth}
@@ -373,9 +386,19 @@ export function CanvasElement({
               fontScale={fontScale}
               stylePreview={stylePreview}
             />
-          </View>
+          ) : (
+            <View style={styles.contentContainer} testID={`canvas-element-content-${element.id}`}>
+              <ElementContent
+                canvasHeight={canvasHeight}
+                canvasWidth={canvasWidth}
+                element={element}
+                fontScale={fontScale}
+                stylePreview={stylePreview}
+              />
+            </View>
+          )}
         </Pressable>
-        {isSelected ? (
+        {isSelected && element.type !== "image" ? (
           <View
             pointerEvents="none"
             style={styles.selectionOverlay}
@@ -383,7 +406,7 @@ export function CanvasElement({
           />
         ) : null}
         {/* 选中时显示四角拖拽手柄 */}
-        {isSelected ? (
+        {isSelected && element.type !== "image" ? (
           <SelectionHandles
             activeGestureCount={activeGestureCount}
             elemH={elemH}
@@ -464,9 +487,9 @@ function ElementContent({
  */
 function ImageElement({ testID, uri }: { testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
-  if (failed) {
+  if (isMissingPhotoToken(uri) || failed) {
     return (
-      <View style={styles.imagePlaceholder} testID="canvas-image-placeholder">
+      <View accessibilityLabel="本地照片缺失" accessibilityRole="image" accessible style={styles.imagePlaceholder} testID={isMissingPhotoToken(uri) ? "canvas-missing-image-placeholder" : "canvas-image-placeholder"}>
         <Text style={styles.imagePlaceholderGlyph}>🖼</Text>
         <Text style={styles.imagePlaceholderText}>照片丢失</Text>
       </View>
@@ -528,6 +551,7 @@ function AnimatedText({
 const styles = StyleSheet.create({
   positioned: { position: "absolute" },
   touchTarget: { flex: 1 },
+  selectedPhotoTouchTarget: { borderColor: "#B76545", borderRadius: 8, borderWidth: 2, overflow: "hidden" },
   contentContainer: { borderRadius: 8, flex: 1, overflow: "hidden" },
   selectionOverlay: {
     borderColor: "#B76545",

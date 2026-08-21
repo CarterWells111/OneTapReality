@@ -5,6 +5,8 @@ import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reani
 import { canvasBackgrounds } from "./canvas-assets";
 import { CanvasElement, type CanvasElementStylePreview } from "./canvas-element";
 import { colors } from "../../components/ui";
+import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
+import { isMissingPhotoToken } from "../memories/photo-references";
 import type { CanvasLayout } from "../../types/memory";
 
 type ElementPatch = {
@@ -108,7 +110,9 @@ export function CanvasPage({
         />
       ) : null}
       {/* 封面自定义背景图 */}
-      {!background && coverImageUri ? (
+      {!background && coverImageUri && isMissingPhotoToken(coverImageUri) ? (
+        <LocalMissingPhotoPlaceholder style={StyleSheet.absoluteFill} testID="canvas-missing-cover-placeholder" />
+      ) : !background && coverImageUri ? (
         <Image
           contentFit="cover"
           pointerEvents="none"

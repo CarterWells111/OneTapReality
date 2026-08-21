@@ -4,9 +4,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
 import { useMemories } from "../../features/memories/memories-provider";
+import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../../features/memories/local-photo-integrity";
+import { isMissingPhotoToken } from "../../features/memories/photo-references";
 import { BackendApiClient } from "../../services/backend/api-client";
 import type { GiftManagementRequest, GiftMemberRole } from "../../services/backend/api-client";
 import type { Memory } from "../../types/memory";
@@ -131,6 +134,10 @@ export default function GiftManagementScreen() {
 
   const publish = async () => {
     if (!session || !id || !selectedMemory) { setMessage("请选择一册本地旅行册后再发布。"); return; }
+    if (hasMissingLocalPhotos(selectedMemory)) {
+      setMessage(MISSING_LOCAL_PHOTO_ACTION_MESSAGE);
+      return;
+    }
     const operation = beginOwnerOperation();
     if (!operation) return;
     try {
@@ -286,12 +293,15 @@ export default function GiftManagementScreen() {
                 const selected = candidate.uri === selectedCoverUri;
                 return (
                   <Pressable
+                    accessibilityLabel={isMissingPhotoToken(candidate.uri) ? `${candidate.label}，本地照片缺失` : candidate.label}
                     accessibilityRole="button"
                     key={candidate.uri}
                     onPress={() => setSelectedCoverUri(candidate.uri)}
                     style={[styles.coverOption, selected && styles.coverOptionSelected]}
                   >
-                    <Image contentFit="cover" source={{ uri: candidate.uri }} style={styles.coverThumb} />
+                    {isMissingPhotoToken(candidate.uri)
+                      ? <LocalMissingPhotoPlaceholder style={styles.coverThumb} />
+                      : <Image contentFit="cover" source={{ uri: candidate.uri }} style={styles.coverThumb} />}
                     <Text numberOfLines={1} style={styles.coverOptionLabel}>{candidate.label}</Text>
                   </Pressable>
                 );
