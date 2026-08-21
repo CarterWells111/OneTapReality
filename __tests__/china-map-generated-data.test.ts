@@ -24,6 +24,26 @@ function pathCoordinates(path: string) {
   return coordinates;
 }
 
+function pathBounds(path: string) {
+  const coordinates = pathCoordinates(path);
+  return {
+    minX: Math.min(...coordinates.map(({ x }) => x)),
+    minY: Math.min(...coordinates.map(({ y }) => y)),
+    maxX: Math.max(...coordinates.map(({ x }) => x)),
+    maxY: Math.max(...coordinates.map(({ y }) => y)),
+  };
+}
+
+function rectanglesOverlap(
+  first: { minX: number; minY: number; maxX: number; maxY: number },
+  second: { minX: number; minY: number; maxX: number; maxY: number },
+) {
+  return first.minX < second.maxX
+    && second.minX < first.maxX
+    && first.minY < second.maxY
+    && second.minY < first.maxY;
+}
+
 describe("generated China map data", () => {
   it("pins the documented offline source and packages all 34 province-level regions", () => {
     expect(chinaMapSourceCommit).toBe("6e83a19923e39f2c0e58a0a7ad29b349b2a71b9f");
@@ -55,12 +75,29 @@ describe("generated China map data", () => {
 
   it("separates Hainan's largest polygon from a non-empty fixed South China Sea inset", () => {
     const hainan = chinaProvinces.find((province) => province.id === "460000");
+    const { minX, minY, width, height } = parseViewBox(chinaMapViewBox);
+    const frame = chinaSouthSeaInset.frame;
+    const frameBounds = {
+      minX: frame.x,
+      minY: frame.y,
+      maxX: frame.x + frame.width,
+      maxY: frame.y + frame.height,
+    };
 
     expect(hainan?.path).toMatch(/^M/);
     expect(chinaSouthSeaInset.path).toMatch(/^M/);
     expect(pathCoordinates(chinaSouthSeaInset.path).length).toBeGreaterThan(2);
     expect(parseViewBox(chinaSouthSeaInset.viewBox).width).toBeGreaterThan(0);
     expect(parseViewBox(chinaSouthSeaInset.viewBox).height).toBeGreaterThan(0);
+    expect(frame.x).toBe(16);
+    expect(frame.y + frame.height).toBe(minY + height - 12);
+    expect(frame.x).toBeGreaterThanOrEqual(minX);
+    expect(frame.y).toBeGreaterThanOrEqual(minY);
+    expect(frameBounds.maxX).toBeLessThanOrEqual(minX + width);
+    expect(frameBounds.maxY).toBeLessThanOrEqual(minY + height);
+    for (const province of chinaProvinces) {
+      expect(rectanglesOverlap(frameBounds, pathBounds(province.path))).toBe(false);
+    }
     expect(Object.isFrozen(chinaSouthSeaInset)).toBe(true);
   });
 
