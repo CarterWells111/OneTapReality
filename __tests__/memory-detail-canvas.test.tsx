@@ -275,6 +275,63 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(mockReplace).toHaveBeenCalledWith("/");
   });
 
+  it("keeps preview open and reports an error when album deletion fails", async () => {
+    const alerts: Array<{ buttons?: AlertButton[]; message?: string; title: string }> = [];
+    jest.spyOn(Alert, "alert").mockImplementation((title, message, buttons) => {
+      alerts.push({ buttons, message, title });
+    });
+    let rejectDiscard: ((reason?: unknown) => void) | undefined;
+    const discardPromise = new Promise<void>((_resolve, reject) => {
+      rejectDiscard = reject;
+    });
+    let deletionChain: Promise<unknown> | undefined;
+    const originalThen = discardPromise.then.bind(discardPromise);
+    jest.spyOn(discardPromise, "then").mockImplementation(function <TResult1 = void, TResult2 = never>(
+      onFulfilled?: ((value: void) => PromiseLike<TResult1> | TResult1) | null,
+      onRejected?: ((reason: unknown) => PromiseLike<TResult2> | TResult2) | null,
+    ) {
+      const chain = originalThen(onFulfilled, onRejected);
+      deletionChain = chain;
+      return chain;
+    });
+    mockDiscardMemory.mockReturnValue(discardPromise);
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [{ id: "cover", position: 0, kind: "cover", headline: "Cover", body: "" }],
+    });
+    const view = render(<MemoryDetailScreen />);
+
+    fireEvent.press(view.getByText("页面预览"));
+    const preview = within(view.UNSAFE_getByType(Modal));
+    fireEvent.press(preview.getByLabelText("删除这册旅行记忆"));
+
+    expect(alerts[0]).toMatchObject({
+      message: "会移入回收站，可在回收站里恢复或彻底删除。",
+      title: "删除这册旅行记忆？",
+    });
+    const destructiveButton = alerts[0]?.buttons?.find((button) => button.style === "destructive");
+    expect(destructiveButton?.text).toBe("删除");
+
+    await act(async () => {
+      destructiveButton?.onPress?.();
+      expect(mockDiscardMemory).toHaveBeenCalledWith("memory-canvas");
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(view.getByText("页面预览 · 1 页")).toBeTruthy();
+      rejectDiscard?.(new Error("discard failed"));
+      await deletionChain?.catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(view.getByText("页面预览 · 1 页")).toBeTruthy();
+    expect(Alert.alert).toHaveBeenNthCalledWith(
+      2,
+      "删除失败",
+      "未能移入回收站，请稍后重试。",
+    );
+  });
+
   it("issues a new restoration request when the same preview page is selected again", () => {
     mockGetMemoryById.mockReturnValue({
       id: "memory-canvas", title: "Local album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],

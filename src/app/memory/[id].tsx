@@ -64,7 +64,11 @@ export default function MemoryDetailScreen() {
         text: "删除",
         style: "destructive",
         onPress: () => {
-          void discardMemory(memory.id).then(() => router.replace("/"));
+          void discardMemory(memory.id)
+            .then(() => router.replace("/"))
+            .catch(() => {
+              Alert.alert("删除失败", "未能移入回收站，请稍后重试。");
+            });
         },
       },
     ]);
