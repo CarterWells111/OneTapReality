@@ -16,7 +16,7 @@ function parseViewBox(viewBox: string) {
 }
 
 function pathCoordinates(path: string) {
-  const numbers = path.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  const numbers = path.match(/-?(?:\d+(?:\.\d+)?|Infinity)|NaN/g)?.map(Number) ?? [];
   const coordinates: { x: number; y: number }[] = [];
   for (let index = 0; index + 1 < numbers.length; index += 2) {
     coordinates.push({ x: numbers[index], y: numbers[index + 1] });
@@ -26,6 +26,9 @@ function pathCoordinates(path: string) {
 
 function pathBounds(path: string) {
   const coordinates = pathCoordinates(path);
+  if (coordinates.length < 3 || coordinates.some(({ x, y }) => !Number.isFinite(x) || !Number.isFinite(y))) {
+    throw new Error("SVG path must contain at least three finite coordinates");
+  }
   return {
     minX: Math.min(...coordinates.map(({ x }) => x)),
     minY: Math.min(...coordinates.map(({ y }) => y)),
@@ -38,10 +41,10 @@ function rectanglesOverlap(
   first: { minX: number; minY: number; maxX: number; maxY: number },
   second: { minX: number; minY: number; maxX: number; maxY: number },
 ) {
-  return first.minX < second.maxX
-    && second.minX < first.maxX
-    && first.minY < second.maxY
-    && second.minY < first.maxY;
+  return first.minX <= second.maxX
+    && second.minX <= first.maxX
+    && first.minY <= second.maxY
+    && second.minY <= first.maxY;
 }
 
 describe("generated China map data", () => {
@@ -71,6 +74,23 @@ describe("generated China map data", () => {
     expect(heilongjiang).toBeDefined();
     expect(Math.max(...pathCoordinates(heilongjiang!.path).map(({ x }) => x))).toBeLessThan(right);
     expect(height / width).toBeLessThan(0.9);
+    for (const province of chinaProvinces) {
+      expect(province.path).toMatch(/^M/);
+      expect(() => pathBounds(province.path)).not.toThrow();
+    }
+  });
+
+  it("rejects empty, incomplete, and non-finite paths when measuring bounds", () => {
+    expect(() => pathBounds("")).toThrow(/at least three finite coordinates/);
+    expect(() => pathBounds("M1 2L3 4")).toThrow(/at least three finite coordinates/);
+    expect(() => pathBounds("M1 2L3 4LNaN 6")).toThrow(/at least three finite coordinates/);
+  });
+
+  it("treats rectangles that only touch at an edge as overlapping", () => {
+    expect(rectanglesOverlap(
+      { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      { minX: 10, minY: 2, maxX: 20, maxY: 8 },
+    )).toBe(true);
   });
 
   it("separates Hainan's largest polygon from a non-empty fixed South China Sea inset", () => {
@@ -135,6 +155,9 @@ describe("generated China map data", () => {
     expect(source).toContain("2ee25af1abd1cfceceb83e20d14623879fe6005b8095237cdbf198c4b39b90e1");
     expect(source).toContain("createHash");
     expect(source).toContain("PRODUCT_CITY_COORDS");
+    expect(source).toContain("const provincePaths = projectedProvinces.map");
+    expect(source).toContain("provincePath.bounds");
+    expect(source).not.toContain("transformedBounds(province.polygons, mainTransform)");
     expect(source).not.toMatch(/fetch\(|https\.get|axios/i);
   });
 });
