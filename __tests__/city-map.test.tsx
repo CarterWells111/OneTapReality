@@ -1,7 +1,9 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 import { readFileSync } from "node:fs";
+import * as React from "react";
 
-import { CityMap, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerModels, type CityStats } from "../src/features/cities";
+import { CityMap, chinaMapCoordinateSpace, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerHit, type CityStats } from "../src/features/cities";
+import { resolveNormalizedMapScreenPoint } from "../src/features/cities/city-label-layout";
 
 const stats: CityStats[] = [
   { city: "hangzhou", visitCount: 2, unlocked: true, isVisited: true, intensity: "medium" },
@@ -29,7 +31,10 @@ describe("CityMap", () => {
     expect(provinces.every((province) => province.props.strokeWidth > 0)).toBe(true);
     // 台湾省界已包含在正式数据中，不再依赖手绘插画
     expect(screen.queryByTestId("china-province-taiwan-inset")).toBeNull();
-    expect(screen.getByText(/China provincial map/i)).toBeTruthy();
+    expect(screen.getByTestId("china-south-sea-inset")).toBeTruthy();
+    expect(screen.getByTestId("china-south-sea-inset-path")).toBeTruthy();
+    expect(screen.getByText(/China map · cn-atlas/i)).toBeTruthy();
+    expect(screen.queryAllByTestId(/^city-map-prefecture-label-/)).toHaveLength(0);
   });
 
   it("projects every local marker into the China SVG viewBox rather than the outer map container", () => {
@@ -38,24 +43,25 @@ describe("CityMap", () => {
     for (const marker of adapter.markers) {
       const coordinate = resolveChinaMapCoordinate(marker);
       expect(coordinate.x).toBeGreaterThanOrEqual(0);
-      expect(coordinate.x).toBeLessThanOrEqual(1000);
+      expect(coordinate.x).toBeLessThanOrEqual(chinaMapCoordinateSpace.minX + chinaMapCoordinateSpace.width);
       expect(coordinate.y).toBeGreaterThanOrEqual(0);
-      expect(coordinate.y).toBeLessThanOrEqual(1171);
+      expect(coordinate.y).toBeLessThanOrEqual(chinaMapCoordinateSpace.minY + chinaMapCoordinateSpace.height);
     }
 
     expect(resolveChinaMapCoordinate(adapter.markers.find((marker) => marker.city === "hangzhou")!)).toMatchObject({
-      x: expect.closeTo(852.46, 1),
-      y: expect.closeTo(553.7, 1),
+      x: expect.closeTo(adapter.markers.find((marker) => marker.city === "hangzhou")!.coordinate.x * chinaMapCoordinateSpace.width, 1),
+      y: expect.closeTo(adapter.markers.find((marker) => marker.city === "hangzhou")!.coordinate.y * chinaMapCoordinateSpace.height, 1),
     });
   });
 
   it("uses the SVG meet content frame for a letterboxed workspace", () => {
+    const scale = Math.min(480 / chinaMapCoordinateSpace.width, 320 / chinaMapCoordinateSpace.height);
     expect(resolveChinaMapContentFrame({ height: 320, width: 480 })).toEqual({
-      height: 320,
-      scale: 320 / 1171,
-      width: (1000 * 320) / 1171,
-      x: (480 - (1000 * 320) / 1171) / 2,
-      y: 0,
+      height: chinaMapCoordinateSpace.height * scale,
+      scale,
+      width: chinaMapCoordinateSpace.width * scale,
+      x: (480 - chinaMapCoordinateSpace.width * scale) / 2,
+      y: (320 - chinaMapCoordinateSpace.height * scale) / 2,
     });
   });
 
@@ -63,16 +69,32 @@ describe("CityMap", () => {
     const screen = await render(<CityMap initialCity="hangzhou" stats={stats} variant="workspace" />);
 
     expect(screen.getByTestId("city-map-content")).toBeTruthy();
+    expect(React.Children.count(screen.getByTestId("city-map-label-layer").props.children)).toBe(0);
+
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 844, width: 390, x: 0, y: 0 } },
+      });
+    });
+
     expect(screen.getByTestId("city-map-marker-dot-jinan-none")).toBeTruthy();
-    // 新坐标系下默认视口不放大，label 仅在 zoom ≥1.8 显示；直接断言 SVG 与标记存在即可
-    expect(screen.queryByTestId("city-map-label-jinan")).toBeNull();
+    const labelCount = React.Children.count(screen.getByTestId("city-map-label-layer").props.children);
+    expect(labelCount).toBeGreaterThan(0);
+    expect(labelCount).toBeLessThan(60);
+    expect(screen.getByTestId("china-south-sea-inset")).toBeTruthy();
   });
 
   it("calls the city callback when an interactive marker is pressed", async () => {
     const onCityPress = jest.fn();
     const screen = await render(<CityMap stats={stats} variant="workspace" interactive onCityPress={onCityPress} />);
 
-    fireEvent.press(screen.getByLabelText("杭州，已保存 2 册旅行记忆"));
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 844, width: 390, x: 0, y: 0 } },
+      });
+    });
+
+    fireEvent(screen.getByLabelText("杭州，已保存 2 册旅行记忆"), "accessibilityTap");
 
     expect(onCityPress).toHaveBeenCalledWith("hangzhou");
   });
@@ -107,7 +129,7 @@ describe("CityMap", () => {
 
   it("resolves every adapter marker into bounded overview geometry", () => {
     const mapWidth = 300;
-    const mapHeight = 351;
+    const mapHeight = mapWidth * chinaMapCoordinateSpace.height / chinaMapCoordinateSpace.width;
     const adapter = new OfflineChinaMapAdapter();
     const layouts = adapter.markers.map((marker) => ({ layout: resolveCityMarkerLayout(marker), marker }));
 
@@ -152,34 +174,74 @@ describe("CityMap", () => {
     expect(resolved.top + resolved.height / 2).toBeCloseTo(marker.coordinate.y * 702);
   });
 
-  it("hides workspace labels below the zoom threshold and scales the full marker model on the worklet viewport", () => {
-    const markers = new OfflineChinaMapAdapter().markers;
-    const size = { height: 351, width: 300 };
-    const hiddenModels = resolveWorkspaceMarkerModels(markers, { scale: 1.79, translateX: 0, translateY: 0 }, size);
-    // 显式选北京（cityRegistry[0] 是乌鲁木齐，位于地图西北角，默认视口下在屏幕外）
-    const beijing = markers.find((marker) => marker.city === "beijing")!;
-    // 视口平移量把北京居中到 (150, 175)（按新坐标系 contentFrame 反算）
-    const visibleModels = resolveWorkspaceMarkerModels([beijing], { scale: 1.8, translateX: -136.8, translateY: 132.5 }, size);
+  it("keeps workspace marker dots and hit targets fixed while labels use separate inert overlays", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" interactive />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 844, width: 390, x: 0, y: 0 } },
+      });
+    });
+    const dot = screen.getByTestId("city-map-marker-visual-beijing");
+    const dotStyle = Array.isArray(dot.props.style) ? Object.assign({}, ...dot.props.style) : dot.props.style;
+    const contextLabel = screen.getByTestId(
+      "city-map-prefecture-label-140100",
+      { includeHiddenElements: true },
+    );
 
-    expect(hiddenModels.every((model) => !model.showLabel)).toBe(true);
-    expect(visibleModels[0]?.dotSize).toBeCloseTo(14.4);
-    expect(visibleModels[0]?.fontSize).toBeCloseTo(19.8);
-    expect(visibleModels[0]?.pressSize).toBeCloseTo(79.2);
-    expect(visibleModels[0]?.showLabel).toBe(true);
+    expect(dotStyle).toMatchObject({ height: 8, width: 8 });
+    expect(contextLabel.props.accessible).toBe(false);
+    expect(contextLabel.props.pointerEvents).toBe("none");
+    expect(screen.queryByLabelText(/南通/)).toBeNull();
+    expect(screen.getByLabelText("北京，已保存 0 册旅行记忆")).toBeTruthy();
   });
 
-  it("shows only one of two colliding workspace labels", () => {
-    const markers = new OfflineChinaMapAdapter().markers;
-    const beijing = markers.find((marker) => marker.city === "beijing")!;
-    const overlappingMarkers = [beijing, { ...beijing, coordinate: beijing.coordinate }];
-    const models = resolveWorkspaceMarkerModels(overlappingMarkers, { scale: 2, translateX: -152, translateY: 147.3 }, { height: 351, width: 300 });
+  it.each([2, 6])("resolves the nearest overlapping product marker at %dx zoom", (scale) => {
+    const size = { height: 844, width: 390 };
+    const adapter = new OfflineChinaMapAdapter();
+    const shenzhen = adapter.markers.find((marker) => marker.city === "shenzhen")!;
+    const hongkong = adapter.markers.find((marker) => marker.city === "hongkong")!;
+    const unpannedShenzhen = resolveNormalizedMapScreenPoint(shenzhen.coordinate, {
+      scale,
+      translateX: 0,
+      translateY: 0,
+    }, size);
+    const viewport = {
+      scale,
+      translateX: size.width / 2 - unpannedShenzhen.x,
+      translateY: size.height / 2 - unpannedShenzhen.y,
+    };
+    const shenzhenPoint = resolveNormalizedMapScreenPoint(shenzhen.coordinate, viewport, size);
+    const hongkongPoint = resolveNormalizedMapScreenPoint(hongkong.coordinate, viewport, size);
 
-    expect(models.map((model) => model.showLabel)).toEqual([true, false]);
+    expect(resolveWorkspaceMarkerHit(shenzhenPoint, viewport, size, adapter.markers)).toBe("shenzhen");
+    expect(resolveWorkspaceMarkerHit(hongkongPoint, viewport, size, adapter.markers)).toBe("hongkong");
+    expect(resolveWorkspaceMarkerHit({ x: 0, y: 0 }, viewport, size, adapter.markers)).toBeUndefined();
   });
+
+  it.each([{ height: 844, width: 0 }, { height: 0, width: 390 }])(
+    "does not resolve a marker before the workspace has a usable size",
+    (size) => {
+      expect(resolveWorkspaceMarkerHit(
+        { x: 0, y: 0 },
+        { scale: 2, translateX: 0, translateY: 0 },
+        size,
+        new OfflineChinaMapAdapter().markers,
+      )).toBeUndefined();
+    },
+  );
 
   it("avoids object spread in the UI-thread label collision worklet", () => {
     const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
 
     expect(source).not.toContain("{ ...candidate.model");
+  });
+
+  it("keeps the city tap worklet closure free of the adapter instance", () => {
+    const source = readFileSync(require.resolve("../src/features/cities/city-map"), "utf8");
+    const cityTapStart = source.indexOf("const cityTap = Gesture.Tap()");
+    const cityTapSource = source.slice(cityTapStart, source.indexOf("const doubleTap = Gesture.Tap()", cityTapStart));
+
+    expect(cityTapSource).toContain("workspaceMarkers");
+    expect(cityTapSource).not.toContain("adapter.");
   });
 });

@@ -1,136 +1,311 @@
-// 生成中国地图 SVG path 数据 + 城市标记坐标（一次运行，产物提交进仓库）
-// 数据源: cn-atlas provinces.json (https://github.com/BarbarossaWang/cn-atlas, 源自 ruiduobao/shengshixian.com 2023 版行政区划)
-// 投影: 中国标准 Albers 等积圆锥投影 (φ0=30, λ0=105, φ1=25, φ2=47)
-// 输出: src/features/cities/china-map-data.ts
+// 生成完整中国主体、省界、固定南海附图、产品城市坐标与全部地级标签。
+// 数据源固定为 cn-atlas commit 6e83a19923e39f2c0e58a0a7ad29b349b2a71b9f
+// （源自 ruiduobao/shengshixian.com 2023 版行政区划）。
+// 生成与运行时均只读取仓库内 JSON，不发起网络请求。
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const SOURCE_COMMIT = "6e83a19923e39f2c0e58a0a7ad29b349b2a71b9f";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const INPUT = path.join(ROOT, ".tmp-mapdata", "provinces.json");
+const PROVINCES_INPUT = path.join(ROOT, ".tmp-mapdata", "provinces.json");
+const PREFECTURES_INPUT = path.join(ROOT, ".tmp-mapdata", "prefectures.json");
 const OUTPUT = path.join(ROOT, "src", "features", "cities", "china-map-data.ts");
 
-const raw = JSON.parse(fs.readFileSync(INPUT, "utf8"));
-const features = raw.features;
-console.log("features:", features.length);
+const SOURCE_HASHES = Object.freeze({
+  [PROVINCES_INPUT]: "0c2613c489a9c017be76f384f5b97d0df1a7632b18242009631834c495689fae",
+  [PREFECTURES_INPUT]: "2ee25af1abd1cfceceb83e20d14623879fe6005b8095237cdbf198c4b39b90e1",
+});
 
-// ── Albers 等积投影（球面近似，中国常用参数） ──
+function readPinnedJson(file) {
+  const buffer = fs.readFileSync(file);
+  const actualHash = createHash("sha256").update(buffer).digest("hex");
+  if (actualHash !== SOURCE_HASHES[file]) {
+    throw new Error(`Offline map snapshot checksum mismatch: ${path.basename(file)}`);
+  }
+  return JSON.parse(buffer.toString("utf8"));
+}
+
+const provinceCollection = readPinnedJson(PROVINCES_INPUT);
+const prefectureCollection = readPinnedJson(PREFECTURES_INPUT);
+
+const VIEWBOX_WIDTH = 1000;
+const MAIN_MARGIN = 12;
+const INSET_WIDTH = 132;
+const INSET_HEIGHT = 172;
+const INSET_MARGIN = 8;
+const TOLERANCE_FRACTION = 0.0012;
+const MIN_POINTS_PER_RING = 24;
+const SIMPLIFY_MIN_RING = 1.2;
+const SMALL_ISLAND_MAX_POINTS = 80;
+
+// 中国标准 Albers 等积圆锥投影（球面近似）。
 const DEG = Math.PI / 180;
-const PHI0 = 30 * DEG, LAMBDA0 = 105 * DEG, PHI1 = 25 * DEG, PHI2 = 47 * DEG;
+const PHI0 = 30 * DEG;
+const LAMBDA0 = 105 * DEG;
+const PHI1 = 25 * DEG;
+const PHI2 = 47 * DEG;
 const n = (Math.sin(PHI1) + Math.sin(PHI2)) / 2;
 const C = Math.cos(PHI1) ** 2 + 2 * n * Math.sin(PHI1);
 const rho0 = Math.sqrt(C - 2 * n * Math.sin(PHI0)) / n;
 
-function albers([lon, lat]) {
-  const phi = lat * DEG;
-  const theta = n * (lon * DEG - LAMBDA0);
+function albers([longitude, latitude]) {
+  const phi = latitude * DEG;
+  const theta = n * (longitude * DEG - LAMBDA0);
   const rho = Math.sqrt(C - 2 * n * Math.sin(phi)) / n;
   return [rho * Math.sin(theta), rho0 - rho * Math.cos(theta)];
 }
 
-// ── Douglas-Peucker 简化（投影平面） ──
-// 注意：闭环数据首尾点重合会让「首尾弦」退化为 0 长度，导致全部点被丢弃；
-// 因此先把末点（与首点重合的闭合点）移除，简化后再闭合。
-function simplifyRing(ring, tol) {
+function isCoordinate(value) {
+  return Array.isArray(value)
+    && value.length >= 2
+    && Number.isFinite(value[0])
+    && Number.isFinite(value[1]);
+}
+
+function geometryPolygons(feature) {
+  const rawPolygons = feature.geometry.type === "MultiPolygon"
+    ? feature.geometry.coordinates
+    : [feature.geometry.coordinates];
+  return rawPolygons
+    .map((polygon) => polygon
+      .map((ring) => ring.filter(isCoordinate).map(albers))
+      .filter((ring) => ring.length >= 3))
+    .filter((polygon) => polygon.length > 0);
+}
+
+function signedRingArea(ring) {
+  let twiceArea = 0;
+  for (let index = 0; index < ring.length; index += 1) {
+    const [x1, y1] = ring[index];
+    const [x2, y2] = ring[(index + 1) % ring.length];
+    twiceArea += x1 * y2 - x2 * y1;
+  }
+  return twiceArea / 2;
+}
+
+function largestPolygon(polygons) {
+  return polygons.reduce((largest, polygon) => (
+    Math.abs(signedRingArea(polygon[0])) > Math.abs(signedRingArea(largest[0])) ? polygon : largest
+  ));
+}
+
+function ringCentroid(ring) {
+  let twiceArea = 0;
+  let xSum = 0;
+  let ySum = 0;
+  for (let index = 0; index < ring.length; index += 1) {
+    const [x1, y1] = ring[index];
+    const [x2, y2] = ring[(index + 1) % ring.length];
+    const cross = x1 * y2 - x2 * y1;
+    twiceArea += cross;
+    xSum += (x1 + x2) * cross;
+    ySum += (y1 + y2) * cross;
+  }
+  if (Math.abs(twiceArea) < Number.EPSILON) {
+    const sum = ring.reduce(([x, y], point) => [x + point[0], y + point[1]], [0, 0]);
+    return [sum[0] / ring.length, sum[1] / ring.length];
+  }
+  return [xSum / (3 * twiceArea), ySum / (3 * twiceArea)];
+}
+
+function boundsForPolygons(polygons) {
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      for (const [x, y] of ring) {
+        bounds.minX = Math.min(bounds.minX, x);
+        bounds.minY = Math.min(bounds.minY, y);
+        bounds.maxX = Math.max(bounds.maxX, x);
+        bounds.maxY = Math.max(bounds.maxY, y);
+      }
+    }
+  }
+  if (!Object.values(bounds).every(Number.isFinite)) {
+    throw new Error("Cannot generate a map from empty polygon bounds");
+  }
+  return bounds;
+}
+
+function boundsForPathPoints(points) {
+  if (points.length < 3 || points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) {
+    throw new Error("SVG path must contain at least three finite coordinates");
+  }
+  return boundsForPolygons([[points]]);
+}
+
+function rectanglesOverlap(first, second) {
+  return first.minX <= second.maxX
+    && second.minX <= first.maxX
+    && first.minY <= second.maxY
+    && second.minY <= first.maxY;
+}
+
+function simplifyRing(ring, tolerance) {
   if (ring.length <= 3) return ring;
-  // 去重闭环：末点与首点相同时去掉末点
   const points = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
     ? ring.slice(0, -1)
     : ring;
   if (points.length <= 3) return points;
   const keep = new Uint8Array(points.length);
-  keep[0] = keep[points.length - 1] = 1;
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
   const stack = [[0, points.length - 1]];
-  while (stack.length) {
+  while (stack.length > 0) {
     const [start, end] = stack.pop();
-    let maxDist = 0, maxIdx = -1;
-    const [ax, ay] = points[start], [bx, by] = points[end];
-    const denom = Math.hypot(bx - ax, by - ay);
-    for (let i = start + 1; i < end; i++) {
-      const [px, py] = points[i];
-      const d = denom === 0
+    const [ax, ay] = points[start];
+    const [bx, by] = points[end];
+    const denominator = Math.hypot(bx - ax, by - ay);
+    let maximumDistance = 0;
+    let maximumIndex = -1;
+    for (let index = start + 1; index < end; index += 1) {
+      const [px, py] = points[index];
+      const distance = denominator === 0
         ? Math.hypot(px - ax, py - ay)
-        : Math.abs((by - ay) * px - (bx - ax) * py + bx * ay - by * ax) / denom;
-      if (d > maxDist) { maxDist = d; maxIdx = i; }
+        : Math.abs((by - ay) * px - (bx - ax) * py + bx * ay - by * ax) / denominator;
+      if (distance > maximumDistance) {
+        maximumDistance = distance;
+        maximumIndex = index;
+      }
     }
-    if (maxDist > tol && maxIdx > 0) {
-      keep[maxIdx] = 1;
-      stack.push([start, maxIdx], [maxIdx, end]);
+    if (maximumDistance > tolerance && maximumIndex > 0) {
+      keep[maximumIndex] = 1;
+      stack.push([start, maximumIndex], [maximumIndex, end]);
     }
   }
-  return points.filter((_, i) => keep[i]);
+  return points.filter((_, index) => keep[index]);
 }
 
-// ── 投影 + 简化所有多边形，同时收集全局范围 ──
-// cn-atlas 数据含少量单数值碎片环（非 [lon,lat] 对），过滤掉，避免 NaN 污染。
-// 统一结构：polys = 环数组的数组（poly → rings → points）
-let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-const projected = features.map((f) => {
-  const rings = f.geometry.coordinates; // Polygon: [ring...]; MultiPolygon: [[ring...]...]
-  const polys = (f.geometry.type === "MultiPolygon" ? rings : [rings]).map((poly) =>
-    poly.map((ring) => ring
-      .filter((coord) => Array.isArray(coord) && coord.length >= 2 && typeof coord[0] === "number" && typeof coord[1] === "number")
-      .map((coord) => {
-        const [x, y] = albers(coord);
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
-        return [x, y];
-      })),
-  );
-  return { name: f.properties.name, id: f.properties.id, polys };
+function toPath(polygons, transform) {
+  const parts = [];
+  const finalPoints = [];
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      const projected = ring.map(transform);
+      const bounds = boundsForPolygons([[projected]]);
+      const width = bounds.maxX - bounds.minX;
+      const height = bounds.maxY - bounds.minY;
+      const size = Math.max(width, height);
+      let points = projected;
+      if (size > SIMPLIFY_MIN_RING) {
+        const tolerance = Math.hypot(width, height) * TOLERANCE_FRACTION;
+        points = simplifyRing(projected, tolerance);
+        if (points.length < MIN_POINTS_PER_RING && projected.length >= MIN_POINTS_PER_RING) {
+          points = simplifyRing(projected, tolerance / 4);
+        }
+      } else if (projected.length > SMALL_ISLAND_MAX_POINTS) {
+        points = simplifyRing(projected, Math.hypot(width, height) * TOLERANCE_FRACTION);
+      }
+      if (points.length < 3) continue;
+      const fixedPoints = points.map(([x, y]) => [Number(x.toFixed(1)), Number(y.toFixed(1))]);
+      boundsForPathPoints(fixedPoints);
+      let path = `M${fixedPoints[0][0].toFixed(1)} ${fixedPoints[0][1].toFixed(1)}`;
+      for (let index = 1; index < fixedPoints.length; index += 1) {
+        path += `L${fixedPoints[index][0].toFixed(1)} ${fixedPoints[index][1].toFixed(1)}`;
+      }
+      parts.push(`${path}Z`);
+      finalPoints.push(...fixedPoints);
+    }
+  }
+  if (parts.length === 0) throw new Error("Cannot generate an empty SVG path");
+  return { path: parts.join(""), bounds: boundsForPathPoints(finalPoints) };
+}
+
+const projectedProvinces = provinceCollection.features.map((feature) => ({
+  id: String(feature.properties.id),
+  name: feature.properties["地名"] || feature.properties.name,
+  polygons: geometryPolygons(feature),
+}));
+
+if (projectedProvinces.length !== 34) {
+  throw new Error(`Expected 34 province-level regions, received ${projectedProvinces.length}`);
+}
+const provinceIds = projectedProvinces.map(({ id }) => id);
+if (new Set(provinceIds).size !== provinceIds.length || provinceIds.some((id) => !/^\d{6}$/.test(id))) {
+  throw new Error("Province codes must be unique six-digit values");
+}
+
+const hainan = projectedProvinces.find(({ id }) => id === "460000");
+if (!hainan) throw new Error("Hainan province is required to create the South China Sea inset");
+const hainanMainPolygon = largestPolygon(hainan.polygons);
+const southSeaPolygons = hainan.polygons.filter((polygon) => polygon !== hainanMainPolygon);
+hainan.polygons = [hainanMainPolygon];
+if (southSeaPolygons.length === 0) throw new Error("South China Sea inset geometry cannot be empty");
+
+const mainBounds = boundsForPolygons(projectedProvinces.flatMap(({ polygons }) => polygons));
+const mainSpanX = mainBounds.maxX - mainBounds.minX;
+const mainSpanY = mainBounds.maxY - mainBounds.minY;
+const mainScale = (VIEWBOX_WIDTH - MAIN_MARGIN * 2) / mainSpanX;
+const viewBoxHeight = Math.ceil(mainSpanY * mainScale + MAIN_MARGIN * 2);
+const mainTransform = ([x, y]) => [
+  MAIN_MARGIN + (x - mainBounds.minX) * mainScale,
+  MAIN_MARGIN + (mainBounds.maxY - y) * mainScale,
+];
+
+const insetBounds = boundsForPolygons(southSeaPolygons);
+const insetScale = Math.min(
+  (INSET_WIDTH - INSET_MARGIN * 2) / (insetBounds.maxX - insetBounds.minX),
+  (INSET_HEIGHT - INSET_MARGIN * 2) / (insetBounds.maxY - insetBounds.minY),
+);
+const insetContentWidth = (insetBounds.maxX - insetBounds.minX) * insetScale;
+const insetContentHeight = (insetBounds.maxY - insetBounds.minY) * insetScale;
+const insetOffsetX = (INSET_WIDTH - insetContentWidth) / 2;
+const insetOffsetY = (INSET_HEIGHT - insetContentHeight) / 2;
+const insetTransform = ([x, y]) => [
+  insetOffsetX + (x - insetBounds.minX) * insetScale,
+  insetOffsetY + (insetBounds.maxY - y) * insetScale,
+];
+const insetFrame = {
+  x: 16,
+  y: viewBoxHeight - INSET_HEIGHT - 12,
+  width: INSET_WIDTH,
+  height: INSET_HEIGHT,
+};
+
+const insetFrameBounds = {
+  minX: insetFrame.x,
+  minY: insetFrame.y,
+  maxX: insetFrame.x + insetFrame.width,
+  maxY: insetFrame.y + insetFrame.height,
+};
+const viewBoxBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: VIEWBOX_WIDTH,
+  maxY: viewBoxHeight,
+};
+if (
+  insetFrameBounds.minX < viewBoxBounds.minX
+  || insetFrameBounds.minY < viewBoxBounds.minY
+  || insetFrameBounds.maxX > viewBoxBounds.maxX
+  || insetFrameBounds.maxY > viewBoxBounds.maxY
+) {
+  throw new Error("South China Sea inset frame must fit within the map viewBox");
+}
+const SHORT_NAME_OVERRIDES = Object.freeze({
+  "152200": "兴安", "152500": "锡林郭勒", "152900": "阿拉善", "222400": "延边",
+  "232700": "大兴安岭", "422800": "恩施", "433100": "湘西", "513200": "阿坝",
+  "513300": "甘孜", "513400": "凉山", "522300": "黔西南", "522600": "黔东南",
+  "522700": "黔南", "532300": "楚雄", "532500": "红河", "532600": "文山",
+  "532800": "西双版纳", "532900": "大理", "533100": "德宏", "533300": "怒江",
+  "533400": "迪庆", "542500": "阿里", "622900": "临夏", "623000": "甘南",
+  "632200": "海北", "632300": "黄南", "632500": "海南州", "632600": "果洛",
+  "632700": "玉树", "632800": "海西", "652300": "昌吉", "652700": "博尔塔拉",
+  "652800": "巴音郭楞", "652900": "阿克苏", "653000": "克孜勒苏", "653100": "喀什",
+  "653200": "和田", "654000": "伊犁", "654200": "塔城", "654300": "阿勒泰",
+  "710000": "台湾", "810000": "香港", "820000": "澳门",
 });
 
-// 归一化到 viewBox（带边距）。SVG y 轴向下：北在上 → 投影 y 取反。
-const MARGIN = 12;
-const spanX = maxX - minX, spanY = maxY - minY;
-const SCALE = 1000 / spanX; // 宽度基准 1000
-const W = 1000;
-const H = Math.round(spanY * SCALE) + MARGIN * 2;
-const tx = MARGIN - minX * SCALE, ty = MARGIN - minY * SCALE;
-const flipY = (y) => H - (y * SCALE + ty);
+const CAPITAL_ADCODES = new Set([
+  "110000", "120000", "130100", "140100", "150100", "210100", "220100", "230100",
+  "310000", "320100", "330100", "340100", "350100", "360100", "370100", "410100",
+  "420100", "430100", "440100", "450100", "460100", "500000", "510100", "520100",
+  "530100", "540100", "610100", "620100", "630100", "640100", "650100", "710100",
+]);
 
-const TOL_FRACTION = 0.0012; // 相对环对角线长度的简化容差（0.12%）
-const MIN_POINTS_PER_RING = 24; // 大环简化后最少保留点数，避免被吞成空环
-const SIMPLIFY_MIN_RING = 1.2; // 小于该尺寸的环（南海小岛）整体保留
-const SMALL_ISLAND_MAX_POINTS = 80;
-
-function toPath(polys) {
-  const parts = [];
-  for (const poly of polys) {
-    for (const ring of poly) {
-      const proj = ring.map(([x, y]) => [x * SCALE + tx, flipY(y)]);
-      // 环的包围盒
-      let rminX = Infinity, rminY = Infinity, rmaxX = -Infinity, rmaxY = -Infinity;
-      for (const [x, y] of proj) {
-        if (x < rminX) rminX = x; if (x > rmaxX) rmaxX = x;
-        if (y < rminY) rminY = y; if (y > rmaxY) rmaxY = y;
-      }
-      const size = Math.max(rmaxX - rminX, rmaxY - rminY);
-      const isBigRing = size > SIMPLIFY_MIN_RING;
-      let pts = proj;
-      if (isBigRing) {
-        const tol = Math.hypot(rmaxX - rminX, rmaxY - rminY) * TOL_FRACTION;
-        pts = simplifyRing(proj, tol);
-        // 兜底：简化过头（环被吞）时放宽容差重试
-        if (pts.length < MIN_POINTS_PER_RING && proj.length >= MIN_POINTS_PER_RING) {
-          pts = simplifyRing(proj, tol / 4);
-        }
-      } else if (proj.length > SMALL_ISLAND_MAX_POINTS) {
-        pts = simplifyRing(proj, TOL_FRACTION * Math.hypot(rmaxX - rminX, rmaxY - rminY));
-      }
-      if (pts.length < 3) continue;
-      let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-      for (let i = 1; i < pts.length; i++) d += `L${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`;
-      d += "Z";
-      parts.push(d);
-    }
-  }
-  return parts.join("");
-}
-
-// ── 城市坐标（WGS84 经纬度，与 city.ts geographicCoordinates 一致） ──
-const CITY_COORDS = {
+const PRODUCT_CITY_COORDS = Object.freeze({
   beijing: [116.4074, 39.9042], tianjin: [117.201, 39.0842], shijiazhuang: [114.5149, 38.0428],
   taiyuan: [112.5492, 37.857], hohhot: [111.7492, 40.8426], shenyang: [123.4315, 41.8057],
   changchun: [125.3235, 43.8171], harbin: [126.6424, 45.756], shanghai: [121.4737, 31.2304],
@@ -143,49 +318,161 @@ const CITY_COORDS = {
   lanzhou: [103.8343, 36.0611], xining: [101.7782, 36.6171], yinchuan: [106.2309, 38.4872],
   urumqi: [87.6177, 43.7928], suzhou: [120.5853, 31.299], luoyang: [112.4544, 34.6181],
   shenzhen: [114.0579, 22.5431], taipei: [121.5654, 25.033], hongkong: [114.1694, 22.3193],
-};
-
-function projectCity([lon, lat]) {
-  const [x, y] = albers([lon, lat]);
-  return { x: (x * SCALE + tx) / W, y: flipY(y) / H };
-}
-
-const markers = Object.entries(CITY_COORDS).map(([city, lonLat]) => {
-  const p = projectCity(lonLat);
-  return { city, x: Number(p.x.toFixed(5)), y: Number(p.y.toFixed(5)) };
 });
 
-// ── 组装输出 ──
-const provinces = projected.map((f) => ({ id: f.id, name: f.name, path: toPath(f.polys) }));
-const totalPoints = provinces.reduce((s, p) => s + (p.path.match(/[ML]/g)?.length ?? 0), 0);
+const PRODUCT_CITY_BY_ADCODE = Object.freeze({
+  "110000": "beijing", "120000": "tianjin", "130100": "shijiazhuang", "140100": "taiyuan",
+  "150100": "hohhot", "210100": "shenyang", "220100": "changchun", "230100": "harbin",
+  "310000": "shanghai", "320100": "nanjing", "320500": "suzhou", "330100": "hangzhou",
+  "340100": "hefei", "350100": "fuzhou", "360100": "nanchang", "370100": "jinan",
+  "410100": "zhengzhou", "410300": "luoyang", "420100": "wuhan", "430100": "changsha",
+  "440100": "guangzhou", "440300": "shenzhen", "450100": "nanning", "460100": "haikou",
+  "500000": "chongqing", "510100": "chengdu", "520100": "guiyang", "530100": "kunming",
+  "540100": "lhasa", "610100": "xian", "620100": "lanzhou", "630100": "xining",
+  "640100": "yinchuan", "650100": "urumqi", "710100": "taipei", "810000": "hongkong",
+});
+
+function displayName(adcode, officialName) {
+  if (SHORT_NAME_OVERRIDES[adcode]) return SHORT_NAME_OVERRIDES[adcode];
+  return officialName.endsWith("市") ? officialName.slice(0, -1) : officialName;
+}
+
+function normalizedMainCoordinate(projectedCoordinate) {
+  const [x, y] = mainTransform(projectedCoordinate);
+  return {
+    x: Number((x / VIEWBOX_WIDTH).toFixed(5)),
+    y: Number((y / viewBoxHeight).toFixed(5)),
+  };
+}
+
+function coordinateInsideMain(coordinate) {
+  return coordinate.x >= 0 && coordinate.x <= 1 && coordinate.y >= 0 && coordinate.y <= 1;
+}
+
+const prefectureFeatures = prefectureCollection.features.filter((feature) => {
+  const adcode = String(feature.properties.id || feature.properties["区划码"]);
+  return /^\d{4}00$/.test(adcode);
+});
+if (!prefectureFeatures.some((feature) => String(feature.properties.id) === "710100")) {
+  prefectureFeatures.push({
+    properties: { id: "710100", "区划码": "710100", "地名": "台北市", name: "Taipei" },
+    geometry: null,
+  });
+}
+
+const labels = prefectureFeatures.map((feature) => {
+  const adcode = String(feature.properties.id || feature.properties["区划码"]);
+  const officialName = feature.properties["地名"];
+  const productCity = PRODUCT_CITY_BY_ADCODE[adcode];
+  let coordinate;
+  if (productCity) {
+    coordinate = normalizedMainCoordinate(albers(PRODUCT_CITY_COORDS[productCity]));
+  } else {
+    const polygon = largestPolygon(geometryPolygons(feature));
+    coordinate = normalizedMainCoordinate(ringCentroid(polygon[0]));
+  }
+  if (!coordinateInsideMain(coordinate)) {
+    if (adcode !== "460300") {
+      throw new Error(`Prefecture ${adcode} projects outside the main viewBox`);
+    }
+    coordinate = {
+      x: Number(((insetFrame.x + insetFrame.width / 2) / VIEWBOX_WIDTH).toFixed(5)),
+      y: Number(((insetFrame.y + insetFrame.height / 2) / viewBoxHeight).toFixed(5)),
+    };
+  }
+  return {
+    adcode,
+    officialName,
+    displayName: displayName(adcode, officialName),
+    coordinate,
+    isCapital: CAPITAL_ADCODES.has(adcode),
+    ...(productCity ? { productCity } : {}),
+  };
+}).sort((left, right) => left.adcode.localeCompare(right.adcode));
+
+const labelAdcodes = labels.map(({ adcode }) => adcode);
+if (new Set(labelAdcodes).size !== labelAdcodes.length || labelAdcodes.some((adcode) => !/^\d{6}$/.test(adcode))) {
+  throw new Error("Prefecture codes must be unique six-digit values");
+}
+if (labels.some((label) => !label.officialName || !label.displayName || !coordinateInsideMain(label.coordinate))) {
+  throw new Error("Every prefecture label requires a name and valid normalized coordinate");
+}
+const projectedProductCities = labels.flatMap((label) => label.productCity ? [label.productCity] : []);
+const expectedProductCities = Object.keys(PRODUCT_CITY_COORDS);
+if (projectedProductCities.length !== expectedProductCities.length
+  || expectedProductCities.some((city) => !projectedProductCities.includes(city))) {
+  throw new Error("Every existing product city must map to one prefecture label");
+}
+
+const provincePaths = projectedProvinces.map(({ id, name, polygons }) => {
+  try {
+    const pathResult = toPath(polygons, mainTransform);
+    return { id, name, path: pathResult.path, bounds: pathResult.bounds };
+  } catch (error) {
+    throw new Error(`Province ${id} has invalid final SVG path: ${error.message}`);
+  }
+});
+for (const provincePath of provincePaths) {
+  if (
+    provincePath.bounds.minX < 0
+    || provincePath.bounds.minY < 0
+    || provincePath.bounds.maxX > VIEWBOX_WIDTH
+    || provincePath.bounds.maxY > viewBoxHeight
+  ) {
+    throw new Error(`Province ${provincePath.id} final path bounds fall outside the map viewBox`);
+  }
+  if (rectanglesOverlap(insetFrameBounds, provincePath.bounds)) {
+    throw new Error(`South China Sea inset overlaps province ${provincePath.id}`);
+  }
+}
+const provinces = provincePaths.map(({ id, name, path }) => ({ id, name, path }));
+const southSeaPathResult = toPath(southSeaPolygons, insetTransform);
+if (
+  southSeaPathResult.bounds.minX < 0
+  || southSeaPathResult.bounds.minY < 0
+  || southSeaPathResult.bounds.maxX > INSET_WIDTH
+  || southSeaPathResult.bounds.maxY > INSET_HEIGHT
+) {
+  throw new Error("South China Sea inset path bounds fall outside the inset viewBox");
+}
+const southSeaPath = southSeaPathResult.path;
+const markers = Object.entries(PRODUCT_CITY_COORDS).map(([city, longitudeLatitude]) => {
+  const coordinate = normalizedMainCoordinate(albers(longitudeLatitude));
+  if (!coordinateInsideMain(coordinate)) throw new Error(`Product city ${city} projects outside the main viewBox`);
+  return { city, x: coordinate.x, y: coordinate.y };
+});
 
 const lines = [];
-lines.push("// 中国省级行政区划地图数据（含台湾省与南海诸岛）");
-lines.push("// 生成脚本: .tmp-mapdata/generate-china-map.mjs（可复现）");
-lines.push("// 数据源: cn-atlas provinces.json，源自 ruiduobao/shengshixian.com 2023 版行政区划（经纬度坐标，WGS84 系）");
-lines.push("// 投影: 中国标准 Albers 等积圆锥投影（φ0=30, λ0=105, φ1=25, φ2=47），已归一化到 0..1 相对坐标系");
-lines.push("// 上架提示: 生产发布前请核对审图要求（含九段线/南海诸岛的正式底图）");
+lines.push("// Generated offline China map data. Do not edit by hand.");
+lines.push("// Generator: .tmp-mapdata/generate-china-map.mjs");
+lines.push(`// Source: cn-atlas commit ${SOURCE_COMMIT}, 2023 administrative snapshot.`);
+lines.push("// Release note: verify against applicable approved standard-map requirements before production publication.");
 lines.push("");
-lines.push(`export const chinaMapViewBox = \`0 0 ${W} ${H}\`;`);
+lines.push(`export const chinaMapSourceCommit = \"${SOURCE_COMMIT}\";`);
+lines.push(`export const chinaMapViewBox = \"0 0 ${VIEWBOX_WIDTH} ${viewBoxHeight}\";`);
 lines.push("");
 lines.push("export type ChinaMapProvince = { readonly id: string; readonly name: string; readonly path: string };");
-lines.push(`export const chinaProvinces: readonly ChinaMapProvince[] = ${JSON.stringify(provinces, null, 0)};`);
+lines.push(`const generatedChinaProvinces: ChinaMapProvince[] = ${JSON.stringify(provinces)};`);
+lines.push("export const chinaProvinces: readonly ChinaMapProvince[] = Object.freeze(generatedChinaProvinces.map((province) => Object.freeze(province)));");
+lines.push("");
+lines.push("export type ChinaSouthSeaInset = { readonly path: string; readonly viewBox: string; readonly frame: Readonly<{ x: number; y: number; width: number; height: number }> };");
+lines.push(`export const chinaSouthSeaInset: ChinaSouthSeaInset = Object.freeze({ path: ${JSON.stringify(southSeaPath)}, viewBox: \"0 0 ${INSET_WIDTH} ${INSET_HEIGHT}\", frame: Object.freeze(${JSON.stringify(insetFrame)}) });`);
 lines.push("");
 lines.push("export type ChinaMapMarker = { readonly city: string; readonly x: number; readonly y: number };");
-lines.push(`export const chinaMapMarkers: readonly ChinaMapMarker[] = ${JSON.stringify(markers)};`);
+lines.push(`const generatedChinaMapMarkers: ChinaMapMarker[] = ${JSON.stringify(markers)};`);
+lines.push("export const chinaMapMarkers: readonly ChinaMapMarker[] = Object.freeze(generatedChinaMapMarkers.map((marker) => Object.freeze(marker)));");
 lines.push("");
-lines.push("export const chinaMapAttribution = \"China provincial map · ruiduobao/shengshixian.com 2023（Albers 投影）\";");
-fs.writeFileSync(OUTPUT, lines.join("\n") + "\n", "utf8");
+lines.push("export type ChinaPrefectureLabel = { readonly adcode: string; readonly officialName: string; readonly displayName: string; readonly coordinate: Readonly<{ x: number; y: number }>; readonly isCapital: boolean; readonly productCity?: string };");
+lines.push(`const generatedChinaPrefectureLabels: ChinaPrefectureLabel[] = ${JSON.stringify(labels)};`);
+lines.push("export const chinaPrefectureLabels: readonly ChinaPrefectureLabel[] = Object.freeze(generatedChinaPrefectureLabels.map((label) => Object.freeze({ ...label, coordinate: Object.freeze(label.coordinate) })));");
+lines.push("");
+lines.push("export const chinaMapAttribution = \"China map · cn-atlas / ruiduobao 2023（Albers 投影）\";");
+fs.writeFileSync(OUTPUT, `${lines.join("\n")}\n`, "utf8");
 
-// ── 自检输出 ──
-console.log("viewBox:", `0 0 ${W} ${H}`);
-console.log("province paths:", provinces.length, " total ML points:", totalPoints);
-const sizeKb = (fs.statSync(OUTPUT).size / 1024).toFixed(1);
-console.log("output size:", sizeKb, "KB");
-const spot = (city) => {
-  const m = markers.find((mk) => mk.city === city);
-  console.log(`  ${city}: (${m.x}, ${m.y})`);
-};
-console.log("marker sanity:");
-spot("beijing"); spot("urumqi"); spot("haikou"); spot("taipei"); spot("hongkong"); spot("chengdu"); spot("xian");
-// 大陆最西城市乌鲁木齐 x 应接近 0，北京 x ~0.65-0.75，海口 y 应接近 1（南）
+const totalPoints = provinces.reduce((sum, province) => sum + (province.path.match(/[ML]/g)?.length ?? 0), 0);
+console.log("source commit:", SOURCE_COMMIT);
+console.log("viewBox:", `0 0 ${VIEWBOX_WIDTH} ${viewBoxHeight}`);
+console.log("province paths:", provinces.length, "total ML points:", totalPoints);
+console.log("prefecture labels:", labels.length, "product cities:", projectedProductCities.length);
+console.log("South China Sea polygons:", southSeaPolygons.length, "inset path chars:", southSeaPath.length);
+console.log("output size:", `${(fs.statSync(OUTPUT).size / 1024).toFixed(1)} KB`);
