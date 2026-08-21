@@ -32,6 +32,7 @@ export default function MemoryDetailScreen() {
   const [previewRestorationKey, setPreviewRestorationKey] = React.useState(0);
 
   React.useEffect(() => {
+    setActivePage(null);
     setIsPagePreviewOpen(false);
     setPreviewCursor(null);
     setPreviewRestorationKey(0);
@@ -115,7 +116,7 @@ export default function MemoryDetailScreen() {
           initialPageId={restoredPreviewCursor?.pageId ?? (typeof pageId === "string" ? pageId : undefined)}
           onActivePageChange={setActivePage}
           pages={memory.pages}
-          restorationKey={restoredPreviewCursor ? previewRestorationKey : 0}
+          restorationKey={`${memory.id}:${restoredPreviewCursor ? previewRestorationKey : 0}`}
         />
         {isSample ? (
           <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />

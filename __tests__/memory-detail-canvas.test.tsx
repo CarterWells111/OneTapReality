@@ -181,7 +181,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(mockPageReader.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
       fallbackIndex: 1,
       initialPageId: "page-2",
-      restorationKey: 1,
+      restorationKey: "memory-canvas:1",
     }));
 
     fireEvent.press(view.getByText("页面预览"));
@@ -189,7 +189,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
     expect(mockPageReader.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
       fallbackIndex: 1,
       initialPageId: "page-2",
-      restorationKey: 2,
+      restorationKey: "memory-canvas:2",
     }));
   });
 
@@ -233,8 +233,60 @@ describe("MemoryDetailScreen canvas rendering", () => {
       expect(props).toEqual(expect.objectContaining({
         fallbackIndex: 1,
         initialPageId: "page-2",
-        restorationKey: 1,
+        restorationKey: "memory-canvas:1",
       }));
+    }
+  });
+
+  it("restores the cover when switching albums that share page ids", async () => {
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-canvas", title: "First album", city: "shanghai", travelDate: "2026-07-22", photoUris: [],
+      createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "First cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "First second page", body: "" },
+      ],
+    });
+    const view = render(<MemoryDetailScreen />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      fireGestureHandler(getByGestureTestId("page-reader-pan"), [
+        { state: State.BEGAN, translationX: 0, translationY: 0, velocityX: 0 },
+        { state: State.ACTIVE, translationX: -30, translationY: 0, velocityX: -700 },
+        { state: State.END, translationX: -100, translationY: 0, velocityX: -700 },
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("reader-page")).toHaveTextContent("First second page");
+    mockPageReader.mockClear();
+
+    mockSearchParams = { id: "memory-other" };
+    mockGetMemoryById.mockReturnValue({
+      id: "memory-other", title: "Second album", city: "hangzhou", travelDate: "2026-08-01", photoUris: [],
+      createdAt: "2026-08-01T10:00:00.000Z", updatedAt: "2026-08-01T10:00:00.000Z",
+      pages: [
+        { id: "cover", position: 0, kind: "cover", headline: "Second cover", body: "" },
+        { id: "page-2", position: 1, kind: "photo", headline: "Second second page", body: "" },
+      ],
+    });
+    view.rerender(<MemoryDetailScreen />);
+
+    expect(view.getByTestId("reader-page")).toHaveTextContent("Second cover");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(view.getByTestId("reader-page")).toHaveTextContent("Second cover");
+    expect(mockPageReader).toHaveBeenCalled();
+    for (const [props] of mockPageReader.mock.calls) {
+      expect(props).toEqual(expect.objectContaining({
+        fallbackIndex: 0,
+        initialPageId: undefined,
+        restorationKey: "memory-other:0",
+      }));
+      expect(props.pages[0]).toEqual(expect.objectContaining({ headline: "Second cover" }));
     }
   });
 
@@ -265,7 +317,7 @@ describe("MemoryDetailScreen canvas rendering", () => {
       expect(props).toEqual(expect.objectContaining({
         fallbackIndex: 0,
         initialPageId: undefined,
-        restorationKey: 0,
+        restorationKey: "memory-other:0",
       }));
       expect(props).not.toEqual(expect.objectContaining({
         fallbackIndex: 1,
