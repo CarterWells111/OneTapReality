@@ -1,5 +1,15 @@
 ﻿# 决策记录
 
+## 2026-08-21：NFC staging 测试批次与本地模拟入口
+
+NFC 礼品的账号、认领、首次激活、共享相册和停用回归使用现有独立 staging API、PostgreSQL、Resend 与私有 R2，不新增远程测试端点、第三方服务或客户端秘密。测试批次只能调用 `https://api-staging.onetapreality.com`，礼品 URL 只能来自 `https://staging.onetapreality.com`；任何 production origin、非 staging bucket 或缺少显式确认的运行都必须在写入前失败。
+
+- 批次工具通过现有管理员与礼品拥有者 API 创建未认领、owner、viewer、editor 和停用五种礼品状态。viewer/editor 只预置邀请，不预置激活；首次激活仍必须由对应已验证账号持有礼品 token 后完成。
+- 三个临时账号从一个受控邮箱派生 `+nfc-owner`、`+nfc-viewer`、`+nfc-editor`，只由发布负责人临时追加到 staging `ALPHA_ALLOWED_EMAILS`。不得清空白名单、扩大 production 登录或把邮箱、验证码、会话 token、礼品 token 写入 Git/日志。
+- 本地 NFC Lab 是由脚本生成且被 Git 精确忽略的 Expo Router 页面。按钮只把应用导航到真实 `/gift/<token>` 路由，不 mock API、不跳过邮箱验证或权限检查；本地 demo 相册继续按当前规范化账号隔离并只使用仓库内图片。
+- PR 准备必须先停用/退休批次礼品并完成媒体清理，再移除临时邮箱、本地 manifest 和生成页面。任何未清批次或测试凭据残留都阻止 PR 准备完成。
+- 本地按钮只能验证应用收到 NFC 深链后的业务链路，不能证明实体标签的 NDEF 写入、写后读回、容量、锁屏唤起或射频可靠性；三张 staging 实体卡验收仍是独立发布门槛。
+
 ## 2026-08-17：本地相册照片只持久化容器相对引用
 
 本地相册不得把包含 iOS 应用容器 UUID 的绝对 `file://` URI 作为长期照片标识写入数据库。应用复制照片到当前账号和相册专属的 `Documents/photos/accounts/...` 目录后，只保存从 `Documents` 开始计算的规范相对引用；展示、编辑、导出和礼品发布前再基于当前 `FileSystem.documentDirectory` 解析。这样 TestFlight/App Store 更新导致容器根路径变化时，数据库引用仍然有效。
