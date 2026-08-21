@@ -76,13 +76,15 @@ const mediaSnapshotMemory: Memory = {
 
 function createMediaSnapshotDatabase(options?: { ownerAccountKey?: string; failStatement?: string }) {
   const state: {
-    memory: { id: string; ownerAccountKey: string; updatedAt: string; coverImage?: string };
+    memory: { id: string; ownerAccountKey: string; title: string; travelDate: string; updatedAt: string; coverImage?: string };
     photos: string[];
     pages: Array<{ id: string; photoUri?: string; layoutJson: string }>;
   } = {
     memory: {
       id: mediaSnapshotMemory.id,
       ownerAccountKey: options?.ownerAccountKey ?? accountKey,
+      title: "Old album name",
+      travelDate: "2025-01-02",
       updatedAt: "old-updated-at",
       coverImage: "old-cover.jpg",
     },
@@ -103,7 +105,13 @@ function createMediaSnapshotDatabase(options?: { ownerAccountKey?: string; failS
       if (options?.failStatement && statement.startsWith(options.failStatement)) {
         throw new Error("injected statement failure");
       }
-      if (statement.startsWith("UPDATE memories SET updatedAt")) {
+      if (statement.startsWith("UPDATE memories SET title")) {
+        if (state.memory.id !== parameters[4] || state.memory.ownerAccountKey !== parameters[5]) return { changes: 0 };
+        state.memory.title = String(parameters[0]);
+        state.memory.travelDate = String(parameters[1]);
+        state.memory.updatedAt = String(parameters[2]);
+        state.memory.coverImage = parameters[3] == null ? undefined : String(parameters[3]);
+      } else if (statement.startsWith("UPDATE memories SET updatedAt")) {
         if (state.memory.id !== parameters[2] || state.memory.ownerAccountKey !== parameters[3]) return { changes: 0 };
         state.memory.updatedAt = String(parameters[0]);
         state.memory.coverImage = parameters[1] == null ? undefined : String(parameters[1]);
@@ -427,6 +435,8 @@ describe("memory draft lifecycle repository", () => {
 
     expect(state).toEqual({
       memory: expect.objectContaining({
+        title: mediaSnapshotMemory.title,
+        travelDate: mediaSnapshotMemory.travelDate,
         updatedAt: mediaSnapshotMemory.updatedAt,
         coverImage: mediaSnapshotMemory.coverImage,
       }),

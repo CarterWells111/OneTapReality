@@ -1,6 +1,7 @@
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconButton } from "../../../components/icon-button";
 import { AppButton, colors } from "../../../components/ui";
@@ -19,6 +20,24 @@ import type { Memory, StoryPage } from "../../../types/memory";
 
 type Action = "save" | "retry" | "discard" | null;
 
+const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
+
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return new Date();
+  }
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
 export default function DraftReviewScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,14 +51,15 @@ export default function DraftReviewScreen() {
   } = useMemories();
   const [draft, setDraft] = React.useState<Memory | null>(null);
   const draftRef = React.useRef<Memory | null>(null);
-  const queueRef = React.useRef<AutosaveQueue<StoryPage[]> | null>(null);
+  const queueRef = React.useRef<AutosaveQueue<Memory> | null>(null);
   const unsubscribeRef = React.useRef<(() => void) | null>(null);
-  const pendingTextPages = React.useRef<StoryPage[] | null>(null);
+  const pendingDebouncedDraft = React.useRef<Memory | null>(null);
   const textTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autosaveState, setAutosaveState] = React.useState<AutosaveQueueState>({ status: "saved" });
   const [isLoading, setIsLoading] = React.useState(true);
   const [action, setAction] = React.useState<Action>(null);
   const [error, setError] = React.useState("");
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
   const draftId = draft?.id;
 
   const installDraft = React.useCallback((nextDraft: Memory) => {
@@ -76,12 +96,11 @@ export default function DraftReviewScreen() {
     if (!draftId || queueRef.current) {
       return;
     }
-    const queue = new AutosaveQueue<StoryPage[]>(async (pages) => {
-      const currentDraft = draftRef.current;
-      if (!currentDraft) {
-        throw new Error("草稿已不可用");
+    const queue = new AutosaveQueue<Memory>(async (snapshot) => {
+      if (!snapshot.title.trim()) {
+        throw new Error("请输入纪念册标题");
       }
-      await updateDraftPages({ ...currentDraft, pages }, pages);
+      await updateDraftPages(snapshot, snapshot.pages);
     });
     queueRef.current = queue;
     unsubscribeRef.current = queue.subscribe(setAutosaveState);
@@ -96,24 +115,38 @@ export default function DraftReviewScreen() {
     if (textTimer.current) {
       clearTimeout(textTimer.current);
     }
+    const pendingDraft = pendingDebouncedDraft.current;
+    pendingDebouncedDraft.current = null;
+    textTimer.current = null;
+    if (pendingDraft?.title.trim()) {
+      queueRef.current?.enqueue(pendingDraft);
+    }
   }, []);
 
-  const enqueuePendingText = React.useCallback(() => {
-    if (!pendingTextPages.current) {
+  const enqueueDraft = React.useCallback((snapshot: Memory) => {
+    if (!snapshot.title.trim()) {
+      setError("请输入纪念册标题");
       return;
     }
-    const pages = pendingTextPages.current;
-    pendingTextPages.current = null;
-    textTimer.current = null;
-    queueRef.current?.enqueue(pages);
+    queueRef.current?.enqueue(snapshot);
   }, []);
+
+  const enqueuePendingDraft = React.useCallback(() => {
+    if (!pendingDebouncedDraft.current) {
+      return;
+    }
+    const snapshot = pendingDebouncedDraft.current;
+    pendingDebouncedDraft.current = null;
+    textTimer.current = null;
+    enqueueDraft(snapshot);
+  }, [enqueueDraft]);
 
   const clearTextDebounce = React.useCallback(() => {
     if (textTimer.current) {
       clearTimeout(textTimer.current);
       textTimer.current = null;
     }
-    pendingTextPages.current = null;
+    pendingDebouncedDraft.current = null;
   }, []);
 
   const changePages = (pages: StoryPage[], reason: BookEditorChangeReason) => {
@@ -126,29 +159,66 @@ export default function DraftReviewScreen() {
     setDraft(nextDraft);
 
     if (reason === "text") {
-      pendingTextPages.current = pages;
+      pendingDebouncedDraft.current = nextDraft;
       if (textTimer.current) {
         clearTimeout(textTimer.current);
       }
-      textTimer.current = setTimeout(enqueuePendingText, 400);
+      textTimer.current = setTimeout(enqueuePendingDraft, 400);
       return;
     }
 
     clearTextDebounce();
-    queueRef.current?.enqueue(pages);
+    enqueueDraft(nextDraft);
+  };
+
+  const changeTitle = (title: string) => {
+    const currentDraft = draftRef.current;
+    if (!currentDraft) {
+      return;
+    }
+    const nextDraft = { ...currentDraft, title };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    if (title.trim()) {
+      setError((current) => current === "请输入纪念册标题" ? "" : current);
+    }
+    pendingDebouncedDraft.current = nextDraft;
+    if (textTimer.current) {
+      clearTimeout(textTimer.current);
+    }
+    textTimer.current = setTimeout(enqueuePendingDraft, 400);
+  };
+
+  const handleDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== "ios") {
+      setShowDatePicker(false);
+    }
+    const currentDraft = draftRef.current;
+    if (event.type !== "set" || !selected || !currentDraft) {
+      return;
+    }
+    const nextDraft = { ...currentDraft, travelDate: toIsoDate(selected) };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    clearTextDebounce();
+    enqueueDraft(nextDraft);
   };
 
   const flushAutosave = async () => {
-    if (pendingTextPages.current) {
+    if (pendingDebouncedDraft.current) {
       if (textTimer.current) {
         clearTimeout(textTimer.current);
       }
-      enqueuePendingText();
+      enqueuePendingDraft();
     }
     await queueRef.current?.waitForIdle();
   };
 
   const keepDraft = async () => {
+    if (!draftRef.current?.title.trim()) {
+      setError("请输入纪念册标题");
+      return;
+    }
     setAction("save");
     setError("");
     try {
@@ -251,8 +321,26 @@ export default function DraftReviewScreen() {
           keyboardShouldPersistTaps="handled">
           <View style={styles.summary}>
             <View style={styles.summaryCopy}>
-              <Text numberOfLines={1} selectable style={styles.title}>{draft.title}</Text>
-              <Text selectable style={styles.metadata}>{city.name} · {draft.travelDate}</Text>
+              <TextInput
+                accessibilityLabel="纪念册标题"
+                editable={!isActing}
+                onChangeText={changeTitle}
+                placeholder="纪念册标题"
+                placeholderTextColor={colors.muted}
+                style={styles.title}
+                value={draft.title}
+              />
+              <View style={styles.metadataRow}>
+                <Text selectable style={styles.metadata}>{city.name} ·</Text>
+                <Pressable
+                  accessibilityLabel="选择旅行日期"
+                  accessibilityRole="button"
+                  disabled={isActing}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text selectable style={styles.dateValue}>{draft.travelDate} ›</Text>
+                </Pressable>
+              </View>
             </View>
             <Text selectable style={styles.pageCount}>{draft.pages.length} 页</Text>
           </View>
@@ -284,6 +372,35 @@ export default function DraftReviewScreen() {
             onPress={() => void keepDraft()}
           />
         </View>
+
+        {showDatePicker && Platform.OS === "android" ? (
+          <DateTimePicker
+            maximumDate={new Date()}
+            minimumDate={MIN_TRAVEL_DATE}
+            mode="date"
+            onChange={handleDateChange}
+            value={parseIsoDate(draft.travelDate)}
+          />
+        ) : null}
+
+        {showDatePicker && Platform.OS === "ios" ? (
+          <View style={styles.overlay}>
+            <View style={styles.dateSheet}>
+              <Text selectable style={styles.sheetTitle}>选择旅行日期</Text>
+              <DateTimePicker
+                display="spinner"
+                maximumDate={new Date()}
+                minimumDate={MIN_TRAVEL_DATE}
+                mode="date"
+                onChange={handleDateChange}
+                textColor={colors.ink}
+                themeVariant="light"
+                value={parseIsoDate(draft.travelDate)}
+              />
+              <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
+            </View>
+          </View>
+        ) : null}
       </View>
     </>
   );
@@ -325,8 +442,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   summaryCopy: { flex: 1, gap: 3 },
-  title: { color: colors.ink, fontSize: 20, fontWeight: "800" },
+  title: { color: colors.ink, fontSize: 20, fontWeight: "800", margin: 0, padding: 0 },
+  metadataRow: { alignItems: "center", flexDirection: "row", gap: 4 },
   metadata: { color: colors.muted, fontSize: 13 },
+  dateValue: { color: colors.accent, fontSize: 13, fontWeight: "700" },
   pageCount: { color: colors.accent, fontSize: 13, fontWeight: "800" },
   hint: { color: colors.muted, fontSize: 13, lineHeight: 19, paddingHorizontal: 20 },
   aiDisclaimer: { color: colors.muted, fontSize: 12, lineHeight: 17, paddingHorizontal: 20, textAlign: "center" },
@@ -342,4 +461,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
   },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
+  dateSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    gap: 12,
+    padding: 20,
+  },
+  sheetTitle: { color: colors.ink, fontSize: 19, fontWeight: "800" },
 });
