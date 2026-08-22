@@ -39,6 +39,31 @@ let mockAccountEmail = "owner@example.com";
 let mockRouteId = "memory-1";
 let mockRoutePageId: string | undefined;
 let mockRoutePageIndex: string | undefined;
+let mockDatePickerProps: {
+  maximumDate?: Date;
+  minimumDate?: Date;
+  onChange: (event: { type: "set" }, date: Date) => void;
+} | null = null;
+
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react") as typeof import("react");
+  const { Pressable, Text } = require("react-native");
+  return function MockDateTimePicker(props: {
+    maximumDate?: Date;
+    minimumDate?: Date;
+    onChange: (event: { type: "set" }, date: Date) => void;
+  }) {
+    mockDatePickerProps = props;
+    return (
+      <Pressable
+        accessibilityLabel="测试已保存旅行日期选择器"
+        onPress={() => props.onChange({ type: "set" }, new Date(2026, 7, 21))}
+      >
+        <Text>测试日期选择器</Text>
+      </Pressable>
+    );
+  };
+});
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: mockRouteId, pageId: mockRoutePageId, pageIndex: mockRoutePageIndex }),
@@ -243,6 +268,7 @@ describe("EditMemoryScreen", () => {
     mockPreparedPages = undefined;
     mockPreparedCursor = { pageId: "cover-1", index: 0 };
     mockPrepareSaveReturnsNull = false;
+    mockDatePickerProps = null;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);
@@ -550,6 +576,195 @@ describe("EditMemoryScreen", () => {
       params: { id: "memory-1", pageId: "page-2", pageIndex: "1" },
     });
     expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("shows saved album metadata before the existing editing instruction and canvas", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    expect(screen.getByLabelText("双击修改旅行册名称")).toBeTruthy();
+    expect(screen.getByText("杭州 · 2026-07-22")).toBeTruthy();
+    expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+    const rendered = JSON.stringify(screen.toJSON());
+    expect(rendered.indexOf("杭州周末")).toBeLessThan(rendered.indexOf("双击组件进入编辑"));
+  });
+
+  it("requires two immediate physical presses to edit the saved album title", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+
+    fireEvent.press(title);
+    expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+    fireEvent.press(title);
+
+    expect(screen.getByLabelText("纪念册标题").props.autoFocus).toBe(true);
+  });
+
+  it("uses the latest press as the start of the 350ms title-edit window", async () => {
+    const now = jest.spyOn(Date, "now");
+    try {
+      const screen = render(<EditMemoryScreen />);
+      await screen.findByTestId("album-canvas");
+      const title = screen.getByLabelText("双击修改旅行册名称");
+      now.mockReturnValueOnce(1000);
+      fireEvent.press(title);
+      now.mockReturnValueOnce(1400);
+      fireEvent.press(title);
+      expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+      now.mockReturnValueOnce(1500);
+      fireEvent.press(title);
+      expect(screen.getByLabelText("纪念册标题")).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("never treats the first title press as a double press at an early clock value", async () => {
+    const now = jest.spyOn(Date, "now").mockReturnValue(100);
+    try {
+      const screen = render(<EditMemoryScreen />);
+      await screen.findByTestId("album-canvas");
+      fireEvent.press(screen.getByLabelText("双击修改旅行册名称"));
+      expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("updates title and travel date locally without formal persistence", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "杭州夏夜");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试已保存旅行日期选择器"));
+
+    expect(screen.getByDisplayValue("杭州夏夜")).toBeTruthy();
+    expect(screen.getByText("杭州 · 2026-08-21")).toBeTruthy();
+    expect(mockUpdatePages).not.toHaveBeenCalled();
+  });
+
+  it("enters title editing through the accessibility activate action", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+
+    fireEvent(screen.getByLabelText("双击修改旅行册名称"), "accessibilityAction", {
+      nativeEvent: { actionName: "activate" },
+    });
+
+    expect(screen.getByLabelText("纪念册标题")).toBeTruthy();
+  });
+
+  it("discards local metadata when account, route, and memory identity switch", async () => {
+    let providerMemory = memory;
+    mockGetMemoryById.mockImplementation(() => providerMemory);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "不应泄漏");
+
+    mockAccountEmail = "other@example.com";
+    mockRouteId = "memory-2";
+    providerMemory = {
+      ...memory,
+      id: "memory-2",
+      title: "上海秋日",
+      city: "shanghai",
+      travelDate: "2026-08-02",
+    };
+    screen.rerender(<EditMemoryScreen />);
+
+    expect(await screen.findByText("上海秋日")).toBeTruthy();
+    expect(screen.getByText("上海 · 2026-08-02")).toBeTruthy();
+    expect(screen.queryByText("不应泄漏")).toBeNull();
+    expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+  });
+
+  it("keeps local metadata through a same-identity provider refresh", async () => {
+    let providerMemory = memory;
+    mockGetMemoryById.mockImplementation(() => providerMemory);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "本地杭州");
+    providerMemory = { ...memory, title: "服务端刷新", updatedAt: "2026-07-22T11:00:00.000Z" };
+    screen.rerender(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    expect(screen.getByDisplayValue("本地杭州")).toBeTruthy();
+  });
+
+  it("closes metadata controls and clears the first press when identity changes", async () => {
+    let providerMemory = memory;
+    mockGetMemoryById.mockImplementation(() => providerMemory);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("双击修改旅行册名称"));
+    mockAccountEmail = "other@example.com";
+    mockRouteId = "memory-2";
+    providerMemory = { ...memory, id: "memory-2", title: "上海秋日", city: "shanghai", travelDate: "2026-08-02" };
+    screen.rerender(<EditMemoryScreen />);
+    await screen.findByText("上海秋日");
+    expect(screen.queryByLabelText("测试已保存旅行日期选择器")).toBeNull();
+    expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+    fireEvent.press(screen.getByLabelText("双击修改旅行册名称"));
+    expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+  });
+
+  it("bounds the picker date and disables metadata controls during formal save", async () => {
+    let resolveFormal: (() => void) | undefined;
+    mockUpdatePages.mockReturnValue(new Promise<void>((resolve) => { resolveFormal = resolve; }));
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    expect(mockDatePickerProps?.minimumDate).toEqual(new Date(2000, 0, 1));
+    expect(mockDatePickerProps?.maximumDate?.toDateString()).toBe(new Date().toDateString());
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityState.disabled).toBe(true);
+    await act(async () => resolveFormal?.());
+  });
+
+  it("ignores captured metadata callbacks after formal save starts", async () => {
+    let resolveFormal: (() => void) | undefined;
+    mockUpdatePages.mockReturnValue(new Promise<void>((resolve) => { resolveFormal = resolve; }));
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    const oldTitleChange = screen.getByLabelText("纪念册标题").props.onChangeText;
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    const oldDateChange = mockDatePickerProps!.onChange;
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+    act(() => {
+      oldTitleChange("保存中泄漏");
+      oldDateChange({ type: "set" }, new Date(2026, 8, 3));
+    });
+    expect(screen.queryByDisplayValue("保存中泄漏")).toBeNull();
+    expect(screen.getByText("杭州 · 2026-07-22")).toBeTruthy();
+    await act(async () => resolveFormal?.());
+  });
+
+  it("does not formally persist metadata when unmounted without saving", async () => {
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "未保存标题");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试已保存旅行日期选择器"));
+    screen.unmount();
+
+    expect(mockUpdatePages).not.toHaveBeenCalled();
   });
 
   it("persists the editor-prepared pages and cursor instead of older parent refs", async () => {
