@@ -3,6 +3,8 @@
   fireEvent,
   render,
 } from "@testing-library/react-native";
+import * as React from "react";
+import { ScrollView } from "react-native";
 
 import {
   addCanvasPage,
@@ -582,11 +584,15 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
 
-    expect(screen.getByLabelText("双击修改旅行册名称")).toBeTruthy();
-    expect(screen.getByText("杭州 · 2026-07-22")).toBeTruthy();
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("杭州周末");
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("杭州 · 2026-07-22");
     expect(screen.queryByLabelText("纪念册标题")).toBeNull();
-    const rendered = JSON.stringify(screen.toJSON());
-    expect(rendered.indexOf("杭州周末")).toBeLessThan(rendered.indexOf("双击组件进入编辑"));
+    const children = React.Children.toArray(screen.UNSAFE_getByType(ScrollView).props.children) as Array<React.ReactElement<{ testID?: string }>>;
+    const headerIndex = children.findIndex((child) => child.props.testID === "saved-memory-metadata-header");
+    const instructionIndex = children.findIndex((child) => child.props.testID === "memory-canvas-edit-instruction");
+    expect(headerIndex).toBeGreaterThanOrEqual(0);
+    expect(instructionIndex).toBeGreaterThanOrEqual(0);
+    expect(headerIndex).toBeLessThan(instructionIndex);
   });
 
   it("requires two immediate physical presses to edit the saved album title", async () => {
@@ -632,6 +638,27 @@ describe("EditMemoryScreen", () => {
     }
   });
 
+  it("does not treat a rolled-back clock as a title double press", async () => {
+    const now = jest.spyOn(Date, "now");
+    try {
+      const screen = render(<EditMemoryScreen />);
+      await screen.findByTestId("album-canvas");
+      const title = screen.getByLabelText("双击修改旅行册名称");
+      now.mockReturnValueOnce(1000);
+      fireEvent.press(title);
+      now.mockReturnValueOnce(900);
+      fireEvent.press(title);
+      expect(screen.queryByLabelText("纪念册标题")).toBeNull();
+      now.mockReturnValueOnce(2000);
+      fireEvent.press(title);
+      now.mockReturnValueOnce(2100);
+      fireEvent.press(title);
+      expect(screen.getByLabelText("纪念册标题")).toBeTruthy();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("updates title and travel date locally without formal persistence", async () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
@@ -644,6 +671,9 @@ describe("EditMemoryScreen", () => {
 
     expect(screen.getByDisplayValue("杭州夏夜")).toBeTruthy();
     expect(screen.getByText("杭州 · 2026-08-21")).toBeTruthy();
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("杭州 · 2026-08-21");
+    fireEvent(screen.getByLabelText("纪念册标题"), "submitEditing");
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("杭州夏夜");
     expect(mockUpdatePages).not.toHaveBeenCalled();
   });
 
@@ -681,6 +711,8 @@ describe("EditMemoryScreen", () => {
 
     expect(await screen.findByText("上海秋日")).toBeTruthy();
     expect(screen.getByText("上海 · 2026-08-02")).toBeTruthy();
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("上海秋日");
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("上海 · 2026-08-02");
     expect(screen.queryByText("不应泄漏")).toBeNull();
     expect(screen.queryByLabelText("纪念册标题")).toBeNull();
   });

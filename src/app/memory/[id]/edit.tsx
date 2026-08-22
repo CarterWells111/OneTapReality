@@ -365,7 +365,8 @@ export default function EditMemoryScreen() {
       || isFormalSaveCompleted
       || metadataDraftRef.current?.identity !== loadIdentity) return;
     const now = Date.now();
-    if (lastTitlePressRef.current !== null && now - lastTitlePressRef.current <= 350) {
+    const elapsed = lastTitlePressRef.current === null ? null : now - lastTitlePressRef.current;
+    if (elapsed !== null && elapsed >= 0 && elapsed <= 350) {
       beginTitleEditing();
       return;
     }
@@ -568,7 +569,7 @@ export default function EditMemoryScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         testID="memory-canvas-edit-scroll">
-      <View style={styles.metadataHeader}>
+      <View style={styles.metadataHeader} testID="saved-memory-metadata-header">
         {isEditingTitle && metadataDraftRef.current?.identity === loadIdentity ? (
           <TextInput
             accessibilityLabel="纪念册标题"
@@ -587,6 +588,7 @@ export default function EditMemoryScreen() {
             accessibilityHint="连续点击两次进入编辑"
             accessibilityLabel="双击修改旅行册名称"
             accessibilityRole="button"
+            accessibilityValue={{ text: currentMetadata.title }}
             disabled={metadataControlsDisabled}
             onAccessibilityAction={(event) => {
               if (event.nativeEvent.actionName === "activate") beginTitleEditing();
@@ -599,6 +601,9 @@ export default function EditMemoryScreen() {
         <Pressable
           accessibilityLabel="选择旅行日期"
           accessibilityRole="button"
+          accessibilityValue={{
+            text: `${cityContent[memory.city].name} · ${currentMetadata.travelDate}`,
+          }}
           disabled={metadataControlsDisabled}
           onPress={() => {
             if (metadataDraftRef.current?.identity === loadIdentity) setShowDatePicker(true);
@@ -609,7 +614,7 @@ export default function EditMemoryScreen() {
           </Text>
         </Pressable>
       </View>
-      <Text selectable style={styles.muted}>
+      <Text selectable style={styles.muted} testID="memory-canvas-edit-instruction">
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
       {didRecover ? (
