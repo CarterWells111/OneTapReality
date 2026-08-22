@@ -595,6 +595,20 @@ describe("EditMemoryScreen", () => {
     expect(headerIndex).toBeLessThan(instructionIndex);
   });
 
+  it("renders a legacy runtime city key as its own metadata label", async () => {
+    mockGetMemoryById.mockReturnValue({
+      ...memory,
+      city: "london" as Memory["city"],
+    });
+
+    const screen = render(<EditMemoryScreen />);
+
+    expect(await screen.findByText("london · 2026-07-22")).toBeTruthy();
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe(
+      "london · 2026-07-22",
+    );
+  });
+
   it("requires two immediate physical presses to edit the saved album title", async () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
@@ -817,11 +831,117 @@ describe("EditMemoryScreen", () => {
 
     await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
-    expect(mockUpdatePages).toHaveBeenCalledWith(memory, mockPreparedPages);
+    expect(mockUpdatePages).toHaveBeenCalledWith({
+      ...memory,
+      pages: mockPreparedPages,
+    }, mockPreparedPages);
     expect(mockReplace).toHaveBeenCalledWith({
       pathname: "/memory/[id]",
       params: { id: "memory-1", pageId: "closing-1", pageIndex: "1" },
     });
+  });
+
+  it("formally saves edited metadata with prepared pages in place", async () => {
+    mockPreparedPages = legacyPages.map((page, index) => index === 0
+      ? { ...page, headline: "准备后的页面" }
+      : page);
+    const expectedPages = canvasPages(mockPreparedPages);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "西湖的夏天");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试已保存旅行日期选择器"));
+
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+
+    expect(mockUpdatePages).toHaveBeenCalledWith({
+      ...memory,
+      title: "西湖的夏天",
+      travelDate: "2026-08-21",
+      pages: expectedPages,
+    }, expectedPages);
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(screen.getByTestId("album-canvas")).toBeTruthy();
+  });
+
+  it("formally saves edited metadata with prepared pages before exiting", async () => {
+    mockPreparedPages = legacyPages.map((page, index) => index === 0
+      ? { ...page, headline: "准备后的页面" }
+      : page);
+    mockPreparedCursor = { pageId: "closing-1", index: 1 };
+    const expectedPages = canvasPages(mockPreparedPages);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "西湖的夏天");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试已保存旅行日期选择器"));
+
+    await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
+
+    expect(mockUpdatePages).toHaveBeenCalledWith({
+      ...memory,
+      title: "西湖的夏天",
+      travelDate: "2026-08-21",
+      pages: expectedPages,
+    }, expectedPages);
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: "/memory/[id]",
+      params: { id: "memory-1", pageId: "closing-1", pageIndex: "1" },
+    });
+  });
+
+  it.each(["保存当前修改", "保存并退出画布"])(
+    "blocks formal persistence for a whitespace-only title via %s",
+    async (saveLabel) => {
+      const screen = render(<EditMemoryScreen />);
+      await screen.findByTestId("album-canvas");
+      const title = screen.getByLabelText("双击修改旅行册名称");
+      fireEvent.press(title);
+      fireEvent.press(title);
+      fireEvent.changeText(screen.getByLabelText("纪念册标题"), "   ");
+
+      await act(async () => fireEvent.press(screen.getByText(saveLabel)));
+
+      expect(screen.getByText("请输入纪念册标题")).toBeTruthy();
+      expect(mockUpdatePages).not.toHaveBeenCalled();
+      expect(mockClearMemoryEditDraft).not.toHaveBeenCalled();
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(mockBack).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains edited metadata after persistence failure and retries the same snapshot", async () => {
+    mockUpdatePages
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce(undefined);
+    const screen = render(<EditMemoryScreen />);
+    await screen.findByTestId("album-canvas");
+    const title = screen.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "西湖的夏天");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试已保存旅行日期选择器"));
+
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+
+    expect(screen.getByDisplayValue("西湖的夏天")).toBeTruthy();
+    expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("杭州 · 2026-08-21");
+    await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
+    expect(mockUpdatePages).toHaveBeenCalledTimes(2);
+    expect(mockUpdatePages.mock.calls[1][0]).toMatchObject({
+      id: "memory-1",
+      title: "西湖的夏天",
+      travelDate: "2026-08-21",
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("does not persist when the editor cannot finish preparing its snapshot", async () => {

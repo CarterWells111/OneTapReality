@@ -427,17 +427,24 @@ export default function EditMemoryScreen() {
   const currentMetadata = metadataDraft?.identity === loadIdentity
     ? metadataDraft
     : { identity: loadIdentity, title: memory.title, travelDate: memory.travelDate };
+  const cityName = (cityContent as Record<string, { name: string }>)[memory.city]?.name ?? memory.city;
   const metadataControlsDisabled = isSaving || isFormalSaveCompleted;
 
   const save = async ({ navigate }: { navigate: boolean }) => {
     const sessionToken = editorSessionToken;
     const sessionLoadKey = loadKey;
     const sessionMemory = memoryRef.current;
+    const sessionMetadata = metadataDraftRef.current;
     if (saveInFlightRef.current
       || sessionToken === null
       || sessionToken !== editorSessionGenerationRef.current
       || sessionLoadKey !== currentLoadKeyRef.current
-      || !sessionMemory) {
+      || !sessionMemory
+      || sessionMetadata?.identity !== loadIdentity) {
+      return;
+    }
+    if (!sessionMetadata.title.trim()) {
+      setSaveError("请输入纪念册标题");
       return;
     }
     const recoveryLease = queueLeaseRef.current;
@@ -488,7 +495,13 @@ export default function EditMemoryScreen() {
         }
         if (!isCurrentSave()) return;
         try {
-          await updatePagesForSession(sessionMemory, latestPages);
+          const formalSnapshot = {
+            ...sessionMemory,
+            title: sessionMetadata.title,
+            travelDate: sessionMetadata.travelDate,
+            pages: latestPages,
+          };
+          await updatePagesForSession(formalSnapshot, latestPages);
           localDiagnostics.emit("formal_persistence_succeeded", {
             memoryId: sessionMemory.id,
           });
@@ -602,7 +615,7 @@ export default function EditMemoryScreen() {
           accessibilityLabel="选择旅行日期"
           accessibilityRole="button"
           accessibilityValue={{
-            text: `${cityContent[memory.city].name} · ${currentMetadata.travelDate}`,
+            text: `${cityName} · ${currentMetadata.travelDate}`,
           }}
           disabled={metadataControlsDisabled}
           onPress={() => {
@@ -610,7 +623,7 @@ export default function EditMemoryScreen() {
           }}
         >
           <Text selectable style={styles.metadataLine}>
-            {cityContent[memory.city].name} · {currentMetadata.travelDate}
+            {cityName} · {currentMetadata.travelDate}
           </Text>
         </Pressable>
       </View>
