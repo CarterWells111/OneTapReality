@@ -339,4 +339,32 @@ describe("CityMap workspace gestures", () => {
     expect(mockSharedValues[0]?.value).toBe(-120);
     expect(mockSharedValues[1]?.value).toBe(-80);
   });
+
+  it("does not reset the camera when the workspace container is resized after panning", async () => {
+    const screen = await render(<CityMap initialCity="shenzhen" stats={stats} variant="workspace" />);
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 320, width: 480, x: 0, y: 0 } },
+      });
+    });
+    const initial = [mockSharedValues[0]?.value, mockSharedValues[1]?.value, mockSharedValues[2]?.value];
+
+    await act(async () => {
+      mockGestureHandlers.pan.begin?.();
+      mockGestureHandlers.pan.update?.({ translationX: 40, translationY: -30 });
+    });
+    const panned = [mockSharedValues[0]?.value, mockSharedValues[1]?.value, mockSharedValues[2]?.value];
+    expect(panned[0]).not.toBe(initial[0]);
+
+    await act(async () => {
+      fireEvent(screen.getByTestId("city-map-workspace"), "layout", {
+        nativeEvent: { layout: { height: 500, width: 720, x: 0, y: 0 } },
+      });
+    });
+    const resized = [mockSharedValues[0]?.value, mockSharedValues[1]?.value, mockSharedValues[2]?.value];
+    // 用户平移后的视角应被保留（只按新尺寸夹取），而不是重置回初始聚焦
+    expect(resized[0]).toBe(panned[0]);
+    expect(resized[1]).toBe(panned[1]);
+    expect(resized[2]).toBe(panned[2]);
+  });
 });

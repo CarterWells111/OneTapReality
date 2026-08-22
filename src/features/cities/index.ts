@@ -8,5 +8,4 @@ export * from "./city-route";
 export * from "./city-archive";
 export * from "./city-illustrations";
 export * from "./city-card";
-export * from "./city-checkin-modal";
-export * from "./city-checkin-images";
+export * from "./city-checkin-map-images";

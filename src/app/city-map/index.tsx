@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../../components/ui";
 import { CityMap } from "../../features/cities/city-map";
-import { CityCheckinModal } from "../../features/cities/city-checkin-modal";
+import { getCityCheckinMapImage } from "../../features/cities/city-checkin-map-images";
 import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
 import { cityContent } from "../../features/cities/city-content";
@@ -38,15 +38,18 @@ export default function FullscreenCityMapScreen() {
   const { memories } = useMemories();
   const cityStats = getCityStats(memories);
   const [targetCity, setTargetCity] = React.useState<City | undefined>(undefined);
-  const [checkinCity, setCheckinCity] = React.useState<City | undefined>(undefined);
   const [searchText, setSearchText] = React.useState("");
   const [filteredCities, setFilteredCities] = React.useState<typeof citySearchEntries>([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const searchInputRef = React.useRef<TextInput>(null);
 
   const handleCityPress = React.useCallback((city: City) => {
-    setCheckinCity(city);
-  }, []);
+    if (getCityCheckinMapImage(city)) {
+      router.push(`/city-map/${city}`);
+    } else {
+      router.push({ pathname: "/city/[city]", params: { city } });
+    }
+  }, [router]);
 
   const handleSearch = React.useCallback((text: string) => {
     setSearchText(text);
@@ -153,15 +156,6 @@ export default function FullscreenCityMapScreen() {
           onTargetReached={() => setTargetCity(undefined)}
         />
       </View>
-
-      {/* 城市打卡弹窗 */}
-      {checkinCity ? (
-        <CityCheckinModal
-          city={checkinCity}
-          onClose={() => setCheckinCity(undefined)}
-          visible
-        />
-      ) : null}
     </View>
   );
 }
