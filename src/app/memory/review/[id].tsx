@@ -16,27 +16,14 @@ import {
   type AutosaveQueueState,
 } from "../../../features/memories/autosave-queue";
 import { useMemories } from "../../../features/memories/memories-provider";
+import {
+  MIN_TRAVEL_DATE,
+  parseIsoTravelDate,
+  toIsoTravelDate,
+} from "../../../features/memories/travel-date";
 import type { Memory, StoryPage } from "../../../types/memory";
 
 type Action = "save" | "retry" | "discard" | null;
-
-const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
-
-function toIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoDate(value: string): Date {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) {
-    return new Date();
-  }
-  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-}
 
 export default function DraftReviewScreen() {
   const router = useRouter();
@@ -197,7 +184,7 @@ export default function DraftReviewScreen() {
     if (event.type !== "set" || !selected || !currentDraft) {
       return;
     }
-    const nextDraft = { ...currentDraft, travelDate: toIsoDate(selected) };
+    const nextDraft = { ...currentDraft, travelDate: toIsoTravelDate(selected) };
     draftRef.current = nextDraft;
     setDraft(nextDraft);
     clearTextDebounce();
@@ -379,7 +366,7 @@ export default function DraftReviewScreen() {
             minimumDate={MIN_TRAVEL_DATE}
             mode="date"
             onChange={handleDateChange}
-            value={parseIsoDate(draft.travelDate)}
+            value={parseIsoTravelDate(draft.travelDate)}
           />
         ) : null}
 
@@ -395,7 +382,7 @@ export default function DraftReviewScreen() {
                 onChange={handleDateChange}
                 textColor={colors.ink}
                 themeVariant="light"
-                value={parseIsoDate(draft.travelDate)}
+                value={parseIsoTravelDate(draft.travelDate)}
               />
               <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
             </View>
