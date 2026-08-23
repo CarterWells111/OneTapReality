@@ -939,7 +939,7 @@ describe("EditMemoryScreen", () => {
 
     await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
 
-    expect(screen.getByDisplayValue("西湖的夏天")).toBeTruthy();
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("西湖的夏天");
     expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("杭州 · 2026-08-21");
     await act(async () => fireEvent.press(screen.getByText("保存当前修改")));
     expect(mockUpdatePages).toHaveBeenCalledTimes(2);

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, within } from "@testing-library/react-native";
 import * as React from "react";
 import { Modal, Platform } from "react-native";
 
@@ -6,6 +6,7 @@ import { AlbumMetadataEditor } from "../src/features/memories/album-metadata-edi
 import { MIN_TRAVEL_DATE } from "../src/features/memories/travel-date";
 
 type PickerProps = {
+  disabled?: boolean;
   display?: string;
   maximumDate?: Date;
   minimumDate?: Date;
@@ -146,6 +147,87 @@ describe("AlbumMetadataEditor", () => {
     expect(screen.queryByLabelText("测试旅行日期选择器")).toBeNull();
   });
 
+  it("closes active controls and rejects captured callbacks when disabled", () => {
+    const onChange = jest.fn();
+    const view = render(
+      <AlbumMetadataEditor
+        disabled={false}
+        onChange={onChange}
+        title="杭州周末"
+        travelDate="2026-07-22"
+      />,
+    );
+    fireEvent(view.getByLabelText("双击修改旅行册名称"), "accessibilityAction", {
+      nativeEvent: { actionName: "activate" },
+    });
+    const oldTitleChange = view.getByLabelText("纪念册标题").props.onChangeText;
+    fireEvent.press(view.getByLabelText("选择旅行日期"));
+    const oldDateChange = latestPickerProps!.onChange;
+    expect(latestPickerProps?.disabled).toBe(false);
+
+    view.rerender(
+      <AlbumMetadataEditor
+        disabled
+        onChange={onChange}
+        title="杭州周末"
+        travelDate="2026-07-22"
+      />,
+    );
+
+    expect(view.queryByLabelText("纪念册标题")).toBeNull();
+    expect(view.UNSAFE_queryByType(Modal)).toBeNull();
+    expect(view.getByLabelText("双击修改旅行册名称").props.accessibilityState.disabled).toBe(true);
+    expect(view.getByLabelText("选择旅行日期").props.accessibilityState.disabled).toBe(true);
+    act(() => {
+      oldTitleChange("不应写入");
+      oldDateChange({ type: "set" }, new Date(2026, 8, 3));
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("clears a pending first title press when disabled", () => {
+    const now = jest.spyOn(Date, "now");
+    try {
+      const view = render(
+        <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate={null} />,
+      );
+      now.mockReturnValueOnce(1_000);
+      fireEvent.press(view.getByLabelText("双击修改旅行册名称"));
+      view.rerender(
+        <AlbumMetadataEditor disabled onChange={jest.fn()} title="杭州周末" travelDate={null} />,
+      );
+      view.rerender(
+        <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate={null} />,
+      );
+      now.mockReturnValueOnce(1_100);
+      fireEvent.press(view.getByLabelText("双击修改旅行册名称"));
+
+      expect(view.queryByLabelText("纪念册标题")).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("clamps null and out-of-range picker values to explicit date bounds", () => {
+    const view = render(
+      <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate={null} />,
+    );
+    fireEvent.press(view.getByLabelText("选择旅行日期"));
+
+    expect(latestPickerProps!.value.getTime()).toBeGreaterThanOrEqual(MIN_TRAVEL_DATE.getTime());
+    expect(latestPickerProps!.value.getTime()).toBeLessThanOrEqual(latestPickerProps!.maximumDate!.getTime());
+
+    view.rerender(
+      <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate="1999-12-31" />,
+    );
+    expect(latestPickerProps!.value).toEqual(MIN_TRAVEL_DATE);
+
+    view.rerender(
+      <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate="2999-01-01" />,
+    );
+    expect(latestPickerProps!.value.getTime()).toBe(latestPickerProps!.maximumDate!.getTime());
+  });
+
   it("presents the iOS spinner in a top-level modal and closes it", () => {
     const view = render(
       <AlbumMetadataEditor disabled={false} onChange={jest.fn()} title="杭州周末" travelDate={null} />,
@@ -155,8 +237,12 @@ describe("AlbumMetadataEditor", () => {
     const modal = view.UNSAFE_getByType(Modal);
     expect(modal.props.transparent).toBe(true);
     expect(latestPickerProps?.display).toBe("spinner");
-    fireEvent.press(within(modal).getByText("完成"));
+    act(() => modal.props.onRequestClose());
 
+    expect(view.UNSAFE_queryByType(Modal)).toBeNull();
+
+    fireEvent.press(view.getByLabelText("选择旅行日期"));
+    fireEvent.press(within(view.UNSAFE_getByType(Modal)).getByText("完成"));
     expect(view.UNSAFE_queryByType(Modal)).toBeNull();
   });
 

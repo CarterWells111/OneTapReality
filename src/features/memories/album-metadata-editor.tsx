@@ -27,18 +27,36 @@ export function AlbumMetadataEditor({
 }: Props) {
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const disabledRef = React.useRef(disabled);
   const lastTitlePressRef = React.useRef<number | null>(null);
+  const onChangeRef = React.useRef(onChange);
+  disabledRef.current = disabled;
+  onChangeRef.current = onChange;
   const dateLabel = travelDate ?? "未设置旅行日期";
   const contextualDateLabel = contextLabel ? `${contextLabel} · ${dateLabel}` : dateLabel;
+  const maximumDate = new Date();
+  const parsedPickerDate = parseIsoTravelDate(travelDate ?? "");
+  const pickerValue = parsedPickerDate < MIN_TRAVEL_DATE
+    ? MIN_TRAVEL_DATE
+    : parsedPickerDate > maximumDate
+      ? maximumDate
+      : parsedPickerDate;
+
+  React.useEffect(() => {
+    if (!disabled) return;
+    lastTitlePressRef.current = null;
+    setIsEditingTitle(false);
+    setShowDatePicker(false);
+  }, [disabled]);
 
   const beginTitleEditing = () => {
-    if (disabled) return;
+    if (disabledRef.current) return;
     lastTitlePressRef.current = null;
     setIsEditingTitle(true);
   };
 
   const handleTitlePress = () => {
-    if (disabled) return;
+    if (disabledRef.current) return;
     const now = Date.now();
     const elapsed = lastTitlePressRef.current === null ? null : now - lastTitlePressRef.current;
     if (elapsed !== null && elapsed >= 0 && elapsed <= TITLE_DOUBLE_PRESS_WINDOW_MS) {
@@ -50,31 +68,32 @@ export function AlbumMetadataEditor({
 
   const handleDateChange = (event: DateTimePickerEvent, selected?: Date) => {
     if (Platform.OS !== "ios") setShowDatePicker(false);
-    if (!disabled && event.type === "set" && selected) {
-      onChange({ travelDate: toIsoTravelDate(selected) });
+    if (!disabledRef.current && event.type === "set" && selected) {
+      onChangeRef.current({ travelDate: toIsoTravelDate(selected) });
     }
   };
 
   const datePicker = (
     <DateTimePicker
-      maximumDate={new Date()}
+      disabled={disabled}
+      maximumDate={maximumDate}
       minimumDate={MIN_TRAVEL_DATE}
       mode="date"
       onChange={handleDateChange}
-      value={parseIsoTravelDate(travelDate ?? "")}
+      value={pickerValue}
     />
   );
 
   return (
     <View style={styles.metadataHeader} testID="saved-memory-metadata-header">
-      {isEditingTitle ? (
+      {!disabled && isEditingTitle ? (
         <TextInput
           accessibilityLabel="纪念册标题"
           autoFocus
           editable={!disabled}
           onBlur={() => setIsEditingTitle(false)}
           onChangeText={(nextTitle) => {
-            if (!disabled) onChange({ title: nextTitle });
+            if (!disabledRef.current) onChangeRef.current({ title: nextTitle });
           }}
           onSubmitEditing={() => setIsEditingTitle(false)}
           returnKeyType="done"
@@ -103,13 +122,13 @@ export function AlbumMetadataEditor({
         accessibilityValue={{ text: contextualDateLabel }}
         disabled={disabled}
         onPress={() => {
-          if (!disabled) setShowDatePicker(true);
+          if (!disabledRef.current) setShowDatePicker(true);
         }}
       >
         <Text selectable style={styles.metadataLine}>{contextualDateLabel}</Text>
       </Pressable>
-      {showDatePicker && Platform.OS === "android" ? datePicker : null}
-      {showDatePicker && Platform.OS === "ios" ? (
+      {!disabled && showDatePicker && Platform.OS === "android" ? datePicker : null}
+      {!disabled && showDatePicker && Platform.OS === "ios" ? (
         <Modal animationType="slide" onRequestClose={() => setShowDatePicker(false)} transparent visible>
           <View style={styles.overlay}>
             <View style={styles.dateSheet}>
