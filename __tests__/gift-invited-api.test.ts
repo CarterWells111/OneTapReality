@@ -8,16 +8,16 @@ jest.mock("../src/server/gifts/r2-media", () => ({
 }));
 jest.mock("../src/server/gifts/repository", () => ({
   listInvitedGifts: jest.fn(async () => [
-    { giftId: "gift-1", role: "viewer", albumId: "album-1", albumTitle: "A shared trip", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 },
-    { giftId: "gift-2", role: "viewer", albumId: null, albumTitle: null, publishedAt: null, version: null, coverObjectKey: null, coverContentType: null, coverByteSize: null },
+    { giftId: "gift-1", role: "viewer", albumId: "album-1", albumTitle: "A shared trip", travelDate: "2026-07-24", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 },
+    { giftId: "gift-2", role: "viewer", albumId: null, albumTitle: null, travelDate: null, publishedAt: null, version: null, coverObjectKey: null, coverContentType: null, coverByteSize: null },
   ]),
   getActivatedGiftAccessByGiftId: jest.fn(async (_db: unknown, giftId: string) =>
     giftId === "gift-1"
-      ? { id: "gift-1", status: "bound", role: "viewer", albumId: "album-1", albumTitle: "A shared trip", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 }
+      ? { id: "gift-1", status: "bound", role: "viewer", albumId: "album-1", albumTitle: "A shared trip", travelDate: "2026-07-24", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 }
       : null,
   ),
   getSharedAlbumSnapshot: jest.fn(async () => ({
-    album: { id: "album-1", title: "A shared trip", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 },
+    album: { id: "album-1", title: "A shared trip", travelDate: "2026-07-24", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: "gifts/gift-1/cover.jpg", coverContentType: "image/jpeg", coverByteSize: 24 },
     pages: [{ position: 0, page: { kind: "cover" } }],
     media: [],
   })),
@@ -41,6 +41,7 @@ describe("invited gift APIs", () => {
           giftId: "gift-1",
           album: expect.objectContaining({
             title: "A shared trip",
+            travelDate: "2026-07-24",
             cover: expect.objectContaining({ readUrl: "https://cdn.example.test/gifts/gift-1/cover.jpg", contentType: "image/jpeg", byteSize: 24 }),
           }),
         }),
@@ -62,8 +63,20 @@ describe("invited gift APIs", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
       title: "A shared trip",
+      travelDate: "2026-07-24",
       cover: expect.objectContaining({ readUrl: "https://cdn.example.test/gifts/gift-1/cover.jpg" }),
     }));
+  });
+
+  it("returns null for a legacy invited album without a travel date", async () => {
+    const { getSharedAlbumSnapshot } = jest.requireMock("../src/server/gifts/repository") as { getSharedAlbumSnapshot: jest.Mock };
+    getSharedAlbumSnapshot.mockResolvedValueOnce({
+      album: { id: "album-1", title: "Legacy", travelDate: null, publishedAt: "2026-07-24T00:00:00.000Z", version: 1, coverObjectKey: null },
+      pages: [],
+      media: [],
+    });
+    const response = await readInvitedAlbum(authedRequest("/api/gifts/invited/gift-1/album"), { id: "gift-1" });
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ title: "Legacy", travelDate: null }));
   });
 
   it("rejects non-viewers and missing albums", async () => {

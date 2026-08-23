@@ -29,11 +29,22 @@ export type GiftMemberRole = "owner" | "viewer" | "editor";
 export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
 export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
 
+export type SharedAlbumPublishPayload = {
+  baseVersion: number;
+  sourceMemoryId: string;
+  title: string;
+  travelDate: string | null;
+  pages: { position: number; page: unknown }[];
+  media: ({ position: number; mediaId: string } | { position: number; contentType: string; byteSize: number })[];
+  cover?: { contentType: string; byteSize: number } | null;
+};
+
 export type InvitedGift = {
   giftId: string;
   role: "viewer" | "editor";
   album: {
     title: string;
+    travelDate: string | null;
     albumId: string;
     publishedAt: string;
     version: number;
@@ -50,6 +61,7 @@ export type SharedAlbumCover = {
 export type InvitedGiftAlbum = {
   role: GiftMemberRole;
   title: string;
+  travelDate: string | null;
   pages: { position: number; page: unknown }[];
   media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[];
   publishedAt: string;
@@ -126,11 +138,11 @@ export class BackendApiClient {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/entry`);
   }
 
-  getGiftAccess(token: string, accessToken: string): Promise<{ id: string; status: "bound"; role: GiftMemberRole; albumId: string | null; albumTitle: string | null; publishedAt: string | null; version: number | null }> {
+  getGiftAccess(token: string, accessToken: string): Promise<{ id: string; status: "bound"; role: GiftMemberRole; albumId: string | null; albumTitle: string | null; travelDate: string | null; publishedAt: string | null; version: number | null }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/access`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  getGiftAlbum(token: string, accessToken: string): Promise<{ title: string; pages: { position: number; page: unknown }[]; media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[]; publishedAt: string; version: number; cover: SharedAlbumCover | null }> {
+  getGiftAlbum(token: string, accessToken: string): Promise<{ title: string; travelDate: string | null; pages: { position: number; page: unknown }[]; media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[]; publishedAt: string; version: number; cover: SharedAlbumCover | null }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
@@ -138,7 +150,7 @@ export class BackendApiClient {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/activate-viewer`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  startGiftPublish(token: string, accessToken: string, payload: { baseVersion: number; sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: { position: number; contentType: string; byteSize: number }[]; cover?: { contentType: string; byteSize: number } | null }) {
+  startGiftPublish(token: string, accessToken: string, payload: SharedAlbumPublishPayload) {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
@@ -146,11 +158,11 @@ export class BackendApiClient {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 
-  listOwnedGifts(accessToken: string): Promise<{ id: string; status: string; claimedAt: string | null; album: { title: string; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[]> {
-    return this.send<{ items: { id: string; status: string; claimedAt: string | null; album: { title: string; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[] }>("/api/gifts/owned", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
+  listOwnedGifts(accessToken: string): Promise<{ id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[]> {
+    return this.send<{ items: { id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[] }>("/api/gifts/owned", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
   }
 
-  getOwnedGiftManagement(accessToken: string, id: string): Promise<{ gift: { id: string; status: string; claimedAt: string | null; disabledAt: string | null }; members: { email: string; role: GiftMemberRole; createdAt: string }[]; album: { id: string; title: string; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null }> {
+  getOwnedGiftManagement(accessToken: string, id: string): Promise<{ gift: { id: string; status: string; claimedAt: string | null; disabledAt: string | null }; members: { email: string; role: GiftMemberRole; createdAt: string }[]; album: { id: string; title: string; travelDate: string | null; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null }> {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/manage`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
@@ -174,7 +186,7 @@ export class BackendApiClient {
     await this.send<null>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email }) });
   }
 
-  startOwnedGiftPublish(accessToken: string, id: string, payload: { baseVersion: number; sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: ({ position: number; mediaId: string } | { position: number; contentType: string; byteSize: number })[]; cover?: { contentType: string; byteSize: number } | null }) {
+  startOwnedGiftPublish(accessToken: string, id: string, payload: SharedAlbumPublishPayload) {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
@@ -216,7 +228,7 @@ export class BackendApiClient {
     return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  startInvitedGiftPublish(id: string, accessToken: string, payload: { baseVersion: number; sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: ({ position: number; mediaId: string } | { position: number; contentType: string; byteSize: number })[]; cover?: { contentType: string; byteSize: number } | null }) {
+  startInvitedGiftPublish(id: string, accessToken: string, payload: SharedAlbumPublishPayload) {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 

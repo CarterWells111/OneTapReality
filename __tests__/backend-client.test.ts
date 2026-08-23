@@ -104,17 +104,33 @@ describe("backend client", () => {
 
   it("lists invited gifts and reads an invited album from the real endpoints", async () => {
     const request = jest.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ title: "A shared trip", pages: [], media: [], publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: null }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", travelDate: "2026-07-24", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ title: "A shared trip", travelDate: null, pages: [], media: [], publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: null }), { status: 200 }));
     const client = new BackendApiClient(request);
 
     await expect(client.listInvitedGifts("session")).resolves.toEqual([
-      expect.objectContaining({ giftId: "gift-1", album: expect.objectContaining({ cover: expect.objectContaining({ readUrl: "https://cdn.test/cover.jpg" }) }) }),
+      expect.objectContaining({ giftId: "gift-1", album: expect.objectContaining({ travelDate: "2026-07-24", cover: expect.objectContaining({ readUrl: "https://cdn.test/cover.jpg" }) }) }),
     ]);
-    await expect(client.getInvitedGiftAlbum("gift-1", "session")).resolves.toEqual(expect.objectContaining({ title: "A shared trip", cover: null }));
+    await expect(client.getInvitedGiftAlbum("gift-1", "session")).resolves.toEqual(expect.objectContaining({ title: "A shared trip", travelDate: null, cover: null }));
     expect(request.mock.calls.map(([url]) => url)).toEqual([
       "/api/gifts/invited",
       "/api/gifts/invited/gift-1/album",
+    ]);
+  });
+
+  it("serializes the shared album title and travel date for every publish endpoint", async () => {
+    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ publicationId: "publish-1", uploads: [], coverUpload: null, expiresAt: "2026-07-24T00:10:00.000Z" }), { status: 201 }));
+    const client = new BackendApiClient(request);
+    const payload = { baseVersion: 0, sourceMemoryId: "memory-1", title: "A shared trip", travelDate: "2026-07-24", pages: [], media: [] };
+
+    await client.startGiftPublish("tag", "session", payload);
+    await client.startOwnedGiftPublish("session", "gift-1", payload);
+    await client.startInvitedGiftPublish("gift-1", "session", { ...payload, travelDate: null });
+
+    expect(request.mock.calls.map(([, options]) => JSON.parse(String(options?.body)))).toEqual([
+      expect.objectContaining({ title: "A shared trip", travelDate: "2026-07-24" }),
+      expect.objectContaining({ title: "A shared trip", travelDate: "2026-07-24" }),
+      expect.objectContaining({ title: "A shared trip", travelDate: null }),
     ]);
   });
 });

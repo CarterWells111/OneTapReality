@@ -15,6 +15,7 @@ describe("SharedAlbumEditor real Canvas chain", () => {
         album={{
           role: "editor",
           title: "Legacy shared album",
+          travelDate: null,
           version: 1,
           publishedAt: "2026-08-16T00:00:00Z",
           cover: null,

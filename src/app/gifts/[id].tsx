@@ -163,6 +163,7 @@ export default function GiftManagementScreen() {
         baseVersion: album?.version ?? 0,
         sourceMemoryId: selectedMemory.id,
         title: selectedMemory.title,
+        travelDate: selectedMemory.travelDate,
         pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page) })),
         media: media.map(({ position, contentType, byteSize }) => ({ position, contentType, byteSize })),
         cover: coverSize && coverContentType ? { contentType: coverContentType, byteSize: coverSize } : null,

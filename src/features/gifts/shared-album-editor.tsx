@@ -154,6 +154,7 @@ export function SharedAlbumEditor({
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
         title: album.title,
+        travelDate: album.travelDate,
         pages: publishPages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
         media: sources.map((source, position) => source.existingId
           ? { position, mediaId: source.existingId }

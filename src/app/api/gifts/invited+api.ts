@@ -21,6 +21,7 @@ export async function GET(request: Request): Promise<Response> {
         album: row.albumId
           ? {
               title: row.albumTitle,
+              travelDate: row.travelDate ?? null,
               albumId: row.albumId,
               publishedAt: row.publishedAt,
               version: row.version,
