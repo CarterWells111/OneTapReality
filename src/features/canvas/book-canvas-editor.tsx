@@ -76,6 +76,7 @@ type BookCanvasEditorProps = {
   onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
+  ref?: React.Ref<BookCanvasEditorHandle>;
 };
 
 const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
@@ -204,16 +205,16 @@ function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCanvasEditorProps>(
-  function BookCanvasEditor({
-    fallbackIndex = 0,
-    initialPageId,
-    onActivePageChange,
-    onPagesChange,
-    onTransformPendingChange,
-    pages,
-    persistSelectedPhoto,
-  }, ref) {
+export function BookCanvasEditor({
+  fallbackIndex = 0,
+  initialPageId,
+  onActivePageChange,
+  onPagesChange,
+  onTransformPendingChange,
+  pages,
+  persistSelectedPhoto,
+  ref,
+}: BookCanvasEditorProps) {
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = resolveCanvasPageWidth(windowWidth);
   const pageHeight = (pageWidth * 4) / 3;
@@ -1131,8 +1132,7 @@ export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCan
       </View>
     </View>
   );
-  },
-);
+}
 
 function SmallButton({
   active = false,

@@ -121,6 +121,10 @@ const backgroundTray = "背景";
 const backgroundChoice = "选择背景 01";
 
 describe("BookCanvasEditor", () => {
+  it("exports a plain function component so Expo React Compiler can call it on Fabric", () => {
+    expect(typeof BookCanvasEditor).toBe("function");
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     requestPermissionMock.mockResolvedValue({ granted: true });
