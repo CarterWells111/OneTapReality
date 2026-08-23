@@ -48,7 +48,7 @@ describe("canvas display metrics", () => {
 
 - [ ] **Step 2: Run the new unit test and verify RED**
 
-Run: `npm test -- --runInBand __tests__/canvas-display-metrics.test.ts`
+Run: `npm test -- --watch=false --runInBand __tests__/canvas-display-metrics.test.ts`
 
 Expected: FAIL because `canvas-display-metrics` does not exist.
 
@@ -78,7 +78,7 @@ export function resolveCanvasPreviewContentScale(
 
 - [ ] **Step 4: Run the unit test and verify GREEN**
 
-Run: `npm test -- --runInBand __tests__/canvas-display-metrics.test.ts`
+Run: `npm test -- --watch=false --runInBand __tests__/canvas-display-metrics.test.ts`
 
 Expected: PASS.
 
@@ -100,7 +100,7 @@ git commit -m "refactor: share canvas preview metrics"
 
 - [ ] **Step 1: Run the focused existing tests as the behavioral baseline**
 
-Run: `npm test -- --runInBand __tests__/page-manager-sheet.test.tsx __tests__/book-canvas-editor.test.tsx __tests__/page-reader-buffer.test.tsx`
+Run: `npm test -- --watch=false --runInBand __tests__/page-manager-sheet.test.tsx __tests__/book-canvas-editor.test.tsx __tests__/page-reader-buffer.test.tsx`
 
 Expected: PASS before the behavior-preserving refactor.
 
@@ -124,7 +124,7 @@ Do not change `cellWidth`, `thumbHeight`, layout, or interaction code.
 
 - [ ] **Step 3: Run the focused tests after refactoring**
 
-Run: `npm test -- --runInBand __tests__/canvas-display-metrics.test.ts __tests__/page-manager-sheet.test.tsx __tests__/book-canvas-editor.test.tsx __tests__/page-reader-buffer.test.tsx`
+Run: `npm test -- --watch=false --runInBand __tests__/canvas-display-metrics.test.ts __tests__/page-manager-sheet.test.tsx __tests__/book-canvas-editor.test.tsx __tests__/page-reader-buffer.test.tsx`
 
 Expected: PASS with the existing page dimensions and page-preview behavior unchanged.
 
@@ -184,7 +184,7 @@ expect(mockCanvasPage).toHaveBeenLastCalledWith(expect.objectContaining({
 
 - [ ] **Step 2: Run the home-cover test and verify RED**
 
-Run: `npm test -- --runInBand __tests__/memory-book-cover-canvas.test.tsx`
+Run: `npm test -- --watch=false --runInBand __tests__/memory-book-cover-canvas.test.tsx`
 
 Expected: FAIL because the `CanvasPage` call has no `contentScale`.
 
@@ -212,7 +212,7 @@ Pass it to the existing canvas without changing any outer styles or interactions
 
 - [ ] **Step 4: Run the regression tests and verify GREEN**
 
-Run: `npm test -- --runInBand __tests__/memory-book-cover-canvas.test.tsx __tests__/canvas-display-metrics.test.ts __tests__/page-manager-sheet.test.tsx`
+Run: `npm test -- --watch=false --runInBand __tests__/memory-book-cover-canvas.test.tsx __tests__/canvas-display-metrics.test.ts __tests__/page-manager-sheet.test.tsx`
 
 Expected: PASS. The recorded home-cover `contentScale` is the deterministic mocked value `0.5` after the cover width becomes 175 points.
 
