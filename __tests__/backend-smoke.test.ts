@@ -1,37 +1,6 @@
-const mockDatabaseExecute = jest.fn();
-
-jest.mock("../src/server/db/client", () => ({
-  getServerDatabase: jest.fn(() => ({ execute: mockDatabaseExecute })),
-}));
-
 const { verifyBackend } = require("../scripts/verify-backend.cjs");
-const { GET: getHealth } = require("../src/app/api/health+api");
 
 describe("backend deployment smoke check", () => {
-  beforeEach(() => {
-    mockDatabaseExecute.mockReset();
-  });
-
-  it("rejects health when the database schema is version 10", async () => {
-    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 10 }] });
-
-    const response = await getHealth(new Request("http://localhost/api/health"));
-
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toEqual({
-      error: { code: "database_schema_outdated", message: "Database schema is not ready" },
-    });
-  });
-
-  it("reports health when the database schema is version 11", async () => {
-    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 11 }] });
-
-    const response = await getHealth(new Request("http://localhost/api/health"));
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(expect.objectContaining({ database: "ok", schemaVersion: 11 }));
-  });
-
   it("verifies health, registration, CRUD visibility, and cleanup", async () => {
     const fetchImpl = jest.fn(async (input: string, init?: RequestInit) => {
       const url = new URL(input);

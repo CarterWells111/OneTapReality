@@ -49,8 +49,8 @@ describe("backend API routes", () => {
     expect((await capabilities.json()).features.automaticSync).toBe(false);
   });
 
-  it("reports a database whose application schema is behind", async () => {
-    mockDatabaseExecute.mockResolvedValueOnce({ rows: [] });
+  it("rejects health when the database schema is version 10", async () => {
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 10 }] });
 
     const response = await getHealth(new Request("http://localhost/api/health"));
 

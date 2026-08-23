@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import {
   createBackendTestDatabase,
@@ -7,6 +7,46 @@ import {
 } from "../src/server/db/test-database";
 
 describe("backend PostgreSQL migrations", () => {
+  it("preserves a legacy shared album with a null travel date when applying migration 0011", async () => {
+    const { db, close } = createBackendTestDatabase();
+
+    try {
+      const migrationFiles = readdirSync("drizzle")
+        .filter((file) => /^00(?:0\d|10)_.*\.sql$/.test(file))
+        .sort();
+      for (const migrationFile of migrationFiles) {
+        const statements = readFileSync(`drizzle/${migrationFile}`, "utf8")
+          .split("--> statement-breakpoint")
+          .map((statement) => statement.trim())
+          .filter(Boolean);
+        for (const statement of statements) {
+          await db.execute(sql.raw(statement));
+        }
+      }
+
+      await db.execute(sql`
+        insert into gifts (id, token_hash, status, created_at)
+        values ('legacy-travel-date-gift', 'legacy-travel-date-hash', 'bound', '2026-08-16T00:00:00.000Z')
+      `);
+      await db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version)
+        values ('legacy-travel-date-album', 'legacy-travel-date-gift', 'legacy-travel-date-memory', 'Legacy album', '2026-08-16T00:00:00.000Z', 1)
+      `);
+
+      const migration0011 = readFileSync("drizzle/0011_shared_album_travel_date.sql", "utf8");
+      for (const statement of migration0011.split("--> statement-breakpoint").map((part) => part.trim()).filter(Boolean)) {
+        await db.execute(sql.raw(statement));
+      }
+
+      const legacyAlbum = await db.execute(sql`
+        select id, travel_date from shared_albums where id = 'legacy-travel-date-album'
+      `);
+      expect(legacyAlbum.rows).toEqual([{ id: "legacy-travel-date-album", travel_date: null }]);
+    } finally {
+      await close();
+    }
+  });
+
   it("applies the baseline to an empty database", async () => {
     const { db, close } = createBackendTestDatabase();
 
