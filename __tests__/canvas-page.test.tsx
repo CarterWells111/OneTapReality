@@ -63,6 +63,25 @@ describe("CanvasPage", () => {
     });
   });
 
+  it("scales text metrics with a read-only thumbnail while preserving normalized geometry", () => {
+    const screen = render(
+      <CanvasPage contentScale={0.5} interactive={false} layout={layout} width={150} height={200} />,
+    );
+
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-frame-caption-1").props.style)).toMatchObject({
+      height: 20,
+      left: 15,
+      top: 130,
+      width: 120,
+    });
+    expect(StyleSheet.flatten(screen.getByText("Lake side").props.style)).toMatchObject({
+      fontSize: 8,
+      lineHeight: 10,
+      paddingHorizontal: 2,
+      paddingVertical: 1,
+    });
+  });
+
   it("consumes shared text and cover previews without changing saved layout", () => {
     const color = { value: "#123456" } as SharedValue<string>;
     const fontSize = { value: 28 } as SharedValue<number>;

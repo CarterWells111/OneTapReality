@@ -10,6 +10,11 @@ import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { useMemories } from "../../features/memories/memories-provider";
+import {
+  MIN_TRAVEL_DATE,
+  parseIsoTravelDate,
+  toIsoTravelDate,
+} from "../../features/memories/travel-date";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
 
 const cityGroupLabels: Record<CityKind, string> = {
@@ -18,8 +23,6 @@ const cityGroupLabels: Record<CityKind, string> = {
   municipality: "直辖市",
   "province-capital": "省会",
 };
-
-const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
 
 /** 封面预设颜色（十六进制）。 */
 const COVER_COLORS = [
@@ -35,18 +38,6 @@ const COVER_COLORS = [
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function toIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoDate(value: string): Date {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export default function NewMemoryScreen() {
@@ -86,7 +77,7 @@ export default function NewMemoryScreen() {
       setShowDatePicker(false);
     }
     if (event.type === "set" && selected) {
-      setTravelDate(toIsoDate(selected));
+      setTravelDate(toIsoTravelDate(selected));
     }
   };
 
@@ -272,7 +263,7 @@ export default function NewMemoryScreen() {
           minimumDate={MIN_TRAVEL_DATE}
           mode="date"
           onChange={handleDateChange}
-          value={parseIsoDate(travelDate)}
+          value={parseIsoTravelDate(travelDate)}
         />
       ) : null}
 
@@ -288,7 +279,7 @@ export default function NewMemoryScreen() {
               onChange={handleDateChange}
               textColor={colors.ink}
               themeVariant="light"
-              value={parseIsoDate(travelDate)}
+              value={parseIsoTravelDate(travelDate)}
             />
             <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
           </View>

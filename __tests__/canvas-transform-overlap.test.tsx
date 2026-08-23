@@ -1,8 +1,10 @@
 import { act, render } from "@testing-library/react-native";
+import * as React from "react";
 import { State } from "react-native-gesture-handler";
 import { fireGestureHandler, getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 
 import { CanvasPage } from "../src/features/canvas/canvas-page";
+import { createTransformSettleGate } from "../src/features/canvas/editor-save-transaction";
 import type { CanvasLayout } from "../src/types/memory";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -96,9 +98,95 @@ function performTextGesture(kind: "handle" | "pan" | "pinch" | "rotation") {
 describe("overlapping canvas transforms", () => {
   beforeEach(() => mockRunOnJSQueue.splice(0));
 
+  it("releases transform ownership when an element unmounts before native finalize reaches JS", () => {
+    const gate = createTransformSettleGate();
+    const replacementGate = createTransformSettleGate();
+    const strictModeWarning = jest.spyOn(console, "error").mockImplementation((...args) => {
+      const renderedMessage = args.map(String).join(" ");
+      if (!renderedMessage.includes("findNodeHandle") || !renderedMessage.includes("deprecated in StrictMode")) {
+        throw new Error(`Unexpected StrictMode console error: ${renderedMessage}`);
+      }
+    });
+    let screen: ReturnType<typeof render>;
+    try {
+      screen = render(
+        <React.StrictMode>
+          <CanvasPage
+            interactive
+            layout={layout}
+            onTransformSettled={() => gate.end()}
+            onTransformStart={() => gate.begin()}
+            selectedElementId="photo-1"
+            width={300}
+          />
+        </React.StrictMode>,
+      );
+    } finally {
+      strictModeWarning.mockRestore();
+    }
+
+    act(() => {
+      fireGestureHandler(getByGestureTestId("canvas-element-pinch-photo-1"), [
+        { state: State.BEGAN, scale: 1 },
+        { state: State.ACTIVE, scale: 1.2 },
+        { state: State.END, scale: 1.2 },
+      ]);
+      mockRunOnJSQueue.shift()?.();
+      mockRunOnJSQueue.shift()?.();
+    });
+    expect(gate.isPending()).toBe(true);
+
+    // Hold the native final commit until after the selected element leaves the
+    // rendered page, modeling a delayed finalize callback.
+    const delayedFinalize = mockRunOnJSQueue.pop();
+    mockRunOnJSQueue.splice(0);
+    screen.rerender(
+      <React.StrictMode>
+        <CanvasPage
+          interactive
+          layout={layout}
+          onTransformSettled={() => replacementGate.end()}
+          onTransformStart={() => replacementGate.begin()}
+          selectedElementId="photo-1"
+          width={300}
+        />
+      </React.StrictMode>,
+    );
+    screen.rerender(
+      <React.StrictMode>
+        <CanvasPage
+          interactive
+          layout={{ ...layout, elements: [] }}
+          onTransformSettled={() => replacementGate.end()}
+          onTransformStart={() => replacementGate.begin()}
+          width={300}
+        />
+      </React.StrictMode>,
+    );
+
+    expect(gate.isPending()).toBe(false);
+    expect(replacementGate.isPending()).toBe(false);
+
+    act(() => delayedFinalize?.());
+    expect(gate.isPending()).toBe(false);
+    expect(replacementGate.isPending()).toBe(false);
+  });
+
   it("composes a second pinch before the delayed first commit reaches JS", () => {
     const onTransformEnd = jest.fn();
-    render(<CanvasPage interactive layout={layout} onTransformEnd={onTransformEnd} selectedElementId="photo-1" width={300} />);
+    const onTransformSettled = jest.fn();
+    const onTransformStart = jest.fn();
+    render(
+      <CanvasPage
+        interactive
+        layout={layout}
+        onTransformEnd={onTransformEnd}
+        onTransformSettled={onTransformSettled}
+        onTransformStart={onTransformStart}
+        selectedElementId="photo-1"
+        width={300}
+      />,
+    );
 
     act(() => {
       fireGestureHandler(getByGestureTestId("canvas-element-pinch-photo-1"), [
@@ -118,6 +206,8 @@ describe("overlapping canvas transforms", () => {
     expect(onTransformEnd).not.toHaveBeenCalled();
     flushRunOnJSQueue();
 
+    expect(onTransformStart).toHaveBeenCalledTimes(2);
+    expect(onTransformSettled).toHaveBeenCalledTimes(2);
     expect(onTransformEnd).toHaveBeenCalledTimes(1);
     expect(onTransformEnd.mock.calls[0][1].width).toBeCloseTo(0.36);
     expect(onTransformEnd.mock.calls[0][1].height).toBeCloseTo(0.36);

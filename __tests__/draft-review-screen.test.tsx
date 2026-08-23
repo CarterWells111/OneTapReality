@@ -17,6 +17,22 @@ jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
 
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { Pressable, Text } = require("react-native");
+  return function MockDateTimePicker({ onChange, value }: { onChange: (event: { type: string }, date: Date) => void; value: Date }) {
+    const localValue = `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    return React.createElement(
+      Pressable,
+      {
+        accessibilityLabel: "测试日期选择器",
+        onPress: () => onChange({ type: "set" }, new Date(2026, 7, 21)),
+      },
+      React.createElement(Text, null, `${localValue} ${value.getHours()}`),
+    );
+  };
+});
+
 jest.mock("expo-router", () => {
   const React = require("react");
   const { View } = require("react-native");
@@ -130,6 +146,112 @@ describe("DraftReviewScreen", () => {
     await act(async () => finishWrite());
     await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledWith("draft-1"));
     expect(mockReplace).toHaveBeenCalledWith({ pathname: "/memory/[id]", params: { id: "draft-1" } });
+  });
+
+  it("edits and debounces the draft album name before persisting the full snapshot", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("纪念册标题")).toBeTruthy());
+    jest.useFakeTimers();
+
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "杭州的夏天");
+    expect(mockUpdateDraftPages).not.toHaveBeenCalled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "杭州的夏天", travelDate: "2026-07-20" }),
+      expect.arrayContaining([expect.objectContaining({ id: "cover-1" })]),
+    ));
+    jest.useRealTimers();
+  });
+
+  it("flushes a pending album name when leaving before the debounce expires", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("纪念册标题")).toBeTruthy());
+    jest.useFakeTimers();
+
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "离开前的新名称");
+    screen.unmount();
+
+    await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "离开前的新名称" }),
+      expect.arrayContaining([expect.objectContaining({ id: "cover-1" })]),
+    ));
+    jest.useRealTimers();
+  });
+
+  it("does not persist or complete a draft with a blank album name", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("纪念册标题")).toBeTruthy());
+    jest.useFakeTimers();
+
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "   ");
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    fireEvent.press(screen.getByText("保留草稿"));
+
+    expect(mockUpdateDraftPages).not.toHaveBeenCalled();
+    expect(mockSaveDraft).not.toHaveBeenCalled();
+    expect(screen.getByText("请输入纪念册标题")).toBeTruthy();
+    jest.useRealTimers();
+  });
+
+  it("does not persist a blank album name through date or canvas autosaves", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("纪念册标题")).toBeTruthy());
+
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "   ");
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试日期选择器"));
+    expect(mockUpdateDraftPages).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText("添加贴纸 1-01"));
+    expect(mockUpdateDraftPages).not.toHaveBeenCalled();
+    expect(screen.getByText("请输入纪念册标题")).toBeTruthy();
+  });
+
+  it("keeps queued autosaves immutable when a later title becomes blank", async () => {
+    let finishFirstWrite: () => void = () => undefined;
+    mockUpdateDraftPages.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finishFirstWrite = resolve;
+    }));
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("添加贴纸 1-01"));
+    await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledTimes(1));
+    fireEvent.press(screen.getByLabelText("添加贴纸 1-02"));
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "   ");
+
+    await act(async () => finishFirstWrite());
+    await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledTimes(2));
+    expect(mockUpdateDraftPages.mock.calls[1][0]).toEqual(expect.objectContaining({
+      title: draft.title,
+    }));
+  });
+
+  it("edits the draft travel date and persists it immediately", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("选择旅行日期")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+    fireEvent.press(screen.getByLabelText("测试日期选择器"));
+
+    await waitFor(() => expect(mockUpdateDraftPages).toHaveBeenCalledWith(
+      expect.objectContaining({ title: draft.title, travelDate: "2026-08-21" }),
+      expect.arrayContaining([expect.objectContaining({ id: "cover-1" })]),
+    ));
+  });
+
+  it("opens an ISO travel date at local midnight without a UTC offset", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByLabelText("选择旅行日期")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("选择旅行日期"));
+
+    expect(screen.getByText("2026-07-20 0")).toBeTruthy();
   });
 
   it("debounces text writes by 400ms and retries a failed latest snapshot", async () => {

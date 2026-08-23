@@ -315,7 +315,9 @@ export async function replaceMemoryMediaSnapshot(
   let replaced = false;
   await db.withTransactionAsync(async () => {
     const owned = await db.runAsync(
-      "UPDATE memories SET updatedAt = ?, coverImage = ? WHERE id = ? AND ownerAccountKey = ?",
+      "UPDATE memories SET title = ?, travelDate = ?, updatedAt = ?, coverImage = ? WHERE id = ? AND ownerAccountKey = ?",
+      memory.title,
+      memory.travelDate,
       memory.updatedAt,
       memory.coverImage ?? null,
       memory.id,
