@@ -17,6 +17,7 @@ import {
   toggleCanvasPhotoSelection,
   updateCanvasElement,
 } from "../src/features/canvas/editor-pages";
+import { AlbumMetadataEditor } from "../src/features/memories/album-metadata-editor";
 import type { Memory, StoryPage } from "../src/types/memory";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -584,11 +585,17 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
 
+    expect(screen.UNSAFE_getByType(AlbumMetadataEditor).props).toEqual(expect.objectContaining({
+      contextLabel: "杭州",
+      disabled: false,
+      title: "杭州周末",
+      travelDate: "2026-07-22",
+    }));
     expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("杭州周末");
     expect(screen.getByLabelText("选择旅行日期").props.accessibilityValue.text).toBe("杭州 · 2026-07-22");
     expect(screen.queryByLabelText("纪念册标题")).toBeNull();
     const children = React.Children.toArray(screen.UNSAFE_getByType(ScrollView).props.children) as Array<React.ReactElement<{ testID?: string }>>;
-    const headerIndex = children.findIndex((child) => child.props.testID === "saved-memory-metadata-header");
+    const headerIndex = children.findIndex((child) => child.type === AlbumMetadataEditor);
     const instructionIndex = children.findIndex((child) => child.props.testID === "memory-canvas-edit-instruction");
     expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(instructionIndex).toBeGreaterThanOrEqual(0);
@@ -743,7 +750,7 @@ describe("EditMemoryScreen", () => {
     providerMemory = { ...memory, title: "服务端刷新", updatedAt: "2026-07-22T11:00:00.000Z" };
     screen.rerender(<EditMemoryScreen />);
     await screen.findByTestId("album-canvas");
-    expect(screen.getByDisplayValue("本地杭州")).toBeTruthy();
+    expect(screen.getByLabelText("双击修改旅行册名称").props.accessibilityValue.text).toBe("本地杭州");
   });
 
   it("closes metadata controls and clears the first press when identity changes", async () => {
