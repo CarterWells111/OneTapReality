@@ -1,13 +1,17 @@
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
 import type { CanvasLayout } from "../src/types/memory";
 
-const mockCanvasPage = jest.fn(({ layout }: { layout: unknown }) => {
+const mockCanvasPage = jest.fn((props: { layout: unknown }) => {
   const React = require("react");
   const { Text } = require("react-native");
-  return <Text testID="cover-canvas">{JSON.stringify(layout)}</Text>;
+  return <Text testID="cover-canvas">{JSON.stringify(props.layout)}</Text>;
 });
+const mockResolveCanvasPreviewContentScale = jest.fn((_displayWidth: number, _viewportWidth: number) => 0.5);
 
 jest.mock("../src/features/canvas/canvas-page", () => ({ CanvasPage: (props: { layout: unknown }) => mockCanvasPage(props) }));
+jest.mock("../src/features/canvas/canvas-display-metrics", () => ({
+  resolveCanvasPreviewContentScale: (...args: [number, number]) => mockResolveCanvasPreviewContentScale(...args),
+}));
 
 import { MemoryBookCover } from "../src/components/memory-book-cover";
 
@@ -30,7 +34,18 @@ describe("MemoryBookCover", () => {
     }} onPress={jest.fn()} />);
 
     expect(screen.getByTestId("cover-canvas")).toBeTruthy();
-    expect(mockCanvasPage).toHaveBeenCalledWith(expect.objectContaining({ interactive: false, layout: firstPageLayout }));
+    fireEvent(screen.getByRole("button", { name: "打开旅行册 顶层旧标题" }), "layout", {
+      nativeEvent: { layout: { width: 175 } },
+    });
+
+    expect(mockResolveCanvasPreviewContentScale).toHaveBeenLastCalledWith(175, expect.any(Number));
+    expect(mockCanvasPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      contentScale: 0.5,
+      height: (175 * 4) / 3,
+      interactive: false,
+      layout: firstPageLayout,
+      width: 175,
+    }));
     expect(screen.queryByText("顶层旧标题")).toBeNull();
   });
 });
