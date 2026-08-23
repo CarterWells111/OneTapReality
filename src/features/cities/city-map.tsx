@@ -561,9 +561,29 @@ function WorkspaceCityMap({
     });
   }, [adapter, onTargetReached, scale, settleVisibleLabels, targetCity, translateX, translateY, workspaceSize]);
 
+  const appliedFocusRef = React.useRef<{ city?: City; focus?: CityMapFocus } | null>(null);
+
   React.useEffect(() => {
     if (workspaceSize.width <= 0 || workspaceSize.height <= 0) return;
-    const nextViewport = focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize);
+    // 仅首次布局（或 initialCity/focus 真正变化）时应用初始相机；
+    // 后续容器尺寸变化只做夹取，避免把用户正在查看的视角回弹到初始画面。
+    const shouldApplyInitial = appliedFocusRef.current === null
+      || appliedFocusRef.current.city !== initialCity
+      || appliedFocusRef.current.focus !== focus;
+    if (shouldApplyInitial) {
+      const nextViewport = focusViewport(getWorkspaceFocus(adapter, initialCity, focus), workspaceSize);
+      translateX.value = nextViewport.translateX;
+      translateY.value = nextViewport.translateY;
+      scale.value = nextViewport.scale;
+      settleVisibleLabels(nextViewport, workspaceSize);
+      appliedFocusRef.current = { city: initialCity, focus };
+      return;
+    }
+    const nextViewport = clampWorkspaceViewport({
+      scale: scale.value,
+      translateX: translateX.value,
+      translateY: translateY.value,
+    }, workspaceSize);
     translateX.value = nextViewport.translateX;
     translateY.value = nextViewport.translateY;
     scale.value = nextViewport.scale;

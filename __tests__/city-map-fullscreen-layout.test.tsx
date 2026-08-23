@@ -1,8 +1,10 @@
 import { act, render } from "@testing-library/react-native";
 
 import { cityRegistry } from "../src/types/city";
+import { getCityCheckinMapImage } from "../src/features/cities/city-checkin-map-images";
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 const mockCityMap = jest.fn();
 
 jest.mock("../src/features/cities/city-map", () => {
@@ -20,20 +22,7 @@ jest.mock("../src/features/cities/city-map", () => {
   };
 });
 
-jest.mock("../src/features/cities/city-checkin-modal", () => {
-  const React = require("react");
-  const { Text } = require("react-native");
-
-  return {
-    CityCheckinModal: ({ city }: { city: string }) => React.createElement(
-      Text,
-      { testID: "city-checkin-modal-city" },
-      city,
-    ),
-  };
-});
-
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: mockPush }) }));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ memories: [] }),
 }));
@@ -68,7 +57,7 @@ describe("FullscreenCityMapScreen", () => {
     expect(workspaceStyle.aspectRatio).toBeUndefined();
   });
 
-  it("opens the check-in modal for every product city pressed on the map", async () => {
+  it("routes every pressed city to its full-screen check-in map or the city collection page", async () => {
     const screen = await render(<FullscreenCityMapScreen />);
 
     expect(cityRegistry).toHaveLength(36);
@@ -78,11 +67,16 @@ describe("FullscreenCityMapScreen", () => {
         onCityPress: (id: typeof city.id) => void;
       };
 
+      mockPush.mockClear();
       await act(async () => {
         latestCityMapProps.onCityPress(city.id);
       });
 
-      expect(screen.getByTestId("city-checkin-modal-city").props.children).toBe(city.id);
+      if (getCityCheckinMapImage(city.id)) {
+        expect(mockPush).toHaveBeenCalledWith(`/city-map/${city.id}`);
+      } else {
+        expect(mockPush).toHaveBeenCalledWith({ pathname: "/city/[city]", params: { city: city.id } });
+      }
     }
   });
 });

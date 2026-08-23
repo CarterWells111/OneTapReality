@@ -5,6 +5,7 @@ import { bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont, Tag } fro
 import { CityMap } from "../../features/cities/city-map";
 import { getCityArchiveCities } from "../../features/cities/city-archive";
 import { CityCard } from "../../features/cities/city-card";
+import { getCityCheckinMapImage } from "../../features/cities/city-checkin-map-images";
 import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
 import type { City } from "../../types/memory";
@@ -15,7 +16,13 @@ export default function CitiesScreen() {
   const cityStats = getCityStats(memories);
   const cityStatsByCity = new Map(cityStats.map((stat) => [stat.city, stat]));
   const archiveCities = getCityArchiveCities(memories);
+  // 城市档案卡片/入口始终进入城市记忆页
   const goToCity = (city: City) => router.push({ pathname: "/city/[city]", params: { city } });
+  // 地图上的城市标记：有打卡地图的城市进全屏大图，其余进城市记忆页
+  const handleMapCityPress = (city: City) => {
+    if (getCityCheckinMapImage(city)) router.push(`/city-map/${city}`);
+    else router.push({ pathname: "/city/[city]", params: { city } });
+  };
 
   return (
     <ScrollView
@@ -35,7 +42,7 @@ export default function CitiesScreen() {
             stats={cityStats}
             variant="overview"
             interactive
-            onCityPress={goToCity}
+            onCityPress={handleMapCityPress}
             onMapPress={() => router.push("/city-map")}
           />
         </PaperCard>
