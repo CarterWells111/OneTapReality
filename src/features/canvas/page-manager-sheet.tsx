@@ -17,6 +17,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CanvasPage } from "./canvas-page";
+import { resolveCanvasPreviewContentScale } from "./canvas-display-metrics";
 import {
   addCanvasPage,
   deleteCanvasPages,
@@ -69,8 +70,7 @@ export function PageManagerSheet({
   const cellWidth = (containerWidth - GAP) / 2;
   const thumbHeight = (cellWidth * 4) / 3;
   const cellHeight = thumbHeight + LABEL_HEIGHT;
-  const editorPageWidth = Math.min(Math.max(width - 40, 280), 360);
-  const contentScale = cellWidth / editorPageWidth;
+  const contentScale = resolveCanvasPreviewContentScale(cellWidth, width);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [draggingIndex, setDraggingIndex] = React.useState<number | null>(null);

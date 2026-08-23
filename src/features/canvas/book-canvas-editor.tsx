@@ -28,6 +28,7 @@ import {
   type CanvasStickerCategory,
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
+import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
@@ -214,7 +215,7 @@ export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCan
     persistSelectedPhoto,
   }, ref) {
   const { width: windowWidth } = useWindowDimensions();
-  const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
+  const pageWidth = resolveCanvasPageWidth(windowWidth);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);

@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { CanvasPage } from "./canvas-page";
+import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { resolvePageTurn } from "./page-turn";
 import { colors } from "../../components/ui";
 import { headingFontFamily } from "../typography/fonts";
@@ -93,7 +94,7 @@ type PageReaderProps = {
 
 export function PageReader({ fallbackIndex = 0, initialPageId, onActivePageChange, pages, restorationKey }: PageReaderProps) {
   const { width } = useWindowDimensions();
-  const pageWidth = Math.min(Math.max(width - 40, 280), 360);
+  const pageWidth = resolveCanvasPageWidth(width);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
