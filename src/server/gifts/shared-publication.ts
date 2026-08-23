@@ -4,7 +4,16 @@ import { enqueueGiftMediaCleanupJobs } from "./repository";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
 
-export type SharedPublishBody = { baseVersion?: number; sourceMemoryId?: string; title?: string; pages?: { position?: number; page?: unknown }[]; media?: ({ position?: number; mediaId: string } | { position?: number; contentType: string; byteSize: number })[]; cover?: { contentType?: string; byteSize?: number } | null };
+export type SharedPublishBody = { baseVersion?: number; sourceMemoryId?: string; title?: string; travelDate?: string | null; pages?: { position?: number; page?: unknown }[]; media?: ({ position?: number; mediaId: string } | { position?: number; contentType: string; byteSize: number })[]; cover?: { contentType?: string; byteSize?: number } | null };
+
+function normalizeSharedTravelDate(travelDate: string | null | undefined): string | null {
+  if (travelDate === undefined || travelDate === null) return null;
+  if (typeof travelDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(travelDate)) throw new ApiError(400, "validation_failed", "Travel date must be a valid ISO date");
+  const [year, month, day] = travelDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) throw new ApiError(400, "validation_failed", "Travel date must be a valid ISO date");
+  return travelDate;
+}
 
 export function prepareSharedPublication(body: SharedPublishBody, giftId: string, sessionId: string, options: { allowExistingMedia?: boolean } = {}) {
   if (!body || typeof body !== "object" || (body.pages !== undefined && !Array.isArray(body.pages)) || (body.media !== undefined && !Array.isArray(body.media))) throw new ApiError(400, "validation_failed", "Pages and media must be arrays");
@@ -23,6 +32,7 @@ export function prepareSharedPublication(body: SharedPublishBody, giftId: string
   const existingMedia = media.flatMap((item, position) => "mediaId" in item ? [{ position: item.position ?? position, mediaId: item.mediaId }] : []);
   const payload: GiftPublicationPayload = {
     sourceMemoryId: body.sourceMemoryId.trim(), title: body.title.trim().slice(0, 160),
+    travelDate: normalizeSharedTravelDate(body.travelDate),
     pages: pages.map((item, position) => ({ position: item.position ?? position, page: item.page ?? {} })),
     media: media.flatMap((item, position) => { if ("mediaId" in item) return []; if (!validImage(item)) throw new ApiError(400, "validation_failed", "Each photo must be an image smaller than 25 MB"); return [{ position: item.position ?? position, contentType: item.contentType, byteSize: item.byteSize, objectKey: `gifts/${giftId}/${sessionId}/temp/${crypto.randomUUID()}`, source: "upload" as const }]; }),
     cover: cover ? { contentType: cover.contentType!, byteSize: cover.byteSize!, objectKey: `gifts/${giftId}/${sessionId}/temp/cover` } : null,
