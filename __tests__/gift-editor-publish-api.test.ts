@@ -182,6 +182,12 @@ describe("editor shared publication contract", () => {
     expect(undated.payload.travelDate).toBeNull();
   });
 
+  it("accepts four-digit shared album years below 100", () => {
+    const prepared = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate: "0099-01-01", pages: [], media: [] }, "gift-1", "session-1");
+
+    expect(prepared.payload.travelDate).toBe("0099-01-01");
+  });
+
   it.each(["21/08/2026", "2026-02-30"]) ("rejects invalid shared album travel date %s", (travelDate) => {
     expect(() => prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate, pages: [], media: [] }, "gift-1", "session-1")).toThrow(expect.objectContaining({ status: 400, code: "validation_failed" }));
   });
