@@ -121,6 +121,7 @@ export default function SharedGiftDetailScreen() {
       <Stack.Screen options={{ headerRight }} />
       <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
       <ScreenTitle title={visibleAlbum?.title ?? "分享相册"} caption="SHARED WITH YOU" />
+      {visibleAlbum ? <Text selectable style={styles.publishedMeta}>旅行日期 · {visibleAlbum.travelDate ?? "未设置旅行日期"}</Text> : null}
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
       {loadFailed && session && id ? <AppButton label="重试" tone="secondary" onPress={() => void load()} /> : null}
@@ -182,6 +183,7 @@ function parsePageIndex(value?: string) {
 const styles = StyleSheet.create({
   content: { gap: 22, padding: 20, paddingBottom: 40 },
   message: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 22 },
+  publishedMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 13 },
   coverStage: { alignItems: "center" },
   coverImage: {
     alignSelf: "center",

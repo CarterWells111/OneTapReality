@@ -49,6 +49,7 @@ import SharedGiftDetailScreen from "../src/app/gifts/shared/[id]";
 const album = {
   role: "viewer",
   title: "我们的杭州之旅",
+  travelDate: "2026-08-21",
   pages: [
     { position: 0, page: { id: "p0", position: 0, kind: "cover", headline: "杭州", body: "西湖边的记忆", layout: { aspectRatio: 0.75, elements: [{ id: "i0", type: "image", uri: "file:///local.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }] } } },
     { position: 1, page: { id: "p1", position: 1, kind: "photo", headline: "断桥", body: "小雪", layout: { aspectRatio: 0.75, elements: [] } } },
@@ -72,6 +73,7 @@ describe("shared gift album viewer", () => {
   it("starts on the album cover and opens the reader on demand", async () => {
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(screen.getByText("我们的杭州之旅")).toBeTruthy());
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
     expect(screen.queryByTestId("reader")).toBeNull();
 
     fireEvent.press(screen.getByText("打开相册"));
@@ -84,10 +86,21 @@ describe("shared gift album viewer", () => {
     expect(screen.queryByLabelText("编辑共享相册")).toBeNull();
   });
 
+  it("uses the published title and legacy date fallback for a viewer", async () => {
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, title: "服务器共享名称", travelDate: null });
+    render(<SharedGiftDetailScreen />);
+
+    await screen.findByText("服务器共享名称");
+    expect(screen.getByText("旅行日期 · 未设置旅行日期")).toBeTruthy();
+    expect(screen.queryByText("旅行日期 · 2026-07-20")).toBeNull();
+    expect(screen.queryByLabelText("编辑共享相册")).toBeNull();
+  });
+
   it("opens editor albums directly and sends the current page to the dedicated edit route", async () => {
     mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(screen.getByTestId("reader")).toBeTruthy());
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
     expect(screen.queryByText("打开相册")).toBeNull();
     fireEvent.press(screen.getByText("report second page"));
     fireEvent.press(screen.getByLabelText("编辑共享相册"));
@@ -103,6 +116,7 @@ describe("shared gift album viewer", () => {
     await waitFor(() => expect(mockGetOwnedGiftAlbum).toHaveBeenCalledWith("gift-1", "account-token"));
     expect(mockGetInvitedGiftAlbum).not.toHaveBeenCalled();
     expect(screen.getByTestId("reader")).toBeTruthy();
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
     fireEvent.press(screen.getByLabelText("编辑共享相册"));
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/gifts/shared/[id]/edit",

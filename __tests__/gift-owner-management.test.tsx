@@ -44,7 +44,7 @@ const editor = { email: "editor@example.com", role: "editor" as const, createdAt
 type Management = {
   gift: { id: string; status: string; claimedAt: string | null; disabledAt: string | null };
   members: { email: string; role: "owner" | "viewer" | "editor"; createdAt: string }[];
-  album: { id: string; title: string; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null;
+  album: { id: string; title: string; travelDate: string | null; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null;
 };
 
 function management(members: Management["members"] = [owner, viewer, editor]): Management {
@@ -68,7 +68,7 @@ describe("gift owner member management", () => {
   });
 
   it("publishes an existing local album only for the first shared version", async () => {
-    const memory = { id: "memory-1", title: "Trip", city: "London", travelDate: "2026-08-16", photoUris: [], pages: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
+    const memory = { id: "memory-1", title: "Trip", city: "London", travelDate: "2026-08-21", photoUris: [], pages: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
     mockMemories.mockReturnValue([memory]);
     render(<GiftManagementScreen />);
     await screen.findByText(owner.email);
@@ -77,7 +77,12 @@ describe("gift owner member management", () => {
     fireEvent.press(screen.getByText("发布共享相册"));
 
     await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
-    expect(mockStartOwnedGiftPublish.mock.calls[0][2]).toEqual(expect.objectContaining({ baseVersion: 0 }));
+    expect(mockStartOwnedGiftPublish.mock.calls[0][2]).toEqual(expect.objectContaining({
+      baseVersion: 0,
+      sourceMemoryId: memory.id,
+      title: memory.title,
+      travelDate: memory.travelDate,
+    }));
   });
 
   it("directs owners without a local album back to the home creation flow", async () => {
@@ -116,18 +121,31 @@ describe("gift owner member management", () => {
     expect(mockGetInfoAsync).not.toHaveBeenCalled();
   });
 
-  it("shows only the existing shared album entry after the first publication", async () => {
+  it("shows the dated existing shared album without replacement controls", async () => {
     const memory = { id: "memory-1", title: "Different local trip", city: "London", travelDate: "2026-08-16", photoUris: [], pages: [], createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z" };
     mockUseLocalSearchParams.mockReturnValue({ id: "gift-1", memoryId: memory.id });
     mockMemories.mockReturnValue([memory]);
-    mockGetOwnedGiftManagement.mockResolvedValue({ ...management(), album: { id: "album-1", title: "Cloud trip", sourceMemoryId: memory.id, publishedAt: "2026-08-16T00:00:00.000Z", version: 3, mediaCount: 0 } });
+    mockGetOwnedGiftManagement.mockResolvedValue({ ...management(), album: { id: "album-1", title: "Cloud trip", travelDate: "2026-08-21", sourceMemoryId: memory.id, publishedAt: "2026-08-16T00:00:00.000Z", version: 3, mediaCount: 0 } });
     render(<GiftManagementScreen />);
     await screen.findByText("Cloud trip");
+    expect(screen.getByText("版本 3")).toBeTruthy();
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
     expect(screen.queryByText("Different local trip")).toBeNull();
     expect(screen.queryByText("更新共享相册")).toBeNull();
     expect(screen.queryByText("新建本地旅行册")).toBeNull();
+    expect(screen.queryByText("选择相册封面")).toBeNull();
+    expect(screen.queryByText("发布共享相册")).toBeNull();
     fireEvent.press(screen.getByText("查看当前共享相册"));
     expect(mockRouter.push).toHaveBeenCalledWith("/gifts/shared/gift-1?access=owner");
+  });
+
+  it("shows the legacy travel date fallback instead of the publication timestamp", async () => {
+    mockGetOwnedGiftManagement.mockResolvedValue({ ...management(), album: { id: "album-1", title: "Legacy cloud trip", travelDate: null, sourceMemoryId: "memory-1", publishedAt: "2026-08-16T00:00:00.000Z", version: 3, mediaCount: 0 } });
+    render(<GiftManagementScreen />);
+
+    await screen.findByText("Legacy cloud trip");
+    expect(screen.getByText("旅行日期 · 未设置旅行日期")).toBeTruthy();
+    expect(screen.queryByText("旅行日期 · 2026-08-16")).toBeNull();
   });
 
   it("shows pending request details and reloads management after approval", async () => {
@@ -171,9 +189,9 @@ describe("gift owner member management", () => {
       fireEvent.press(screen.getByText("重试"));
       fireEvent.press(screen.getByText("重试"));
     });
-    await act(async () => { resolveNewer({ ...management(), album: { id: "album-new", title: "New album", sourceMemoryId: "memory-new", publishedAt: "2026-08-16T00:00:00.000Z", version: 2, mediaCount: 0 } }); await Promise.resolve(); });
+    await act(async () => { resolveNewer({ ...management(), album: { id: "album-new", title: "New album", travelDate: "2026-08-16", sourceMemoryId: "memory-new", publishedAt: "2026-08-16T00:00:00.000Z", version: 2, mediaCount: 0 } }); await Promise.resolve(); });
     await screen.findByText("New album");
-    await act(async () => { resolveOlder({ ...management(), album: { id: "album-old", title: "Old album", sourceMemoryId: "memory-old", publishedAt: "2026-08-16T00:00:00.000Z", version: 1, mediaCount: 0 } }); await Promise.resolve(); });
+    await act(async () => { resolveOlder({ ...management(), album: { id: "album-old", title: "Old album", travelDate: "2026-08-16", sourceMemoryId: "memory-old", publishedAt: "2026-08-16T00:00:00.000Z", version: 1, mediaCount: 0 } }); await Promise.resolve(); });
     expect(screen.queryByText("Old album")).toBeNull();
     expect(screen.getByText("New album")).toBeTruthy();
   });
