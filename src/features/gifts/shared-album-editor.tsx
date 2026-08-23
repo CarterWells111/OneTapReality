@@ -10,9 +10,13 @@ import { mapSharedAlbumToStoryPages } from "./shared-album-mapper";
 type Props = {
   accessToken: string;
   album: InvitedGiftAlbum;
+  fallbackIndex?: number;
   giftId: string;
+  initialPageId?: string;
   onAccessLost: () => void;
-  onPublished: (cursor: { pageId: string; index: number }) => void | Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
+  onExit?: (cursor: { pageId: string; index: number }) => void;
+  onPublished: (result: { cursor: { pageId: string; index: number }; intent: "stay" | "exit" }) => void | Promise<void>;
   onReload?: () => void | Promise<void>;
 };
 
@@ -53,24 +57,53 @@ function snapshotPage(page: StoryPage, positions: Map<string, { position: number
   };
 }
 
-export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, onPublished, onReload }: Props) {
+export function SharedAlbumEditor({
+  accessToken,
+  album,
+  fallbackIndex = 0,
+  giftId,
+  initialPageId,
+  onAccessLost,
+  onDirtyChange,
+  onExit,
+  onPublished,
+  onReload,
+}: Props) {
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const [pages, setPages] = React.useState(() => mapSharedAlbumToStoryPages(album));
+  const initialPages = React.useMemo(() => mapSharedAlbumToStoryPages(album), [album]);
+  const [pages, setPages] = React.useState(initialPages);
   const [busy, setBusy] = React.useState(false);
+  const [busyIntent, setBusyIntent] = React.useState<"stay" | "exit" | null>(null);
+  const [dirty, setDirty] = React.useState(false);
   const [stale, setStale] = React.useState(false);
+  const [transformPending, setTransformPending] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const inFlight = React.useRef(false);
-  const activePage = React.useRef({ pageId: pages[0]?.id ?? "", index: 0 });
+  const initialIndex = resolveInitialIndex(initialPages, initialPageId, fallbackIndex);
+  const activePage = React.useRef({ pageId: initialPages[initialIndex]?.id ?? "", index: initialIndex });
   const handleActivePageChange = React.useCallback((cursor: { pageId: string; index: number }) => {
     activePage.current = cursor;
   }, []);
   const isOwner = album.role === "owner";
+  const changeDirty = React.useCallback((nextDirty: boolean) => {
+    setDirty(nextDirty);
+    onDirtyChange?.(nextDirty);
+  }, [onDirtyChange]);
+  const handlePagesChange = React.useCallback((nextPages: StoryPage[]) => {
+    setPages(nextPages);
+    changeDirty(true);
+  }, [changeDirty]);
 
-  const publish = async () => {
-    if (inFlight.current || stale) return;
-    inFlight.current = true;
+  const publish = async (intent: "stay" | "exit") => {
+    if (inFlight.current || stale || transformPending) return;
     const publishCursor = activePage.current;
+    if (!dirty) {
+      if (intent === "exit") onExit?.(publishCursor);
+      return;
+    }
+    inFlight.current = true;
     setBusy(true);
+    setBusyIntent(intent);
     setMessage("");
     try {
       const existingByUrl = new Map(album.media.map((media) => [media.readUrl, media]));
@@ -129,7 +162,8 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
       }
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
-      await onPublished(publishCursor);
+      changeDirty(false);
+      await onPublished({ cursor: publishCursor, intent });
     } catch (error) {
       if (error instanceof BackendApiError && error.status === 403) {
         setPages([]);
@@ -143,13 +177,39 @@ export function SharedAlbumEditor({ accessToken, album, giftId, onAccessLost, on
     } finally {
       inFlight.current = false;
       setBusy(false);
+      setBusyIntent(null);
     }
   };
 
   return <View style={{ gap: 12 }}>
-    <BookCanvasEditor pages={pages} onActivePageChange={handleActivePageChange} onPagesChange={(nextPages) => setPages(nextPages)} />
+    <View pointerEvents={busy || stale ? "none" : "auto"}>
+      <BookCanvasEditor
+        fallbackIndex={fallbackIndex}
+        initialPageId={initialPageId}
+        onActivePageChange={handleActivePageChange}
+        onPagesChange={handlePagesChange}
+        onTransformPendingChange={setTransformPending}
+        pages={pages}
+      />
+    </View>
     {message ? <Text style={{ color: colors.muted, fontFamily: bodyFont }}>{message}</Text> : null}
-    <AppButton disabled={busy || stale} label={busy ? "正在发布…" : "发布新版本"} onPress={() => void publish()} />
+    <AppButton
+      disabled={!dirty || busy || stale || transformPending}
+      label={busyIntent === "stay" ? "正在发布…" : "保存当前修改"}
+      onPress={() => void publish("stay")}
+      tone="secondary"
+    />
+    <AppButton
+      disabled={busy || stale || transformPending}
+      label={busyIntent === "exit" ? "正在发布…" : "保存并发布更新"}
+      onPress={() => void publish("exit")}
+    />
     {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onReload?.()} /> : null}
   </View>;
+}
+
+function resolveInitialIndex(pages: StoryPage[], pageId?: string, fallbackIndex = 0) {
+  const pageIdIndex = pageId ? pages.findIndex((page) => page.id === pageId) : -1;
+  if (pageIdIndex >= 0) return pageIdIndex;
+  return Math.max(0, Math.min(fallbackIndex, Math.max(0, pages.length - 1)));
 }

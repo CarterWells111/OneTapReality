@@ -1,24 +1,28 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import * as React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { IconButton } from "../../../components/icon-button";
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../../components/ui";
 import { PageReader } from "../../../features/canvas/page-reader";
 import { useAuth } from "../../../features/auth/auth-provider";
 import { mapSharedAlbumToStoryPages } from "../../../features/gifts/shared-album-mapper";
-import { SharedAlbumEditor } from "../../../features/gifts/shared-album-editor";
 import { BackendApiClient, type InvitedGiftAlbum } from "../../../services/backend/api-client";
 
 export default function SharedGiftDetailScreen() {
   const router = useRouter();
-  const { id, access } = useLocalSearchParams<{ id: string; access?: string }>();
+  const { id, access, pageId, pageIndex } = useLocalSearchParams<{
+    id: string;
+    access?: string;
+    pageId?: string | string[];
+    pageIndex?: string | string[];
+  }>();
   const { isAuthReady, session } = useAuth();
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [status, setStatus] = React.useState("正在读取分享相册…");
   const [album, setAlbum] = React.useState<InvitedGiftAlbum | null>(null);
   const [opened, setOpened] = React.useState(false);
-  const [editing, setEditing] = React.useState(false);
   const [readerCursor, setReaderCursor] = React.useState<{ pageId: string; index: number } | null>(null);
   const [targets, setTargets] = React.useState<{ email: string; role: "viewer" | "editor" }[]>([]);
   const [requestBusy, setRequestBusy] = React.useState(false);
@@ -31,14 +35,13 @@ export default function SharedGiftDetailScreen() {
   const contextKeyRef = React.useRef(contextKey);
   contextKeyRef.current = contextKey;
 
-  const load = React.useCallback(async (options?: { openAt?: { pageId: string; index: number } }) => {
+  const load = React.useCallback(async () => {
     const loadContextKey = contextKey;
     if (loadContextKey !== contextKeyRef.current) return;
     const generation = ++requestGeneration.current;
     const current = () => generation === requestGeneration.current && loadContextKey === contextKeyRef.current;
     setAlbum(null);
     setOpened(false);
-    setEditing(false);
     setReaderCursor(null);
     setTargets([]);
     setRequestMessage("");
@@ -66,27 +69,12 @@ export default function SharedGiftDetailScreen() {
       setTargets(nextTargets);
       setLoadedContextKey(loadContextKey);
       setStatus("");
-      if (options?.openAt) {
-        setReaderCursor(options.openAt);
-        setOpened(true);
-      }
     } catch {
       if (!current()) return;
       setStatus("无法读取此分享相册，请检查网络后重试。");
       setLoadFailed(true);
     }
   }, [access, client, contextKey, id, router, session]);
-  const handlePublished = React.useCallback(async (cursor: { pageId: string; index: number }) => {
-    if (contextKey !== contextKeyRef.current) return;
-    await load({ openAt: cursor });
-  }, [contextKey, load]);
-  const handleAccessLost = React.useCallback(() => {
-    if (contextKey !== contextKeyRef.current) return;
-    setEditing(false);
-    setAlbum(null);
-    setStatus("编辑权限已被移除，请返回纪念品列表。");
-  }, [contextKey]);
-
   React.useEffect(() => {
     if (isAuthReady) void load();
     return () => { requestGeneration.current += 1; };
@@ -96,6 +84,26 @@ export default function SharedGiftDetailScreen() {
   const visibleAlbum = loadedContextKey === contextKey ? album : null;
   const coverImage = visibleAlbum?.cover?.readUrl ?? null;
   const canEdit = visibleAlbum?.role === "owner" || visibleAlbum?.role === "editor";
+  const pages = visibleAlbum ? mapSharedAlbumToStoryPages(visibleAlbum) : [];
+  const requestedPageId = Array.isArray(pageId) ? pageId[0] : pageId;
+  const requestedPageIndex = parsePageIndex(Array.isArray(pageIndex) ? pageIndex[0] : pageIndex);
+  const fallbackPage = pages[requestedPageIndex] ?? pages[0];
+  const openEditor = () => {
+    if (!id || !canEdit) return;
+    const cursor = readerCursor ?? { pageId: requestedPageId ?? fallbackPage?.id ?? "", index: requestedPageIndex };
+    router.push({
+      pathname: "/gifts/shared/[id]/edit",
+      params: {
+        ...(access === "owner" ? { access: "owner" } : {}),
+        id,
+        pageId: cursor.pageId,
+        pageIndex: String(cursor.index),
+      },
+    });
+  };
+  const headerRight = canEdit
+    ? () => <IconButton accessibilityLabel="编辑共享相册" icon="edit" onPress={openEditor} />
+    : undefined;
   const requestManagement = async (input: { action: "delete_album" | "remove_member" | "change_member_role"; targetEmail?: string; targetRole?: "viewer" | "editor" }) => {
     if (!session || !id || !contextKey || loadedContextKey !== contextKey || requestInFlight.current) return;
     const generation = requestGeneration.current;
@@ -109,7 +117,9 @@ export default function SharedGiftDetailScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
+    <>
+      <Stack.Screen options={{ headerRight }} />
+      <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
       <ScreenTitle title={visibleAlbum?.title ?? "分享相册"} caption="SHARED WITH YOU" />
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
@@ -125,24 +135,15 @@ export default function SharedGiftDetailScreen() {
 
 
       {visibleAlbum ? (
-        editing && canEdit ? (
-          <SharedAlbumEditor
-            accessToken={session.accessToken}
-            album={visibleAlbum}
-            giftId={id}
-            onAccessLost={handleAccessLost}
-            onPublished={handlePublished}
-            onReload={load}
-          />
-        ) : opened ? (
+        opened || canEdit ? (
           <>
             <PageReader
-              fallbackIndex={readerCursor?.index}
-              initialPageId={readerCursor?.pageId}
-              pages={mapSharedAlbumToStoryPages(visibleAlbum)}
+              fallbackIndex={readerCursor?.index ?? requestedPageIndex}
+              initialPageId={readerCursor?.pageId ?? requestedPageId}
+              onActivePageChange={setReaderCursor}
+              pages={pages}
             />
             <View style={styles.actions}>
-              {canEdit ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
               <AppButton label="返回纪念品" onPress={() => router.back()} />
             </View>
           </>
@@ -162,14 +163,20 @@ export default function SharedGiftDetailScreen() {
             </Text>
             <View style={styles.actions}>
               <AppButton label="打开相册" onPress={() => setOpened(true)} />
-              {canEdit ? <AppButton label="编辑共享相册" tone="warm" onPress={() => setEditing(true)} /> : null}
               <AppButton label="返回纪念品" tone="secondary" onPress={() => router.back()} />
             </View>
           </>
         )
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </>
   );
+}
+
+function parsePageIndex(value?: string) {
+  if (!value) return 0;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 const styles = StyleSheet.create({

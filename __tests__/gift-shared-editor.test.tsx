@@ -21,9 +21,13 @@ jest.mock("../src/services/backend/api-client", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text } = require("react-native");
-  return { BookCanvasEditor: ({ pages, onActivePageChange, onPagesChange }: any) => <>
+  return { BookCanvasEditor: ({ fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange }: any) => <>
+    <Text testID="canvas-entry">{`${initialPageId ?? ""}:${fallbackIndex ?? 0}`}</Text>
     <Text testID="canvas-pages">{JSON.stringify(pages)}</Text>
     <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "p2", index: 1 })} />
+    <Button title="change text" onPress={() => onPagesChange([{ ...pages[0], headline: "Changed" }, ...pages.slice(1)], "text")} />
+    <Button title="begin transform" onPress={() => onTransformPendingChange?.(true)} />
+    <Button title="end transform" onPress={() => onTransformPendingChange?.(false)} />
     <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
     <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
     <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
@@ -59,7 +63,7 @@ describe("SharedAlbumEditor", () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add local photo"));
     fireEvent.press(screen.getByText("report second page"));
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存当前修改"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-1"));
     const payload = mockStart.mock.calls[0][2];
@@ -70,13 +74,14 @@ describe("SharedAlbumEditor", () => {
     ]);
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
     expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
-    expect(onPublished).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
+    expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 }, intent: "stay" });
   });
 
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
     const ownedAlbum = { ...album, role: "owner" };
     render(<SharedAlbumEditor accessToken="token" album={ownedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinishOwned).toHaveBeenCalledWith("token", "gift-1", "owned-pub"));
     expect(mockStartOwned).toHaveBeenCalledWith("token", "gift-1", expect.objectContaining({
       baseVersion: 4,
@@ -93,7 +98,8 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-existing", uploads: [], coverUpload: null });
     const firstView = render(<SharedAlbumEditor accessToken="token" album={existingCoverAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     expect(screen.getByTestId("canvas-pages").props.children).toContain("https://signed.test/old.jpg");
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     let payload = mockStart.mock.calls[0][2];
     expect(payload.media).toEqual([{ position: 0, mediaId: "media-1" }]);
@@ -106,7 +112,7 @@ describe("SharedAlbumEditor", () => {
     mockFinish.mockResolvedValueOnce({ albumId: "album-1" });
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [], pages: [{ ...album.pages[0], page: { ...album.pages[0].page, photoSlot: undefined } }] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("set local page cover"));
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     payload = mockStart.mock.calls[0][2];
     expect(payload.pages[0].page.layout.coverImage).toBe("shared-position:0");
@@ -118,7 +124,7 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-cover", uploads: [{ position: 0, uploadUrl: "https://upload.test/cover" }], coverUpload: null });
     render(<SharedAlbumEditor accessToken="token" album={noMediaAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("set local top cover"));
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     const payload = mockStart.mock.calls[0][2];
     expect(payload.pages[0].page.coverImage).toBe("shared-position:0");
@@ -143,7 +149,7 @@ describe("SharedAlbumEditor", () => {
     const onPublished = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add two local photos"));
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(reads.get("file:///a.jpg")).toBe(2));
     expect(reads.get("file:///b.jpg")).toBe(1);
     releaseFirstPut();
@@ -159,9 +165,10 @@ describe("SharedAlbumEditor", () => {
     const onPublished = jest.fn();
     const onReload = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} onReload={onReload} />);
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     expect(mockStart).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByText("重新加载最新版"));
     expect(onPublished).not.toHaveBeenCalled();
@@ -174,10 +181,41 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockReturnValueOnce(new Promise((_resolve, nextReject) => { reject = nextReject; }));
     const onAccessLost = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onPublished={jest.fn()} />);
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存当前修改"));
     fireEvent.press(screen.getByText("正在发布…"));
     expect(mockStart).toHaveBeenCalledTimes(1);
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
+  });
+
+  it("opens the complete canvas at the requested page and blocks both saves during transforms", () => {
+    render(<SharedAlbumEditor accessToken="token" album={album} fallbackIndex={1} giftId="gift-1" initialPageId="p2" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    expect(screen.getByTestId("canvas-entry")).toHaveTextContent("p2:1");
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("begin transform"));
+    expect(screen.getByRole("button", { name: "保存当前修改" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByText("保存当前修改"));
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it("returns without publishing when there are no changes", () => {
+    const onExit = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onExit={onExit} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(onExit).toHaveBeenCalledWith({ pageId: "p0", index: 0 });
+  });
+
+  it("reports dirty state and resets the baseline after a successful stay save", async () => {
+    const onDirtyChange = jest.fn();
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-text", uploads: [], coverUpload: null });
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("change text"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.press(screen.getByText("保存当前修改"));
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 });
