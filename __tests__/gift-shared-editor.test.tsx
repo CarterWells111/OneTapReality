@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import * as React from "react";
 
 const mockStart = jest.fn();
 const mockFinish = jest.fn();
@@ -37,6 +38,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
         onActivePageChange?.(cursor.current);
       }} />
       <Button title="change text" onPress={() => onPagesChange([{ ...pages[0], headline: "Changed" }, ...pages.slice(1)], "text")} />
+      <Button title="restore text" onPress={() => onPagesChange([{ ...pages[0], headline: "Hello" }, ...pages.slice(1)], "text")} />
       <Button title="begin transform" onPress={() => onTransformPendingChange?.(true)} />
       <Button title="end transform" onPress={() => onTransformPendingChange?.(false)} />
       <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
@@ -204,18 +206,61 @@ describe("SharedAlbumEditor", () => {
     expect(onReload).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
   });
 
-  it("clears editing when editor access is revoked and prevents duplicate submits", async () => {
+  it("clears the complete editor when access is revoked and prevents duplicate submits", async () => {
     const { BackendApiError } = require("../src/services/backend/api-client");
     let reject!: (error: Error) => void;
     mockStart.mockReturnValueOnce(new Promise((_resolve, nextReject) => { reject = nextReject; }));
-    const onAccessLost = jest.fn();
-    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onPublished={jest.fn()} />);
+    const onAccessLost = jest.fn(() => {
+      expect(screen.queryByTestId("saved-memory-metadata-header")).toBeNull();
+      expect(screen.queryByTestId("canvas-pages")).toBeNull();
+    });
+    const onDirtyChange = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("change text"));
+    actMetadataChange(view, { title: "Revoked draft", travelDate: "2026-08-20" });
     fireEvent.press(screen.getByText("保存并发布更新"));
     fireEvent.press(screen.getByText("正在发布…"));
     await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
+    expect(screen.queryByTestId("saved-memory-metadata-header")).toBeNull();
+    expect(screen.queryByTestId("canvas-pages")).toBeNull();
+    expect(screen.queryByText("暂存当前修改")).toBeNull();
+    expect(screen.queryByText("保存并发布更新")).toBeNull();
+    expect(screen.queryByText("Revoked draft")).toBeNull();
+    expect(screen.queryByText("2026-08-20")).toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("stops a pending publication after unmount without finishing or publishing callbacks", async () => {
+    let resolveStart!: (publication: { publicationId: string; uploads: never[]; coverUpload: null }) => void;
+    mockStart.mockReturnValueOnce(new Promise((resolve) => { resolveStart = resolve; }));
+    const onPublished = jest.fn();
+    const onAccessLost = jest.fn();
+    const onPublishBusyChange = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onPublishBusyChange={onPublishBusyChange} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
+    expect(onPublishBusyChange).toHaveBeenLastCalledWith(true);
+    view.unmount();
+    await act(async () => resolveStart({ publicationId: "late-publication", uploads: [], coverUpload: null }));
+    expect(mockFinish).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(onAccessLost).not.toHaveBeenCalled();
+    expect(mockReleaseSaveLock).toHaveBeenCalled();
+  });
+
+  it("keeps stage operations current through StrictMode effect replay", async () => {
+    render(
+      <React.StrictMode>
+        <SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />
+      </React.StrictMode>,
+    );
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(mockPrepareSave).toHaveBeenCalledTimes(1);
   });
 
   it("publishes the Canvas editor's settled save snapshot instead of stale parent pages", async () => {
@@ -298,6 +343,51 @@ describe("SharedAlbumEditor", () => {
     expect(onDirtyChange).not.toHaveBeenCalled();
   });
 
+  it("treats normalized metadata matching the published baseline as unchanged", async () => {
+    const onDirtyChange = jest.fn();
+    const onExit = jest.fn();
+    const onPublished = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    actMetadataChange(view, { title: "  Trip  " });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    actMetadataChange(view, { travelDate: "2026-08-16" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(onExit).toHaveBeenCalledWith({ pageId: "p0", index: 0 }));
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStartOwned).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns dirty to false after title and Canvas edits are restored to the baseline", () => {
+    const onDirtyChange = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    actMetadataChange(view, { title: "Different" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    actMetadataChange(view, { title: "Trip" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.press(screen.getByText("change text"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.press(screen.getByText("restore text"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("recomputes dirty from a staged prepared snapshot that restores the published baseline", async () => {
+    const onDirtyChange = jest.fn();
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({
+      cursor,
+      pages: [{ ...pages[0], headline: "Hello" }, ...pages.slice(1)],
+    }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("change text"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain("Hello");
+  });
+
   it("stages canvas and metadata edits locally without publishing or clearing dirty", async () => {
     const onDirtyChange = jest.fn();
     const onPublished = jest.fn();
@@ -326,7 +416,8 @@ describe("SharedAlbumEditor", () => {
     const onDirtyChange = jest.fn();
     const onPublished = jest.fn();
     const onExit = jest.fn();
-    const view = render(<SharedAlbumEditor accessToken="token" album={{ ...album, role: "owner" }} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    const onPublishBusyChange = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={{ ...album, role: "owner" }} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublishBusyChange={onPublishBusyChange} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("change text"));
     actMetadataChange(view, { title: "Owner staged draft", travelDate: "2026-08-19" });
     fireEvent.press(screen.getByText("暂存当前修改"));
@@ -339,6 +430,7 @@ describe("SharedAlbumEditor", () => {
     expect(global.fetch).not.toHaveBeenCalled();
     expect(onPublished).not.toHaveBeenCalled();
     expect(onExit).not.toHaveBeenCalled();
+    expect(onPublishBusyChange).not.toHaveBeenCalled();
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
@@ -403,12 +495,14 @@ describe("SharedAlbumEditor", () => {
 
   it("clears dirty only after a successful publication", async () => {
     const onDirtyChange = jest.fn();
+    const onPublishBusyChange = jest.fn();
     mockStart.mockResolvedValueOnce({ publicationId: "pub-clean", uploads: [], coverUpload: null });
-    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublishBusyChange={onPublishBusyChange} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("change text"));
     fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(onPublishBusyChange.mock.calls).toEqual([[true], [false]]);
   });
 
   it("can retry staging after pending and thrown prepare results", async () => {

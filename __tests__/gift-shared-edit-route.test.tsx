@@ -9,6 +9,8 @@ const mockGetOwnedGiftAlbum = jest.fn();
 const mockUseAuth = jest.fn();
 const mockSharedEditor = jest.fn();
 let mockBeforeRemove: ((event: { preventDefault: () => void; data: { action: unknown } }) => void) | undefined;
+let mockPendingPublish: Promise<void>;
+let resolveMockPendingPublish: () => void;
 let mockParams: { id: string; access?: string; pageId?: string; pageIndex?: string } = {
   id: "gift-1",
   pageId: "p1",
@@ -52,6 +54,12 @@ jest.mock("../src/features/gifts/shared-album-editor", () => {
         <Button title="mark dirty" onPress={() => props.onDirtyChange(true)} />
         <Button title="stage edits" onPress={() => props.onDirtyChange(true)} />
         <Button title="publish" onPress={() => void props.onPublished({ cursor: { pageId: "p2", index: 2 } })} />
+        <Button title="publish pending" onPress={() => void (async () => {
+          props.onPublishBusyChange(true);
+          await mockPendingPublish;
+          await props.onPublished({ cursor: { pageId: "p2", index: 2 } });
+          props.onPublishBusyChange(false);
+        })()} />
         <Button title="clean exit" onPress={() => props.onExit({ pageId: "p1", index: 1 })} />
         <Button title="lose access" onPress={() => props.onAccessLost()} />
         <Button title="reload latest" onPress={() => void props.onReload({ pageId: "p1", index: 1 })} />
@@ -65,6 +73,7 @@ import SharedGiftEditScreen from "../src/app/gifts/shared/[id]/edit";
 const album = {
   role: "editor",
   title: "Trip",
+  travelDate: "2026-08-16",
   version: 1,
   publishedAt: "2026-08-16T00:00:00.000Z",
   cover: null,
@@ -77,6 +86,7 @@ describe("shared gift edit route", () => {
     jest.clearAllMocks();
     mockBeforeRemove = undefined;
     mockParams = { id: "gift-1", pageId: "p1", pageIndex: "1" };
+    mockPendingPublish = new Promise((resolve) => { resolveMockPendingPublish = resolve; });
     mockUseAuth.mockReturnValue({
       isAuthReady: true,
       session: { accessToken: "token", user: { id: "editor-1", email: "editor@example.com" } },
@@ -146,6 +156,31 @@ describe("shared gift edit route", () => {
     const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
     act(() => buttons.find((item) => item.text === "放弃修改")?.onPress?.());
     expect(mockDispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+    alert.mockRestore();
+  });
+
+  it("blocks navigation without a discard action while publication is pending", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    mockParams = { ...mockParams, access: "owner" };
+    render(<SharedGiftEditScreen />);
+    await screen.findByTestId("shared-editor");
+    fireEvent.press(screen.getByText("mark dirty"));
+    fireEvent.press(screen.getByText("publish pending"));
+    const event = { preventDefault: jest.fn(), data: { action: { type: "GO_BACK" } } };
+    act(() => mockBeforeRemove?.(event));
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith("正在发布，请稍候");
+    expect(alert.mock.calls.flat().join(" ")).not.toContain("放弃修改");
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    const publishRemovalEvent = { preventDefault: jest.fn(), data: { action: { type: "DISMISS" } } };
+    mockDismissTo.mockImplementationOnce(() => mockBeforeRemove?.(publishRemovalEvent));
+    await act(async () => resolveMockPendingPublish());
+    await waitFor(() => expect(mockDismissTo).toHaveBeenCalledWith({
+      pathname: "/gifts/shared/[id]",
+      params: { access: "owner", id: "gift-1", pageId: "p2", pageIndex: "2" },
+    }));
+    expect(publishRemovalEvent.preventDefault).not.toHaveBeenCalled();
     alert.mockRestore();
   });
 

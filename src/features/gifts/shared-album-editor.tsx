@@ -28,6 +28,7 @@ type Props = {
   onAccessLost: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onExit?: (cursor: { pageId: string; index: number }) => void;
+  onPublishBusyChange?: (busy: boolean) => void;
   onPublished: (result: { cursor: { pageId: string; index: number } }) => void | Promise<void>;
   onReload?: (cursor: { pageId: string; index: number }) => void | Promise<void>;
 };
@@ -81,6 +82,7 @@ export function SharedAlbumEditor({
   onAccessLost,
   onDirtyChange,
   onExit,
+  onPublishBusyChange,
   onPublished,
   onReload,
 }: Props) {
@@ -93,12 +95,23 @@ export function SharedAlbumEditor({
   });
   const [busy, setBusy] = React.useState(false);
   const [busyIntent, setBusyIntent] = React.useState<"stage" | "publish" | null>(null);
-  const [dirty, setDirty] = React.useState(false);
+  const [, setDirty] = React.useState(false);
   const [stale, setStale] = React.useState(false);
+  const [accessLost, setAccessLost] = React.useState(false);
   const [transformPending, setTransformPending] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const inFlight = React.useRef(false);
+  const mountedRef = React.useRef(true);
+  const operationGeneration = React.useRef(0);
+  const accessLostGeneration = React.useRef<number | null>(null);
+  const accessLostNotified = React.useRef(false);
   const editorRef = React.useRef<BookCanvasEditorHandle>(null);
+  const pagesRef = React.useRef(pages);
+  const metadataRef = React.useRef(metadata);
+  const dirtyRef = React.useRef(false);
+  const publishedBaseline = React.useRef(createPublishedBaseline(initialPages, album));
+  pagesRef.current = pages;
+  metadataRef.current = metadata;
   const initialIndex = resolveInitialIndex(initialPages, initialPageId, fallbackIndex);
   const activePage = React.useRef({ pageId: initialPages[initialIndex]?.id ?? "", index: initialIndex });
   const handleActivePageChange = React.useCallback((cursor: { pageId: string; index: number }) => {
@@ -106,30 +119,52 @@ export function SharedAlbumEditor({
   }, []);
   const isOwner = album.role === "owner";
   const changeDirty = React.useCallback((nextDirty: boolean) => {
+    dirtyRef.current = nextDirty;
     setDirty(nextDirty);
     onDirtyChange?.(nextDirty);
   }, [onDirtyChange]);
   const handlePagesChange = React.useCallback((nextPages: StoryPage[]) => {
+    pagesRef.current = nextPages;
     setPages(nextPages);
-    changeDirty(true);
+    changeDirty(hasEffectiveChanges(nextPages, metadataRef.current, publishedBaseline.current));
   }, [changeDirty]);
   const handleMetadataChange = React.useCallback((change: Partial<AlbumMetadataValue>) => {
-    setMetadata((current) => ({ ...current, ...change }));
-    changeDirty(true);
+    const nextMetadata = { ...metadataRef.current, ...change };
+    metadataRef.current = nextMetadata;
+    setMetadata(nextMetadata);
+    changeDirty(hasEffectiveChanges(pagesRef.current, nextMetadata, publishedBaseline.current));
   }, [changeDirty]);
 
-  React.useEffect(() => () => {
-    editorRef.current?.releaseSaveLock();
+  React.useEffect(() => {
+    mountedRef.current = true;
+    const mountedEditor = editorRef.current;
+    return () => {
+      mountedRef.current = false;
+      operationGeneration.current += 1;
+      mountedEditor?.releaseSaveLock();
+    };
   }, []);
+
+  React.useEffect(() => {
+    if (!accessLost || accessLostNotified.current) return;
+    const generation = accessLostGeneration.current;
+    if (!mountedRef.current || generation === null || generation !== operationGeneration.current) return;
+    accessLostNotified.current = true;
+    onAccessLost();
+  }, [accessLost, onAccessLost]);
 
   const stage = async () => {
     if (inFlight.current || stale || transformPending) return;
+    const generation = ++operationGeneration.current;
+    const current = () => mountedRef.current && generation === operationGeneration.current;
+    const operationEditor = editorRef.current;
     inFlight.current = true;
     setBusy(true);
     setBusyIntent("stage");
     setMessage("");
     try {
-      const prepared = await editorRef.current?.prepareSave();
+      const prepared = await operationEditor?.prepareSave();
+      if (!current()) return;
       if (!prepared) {
         setMessage(PREPARE_SAVE_PENDING_MESSAGE);
         return;
@@ -137,17 +172,19 @@ export function SharedAlbumEditor({
       const publishPages = prepared.pages;
       const publishCursor = prepared.cursor;
       activePage.current = publishCursor;
-      const hasPreparedChanges = !pagesMatch(publishPages, pages);
-      if (hasPreparedChanges && !dirty) changeDirty(true);
+      pagesRef.current = publishPages;
       setPages(publishPages);
+      changeDirty(hasEffectiveChanges(publishPages, metadataRef.current, publishedBaseline.current));
       setMessage(STAGED_MESSAGE);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : PREPARE_SAVE_PENDING_MESSAGE);
+      if (current()) setMessage(error instanceof Error ? error.message : PREPARE_SAVE_PENDING_MESSAGE);
     } finally {
-      editorRef.current?.releaseSaveLock();
+      operationEditor?.releaseSaveLock();
       inFlight.current = false;
-      setBusy(false);
-      setBusyIntent(null);
+      if (current()) {
+        setBusy(false);
+        setBusyIntent(null);
+      }
     }
   };
 
@@ -158,12 +195,17 @@ export function SharedAlbumEditor({
       setMessage("请输入纪念册标题");
       return;
     }
+    const generation = ++operationGeneration.current;
+    const current = () => mountedRef.current && generation === operationGeneration.current;
+    const operationEditor = editorRef.current;
     inFlight.current = true;
+    onPublishBusyChange?.(true);
     setBusy(true);
     setBusyIntent("publish");
     setMessage("");
     try {
-      const prepared = await editorRef.current?.prepareSave();
+      const prepared = await operationEditor?.prepareSave();
+      if (!current()) return;
       if (!prepared) {
         setMessage(PREPARE_SAVE_PENDING_MESSAGE);
         return;
@@ -171,12 +213,13 @@ export function SharedAlbumEditor({
       const publishPages = prepared.pages;
       const publishCursor = prepared.cursor;
       activePage.current = publishCursor;
-      const hasPreparedChanges = !pagesMatch(publishPages, pages);
-      if (!dirty && !hasPreparedChanges) {
+      const publishMetadata = metadataRef.current;
+      if (!hasEffectiveChanges(publishPages, publishMetadata, publishedBaseline.current)) {
         onExit?.(publishCursor);
         return;
       }
-      if (!dirty) changeDirty(true);
+      if (!dirtyRef.current) changeDirty(true);
+      pagesRef.current = publishPages;
       setPages(publishPages);
       const existingByUrl = new Map(album.media.map((media) => [media.readUrl, media]));
       const sources: MediaSource[] = [];
@@ -190,23 +233,27 @@ export function SharedAlbumEditor({
       for (const source of sources) {
         if (source.existingId) continue;
         const response = await fetch(source.uri);
+        if (!current()) return;
         if (!response.ok) throw new Error("有照片无法读取，请重新选择后再发布。");
         const blob = await response.blob();
+        if (!current()) return;
         source.contentType = blob.type || "image/jpeg";
         source.byteSize = blob.size;
       }
       let coverBlob: Blob | null = null;
       if (album.cover) {
         const response = await fetch(album.cover.readUrl);
+        if (!current()) return;
         if (!response.ok) throw new Error("封面图片无法读取，请重新加载后再发布。");
         coverBlob = await response.blob();
+        if (!current()) return;
       }
       const refs = new Map(sources.map((source, position) => [source.uri, { position, ...(source.existingId ? { mediaId: source.existingId } : {}) }]));
       const publishPayload: SharedAlbumPublishPayload = {
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
         title,
-        travelDate: metadata.travelDate,
+        travelDate: publishMetadata.travelDate,
         pages: publishPages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
         media: sources.map((source, position) => source.existingId
           ? { position, mediaId: source.existingId }
@@ -216,13 +263,17 @@ export function SharedAlbumEditor({
       const publication = isOwner
         ? await client.startOwnedGiftPublish(accessToken, giftId, publishPayload)
         : await client.startInvitedGiftPublish(giftId, accessToken, publishPayload);
+      if (!current()) return;
       for (const upload of publication.uploads) {
         const source = sources[upload.position];
         if (!source || source.existingId) throw new Error("上传清单不完整。");
         const readResponse = await fetch(source.uri);
+        if (!current()) return;
         if (!readResponse.ok) throw new Error("有照片无法读取，请重新选择后再发布。");
         const blob = await readResponse.blob();
+        if (!current()) return;
         const response = await fetch(upload.uploadUrl, { method: "PUT", headers: { "Content-Type": source.contentType! }, body: blob });
+        if (!current()) return;
         if (!response.ok) throw new Error("照片上传失败。");
       }
       if (publication.coverUpload && coverBlob) {
@@ -231,16 +282,26 @@ export function SharedAlbumEditor({
           headers: { "Content-Type": coverBlob.type || album.cover!.contentType },
           body: coverBlob,
         });
+        if (!current()) return;
         if (!response.ok) throw new Error("封面上传失败。");
       }
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
+      if (!current()) return;
       changeDirty(false);
+      if (!current()) return;
       await onPublished({ cursor: publishCursor });
     } catch (error) {
+      if (!current()) return;
       if (error instanceof BackendApiError && error.status === 403) {
+        accessLostGeneration.current = generation;
+        setAccessLost(true);
+        pagesRef.current = [];
         setPages([]);
-        onAccessLost();
+        const clearedMetadata = { title: "", travelDate: null };
+        metadataRef.current = clearedMetadata;
+        setMetadata(clearedMetadata);
+        changeDirty(false);
       } else if (error instanceof BackendApiError && error.status === 409 && error.code === "gift_album_version_conflict") {
         setStale(true);
         setMessage("相册已有新版本，请重新加载后再编辑。");
@@ -248,12 +309,17 @@ export function SharedAlbumEditor({
         setMessage(error instanceof Error ? error.message : "发布失败，请重试。");
       }
     } finally {
-      editorRef.current?.releaseSaveLock();
+      operationEditor?.releaseSaveLock();
       inFlight.current = false;
-      setBusy(false);
-      setBusyIntent(null);
+      if (current()) {
+        setBusy(false);
+        setBusyIntent(null);
+        onPublishBusyChange?.(false);
+      }
     }
   };
+
+  if (accessLost) return null;
 
   return <View style={{ gap: 12 }}>
     <AlbumMetadataEditor
@@ -289,8 +355,28 @@ export function SharedAlbumEditor({
   </View>;
 }
 
-function pagesMatch(left: StoryPage[], right: StoryPage[]) {
-  return JSON.stringify(left) === JSON.stringify(right);
+type PublishedBaseline = {
+  pagesSignature: string;
+  title: string;
+  travelDate: string | null;
+};
+
+function createPublishedBaseline(pages: StoryPage[], album: InvitedGiftAlbum): PublishedBaseline {
+  return {
+    pagesSignature: storyPagesSignature(pages),
+    title: album.title.trim(),
+    travelDate: album.travelDate,
+  };
+}
+
+function hasEffectiveChanges(pages: StoryPage[], metadata: AlbumMetadataValue, baseline: PublishedBaseline) {
+  return storyPagesSignature(pages) !== baseline.pagesSignature
+    || metadata.title.trim() !== baseline.title
+    || metadata.travelDate !== baseline.travelDate;
+}
+
+function storyPagesSignature(pages: StoryPage[]) {
+  return JSON.stringify(pages);
 }
 
 function resolveInitialIndex(pages: StoryPage[], pageId?: string, fallbackIndex = 0) {

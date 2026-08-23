@@ -26,6 +26,7 @@ export default function SharedGiftEditScreen() {
   const [loadedContextKey, setLoadedContextKey] = React.useState<string | null>(null);
   const [cursor, setCursor] = React.useState<Cursor>({ pageId: routePageId ?? "", index: routePageIndex });
   const [dirty, setDirty] = React.useState(false);
+  const [publishBusy, setPublishBusy] = React.useState(false);
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [status, setStatus] = React.useState("正在读取共享相册最新版…");
   const allowRemove = React.useRef(false);
@@ -53,6 +54,7 @@ export default function SharedGiftEditScreen() {
       setLoadedContextKey(null);
       setAlbum(null);
       setDirty(false);
+      setPublishBusy(false);
     }
     setCursor(nextCursor);
     setLoadFailed(false);
@@ -99,6 +101,11 @@ export default function SharedGiftEditScreen() {
       allowRemove.current = false;
       return;
     }
+    if (publishBusy) {
+      event.preventDefault();
+      Alert.alert("正在发布，请稍候");
+      return;
+    }
     if (!dirty) return;
     event.preventDefault();
     Alert.alert(
@@ -116,7 +123,7 @@ export default function SharedGiftEditScreen() {
         },
       ],
     );
-  }), [dirty, navigation]);
+  }), [dirty, navigation, publishBusy]);
 
   const leaveToPreview = React.useCallback((nextCursor: Cursor) => {
     if (!id || contextKey !== contextKeyRef.current) return;
@@ -138,6 +145,9 @@ export default function SharedGiftEditScreen() {
   }, [contextKey, leaveToPreview]);
   const handleDirtyChange = React.useCallback((nextDirty: boolean) => {
     if (contextKey === contextKeyRef.current) setDirty(nextDirty);
+  }, [contextKey]);
+  const handlePublishBusyChange = React.useCallback((nextBusy: boolean) => {
+    if (contextKey === contextKeyRef.current) setPublishBusy(nextBusy);
   }, [contextKey]);
   const handleAccessLost = React.useCallback(() => {
     leaveToGiftList(contextKey);
@@ -162,6 +172,7 @@ export default function SharedGiftEditScreen() {
           onAccessLost={handleAccessLost}
           onDirtyChange={handleDirtyChange}
           onExit={leaveToPreview}
+          onPublishBusyChange={handlePublishBusyChange}
           onPublished={handlePublished}
           onReload={load}
         />
