@@ -54,6 +54,7 @@ jest.mock("../src/features/gifts/shared-album-editor", () => {
         <Button title="publish exit" onPress={() => void props.onPublished({ cursor: { pageId: "p2", index: 2 }, intent: "exit" })} />
         <Button title="clean exit" onPress={() => props.onExit({ pageId: "p1", index: 1 })} />
         <Button title="lose access" onPress={() => props.onAccessLost()} />
+        <Button title="reload latest" onPress={() => void props.onReload({ pageId: "p1", index: 1 })} />
       </>;
     },
   };
@@ -151,5 +152,65 @@ describe("shared gift edit route", () => {
     await screen.findByTestId("shared-editor");
     fireEvent.press(screen.getByText("lose access"));
     expect(mockReplace).toHaveBeenCalledWith("/gifts");
+  });
+
+  it("keeps the in-memory editor and dirty guard when a latest-version reload fails", async () => {
+    render(<SharedGiftEditScreen />);
+    await screen.findByTestId("shared-editor");
+    fireEvent.press(screen.getByText("mark dirty"));
+    mockGetInvitedGiftAlbum.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.press(screen.getByText("reload latest"));
+    await screen.findByText("无法读取共享相册最新版，请检查网络后重试。");
+    expect(screen.getByTestId("shared-editor")).toHaveTextContent("editor:v1:p1:1");
+    const event = { preventDefault: jest.fn(), data: { action: { type: "GO_BACK" } } };
+    act(() => mockBeforeRemove?.(event));
+    expect(event.preventDefault).toHaveBeenCalled();
+
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, version: 2 });
+    fireEvent.press(screen.getByText("重试读取最新版"));
+    await waitFor(() => expect(screen.getByTestId("shared-editor")).toHaveTextContent("editor:v2:p1:1"));
+  });
+
+  it("preserves owner access and page cursor through sign-in", async () => {
+    mockParams = { id: "gift-1", access: "owner", pageId: "p1", pageIndex: "1" };
+    mockUseAuth.mockReturnValue({ isAuthReady: true, session: null });
+    render(<SharedGiftEditScreen />);
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith(
+      "/login?returnTo=%2Fgifts%2Fshared%2Fgift-1%2Fedit%3Faccess%3Downer%26pageId%3Dp1%26pageIndex%3D1",
+    ));
+  });
+
+  it("ignores editor callbacks captured by an older gift and account context", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const view = render(<SharedGiftEditScreen />);
+    await screen.findByTestId("shared-editor");
+    const oldProps = mockSharedEditor.mock.calls.at(-1)?.[0];
+
+    mockParams = { id: "gift-2", pageId: "new-page", pageIndex: "0" };
+    mockUseAuth.mockReturnValue({
+      isAuthReady: true,
+      session: { accessToken: "new-token", user: { id: "editor-2", email: "new@example.com" } },
+    });
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, title: "New trip", version: 7 });
+    view.rerender(<SharedGiftEditScreen />);
+    await waitFor(() => expect(screen.getByTestId("shared-editor")).toHaveTextContent("editor:v7:new-page:0"));
+    fireEvent.press(screen.getByText("mark dirty"));
+
+    await act(async () => {
+      oldProps.onDirtyChange(false);
+      oldProps.onAccessLost();
+      oldProps.onExit({ pageId: "old-page", index: 3 });
+      await oldProps.onPublished({ cursor: { pageId: "old-page", index: 3 }, intent: "stay" });
+    });
+
+    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);
+    expect(mockGetInvitedGiftAlbum).toHaveBeenLastCalledWith("gift-2", "new-token");
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
+    const event = { preventDefault: jest.fn(), data: { action: { type: "GO_BACK" } } };
+    act(() => mockBeforeRemove?.(event));
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith("放弃未发布的修改？", expect.any(String), expect.any(Array));
+    alert.mockRestore();
   });
 });

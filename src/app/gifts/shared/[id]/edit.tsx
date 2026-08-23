@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams, useNavigation, useRouter } from "expo-rout
 import * as React from "react";
 import { Alert, ScrollView, StyleSheet, Text } from "react-native";
 
-import { bodyFont, colors } from "../../../../components/ui";
+import { AppButton, bodyFont, colors } from "../../../../components/ui";
 import { useAuth } from "../../../../features/auth/auth-provider";
 import { SharedAlbumEditor } from "../../../../features/gifts/shared-album-editor";
 import { BackendApiClient, BackendApiError, type InvitedGiftAlbum } from "../../../../services/backend/api-client";
@@ -23,25 +23,42 @@ export default function SharedGiftEditScreen() {
   const routePageId = Array.isArray(pageId) ? pageId[0] : pageId;
   const routePageIndex = parsePageIndex(Array.isArray(pageIndex) ? pageIndex[0] : pageIndex);
   const [album, setAlbum] = React.useState<InvitedGiftAlbum | null>(null);
+  const [loadedContextKey, setLoadedContextKey] = React.useState<string | null>(null);
   const [cursor, setCursor] = React.useState<Cursor>({ pageId: routePageId ?? "", index: routePageIndex });
   const [dirty, setDirty] = React.useState(false);
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const [status, setStatus] = React.useState("正在读取共享相册最新版…");
   const allowRemove = React.useRef(false);
   const requestGeneration = React.useRef(0);
+  const contextKey = session && id
+    ? `${id}\u0000${access === "owner" ? "owner" : "invited"}\u0000${session.user.id}\u0000${session.accessToken}`
+    : null;
+  const contextKeyRef = React.useRef(contextKey);
+  contextKeyRef.current = contextKey;
+  const loadedContextKeyRef = React.useRef<string | null>(null);
 
-  const leaveToGiftList = React.useCallback(() => {
+  const leaveToGiftList = React.useCallback((operationContextKey = contextKey) => {
+    if (operationContextKey !== contextKeyRef.current) return;
     allowRemove.current = true;
     router.replace("/gifts");
-  }, [router]);
+  }, [contextKey, router]);
 
   const load = React.useCallback(async (nextCursor: Cursor) => {
+    const loadContextKey = contextKey;
+    if (loadContextKey !== contextKeyRef.current) return;
     const generation = ++requestGeneration.current;
-    setAlbum(null);
+    const current = () => generation === requestGeneration.current && loadContextKey === contextKeyRef.current;
+    if (loadedContextKeyRef.current !== loadContextKey) {
+      loadedContextKeyRef.current = null;
+      setLoadedContextKey(null);
+      setAlbum(null);
+      setDirty(false);
+    }
     setCursor(nextCursor);
-    setDirty(false);
+    setLoadFailed(false);
     setStatus("正在读取共享相册最新版…");
     if (!session || !id) {
-      const editRoute = id ? `/gifts/shared/${encodeURIComponent(id)}/edit` : "/gifts";
+      const editRoute = buildEditReturnRoute({ access, id, pageId: routePageId, pageIndex: routePageIndex });
       allowRemove.current = true;
       router.replace(`/login?returnTo=${encodeURIComponent(editRoute)}` as never);
       return;
@@ -50,22 +67,27 @@ export default function SharedGiftEditScreen() {
       const result = access === "owner"
         ? await client.getOwnedGiftAlbum(id, session.accessToken)
         : await client.getInvitedGiftAlbum(id, session.accessToken);
-      if (generation !== requestGeneration.current) return;
+      if (!current()) return;
       if (result.role !== "owner" && result.role !== "editor") {
-        leaveToGiftList();
+        leaveToGiftList(loadContextKey);
         return;
       }
       setAlbum(result);
+      loadedContextKeyRef.current = loadContextKey;
+      setLoadedContextKey(loadContextKey);
+      setDirty(false);
+      setLoadFailed(false);
       setStatus("");
     } catch (error) {
-      if (generation !== requestGeneration.current) return;
+      if (!current()) return;
       if (error instanceof BackendApiError && error.status === 403) {
-        leaveToGiftList();
+        leaveToGiftList(loadContextKey);
         return;
       }
       setStatus("无法读取共享相册最新版，请检查网络后重试。");
+      setLoadFailed(true);
     }
-  }, [access, client, id, leaveToGiftList, router, session]);
+  }, [access, client, contextKey, id, leaveToGiftList, routePageId, routePageIndex, router, session]);
 
   React.useEffect(() => {
     if (isAuthReady) void load({ pageId: routePageId ?? "", index: routePageIndex });
@@ -97,7 +119,7 @@ export default function SharedGiftEditScreen() {
   }), [dirty, navigation]);
 
   const leaveToPreview = React.useCallback((nextCursor: Cursor) => {
-    if (!id) return;
+    if (!id || contextKey !== contextKeyRef.current) return;
     allowRemove.current = true;
     router.dismissTo({
       pathname: "/gifts/shared/[id]",
@@ -108,38 +130,58 @@ export default function SharedGiftEditScreen() {
         pageIndex: String(nextCursor.index),
       },
     });
-  }, [access, id, router]);
+  }, [access, contextKey, id, router]);
 
   const handlePublished = React.useCallback(async (result: { cursor: Cursor; intent: "stay" | "exit" }) => {
+    if (contextKey !== contextKeyRef.current) return;
     if (result.intent === "exit") {
       leaveToPreview(result.cursor);
       return;
     }
     await load(result.cursor);
-  }, [leaveToPreview, load]);
+  }, [contextKey, leaveToPreview, load]);
+  const handleDirtyChange = React.useCallback((nextDirty: boolean) => {
+    if (contextKey === contextKeyRef.current) setDirty(nextDirty);
+  }, [contextKey]);
+  const handleAccessLost = React.useCallback(() => {
+    leaveToGiftList(contextKey);
+  }, [contextKey, leaveToGiftList]);
 
   if (!isAuthReady || !session) return null;
+  const visibleAlbum = loadedContextKey === contextKey ? album : null;
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: "编辑共享相册" }} />
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
-      {album ? (
+      {loadFailed ? <AppButton label="重试读取最新版" tone="secondary" onPress={() => void load(cursor)} /> : null}
+      {visibleAlbum ? (
         <SharedAlbumEditor
+          key={`${contextKey}:${visibleAlbum.version}`}
           accessToken={session.accessToken}
-          album={album}
+          album={visibleAlbum}
           fallbackIndex={cursor.index}
           giftId={id}
           initialPageId={cursor.pageId}
-          onAccessLost={leaveToGiftList}
-          onDirtyChange={setDirty}
+          onAccessLost={handleAccessLost}
+          onDirtyChange={handleDirtyChange}
           onExit={leaveToPreview}
           onPublished={handlePublished}
-          onReload={() => load(cursor)}
+          onReload={load}
         />
       ) : null}
     </ScrollView>
   );
+}
+
+function buildEditReturnRoute(input: { access?: string; id?: string; pageId?: string; pageIndex: number }) {
+  if (!input.id) return "/gifts";
+  const query = [
+    input.access === "owner" ? "access=owner" : null,
+    input.pageId ? `pageId=${encodeURIComponent(input.pageId)}` : null,
+    `pageIndex=${input.pageIndex}`,
+  ].filter((value): value is string => Boolean(value)).join("&");
+  return `/gifts/shared/${encodeURIComponent(input.id)}/edit?${query}`;
 }
 
 function parsePageIndex(value?: string) {

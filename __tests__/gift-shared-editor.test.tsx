@@ -166,13 +166,14 @@ describe("SharedAlbumEditor", () => {
     const onReload = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} onReload={onReload} />);
     fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("report second page"));
     fireEvent.press(screen.getByText("保存当前修改"));
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
     fireEvent.press(screen.getByText("保存当前修改"));
     expect(mockStart).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByText("重新加载最新版"));
     expect(onPublished).not.toHaveBeenCalled();
-    expect(onReload).toHaveBeenCalled();
+    expect(onReload).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
   });
 
   it("clears editing when editor access is revoked and prevents duplicate submits", async () => {

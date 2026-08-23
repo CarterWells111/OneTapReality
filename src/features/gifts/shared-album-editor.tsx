@@ -17,7 +17,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onExit?: (cursor: { pageId: string; index: number }) => void;
   onPublished: (result: { cursor: { pageId: string; index: number }; intent: "stay" | "exit" }) => void | Promise<void>;
-  onReload?: () => void | Promise<void>;
+  onReload?: (cursor: { pageId: string; index: number }) => void | Promise<void>;
 };
 
 type MediaSource = { uri: string; existingId?: string; contentType?: string; byteSize?: number };
@@ -204,7 +204,7 @@ export function SharedAlbumEditor({
       label={busyIntent === "exit" ? "正在发布…" : "保存并发布更新"}
       onPress={() => void publish("exit")}
     />
-    {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onReload?.()} /> : null}
+    {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onReload?.(activePage.current)} /> : null}
   </View>;
 }
 

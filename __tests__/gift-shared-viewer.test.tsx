@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -8,6 +8,7 @@ const mockGetOwnedGiftAlbum = jest.fn();
 const mockListTargets = jest.fn();
 const mockUseAuth = jest.fn();
 const mockPageReader = jest.fn();
+const mockUseFocusEffect = jest.fn();
 const mockRouter = { back: mockBack, push: mockPush, replace: mockReplace };
 let mockParams: { id: string; access?: string; pageId?: string; pageIndex?: string } = { id: "gift-1" };
 
@@ -16,6 +17,11 @@ jest.mock("expo-router", () => ({
     Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) => options?.headerRight?.() ?? null,
   },
   useLocalSearchParams: () => mockParams,
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = require("react");
+    mockUseFocusEffect(callback);
+    React.useEffect(callback, [callback]);
+  },
   useRouter: () => mockRouter,
 }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
@@ -115,6 +121,23 @@ describe("shared gift album viewer", () => {
       pathname: "/gifts/shared/[id]/edit",
       params: { id: "gift-1", pageId: "p1", pageIndex: "1" },
     });
+  });
+
+  it("reloads an editable preview when it regains focus after publishing", async () => {
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
+    render(<SharedGiftDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId("reader")).toHaveTextContent("reader:2"));
+    const latestAlbum = {
+      ...album,
+      role: "editor",
+      version: 2,
+      pages: [...album.pages, { ...album.pages[1], position: 2, page: { ...album.pages[1].page, id: "p2", position: 2 } }],
+    };
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce(latestAlbum);
+    const focusCallback = mockUseFocusEffect.mock.calls.at(-1)?.[0];
+    act(() => { focusCallback(); });
+    await waitFor(() => expect(screen.getByTestId("reader")).toHaveTextContent("reader:3"));
+    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);
   });
 
   it("returns to the souvenir list from the cover", async () => {

@@ -9,6 +9,10 @@ const mockRouter = { back: jest.fn(), replace: jest.fn() };
 
 jest.mock("expo-router", () => ({
   Stack: { Screen: () => null },
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = require("react");
+    React.useEffect(callback, [callback]);
+  },
   useLocalSearchParams: () => mockParams,
   useRouter: () => mockRouter,
 }));

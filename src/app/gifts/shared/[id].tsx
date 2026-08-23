@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import * as React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -75,10 +75,10 @@ export default function SharedGiftDetailScreen() {
       setLoadFailed(true);
     }
   }, [access, client, contextKey, id, router, session]);
-  React.useEffect(() => {
+  useFocusEffect(React.useCallback(() => {
     if (isAuthReady) void load();
     return () => { requestGeneration.current += 1; };
-  }, [isAuthReady, load]);
+  }, [isAuthReady, load]));
   if (!isAuthReady || !session) return null;
 
   const visibleAlbum = loadedContextKey === contextKey ? album : null;
