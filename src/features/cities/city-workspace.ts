@@ -1,5 +1,6 @@
 import type { City } from "../../types/memory";
 import type { CityMapAdapter, CityMapFocus } from "./city-map-adapter";
+import { chinaMapViewBox } from "./china-map-data";
 
 export type WorkspaceViewport = {
   readonly scale: number;
@@ -12,19 +13,36 @@ export type WorkspaceSize = {
   readonly width: number;
 };
 
+export const workspaceMinScale = 1;
+export const workspaceMaxScale = 6;
+export const workspacePanOverscanRatio = 0.5;
+
 const clamp = (value: number, minimum: number, maximum: number) => {
   "worklet";
   return Math.min(Math.max(value, minimum), maximum);
 };
 
+const [, , chinaMapWidth, chinaMapHeight] = chinaMapViewBox.split(/\s+/).map(Number);
+
+export function getWorkspaceTranslationLimits(scale: number, size: WorkspaceSize) {
+  "worklet";
+  const boundedScale = clamp(scale, workspaceMinScale, workspaceMaxScale);
+  const contentScale = Math.min(size.width / chinaMapWidth, size.height / chinaMapHeight);
+  const contentWidth = chinaMapWidth * contentScale;
+  const contentHeight = chinaMapHeight * contentScale;
+  return {
+    x: Math.max(0, (contentWidth * boundedScale - size.width) / 2) + size.width * workspacePanOverscanRatio,
+    y: Math.max(0, (contentHeight * boundedScale - size.height) / 2) + size.height * workspacePanOverscanRatio,
+  };
+}
+
 export function clampWorkspaceViewport(viewport: WorkspaceViewport, size: WorkspaceSize): WorkspaceViewport {
   "worklet";
-  const scale = clamp(viewport.scale, 1, 3.5);
-  const translateXLimit = Math.max(0, (size.width * (scale - 1)) / 2);
-  const translateYLimit = Math.max(0, (size.height * (scale - 1)) / 2);
+  const scale = clamp(viewport.scale, workspaceMinScale, workspaceMaxScale);
+  const limits = getWorkspaceTranslationLimits(scale, size);
 
-  const translateX = clamp(viewport.translateX, -translateXLimit, translateXLimit);
-  const translateY = clamp(viewport.translateY, -translateYLimit, translateYLimit);
+  const translateX = clamp(viewport.translateX, -limits.x, limits.x);
+  const translateY = clamp(viewport.translateY, -limits.y, limits.y);
   return {
     scale,
     translateX: translateX === 0 ? 0 : translateX,
