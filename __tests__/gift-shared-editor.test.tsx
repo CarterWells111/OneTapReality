@@ -95,17 +95,27 @@ describe("SharedAlbumEditor", () => {
 
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
     const ownedAlbum = { ...album, role: "owner" };
-    render(<SharedAlbumEditor accessToken="token" album={ownedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    const view = render(<SharedAlbumEditor accessToken="token" album={ownedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("change text"));
+    fireEvent(screen.getByLabelText("双击修改旅行册名称"), "accessibilityAction", { nativeEvent: { actionName: "activate" } });
+    fireEvent.changeText(screen.getByLabelText("纪念册标题"), "  Owner's latest trip  ");
+    actMetadataChange(view, { travelDate: "2026-08-18" });
+    expect(view.UNSAFE_getByType(AlbumMetadataEditor).props).toEqual(expect.objectContaining({
+      title: "  Owner's latest trip  ",
+      travelDate: "2026-08-18",
+    }));
     fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinishOwned).toHaveBeenCalledWith("token", "gift-1", "owned-pub"));
+    expect(mockStartOwned).toHaveBeenCalledTimes(1);
     expect(mockStartOwned).toHaveBeenCalledWith("token", "gift-1", expect.objectContaining({
       baseVersion: 4,
-      title: "Trip",
-      travelDate: "2026-08-16",
+      title: "Owner's latest trip",
+      travelDate: "2026-08-18",
       media: [{ position: 0, mediaId: "media-1" }],
     }));
+    expect(mockFinishOwned).toHaveBeenCalledTimes(1);
     expect(mockStart).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
   });
 
   it("encodes existing and new layout cover images as reloadable stable media refs", async () => {
@@ -270,12 +280,22 @@ describe("SharedAlbumEditor", () => {
     expect(mockStart).not.toHaveBeenCalled();
   });
 
-  it("returns without publishing when there are no changes", async () => {
+  it.each(["editor", "owner"] as const)("returns without publishing when a %s album has no changes", async (role) => {
     const onExit = jest.fn();
-    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onExit={onExit} onPublished={jest.fn()} />);
+    const onPublished = jest.fn();
+    const onDirtyChange = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={{ ...album, role }} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("report second page"));
     fireEvent.press(screen.getByText("保存并发布更新"));
-    await waitFor(() => expect(onExit).toHaveBeenCalledWith({ pageId: "p0", index: 0 }));
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+    expect(onExit).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
+    expect(onPublished).not.toHaveBeenCalled();
     expect(mockStart).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
+    expect(mockStartOwned).not.toHaveBeenCalled();
+    expect(mockFinishOwned).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(onDirtyChange).not.toHaveBeenCalled();
   });
 
   it("stages canvas and metadata edits locally without publishing or clearing dirty", async () => {
@@ -296,6 +316,26 @@ describe("SharedAlbumEditor", () => {
     }));
     expect(mockStart).not.toHaveBeenCalled();
     expect(mockFinish).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("stages owner canvas and metadata edits with zero remote side effects", async () => {
+    const onDirtyChange = jest.fn();
+    const onPublished = jest.fn();
+    const onExit = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={{ ...album, role: "owner" }} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("change text"));
+    actMetadataChange(view, { title: "Owner staged draft", travelDate: "2026-08-19" });
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(mockPrepareSave).toHaveBeenCalledTimes(1);
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
+    expect(mockStartOwned).not.toHaveBeenCalled();
+    expect(mockFinishOwned).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
     expect(onPublished).not.toHaveBeenCalled();
     expect(onExit).not.toHaveBeenCalled();
