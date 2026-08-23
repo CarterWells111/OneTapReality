@@ -53,8 +53,34 @@ describe("backend PostgreSQL migrations", () => {
         "cover_object_key",
       ]);
 
+      const travelDate = await db.execute(sql`
+        select data_type
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'shared_albums'
+          and column_name = 'travel_date'
+      `);
+      expect(travelDate.rows).toEqual([{ data_type: "text" }]);
+      const travelDateMigration = readFileSync("drizzle/0011_shared_album_travel_date.sql", "utf8");
+      const addTravelDateColumn = travelDateMigration.split("--> statement-breakpoint")[0];
+      expect(addTravelDateColumn).toContain('ALTER TABLE "shared_albums" ADD COLUMN "travel_date" text;');
+      expect(addTravelDateColumn).not.toMatch(/NOT NULL/i);
+
+      await db.execute(sql`
+        insert into gifts (id, token_hash, status, created_at)
+        values ('travel-date-gift', 'travel-date-hash', 'bound', '2026-08-23T00:00:00.000Z')
+      `);
+      await expect(db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version)
+        values ('travel-date-album', 'travel-date-gift', 'travel-date-memory', 'Travel date album', '2026-08-23T00:00:00.000Z', 1)
+      `)).resolves.toBeDefined();
+      const storedTravelDate = await db.execute(sql`
+        select travel_date from shared_albums where id = 'travel-date-album'
+      `);
+      expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
+
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 10 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 11 }]);
 
       const collaboration = await db.execute(sql`
         select table_name

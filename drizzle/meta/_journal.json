@@ -78,6 +78,13 @@
       "when": 1786901000000,
       "tag": "0010_shared_album_collaboration",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787443200000,
+      "tag": "0011_shared_album_travel_date",
+      "breakpoints": true
     }
   ]
 }
