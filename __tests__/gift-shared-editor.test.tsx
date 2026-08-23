@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockStart = jest.fn();
 const mockFinish = jest.fn();
@@ -51,9 +51,10 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
 });
 
 import { SharedAlbumEditor } from "../src/features/gifts/shared-album-editor";
+import { AlbumMetadataEditor } from "../src/features/memories/album-metadata-editor";
 
 const album: any = {
-  role: "editor", title: "Trip", version: 4, publishedAt: "2026-08-16T00:00:00Z", cover: null,
+  role: "editor", title: "Trip", travelDate: "2026-08-16", version: 4, publishedAt: "2026-08-16T00:00:00Z", cover: null,
   pages: [{ position: 0, page: { id: "p0", position: 0, kind: "photo", headline: "Hello", body: "", photoSlot: 0 } }],
   media: [{ id: "media-1", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://signed.test/old.jpg" }],
 };
@@ -76,18 +77,20 @@ describe("SharedAlbumEditor", () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add local photo"));
     fireEvent.press(screen.getByText("report second page"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-1"));
     const payload = mockStart.mock.calls[0][2];
     expect(payload.baseVersion).toBe(4);
+    expect(payload.title).toBe("Trip");
+    expect(payload.travelDate).toBe("2026-08-16");
     expect(payload.media).toEqual([
       { position: 0, mediaId: "media-1" },
       { position: 1, contentType: "image/jpeg", byteSize: 3 },
     ]);
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
     expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
-    expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 }, intent: "stay" });
+    expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
   });
 
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
@@ -98,6 +101,8 @@ describe("SharedAlbumEditor", () => {
     await waitFor(() => expect(mockFinishOwned).toHaveBeenCalledWith("token", "gift-1", "owned-pub"));
     expect(mockStartOwned).toHaveBeenCalledWith("token", "gift-1", expect.objectContaining({
       baseVersion: 4,
+      title: "Trip",
+      travelDate: "2026-08-16",
       media: [{ position: 0, mediaId: "media-1" }],
     }));
     expect(mockStart).not.toHaveBeenCalled();
@@ -112,7 +117,7 @@ describe("SharedAlbumEditor", () => {
     const firstView = render(<SharedAlbumEditor accessToken="token" album={existingCoverAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     expect(screen.getByTestId("canvas-pages").props.children).toContain("https://signed.test/old.jpg");
     fireEvent.press(screen.getByText("change text"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     let payload = mockStart.mock.calls[0][2];
     expect(payload.media).toEqual([{ position: 0, mediaId: "media-1" }]);
@@ -125,7 +130,7 @@ describe("SharedAlbumEditor", () => {
     mockFinish.mockResolvedValueOnce({ albumId: "album-1" });
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [], pages: [{ ...album.pages[0], page: { ...album.pages[0].page, photoSlot: undefined } }] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("set local page cover"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     payload = mockStart.mock.calls[0][2];
     expect(payload.pages[0].page.layout.coverImage).toBe("shared-position:0");
@@ -137,7 +142,7 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-cover", uploads: [{ position: 0, uploadUrl: "https://upload.test/cover" }], coverUpload: null });
     render(<SharedAlbumEditor accessToken="token" album={noMediaAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("set local top cover"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     const payload = mockStart.mock.calls[0][2];
     expect(payload.pages[0].page.coverImage).toBe("shared-position:0");
@@ -162,7 +167,7 @@ describe("SharedAlbumEditor", () => {
     const onPublished = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add two local photos"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(reads.get("file:///a.jpg")).toBe(2));
     expect(reads.get("file:///b.jpg")).toBe(1);
     releaseFirstPut();
@@ -180,9 +185,9 @@ describe("SharedAlbumEditor", () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} onReload={onReload} />);
     fireEvent.press(screen.getByText("change text"));
     fireEvent.press(screen.getByText("report second page"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     expect(mockStart).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByText("重新加载最新版"));
     expect(onPublished).not.toHaveBeenCalled();
@@ -196,7 +201,7 @@ describe("SharedAlbumEditor", () => {
     const onAccessLost = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("change text"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     fireEvent.press(screen.getByText("正在发布…"));
     await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
@@ -212,7 +217,7 @@ describe("SharedAlbumEditor", () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
 
     fireEvent.press(screen.getByText("change text"));
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     expect(mockPrepareSave).toHaveBeenCalledTimes(1);
@@ -228,8 +233,8 @@ describe("SharedAlbumEditor", () => {
     }));
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
 
-    expect(screen.getByRole("button", { name: "保存当前修改" }).props.accessibilityState.disabled).toBe(false);
-    fireEvent.press(screen.getByText("保存当前修改"));
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     expect(mockStart.mock.calls[0][2].pages[0].page.headline).toBe("Open style draft");
@@ -245,9 +250,9 @@ describe("SharedAlbumEditor", () => {
     }));
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
 
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(screen.getByText("temporary network failure")).toBeTruthy());
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-retry-draft"));
     expect(mockStart).toHaveBeenCalledTimes(2);
@@ -259,9 +264,9 @@ describe("SharedAlbumEditor", () => {
     expect(screen.getByTestId("canvas-entry")).toHaveTextContent("p2:1");
     fireEvent.press(screen.getByText("change text"));
     fireEvent.press(screen.getByText("begin transform"));
-    expect(screen.getByRole("button", { name: "保存当前修改" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "暂存当前修改" }).props.accessibilityState.disabled).toBe(true);
     expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(true);
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("暂存当前修改"));
     expect(mockStart).not.toHaveBeenCalled();
   });
 
@@ -273,14 +278,119 @@ describe("SharedAlbumEditor", () => {
     expect(mockStart).not.toHaveBeenCalled();
   });
 
-  it("reports dirty state and resets the baseline after a successful stay save", async () => {
+  it("stages canvas and metadata edits locally without publishing or clearing dirty", async () => {
     const onDirtyChange = jest.fn();
-    mockStart.mockResolvedValueOnce({ publicationId: "pub-text", uploads: [], coverUpload: null });
+    const onPublished = jest.fn();
+    const onExit = jest.fn();
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("change text"));
+    actMetadataChange(view, { title: "  Renamed trip  ", travelDate: "2026-08-17" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(mockPrepareSave).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain("Changed");
+    expect(view.UNSAFE_getByType(AlbumMetadataEditor).props).toEqual(expect.objectContaining({
+      title: "  Renamed trip  ",
+      travelDate: "2026-08-17",
+    }));
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("publishes the second prepare snapshot after staging and includes current metadata", async () => {
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-latest", uploads: [], coverUpload: null });
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("change text"));
+    actMetadataChange(view, { title: "  Latest name  ", travelDate: null });
+    mockPrepareSave
+      .mockImplementationOnce(async (pages, cursor) => ({ pages: [{ ...pages[0], headline: "Staged snapshot" }], cursor }))
+      .mockImplementationOnce(async (pages, cursor) => ({ pages: [{ ...pages[0], headline: "Newest snapshot" }], cursor }));
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(mockPrepareSave).toHaveBeenCalledTimes(2);
+    expect(mockStart.mock.calls[0][2]).toEqual(expect.objectContaining({ title: "Latest name", travelDate: null }));
+    expect(mockStart.mock.calls[0][2].pages[0].page.headline).toBe("Newest snapshot");
+  });
+
+  it("rejects an empty title before media reads or publication APIs", async () => {
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    actMetadataChange(view, { title: "   " });
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await screen.findByText("请输入纪念册标题");
+    expect(mockPrepareSave).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStartOwned).not.toHaveBeenCalled();
+  });
+
+  it("does not mark a no-change stage dirty even when prepare returns a cloned array", async () => {
+    const onDirtyChange = jest.fn();
+    const onPublished = jest.fn();
+    const onExit = jest.fn();
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({ pages: pages.map((page: any) => ({ ...page })), cursor }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onExit={onExit} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockFinish).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(onPublished).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("marks an unreported prepared Canvas draft dirty when staging", async () => {
+    const onDirtyChange = jest.fn();
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({
+      cursor,
+      pages: [{ ...pages[0], headline: "Open staged draft" }, ...pages.slice(1)],
+    }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(screen.getByTestId("canvas-pages").props.children).toContain("Open staged draft");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it("clears dirty only after a successful publication", async () => {
+    const onDirtyChange = jest.fn();
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-clean", uploads: [], coverUpload: null });
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("change text"));
-    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-    fireEvent.press(screen.getByText("保存当前修改"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
+
+  it("can retry staging after pending and thrown prepare results", async () => {
+    mockPrepareSave
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("prepare failed"))
+      .mockImplementationOnce(async (pages, cursor) => ({ pages, cursor }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("正在完成编辑，请稍后重试。");
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("prepare failed");
+    expect(screen.getByTestId("canvas-pages").props.children).toContain("Changed");
+    fireEvent.press(screen.getByText("暂存当前修改"));
+    await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");
+    expect(mockPrepareSave).toHaveBeenCalledTimes(3);
+    expect(mockReleaseSaveLock).toHaveBeenCalledTimes(3);
+    expect(mockStart).not.toHaveBeenCalled();
+  });
 });
+
+function actMetadataChange(view: ReturnType<typeof render>, change: { title?: string; travelDate?: string | null }) {
+  act(() => view.UNSAFE_getByType(AlbumMetadataEditor).props.onChange(change));
+}

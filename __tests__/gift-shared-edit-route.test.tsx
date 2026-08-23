@@ -50,8 +50,8 @@ jest.mock("../src/features/gifts/shared-album-editor", () => {
       return <>
         <Text testID="shared-editor">{`${props.album.role}:v${props.album.version}:${props.initialPageId}:${props.fallbackIndex}`}</Text>
         <Button title="mark dirty" onPress={() => props.onDirtyChange(true)} />
-        <Button title="publish stay" onPress={() => void props.onPublished({ cursor: { pageId: "p2", index: 2 }, intent: "stay" })} />
-        <Button title="publish exit" onPress={() => void props.onPublished({ cursor: { pageId: "p2", index: 2 }, intent: "exit" })} />
+        <Button title="stage edits" onPress={() => props.onDirtyChange(true)} />
+        <Button title="publish" onPress={() => void props.onPublished({ cursor: { pageId: "p2", index: 2 } })} />
         <Button title="clean exit" onPress={() => props.onExit({ pageId: "p1", index: 1 })} />
         <Button title="lose access" onPress={() => props.onAccessLost()} />
         <Button title="reload latest" onPress={() => void props.onReload({ pageId: "p1", index: 1 })} />
@@ -107,21 +107,23 @@ describe("shared gift edit route", () => {
     expect(screen.queryByTestId("shared-editor")).toBeNull();
   });
 
-  it("reloads the latest version after a stay save and keeps the edited page", async () => {
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce(album).mockResolvedValueOnce({ ...album, version: 2 });
+  it("keeps the in-memory editor mounted and dirty after local staging", async () => {
     render(<SharedGiftEditScreen />);
     await screen.findByTestId("shared-editor");
-    fireEvent.press(screen.getByText("publish stay"));
-    await waitFor(() => expect(screen.getByTestId("shared-editor")).toHaveTextContent("editor:v2:p2:2"));
-    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);
+    fireEvent.press(screen.getByText("stage edits"));
+    expect(screen.getByTestId("shared-editor")).toHaveTextContent("editor:v1:p1:1");
+    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(1);
+    const event = { preventDefault: jest.fn(), data: { action: { type: "GO_BACK" } } };
+    act(() => mockBeforeRemove?.(event));
+    expect(event.preventDefault).toHaveBeenCalled();
   });
 
-  it.each(["publish exit", "clean exit"])("returns to preview at the current page for %s", async (button) => {
+  it.each(["publish", "clean exit"])("returns to preview at the current page for %s", async (button) => {
     mockParams = { ...mockParams, access: "owner" };
     render(<SharedGiftEditScreen />);
     await screen.findByTestId("shared-editor");
     fireEvent.press(screen.getByText(button));
-    const cursor = button === "publish exit" ? { pageId: "p2", pageIndex: "2" } : { pageId: "p1", pageIndex: "1" };
+    const cursor = button === "publish" ? { pageId: "p2", pageIndex: "2" } : { pageId: "p1", pageIndex: "1" };
     expect(mockDismissTo).toHaveBeenCalledWith({
       pathname: "/gifts/shared/[id]",
       params: { access: "owner", id: "gift-1", ...cursor },
@@ -200,7 +202,7 @@ describe("shared gift edit route", () => {
       oldProps.onDirtyChange(false);
       oldProps.onAccessLost();
       oldProps.onExit({ pageId: "old-page", index: 3 });
-      await oldProps.onPublished({ cursor: { pageId: "old-page", index: 3 }, intent: "stay" });
+      await oldProps.onPublished({ cursor: { pageId: "old-page", index: 3 } });
     });
 
     expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);

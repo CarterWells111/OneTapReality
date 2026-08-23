@@ -2,12 +2,21 @@ import * as React from "react";
 import { Text, View } from "react-native";
 
 import { AppButton, bodyFont, colors } from "../../components/ui";
-import { BackendApiClient, BackendApiError, type InvitedGiftAlbum } from "../../services/backend/api-client";
+import {
+  BackendApiClient,
+  BackendApiError,
+  type InvitedGiftAlbum,
+  type SharedAlbumPublishPayload,
+} from "../../services/backend/api-client";
 import type { CanvasElement, StoryPage } from "../../types/memory";
 import {
   BookCanvasEditor,
   type BookCanvasEditorHandle,
 } from "../canvas/book-canvas-editor";
+import {
+  AlbumMetadataEditor,
+  type AlbumMetadataValue,
+} from "../memories/album-metadata-editor";
 import { mapSharedAlbumToEditablePages } from "./shared-album-mapper";
 
 type Props = {
@@ -19,13 +28,14 @@ type Props = {
   onAccessLost: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onExit?: (cursor: { pageId: string; index: number }) => void;
-  onPublished: (result: { cursor: { pageId: string; index: number }; intent: "stay" | "exit" }) => void | Promise<void>;
+  onPublished: (result: { cursor: { pageId: string; index: number } }) => void | Promise<void>;
   onReload?: (cursor: { pageId: string; index: number }) => void | Promise<void>;
 };
 
 type MediaSource = { uri: string; existingId?: string; contentType?: string; byteSize?: number };
 
 const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
+const STAGED_MESSAGE = "修改已暂存在当前编辑会话，尚未发布。";
 
 function pageImageUris(page: StoryPage) {
   const uris: string[] = [];
@@ -77,8 +87,12 @@ export function SharedAlbumEditor({
   const client = React.useMemo(() => new BackendApiClient(), []);
   const initialPages = React.useMemo(() => mapSharedAlbumToEditablePages(album), [album]);
   const [pages, setPages] = React.useState(initialPages);
+  const [metadata, setMetadata] = React.useState<AlbumMetadataValue>({
+    title: album.title,
+    travelDate: album.travelDate,
+  });
   const [busy, setBusy] = React.useState(false);
-  const [busyIntent, setBusyIntent] = React.useState<"stay" | "exit" | null>(null);
+  const [busyIntent, setBusyIntent] = React.useState<"stage" | "publish" | null>(null);
   const [dirty, setDirty] = React.useState(false);
   const [stale, setStale] = React.useState(false);
   const [transformPending, setTransformPending] = React.useState(false);
@@ -99,16 +113,20 @@ export function SharedAlbumEditor({
     setPages(nextPages);
     changeDirty(true);
   }, [changeDirty]);
+  const handleMetadataChange = React.useCallback((change: Partial<AlbumMetadataValue>) => {
+    setMetadata((current) => ({ ...current, ...change }));
+    changeDirty(true);
+  }, [changeDirty]);
 
   React.useEffect(() => () => {
     editorRef.current?.releaseSaveLock();
   }, []);
 
-  const publish = async (intent: "stay" | "exit") => {
+  const stage = async () => {
     if (inFlight.current || stale || transformPending) return;
     inFlight.current = true;
     setBusy(true);
-    setBusyIntent(intent);
+    setBusyIntent("stage");
     setMessage("");
     try {
       const prepared = await editorRef.current?.prepareSave();
@@ -119,9 +137,43 @@ export function SharedAlbumEditor({
       const publishPages = prepared.pages;
       const publishCursor = prepared.cursor;
       activePage.current = publishCursor;
-      const hasPreparedChanges = dirty || publishPages !== pages;
-      if (!hasPreparedChanges) {
-        if (intent === "exit") onExit?.(publishCursor);
+      const hasPreparedChanges = !pagesMatch(publishPages, pages);
+      if (hasPreparedChanges && !dirty) changeDirty(true);
+      setPages(publishPages);
+      setMessage(STAGED_MESSAGE);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : PREPARE_SAVE_PENDING_MESSAGE);
+    } finally {
+      editorRef.current?.releaseSaveLock();
+      inFlight.current = false;
+      setBusy(false);
+      setBusyIntent(null);
+    }
+  };
+
+  const publish = async () => {
+    if (inFlight.current || stale || transformPending) return;
+    const title = metadata.title.trim();
+    if (!title) {
+      setMessage("请输入纪念册标题");
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setBusyIntent("publish");
+    setMessage("");
+    try {
+      const prepared = await editorRef.current?.prepareSave();
+      if (!prepared) {
+        setMessage(PREPARE_SAVE_PENDING_MESSAGE);
+        return;
+      }
+      const publishPages = prepared.pages;
+      const publishCursor = prepared.cursor;
+      activePage.current = publishCursor;
+      const hasPreparedChanges = !pagesMatch(publishPages, pages);
+      if (!dirty && !hasPreparedChanges) {
+        onExit?.(publishCursor);
         return;
       }
       if (!dirty) changeDirty(true);
@@ -150,11 +202,11 @@ export function SharedAlbumEditor({
         coverBlob = await response.blob();
       }
       const refs = new Map(sources.map((source, position) => [source.uri, { position, ...(source.existingId ? { mediaId: source.existingId } : {}) }]));
-      const publishPayload = {
+      const publishPayload: SharedAlbumPublishPayload = {
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
-        title: album.title,
-        travelDate: album.travelDate,
+        title,
+        travelDate: metadata.travelDate,
         pages: publishPages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
         media: sources.map((source, position) => source.existingId
           ? { position, mediaId: source.existingId }
@@ -184,7 +236,7 @@ export function SharedAlbumEditor({
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
       changeDirty(false);
-      await onPublished({ cursor: publishCursor, intent });
+      await onPublished({ cursor: publishCursor });
     } catch (error) {
       if (error instanceof BackendApiError && error.status === 403) {
         setPages([]);
@@ -204,6 +256,12 @@ export function SharedAlbumEditor({
   };
 
   return <View style={{ gap: 12 }}>
+    <AlbumMetadataEditor
+      disabled={busy || stale}
+      onChange={handleMetadataChange}
+      title={metadata.title}
+      travelDate={metadata.travelDate}
+    />
     <View pointerEvents={busy || stale ? "none" : "auto"}>
       <BookCanvasEditor
         fallbackIndex={fallbackIndex}
@@ -218,17 +276,21 @@ export function SharedAlbumEditor({
     {message ? <Text style={{ color: colors.muted, fontFamily: bodyFont }}>{message}</Text> : null}
     <AppButton
       disabled={busy || stale || transformPending}
-      label={busyIntent === "stay" ? "正在发布…" : "保存当前修改"}
-      onPress={() => void publish("stay")}
+      label={busyIntent === "stage" ? "正在暂存…" : "暂存当前修改"}
+      onPress={() => void stage()}
       tone="secondary"
     />
     <AppButton
       disabled={busy || stale || transformPending}
-      label={busyIntent === "exit" ? "正在发布…" : "保存并发布更新"}
-      onPress={() => void publish("exit")}
+      label={busyIntent === "publish" ? "正在发布…" : "保存并发布更新"}
+      onPress={() => void publish()}
     />
     {stale ? <AppButton label="重新加载最新版" tone="secondary" onPress={() => void onReload?.(activePage.current)} /> : null}
   </View>;
+}
+
+function pagesMatch(left: StoryPage[], right: StoryPage[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function resolveInitialIndex(pages: StoryPage[], pageId?: string, fallbackIndex = 0) {

@@ -132,14 +132,10 @@ export default function SharedGiftEditScreen() {
     });
   }, [access, contextKey, id, router]);
 
-  const handlePublished = React.useCallback(async (result: { cursor: Cursor; intent: "stay" | "exit" }) => {
+  const handlePublished = React.useCallback((result: { cursor: Cursor }) => {
     if (contextKey !== contextKeyRef.current) return;
-    if (result.intent === "exit") {
-      leaveToPreview(result.cursor);
-      return;
-    }
-    await load(result.cursor);
-  }, [contextKey, leaveToPreview, load]);
+    leaveToPreview(result.cursor);
+  }, [contextKey, leaveToPreview]);
   const handleDirtyChange = React.useCallback((nextDirty: boolean) => {
     if (contextKey === contextKeyRef.current) setDirty(nextDirty);
   }, [contextKey]);
