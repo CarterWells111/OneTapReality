@@ -29,9 +29,11 @@ type ElementContextMenuProps = {
   elementFrame: { x: number; y: number; width: number; height: number } | null;
   onChangeFont: (fontStyle: string) => void;
   onChangeSize: (fontSize: number) => void;
+  onFontSizeDraftChange?: (fontSize: number | undefined) => void;
   onCancelSize?: () => void;
   fontSizePreview?: SharedValue<number>;
   onChangeColor: (color: string) => void;
+  onColorDraftChange?: (color: string | undefined) => void;
   onCancelColor?: () => void;
   colorPreview?: SharedValue<string>;
   onClose: () => void;
@@ -70,9 +72,11 @@ export function ElementContextMenu({
   elementFrame,
   onChangeFont,
   onChangeSize,
+  onFontSizeDraftChange,
   onCancelSize,
   fontSizePreview,
   onChangeColor,
+  onColorDraftChange,
   onCancelColor,
   colorPreview,
   onClose,
@@ -141,6 +145,7 @@ export function ElementContextMenu({
             <FontSizeSlider
               onCancel={onCancelSize}
               onChange={onChangeSize}
+              onDraftChange={onFontSizeDraftChange}
               previewValue={fontSizePreview}
               value={element.fontSize}
             />
@@ -170,6 +175,7 @@ export function ElementContextMenu({
               <Text style={styles.presetLabel}>自定义颜色</Text>
               <ColorPicker
                 onCancel={onCancelColor}
+                onDraftChange={onColorDraftChange}
                 scrollRef={colorScrollRef}
                 value={element.color}
                 onCommit={onChangeColor}
@@ -210,11 +216,13 @@ export function ElementContextMenu({
 function FontSizeSlider({
   onCancel,
   onChange,
+  onDraftChange,
   previewValue,
   value,
 }: {
   onCancel?: () => void;
   onChange: (size: number) => void;
+  onDraftChange?: (size: number | undefined) => void;
   previewValue?: SharedValue<number>;
   value: number;
 }) {
@@ -229,6 +237,8 @@ function FontSizeSlider({
   changeRef.current = onChange;
   const cancelRef = React.useRef(onCancel);
   cancelRef.current = onCancel;
+  const draftChangeRef = React.useRef(onDraftChange);
+  draftChangeRef.current = onDraftChange;
   const localPreviewValue = useSharedValue(clamped);
   const localPreviewRef = React.useRef(localPreviewValue);
   const stablePreviewValue = previewValue ?? localPreviewRef.current;
@@ -316,6 +326,15 @@ function FontSizeSlider({
             if (/^\d*$/.test(text)) {
               submittedDraftRef.current = false;
               setDraft(text);
+              const parsed = Number(text);
+              draftChangeRef.current?.(
+                text.trim() !== ""
+                && Number.isInteger(parsed)
+                && parsed >= FONT_SIZE_MIN
+                && parsed <= FONT_SIZE_MAX
+                  ? parsed
+                  : undefined,
+              );
             }
           }}
           onSubmitEditing={() => commitDraft("submit")}

@@ -28,6 +28,7 @@ import {
   type CanvasStickerCategory,
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
+import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
@@ -42,7 +43,14 @@ import {
   setCanvasCoverColor,
   setCanvasCoverImage,
   updateCanvasElement,
+  type CanvasElementPatch,
 } from "./editor-pages";
+import {
+  createEditorSaveSnapshot,
+  createTransformSettleGate,
+  type CanvasEditorSaveSnapshot,
+  type CanvasTextStyleDraft,
+} from "./editor-save-transaction";
 import { PageManagerSheet } from "./page-manager-sheet";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
@@ -52,6 +60,13 @@ import { localDiagnostics } from "../diagnostics/local-diagnostics";
 import type { StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
+
+export type BookCanvasEditorHandle = {
+  prepareSave: () => Promise<CanvasEditorSaveSnapshot | null>;
+  releaseSaveLock: () => void;
+};
+
+export type { CanvasEditorSaveSnapshot } from "./editor-save-transaction";
 
 type BookCanvasEditorProps = {
   fallbackIndex?: number;
@@ -80,6 +95,54 @@ function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fal
   const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
   if (idIndex >= 0) return idIndex;
   return Math.max(0, Math.min(fallbackIndex, Math.max(0, pages.length - 1)));
+}
+
+function resolveValidOpenMenuDraft({
+  editingElementId,
+  menuMode,
+  pages,
+  previewColor,
+  previewFontSize,
+  staged,
+}: {
+  editingElementId?: string;
+  menuMode: "font" | "size" | "color" | null;
+  pages: StoryPage[];
+  previewColor: string;
+  previewFontSize: number;
+  staged?: CanvasTextStyleDraft;
+}): CanvasTextStyleDraft | undefined {
+  const elementId = staged?.elementId ?? editingElementId;
+  if (!elementId) return undefined;
+  const page = pages.find((candidate) => candidate.layout?.elements.some((element) => element.id === elementId));
+  const element = page?.layout?.elements.find((candidate) => candidate.id === elementId);
+  if (!page || element?.type !== "text") return undefined;
+
+  const stagedMatches = staged?.pageId === page.id && staged.elementId === element.id;
+  const draft: CanvasTextStyleDraft = { elementId: element.id, pageId: page.id };
+  if (stagedMatches && staged?.color) {
+    const color = staged.color.toUpperCase();
+    if (VALID_HEX_COLOR.test(color) && color !== element.color.toUpperCase()) {
+      draft.color = color;
+    }
+  }
+  if (stagedMatches && staged?.fontSize !== undefined) {
+    if (isValidFontSize(staged.fontSize) && staged.fontSize !== element.fontSize) {
+      draft.fontSize = staged.fontSize;
+    }
+  }
+  if (editingElementId === element.id && menuMode === "color" && draft.color === undefined) {
+    const color = previewColor.toUpperCase();
+    if (VALID_HEX_COLOR.test(color) && color !== element.color.toUpperCase()) {
+      draft.color = color;
+    }
+  }
+  if (editingElementId === element.id && menuMode === "size" && draft.fontSize === undefined) {
+    if (isValidFontSize(previewFontSize) && previewFontSize !== element.fontSize) {
+      draft.fontSize = previewFontSize;
+    }
+  }
+  return draft.color !== undefined || draft.fontSize !== undefined ? draft : undefined;
 }
 
 type BookCanvasEditorLayerBufferProps = {
@@ -141,17 +204,18 @@ function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export function BookCanvasEditor({
-  fallbackIndex = 0,
-  initialPageId,
-  onActivePageChange,
-  onPagesChange,
-  onTransformPendingChange,
-  pages,
-  persistSelectedPhoto,
-}: BookCanvasEditorProps) {
+export const BookCanvasEditor = React.forwardRef<BookCanvasEditorHandle, BookCanvasEditorProps>(
+  function BookCanvasEditor({
+    fallbackIndex = 0,
+    initialPageId,
+    onActivePageChange,
+    onPagesChange,
+    onTransformPendingChange,
+    pages,
+    persistSelectedPhoto,
+  }, ref) {
   const { width: windowWidth } = useWindowDimensions();
-  const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
+  const pageWidth = resolveCanvasPageWidth(windowWidth);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
@@ -170,6 +234,7 @@ export function BookCanvasEditor({
   const stableCoverColorPreview = coverColorPreviewRef.current;
   const initialPageIndex = resolveInitialPageIndex(pages, initialPageId, fallbackIndex);
   const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
+  const currentIndexRef = React.useRef(initialPageIndex);
   const activePageIdRef = React.useRef(pages[initialPageIndex]?.id);
   const activePageChangeRef = React.useRef(onActivePageChange);
   const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
@@ -179,12 +244,20 @@ export function BookCanvasEditor({
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
+  const editingElementIdRef = React.useRef<string | undefined>(undefined);
   const [menuMode, setMenuMode] = React.useState<"font" | "size" | "color" | null>(null); // 打开的面板；null = 文字编辑态
+  const menuModeRef = React.useRef<"font" | "size" | "color" | null>(null);
   const [pendingTextId, setPendingTextId] = React.useState<string>();
+  const pendingTextIdRef = React.useRef<string | undefined>(undefined);
+  const pendingStyleDraftRef = React.useRef<CanvasTextStyleDraft | undefined>(undefined);
+  const saveBoundaryLockedRef = React.useRef(false);
+  const transformSettleGateRef = React.useRef(createTransformSettleGate());
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
+    if (saveBoundaryLockedRef.current) return;
+    pagesRef.current = restoredPages;
     onPagesChange(restoredPages, "structure");
   });
 
@@ -195,6 +268,10 @@ export function BookCanvasEditor({
     ? activePageIndex
     : Math.min(currentIndex, Math.max(0, pages.length - 1));
   const currentPage = pages[validCurrentIndex];
+  currentIndexRef.current = validCurrentIndex;
+  editingElementIdRef.current = editingElementId;
+  menuModeRef.current = menuMode;
+  pendingTextIdRef.current = pendingTextId;
   const currentPageId = currentPage?.id;
   if (currentPage && activePageIndex < 0) {
     activePageIdRef.current = currentPage.id;
@@ -248,12 +325,81 @@ export function BookCanvasEditor({
     ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
     : undefined;
 
-  const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
-    if (reason === "structure" || reason === "transform") {
-      pushState(pages);
+  const stageTextStyleDraft = React.useCallback((
+    pageId: string,
+    elementId: string,
+    property: "color" | "fontSize",
+    value: string | number | undefined,
+  ) => {
+    const current = pendingStyleDraftRef.current;
+    const next: CanvasTextStyleDraft = current?.pageId === pageId && current.elementId === elementId
+      ? { ...current }
+      : { elementId, pageId };
+    if (property === "color") {
+      if (typeof value === "string") next.color = value;
+      else delete next.color;
+    } else if (typeof value === "number") {
+      next.fontSize = value;
+    } else {
+      delete next.fontSize;
     }
+    pendingStyleDraftRef.current = next.color !== undefined || next.fontSize !== undefined
+      ? next
+      : undefined;
+  }, []);
+
+  const markPendingTextEdited = React.useCallback((elementId: string) => {
+    if (pendingTextIdRef.current === elementId) {
+      pendingTextIdRef.current = undefined;
+      setPendingTextId(undefined);
+    }
+  }, []);
+
+  const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
+    if (saveBoundaryLockedRef.current && reason !== "transform") return false;
+    const previousPages = pagesRef.current;
+    if (reason === "structure" || reason === "transform") {
+      pushState(previousPages);
+    }
+    pagesRef.current = nextPages;
     onPagesChange(nextPages, reason);
-  }, [onPagesChange, pages, pushState]);
+    return true;
+  }, [onPagesChange, pushState]);
+
+  React.useImperativeHandle(ref, () => ({
+    async prepareSave() {
+      if (saveBoundaryLockedRef.current) return null;
+      saveBoundaryLockedRef.current = true;
+      const settled = await transformSettleGateRef.current.wait();
+      if (!settled) {
+        saveBoundaryLockedRef.current = false;
+        return null;
+      }
+      const menuDraft = resolveValidOpenMenuDraft({
+        editingElementId: editingElementIdRef.current,
+        menuMode: menuModeRef.current,
+        pages: pagesRef.current,
+        previewColor: stableColorPreview.value,
+        previewFontSize: stableFontSizePreview.value,
+        staged: pendingStyleDraftRef.current,
+      });
+      const snapshot = createEditorSaveSnapshot({
+        activePageId: activePageIdRef.current,
+        fallbackIndex: currentIndexRef.current,
+        pages: pagesRef.current,
+        styleDraft: menuDraft,
+      });
+      pagesRef.current = snapshot.pages;
+      pendingStyleDraftRef.current = undefined;
+      if (menuDraft) {
+        markPendingTextEdited(menuDraft.elementId);
+      }
+      return snapshot;
+    },
+    releaseSaveLock() {
+      saveBoundaryLockedRef.current = false;
+    },
+  }), [markPendingTextEdited, stableColorPreview, stableFontSizePreview]);
 
   const persistPickedPhoto = React.useCallback(async (uri: string) => {
     if (!persistSelectedPhoto) return uri;
@@ -268,32 +414,35 @@ export function BookCanvasEditor({
     }
   }, [persistSelectedPhoto]);
 
-  const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
-    if (!pendingTextId || !currentPage) {
+  const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pagesRef.current) => {
+    const pendingId = pendingTextIdRef.current;
+    const activePageId = activePageIdRef.current;
+    if (!pendingId || !activePageId) {
       return sourcePages;
     }
+    pendingTextIdRef.current = undefined;
     setPendingTextId(undefined);
-    if (selectedElementId === pendingTextId) {
+    if (selectedElementId === pendingId) {
       setSelectedElementId(undefined);
     }
-    return deleteCanvasElement(sourcePages, currentPage.id, pendingTextId);
-  }, [currentPage, pages, pendingTextId, selectedElementId]);
+    return deleteCanvasElement(sourcePages, activePageId, pendingId);
+  }, [selectedElementId]);
 
   const discardPendingText = React.useCallback(() => {
     const nextPages = clearPendingTextFrom();
-    if (nextPages !== pages) {
+    if (nextPages !== pagesRef.current) {
       changePages(nextPages, "structure");
     }
     return nextPages;
-  }, [changePages, clearPendingTextFrom, pages]);
+  }, [changePages, clearPendingTextFrom]);
 
   const handleElementInteraction = React.useCallback((elementId: string) => {
-    if (pendingTextId === elementId) {
-      setPendingTextId(undefined);
+    if (pendingTextIdRef.current === elementId) {
+      markPendingTextEdited(elementId);
       return;
     }
     discardPendingText();
-  }, [discardPendingText, pendingTextId]);
+  }, [discardPendingText, markPendingTextEdited]);
 
   const commitTurn = React.useCallback((targetPageId: string, generation: number) => {
     if (generation !== stableTurnGeneration.value) {
@@ -306,6 +455,11 @@ export function BookCanvasEditor({
       discardPendingText();
       setSelectedElementId(undefined);
       activePageIdRef.current = targetPageId;
+      currentIndexRef.current = targetIndex;
+      editingElementIdRef.current = undefined;
+      menuModeRef.current = null;
+      setEditingElementId(undefined);
+      setMenuMode(null);
       setCurrentIndex(targetIndex);
     }
     setPendingTurn(null);
@@ -396,69 +550,82 @@ export function BookCanvasEditor({
 
   const updateElement = (
     elementId: string,
-    patch: { x?: number; y?: number; width?: number; height?: number; rotation?: number; text?: string; color?: string; fontSize?: number; fontStyle?: string },
+    patch: CanvasElementPatch,
     reason: BookEditorChangeReason,
   ) => {
-    changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    return changePages(updateCanvasElement(pagesRef.current, activeId, elementId, patch), reason);
   };
 
   const commitElementColor = (elementId: string, color: string) => {
-    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    const activePage = pagesRef.current.find((page) => page.id === activeId);
+    const element = activePage?.layout?.elements.find((candidate) => candidate.id === elementId);
     const normalizedColor = color.toUpperCase();
     if (VALID_HEX_COLOR.test(normalizedColor) && element?.type === "text") {
       if (normalizedColor === element.color.toUpperCase()) {
+        stageTextStyleDraft(activeId, elementId, "color", undefined);
         localDiagnostics.emit("style_transaction_finalized", {
           elementId,
           outcome: "no_op",
-          pageId: currentPage.id,
+          pageId: activeId,
           property: "color",
         });
         return;
       }
-      updateElement(elementId, { color: normalizedColor }, "structure");
+      markPendingTextEdited(elementId);
+      if (!updateElement(elementId, { color: normalizedColor }, "structure")) return;
+      stageTextStyleDraft(activeId, elementId, "color", undefined);
       localDiagnostics.emit("style_transaction_finalized", {
         elementId,
         outcome: "commit",
-        pageId: currentPage.id,
+        pageId: activeId,
         property: "color",
       });
       return;
     }
+    stageTextStyleDraft(activeId, elementId, "color", undefined);
     stableColorPreview.value = element?.type === "text" ? element.color : "#000000";
     localDiagnostics.emit("style_transaction_finalized", {
       elementId,
       outcome: "cancel",
-      pageId: currentPage.id,
+      pageId: activeId,
       property: "color",
     });
   };
 
   const commitElementFontSize = (elementId: string, fontSize: number) => {
-    const element = currentPage.layout?.elements.find((candidate) => candidate.id === elementId);
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    const activePage = pagesRef.current.find((page) => page.id === activeId);
+    const element = activePage?.layout?.elements.find((candidate) => candidate.id === elementId);
     if (isValidFontSize(fontSize) && element?.type === "text") {
       if (fontSize === element.fontSize) {
+        stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
         localDiagnostics.emit("style_transaction_finalized", {
           elementId,
           outcome: "no_op",
-          pageId: currentPage.id,
+          pageId: activeId,
           property: "fontSize",
         });
         return;
       }
-      updateElement(elementId, { fontSize }, "structure");
+      markPendingTextEdited(elementId);
+      if (!updateElement(elementId, { fontSize }, "structure")) return;
+      stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
       localDiagnostics.emit("style_transaction_finalized", {
         elementId,
         outcome: "commit",
-        pageId: currentPage.id,
+        pageId: activeId,
         property: "fontSize",
       });
       return;
     }
+    stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
     stableFontSizePreview.value = element?.type === "text" ? element.fontSize : MIN_FONT_SIZE;
     localDiagnostics.emit("style_transaction_finalized", {
       elementId,
       outcome: "cancel",
-      pageId: currentPage.id,
+      pageId: activeId,
       property: "fontSize",
     });
   };
@@ -502,6 +669,7 @@ export function BookCanvasEditor({
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
     // 不再自动打开编辑输入框：用户需点击工具栏「编辑」按钮手动触发
+    pendingTextIdRef.current = nextId;
     setPendingTextId(nextId);
   };
 
@@ -525,8 +693,8 @@ export function BookCanvasEditor({
           <UndoRedoButtons
             canRedo={canRedo}
             canUndo={canUndo}
-            onRedo={() => redo(pages)}
-            onUndo={() => undo(pages)}
+            onRedo={() => redo(pagesRef.current)}
+            onUndo={() => undo(pagesRef.current)}
           />
           <View style={styles.topbarSpacer} />
           {/* 右侧：页面指示器 + 页面管理 + 添加文字 */}
@@ -554,10 +722,16 @@ export function BookCanvasEditor({
             setPendingTurn(null);
             translateX.value = 0;
             turnDir.value = 0;
-            initializeCoverPreview(pages[index]);
+            const targetPage = pagesRef.current[index];
+            initializeCoverPreview(targetPage);
             discardPendingText();
             setSelectedElementId(undefined);
-            activePageIdRef.current = pages[index]?.id;
+            activePageIdRef.current = targetPage?.id;
+            currentIndexRef.current = index;
+            editingElementIdRef.current = undefined;
+            menuModeRef.current = null;
+            setEditingElementId(undefined);
+            setMenuMode(null);
             setCurrentIndex(index);
           }}
           pages={pages}
@@ -574,17 +748,22 @@ export function BookCanvasEditor({
                 onPressBlank: () => {
                   discardPendingText();
                   setSelectedElementId(undefined);
+                  editingElementIdRef.current = undefined;
+                  menuModeRef.current = null;
                   setEditingElementId(undefined);
                   setMenuMode(null);
                 },
                 onSelectElement: (id) => {
                   // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
                   // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
-                  if (pendingTextId !== undefined && id !== pendingTextId) {
+                  if (pendingTextIdRef.current !== undefined && id !== pendingTextIdRef.current) {
+                    pendingTextIdRef.current = undefined;
                     setPendingTextId(undefined);
                   }
                   // 选中不同元素时，关闭之前的文字编辑状态
                   if (editingElementId !== id) {
+                    editingElementIdRef.current = undefined;
+                    menuModeRef.current = null;
                     setEditingElementId(undefined);
                     setMenuMode(null);
                   }
@@ -593,10 +772,17 @@ export function BookCanvasEditor({
                 },
                 onTransformEnd: (elementId, patch) => {
                   handleElementInteraction(elementId);
+                  markPendingTextEdited(elementId);
                   updateElement(elementId, patch, "transform");
                 },
-                onTransformSettled: () => onTransformPendingChange?.(false),
-                onTransformStart: () => onTransformPendingChange?.(true),
+                onTransformSettled: () => {
+                  const pending = transformSettleGateRef.current.end();
+                  onTransformPendingChange?.(pending);
+                },
+                onTransformStart: () => {
+                  transformSettleGateRef.current.begin();
+                  onTransformPendingChange?.(true);
+                },
                 coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
                   ? stableCoverColorPreview
                   : undefined,
@@ -628,10 +814,7 @@ export function BookCanvasEditor({
             accessibilityLabel="编辑选中文字"
             multiline
             onChangeText={(text) => {
-              const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
-              if (el?.type === "text" && text !== el.text && pendingTextId === editingElement.id) {
-                setPendingTextId(undefined);
-              }
+              markPendingTextEdited(editingElement.id);
               updateElement(editingElement.id, { text }, "text");
             }}
             style={styles.textInput}
@@ -662,6 +845,9 @@ export function BookCanvasEditor({
               property: "color",
             });
           }}
+          onColorDraftChange={(color) => {
+            stageTextStyleDraft(currentPage.id, editingElement.id, "color", color);
+          }}
           onCancelSize={() => {
             localDiagnostics.emit("style_transaction_finalized", {
               elementId: editingElement.id,
@@ -672,12 +858,17 @@ export function BookCanvasEditor({
           }}
           onChangeColor={(color) => commitElementColor(editingElement.id, color)}
           onChangeFont={(fontStyle) => {
+            markPendingTextEdited(editingElement.id);
             updateElement(editingElement.id, { fontStyle }, "structure");
           }}
           onChangeSize={(fontSize) => commitElementFontSize(editingElement.id, fontSize)}
+          onFontSizeDraftChange={(fontSize) => {
+            stageTextStyleDraft(currentPage.id, editingElement.id, "fontSize", fontSize);
+          }}
           onClose={() => {
             stableColorPreview.value = editingElement.color;
             stableFontSizePreview.value = editingElement.fontSize;
+            menuModeRef.current = null;
             setMenuMode(null);
           }}
           fontSizePreview={stableFontSizePreview}
@@ -699,6 +890,8 @@ export function BookCanvasEditor({
         onColor={() => {
           if (selectedElement?.type === "text") {
             stableColorPreview.value = selectedElement.color;
+            menuModeRef.current = "color";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("color");
             setEditingElementId(selectedElement.id);
           }
@@ -710,6 +903,8 @@ export function BookCanvasEditor({
         onDone={() => {
           discardPendingText();
           setSelectedElementId(undefined);
+          editingElementIdRef.current = undefined;
+          menuModeRef.current = null;
           setEditingElementId(undefined);
           setMenuMode(null);
         }}
@@ -721,12 +916,16 @@ export function BookCanvasEditor({
         onEdit={() => {
           // 手动触发文字编辑模式：显示 TextInput 输入框（不打开任何面板）
           if (selectedElement?.type === "text") {
+            menuModeRef.current = null;
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode(null);
             setEditingElementId(selectedElement.id);
           }
         }}
         onFont={() => {
           if (selectedElement?.type === "text") {
+            menuModeRef.current = "font";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("font");
             setEditingElementId(selectedElement.id);
           }
@@ -735,6 +934,8 @@ export function BookCanvasEditor({
         onSize={() => {
           if (selectedElement?.type === "text") {
             stableFontSizePreview.value = selectedElement.fontSize;
+            menuModeRef.current = "size";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("size");
             setEditingElementId(selectedElement.id);
           }
@@ -930,7 +1131,8 @@ export function BookCanvasEditor({
       </View>
     </View>
   );
-}
+  },
+);
 
 function SmallButton({
   active = false,

@@ -1,6 +1,7 @@
 import * as React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
+import { resolveCanvasPreviewContentScale } from "../features/canvas/canvas-display-metrics";
 import { createLegacyLayout } from "../features/canvas/canvas-layout";
 import { CanvasPage } from "../features/canvas/canvas-page";
 import type { Memory } from "../types/memory";
@@ -22,10 +23,12 @@ export function MemoryBookCover({
   onLongPress,
 }: MemoryBookCoverProps) {
   const [coverWidth, setCoverWidth] = React.useState(160);
+  const { width: windowWidth } = useWindowDimensions();
   const firstPage = memory.pages[0];
   const firstPageLayout = firstPage
     ? firstPage.layout ?? createLegacyLayout(firstPage)
     : null;
+  const contentScale = resolveCanvasPreviewContentScale(coverWidth, windowWidth);
 
   return (
     <View style={styles.bookSlot}>
@@ -50,6 +53,7 @@ export function MemoryBookCover({
         {firstPageLayout ? (
           <View pointerEvents="none" style={styles.canvas}>
             <CanvasPage
+              contentScale={contentScale}
               height={(coverWidth * 4) / 3}
               interactive={false}
               layout={firstPageLayout}

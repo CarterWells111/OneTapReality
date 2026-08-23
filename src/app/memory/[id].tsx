@@ -7,6 +7,7 @@ import { IconButton } from "../../components/icon-button";
 import { AppButton, colors, Tag } from "../../components/ui";
 import { cityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
+import { PageManagerSheet } from "../../features/canvas/page-manager-sheet";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
@@ -22,6 +23,20 @@ export default function MemoryDetailScreen() {
   const isSample = id === sampleMemory.id;
   const memory = isSample ? sampleMemory : getMemoryById(id);
   const [activePage, setActivePage] = React.useState<{ pageId: string; index: number } | null>(null);
+  const [isPagePreviewOpen, setIsPagePreviewOpen] = React.useState(false);
+  const [previewCursor, setPreviewCursor] = React.useState<{
+    index: number;
+    memoryId: string;
+    pageId: string;
+  } | null>(null);
+  const [previewRestorationKey, setPreviewRestorationKey] = React.useState(0);
+
+  React.useEffect(() => {
+    setActivePage(null);
+    setIsPagePreviewOpen(false);
+    setPreviewCursor(null);
+    setPreviewRestorationKey(0);
+  }, [id]);
 
   if (!memory) {
     return (
@@ -34,6 +49,7 @@ export default function MemoryDetailScreen() {
   const city = cityContent[memory.city];
   const fallbackIndex = parseFallbackIndex(pageIndex);
   const fallbackPage = memory.pages[fallbackIndex] ?? memory.pages[0];
+  const restoredPreviewCursor = previewCursor?.memoryId === memory.id ? previewCursor : null;
   const openEditor = () => {
     const cursor = activePage ?? { pageId: fallbackPage?.id ?? "", index: fallbackIndex };
     router.push({
@@ -48,7 +64,11 @@ export default function MemoryDetailScreen() {
         text: "删除",
         style: "destructive",
         onPress: () => {
-          void discardMemory(memory.id).then(() => router.replace("/"));
+          void discardMemory(memory.id)
+            .then(() => router.replace("/"))
+            .catch(() => {
+              Alert.alert("删除失败", "未能移入回收站，请稍后重试。");
+            });
         },
       },
     ]);
@@ -63,12 +83,6 @@ export default function MemoryDetailScreen() {
             accessibilityLabel="编辑旅行册"
             icon="edit"
             onPress={openEditor}
-          />
-          <IconButton
-            accessibilityLabel="删除这册旅行记忆"
-            icon="trash"
-            onPress={confirmDelete}
-            tone="danger"
           />
         </View>
       );
@@ -85,23 +99,37 @@ export default function MemoryDetailScreen() {
           <Text selectable style={styles.summaryMeta}>{city.name} · {memory.travelDate}</Text>
         </View>
         <Text selectable style={styles.readerLead}>轻轻左右滑动，一页页翻阅这一册。扉页为第一页。</Text>
-        {!isSample ? (
-          <View style={styles.localActions}>
-            <AppButton label="编辑相册" onPress={openEditor} />
-            <AppButton label="分享相册" tone="secondary" onPress={() => showShareActionSheet({ coverImage: memory.coverImage, pages: memory.pages, photoUris: memory.photoUris, title: memory.title })} />
-            <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
-          </View>
-        ) : null}
         <PageReader
-          fallbackIndex={parseFallbackIndex(pageIndex)}
-          initialPageId={typeof pageId === "string" ? pageId : undefined}
+          fallbackIndex={restoredPreviewCursor?.index ?? fallbackIndex}
+          initialPageId={restoredPreviewCursor?.pageId ?? (typeof pageId === "string" ? pageId : undefined)}
           onActivePageChange={setActivePage}
           pages={memory.pages}
+          restorationKey={`${memory.id}:${restoredPreviewCursor ? previewRestorationKey : 0}`}
         />
-        {isSample ? (
-          <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
-        ) : null}
+        <View style={styles.localActions} testID="memory-detail-actions">
+          <AppButton label="页面预览" onPress={() => setIsPagePreviewOpen(true)} />
+          {isSample ? (
+            <AppButton label="用自己的照片创建" onPress={() => router.push("/memory/new")} />
+          ) : (
+            <AppButton label="绑定到礼品" tone="warm" onPress={() => router.push(`/gifts?memoryId=${encodeURIComponent(memory.id)}` as never)} />
+          )}
+        </View>
       </ScrollView>
+      {isPagePreviewOpen ? (
+        <PageManagerSheet
+          mode="preview"
+          onClose={() => setIsPagePreviewOpen(false)}
+          {...(!isSample ? { onDeleteAlbum: confirmDelete } : {})}
+          onJumpToPage={(index) => {
+            const target = memory.pages[index];
+            if (target) {
+              setPreviewCursor({ index, memoryId: memory.id, pageId: target.id });
+              setPreviewRestorationKey((current) => current + 1);
+            }
+          }}
+          pages={memory.pages}
+        />
+      ) : null}
     </>
   );
 }
