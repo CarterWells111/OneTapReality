@@ -89,6 +89,38 @@ describe("gift repository", () => {
     } finally { await close(); }
   });
 
+  it("persists a travel date when replacing a legacy shared album", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-08-21T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-08-21T00:01:00.000Z");
+      await createGiftPublishSession(db, { id: "legacy", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, createdAt: "2026-08-21T00:02:00.000Z", expiresAt: "2026-08-21T00:12:00.000Z", payload: { sourceMemoryId: "memory", title: "Legacy", pages: [], media: [] } });
+      await completeGiftPublishSession(db, { sessionId: "legacy", ownerEmail: "owner@example.com", now: "2026-08-21T00:03:00.000Z" });
+      await createGiftPublishSession(db, { id: "dated", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 1, createdAt: "2026-08-21T00:04:00.000Z", expiresAt: "2026-08-21T00:14:00.000Z", payload: { sourceMemoryId: "memory", title: "Updated", travelDate: "2026-08-21", pages: [], media: [] } });
+
+      const result = await completeGiftPublishSession(db, { sessionId: "dated", ownerEmail: "owner@example.com", now: "2026-08-21T00:05:00.000Z" });
+      await expect(getSharedAlbumSnapshot(db, result!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ title: "Updated", travelDate: "2026-08-21", version: 2 }) }));
+    } finally { await close(); }
+  });
+
+  it("preserves a date for an upgraded in-flight session but clears it when explicitly null", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-08-21T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-08-21T00:01:00.000Z");
+      await createGiftPublishSession(db, { id: "initial", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, createdAt: "2026-08-21T00:02:00.000Z", expiresAt: "2026-08-21T00:12:00.000Z", payload: { sourceMemoryId: "memory", title: "Original", travelDate: "2026-08-21", pages: [], media: [] } });
+      await completeGiftPublishSession(db, { sessionId: "initial", ownerEmail: "owner@example.com", now: "2026-08-21T00:03:00.000Z" });
+      await createGiftPublishSession(db, { id: "upgraded", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 1, createdAt: "2026-08-21T00:04:00.000Z", expiresAt: "2026-08-21T00:14:00.000Z", payload: { sourceMemoryId: "memory", title: "Preserved", pages: [], media: [] } });
+      const preserved = await completeGiftPublishSession(db, { sessionId: "upgraded", ownerEmail: "owner@example.com", now: "2026-08-21T00:05:00.000Z" });
+      await expect(getSharedAlbumSnapshot(db, preserved!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ travelDate: "2026-08-21", version: 2 }) }));
+      await createGiftPublishSession(db, { id: "clear", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 2, createdAt: "2026-08-21T00:06:00.000Z", expiresAt: "2026-08-21T00:16:00.000Z", payload: { sourceMemoryId: "memory", title: "Cleared", travelDate: null, pages: [], media: [] } });
+      const cleared = await completeGiftPublishSession(db, { sessionId: "clear", ownerEmail: "owner@example.com", now: "2026-08-21T00:07:00.000Z" });
+      await expect(getSharedAlbumSnapshot(db, cleared!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ travelDate: null, version: 3 }) }));
+    } finally { await close(); }
+  });
+
   it("commits the server-promoted payload and queues its session temp objects for durable cleanup", async () => {
     const { db, close } = createBackendTestDatabase();
     try {

@@ -1,7 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as React from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppButton, colors } from "../../../components/ui";
 import { useAuth } from "../../../features/auth/auth-provider";
@@ -20,12 +19,11 @@ import {
   acquireMemoryEditRecoveryQueue,
   type MemoryEditRecoveryQueueLease,
 } from "../../../features/memories/memory-edit-recovery-queue";
-import { useMemories } from "../../../features/memories/memories-provider";
 import {
-  MIN_TRAVEL_DATE,
-  parseIsoTravelDate,
-  toIsoTravelDate,
-} from "../../../features/memories/travel-date";
+  AlbumMetadataEditor,
+  type AlbumMetadataValue,
+} from "../../../features/memories/album-metadata-editor";
+import { useMemories } from "../../../features/memories/memories-provider";
 import type { Memory, StoryPage } from "../../../types/memory";
 
 type CompletedFormalSave = {
@@ -94,8 +92,6 @@ export default function EditMemoryScreen() {
   const [recoveryReadError, setRecoveryReadError] = React.useState(false);
   const [didRecover, setDidRecover] = React.useState(false);
   const [metadataDraft, setMetadataDraft] = React.useState<MetadataDraft | null>(null);
-  const [isEditingTitle, setIsEditingTitle] = React.useState(false);
-  const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [editorSessionToken, setEditorSessionToken] = React.useState<number | null>(null);
   const [recoveryState, setRecoveryState] = React.useState<AutosaveQueueState>({ status: "saved" });
   const activePageRef = React.useRef(activePage);
@@ -111,7 +107,6 @@ export default function EditMemoryScreen() {
   const loadGenerationRef = React.useRef(0);
   const memoryRef = React.useRef(memory);
   const metadataDraftRef = React.useRef<MetadataDraft | null>(null);
-  const lastTitlePressRef = React.useRef<number | null>(null);
   const pagesRef = React.useRef(pages);
   const queueLeaseRef = React.useRef<MemoryEditRecoveryQueueLease | null>(null);
   const queueUnsubscribeRef = React.useRef<(() => void) | null>(null);
@@ -141,10 +136,7 @@ export default function EditMemoryScreen() {
       ? { identity: loadIdentity, title: currentMemory.title, travelDate: currentMemory.travelDate }
       : null;
     metadataDraftRef.current = nextMetadata;
-    lastTitlePressRef.current = null;
     setMetadataDraft(nextMetadata);
-    setIsEditingTitle(false);
-    setShowDatePicker(false);
   }, [loadIdentity, memory?.id]);
 
   React.useEffect(() => {
@@ -348,49 +340,23 @@ export default function EditMemoryScreen() {
     }
   }, [editorSessionToken, loadKey]);
 
-  const beginTitleEditing = () => {
-    if (saveInFlightRef.current
-      || editorCommitLockedRef.current
-      || isSaving
-      || isFormalSaveCompleted
-      || metadataDraftRef.current?.identity !== loadIdentity) return;
-    lastTitlePressRef.current = null;
-    setIsEditingTitle(true);
-  };
-
-  const handleTitlePress = () => {
-    if (saveInFlightRef.current
-      || editorCommitLockedRef.current
-      || isSaving
-      || isFormalSaveCompleted
-      || metadataDraftRef.current?.identity !== loadIdentity) return;
-    const now = Date.now();
-    const elapsed = lastTitlePressRef.current === null ? null : now - lastTitlePressRef.current;
-    if (elapsed !== null && elapsed >= 0 && elapsed <= 350) {
-      beginTitleEditing();
-      return;
-    }
-    lastTitlePressRef.current = now;
-  };
-
-  const updateMetadata = (change: Partial<Pick<MetadataDraft, "title" | "travelDate">>) => {
+  const updateMetadata = (change: Partial<AlbumMetadataValue>) => {
     const current = metadataDraftRef.current;
+    const nextTravelDate = change.travelDate;
     if (!current
       || current.identity !== loadIdentity
       || saveInFlightRef.current
       || editorCommitLockedRef.current
       || isSaving
-      || isFormalSaveCompleted) return;
-    const next = { ...current, ...change };
+      || isFormalSaveCompleted
+      || nextTravelDate === null) return;
+    const next = {
+      ...current,
+      ...(change.title === undefined ? {} : { title: change.title }),
+      ...(nextTravelDate === undefined ? {} : { travelDate: nextTravelDate }),
+    };
     metadataDraftRef.current = next;
     setMetadataDraft(next);
-  };
-
-  const handleDateChange = (event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS !== "ios") setShowDatePicker(false);
-    if (event.type === "set" && selected) {
-      updateMetadata({ travelDate: toIsoTravelDate(selected) });
-    }
   };
 
   if (!memory) {
@@ -582,51 +548,14 @@ export default function EditMemoryScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         testID="memory-canvas-edit-scroll">
-      <View style={styles.metadataHeader} testID="saved-memory-metadata-header">
-        {isEditingTitle && metadataDraftRef.current?.identity === loadIdentity ? (
-          <TextInput
-            accessibilityLabel="纪念册标题"
-            autoFocus
-            editable={!metadataControlsDisabled}
-            onBlur={() => setIsEditingTitle(false)}
-            onChangeText={(title) => updateMetadata({ title })}
-            onSubmitEditing={() => setIsEditingTitle(false)}
-            returnKeyType="done"
-            style={styles.titleInput}
-            value={currentMetadata.title}
-          />
-        ) : (
-          <Pressable
-            accessibilityActions={[{ name: "activate", label: "修改旅行册名称" }]}
-            accessibilityHint="连续点击两次进入编辑"
-            accessibilityLabel="双击修改旅行册名称"
-            accessibilityRole="button"
-            accessibilityValue={{ text: currentMetadata.title }}
-            disabled={metadataControlsDisabled}
-            onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === "activate") beginTitleEditing();
-            }}
-            onPress={handleTitlePress}
-          >
-            <Text selectable style={styles.metadataTitle}>{currentMetadata.title}</Text>
-          </Pressable>
-        )}
-        <Pressable
-          accessibilityLabel="选择旅行日期"
-          accessibilityRole="button"
-          accessibilityValue={{
-            text: `${cityName} · ${currentMetadata.travelDate}`,
-          }}
-          disabled={metadataControlsDisabled}
-          onPress={() => {
-            if (metadataDraftRef.current?.identity === loadIdentity) setShowDatePicker(true);
-          }}
-        >
-          <Text selectable style={styles.metadataLine}>
-            {cityName} · {currentMetadata.travelDate}
-          </Text>
-        </Pressable>
-      </View>
+      <AlbumMetadataEditor
+        key={loadIdentity}
+        contextLabel={cityName}
+        disabled={metadataControlsDisabled}
+        onChange={(change) => updateMetadata(change)}
+        title={currentMetadata.title}
+        travelDate={currentMetadata.travelDate}
+      />
       <Text selectable style={styles.muted} testID="memory-canvas-edit-instruction">
         双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
       </Text>
@@ -684,33 +613,6 @@ export default function EditMemoryScreen() {
         }}
       />
       </ScrollView>
-      {showDatePicker && Platform.OS === "android" ? (
-        <DateTimePicker
-          maximumDate={new Date()}
-          minimumDate={MIN_TRAVEL_DATE}
-          mode="date"
-          onChange={handleDateChange}
-          value={parseIsoTravelDate(currentMetadata.travelDate)}
-        />
-      ) : null}
-      {showDatePicker && Platform.OS === "ios" ? (
-        <View style={styles.overlay}>
-          <View style={styles.dateSheet}>
-            <Text selectable style={styles.sheetTitle}>选择旅行日期</Text>
-            <DateTimePicker
-              display="spinner"
-              maximumDate={new Date()}
-              minimumDate={MIN_TRAVEL_DATE}
-              mode="date"
-              onChange={handleDateChange}
-              textColor={colors.ink}
-              themeVariant="light"
-              value={parseIsoTravelDate(currentMetadata.travelDate)}
-            />
-            <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -724,26 +626,6 @@ function parseFallbackIndex(value: string | string[] | undefined) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { gap: 16, paddingBottom: 28, paddingTop: 14 },
-  metadataHeader: { gap: 6, paddingHorizontal: 20 },
-  metadataTitle: { color: colors.ink, fontSize: 24, fontWeight: "800" },
-  metadataLine: { color: colors.muted, fontSize: 15 },
-  titleInput: {
-    borderColor: colors.line,
-    borderRadius: 12,
-    borderWidth: 1,
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: "800",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    justifyContent: "flex-end",
-  },
-  dateSheet: { backgroundColor: colors.surface, gap: 12, padding: 20 },
-  sheetTitle: { color: colors.ink, fontSize: 18, fontWeight: "800" },
   muted: { color: colors.muted, lineHeight: 22, paddingHorizontal: 20 },
   recovered: { color: colors.muted, fontWeight: "700", paddingHorizontal: 20 },
   error: { color: colors.danger, paddingHorizontal: 20 },

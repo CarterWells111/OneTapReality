@@ -24,6 +24,7 @@ export async function GET(request: Request, { id }: { id: string }): Promise<Res
     return Response.json({
       role: access.role,
       title: snapshot.album.title,
+      travelDate: snapshot.album.travelDate ?? null,
       publishedAt: snapshot.album.publishedAt,
       version: snapshot.album.version,
       cover: snapshot.album.coverObjectKey

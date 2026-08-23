@@ -23,6 +23,7 @@ export async function GET(request: Request, { token }: { token: string }): Promi
     if (!store) throw new ApiError(503, "gift_media_unavailable", "Gift media storage is not configured");
     return Response.json({
       title: snapshot.album.title,
+      travelDate: snapshot.album.travelDate ?? null,
       publishedAt: snapshot.album.publishedAt,
       version: snapshot.album.version,
       cover: snapshot.album.coverObjectKey

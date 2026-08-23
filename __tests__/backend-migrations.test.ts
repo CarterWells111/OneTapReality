@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import {
   createBackendTestDatabase,
@@ -7,6 +7,46 @@ import {
 } from "../src/server/db/test-database";
 
 describe("backend PostgreSQL migrations", () => {
+  it("preserves a legacy shared album with a null travel date when applying migration 0011", async () => {
+    const { db, close } = createBackendTestDatabase();
+
+    try {
+      const migrationFiles = readdirSync("drizzle")
+        .filter((file) => /^00(?:0\d|10)_.*\.sql$/.test(file))
+        .sort();
+      for (const migrationFile of migrationFiles) {
+        const statements = readFileSync(`drizzle/${migrationFile}`, "utf8")
+          .split("--> statement-breakpoint")
+          .map((statement) => statement.trim())
+          .filter(Boolean);
+        for (const statement of statements) {
+          await db.execute(sql.raw(statement));
+        }
+      }
+
+      await db.execute(sql`
+        insert into gifts (id, token_hash, status, created_at)
+        values ('legacy-travel-date-gift', 'legacy-travel-date-hash', 'bound', '2026-08-16T00:00:00.000Z')
+      `);
+      await db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version)
+        values ('legacy-travel-date-album', 'legacy-travel-date-gift', 'legacy-travel-date-memory', 'Legacy album', '2026-08-16T00:00:00.000Z', 1)
+      `);
+
+      const migration0011 = readFileSync("drizzle/0011_shared_album_travel_date.sql", "utf8");
+      for (const statement of migration0011.split("--> statement-breakpoint").map((part) => part.trim()).filter(Boolean)) {
+        await db.execute(sql.raw(statement));
+      }
+
+      const legacyAlbum = await db.execute(sql`
+        select id, travel_date from shared_albums where id = 'legacy-travel-date-album'
+      `);
+      expect(legacyAlbum.rows).toEqual([{ id: "legacy-travel-date-album", travel_date: null }]);
+    } finally {
+      await close();
+    }
+  });
+
   it("applies the baseline to an empty database", async () => {
     const { db, close } = createBackendTestDatabase();
 
@@ -53,8 +93,34 @@ describe("backend PostgreSQL migrations", () => {
         "cover_object_key",
       ]);
 
+      const travelDate = await db.execute(sql`
+        select data_type
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'shared_albums'
+          and column_name = 'travel_date'
+      `);
+      expect(travelDate.rows).toEqual([{ data_type: "text" }]);
+      const travelDateMigration = readFileSync("drizzle/0011_shared_album_travel_date.sql", "utf8");
+      const addTravelDateColumn = travelDateMigration.split("--> statement-breakpoint")[0];
+      expect(addTravelDateColumn).toContain('ALTER TABLE "shared_albums" ADD COLUMN "travel_date" text;');
+      expect(addTravelDateColumn).not.toMatch(/NOT NULL/i);
+
+      await db.execute(sql`
+        insert into gifts (id, token_hash, status, created_at)
+        values ('travel-date-gift', 'travel-date-hash', 'bound', '2026-08-23T00:00:00.000Z')
+      `);
+      await expect(db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version)
+        values ('travel-date-album', 'travel-date-gift', 'travel-date-memory', 'Travel date album', '2026-08-23T00:00:00.000Z', 1)
+      `)).resolves.toBeDefined();
+      const storedTravelDate = await db.execute(sql`
+        select travel_date from shared_albums where id = 'travel-date-album'
+      `);
+      expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
+
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 10 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 11 }]);
 
       const collaboration = await db.execute(sql`
         select table_name

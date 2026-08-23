@@ -13,7 +13,7 @@ export async function GET(request: Request, { id }: { id: string }): Promise<Res
     return Response.json({
       gift,
       members,
-      album: snapshot ? { id: snapshot.album.id, title: snapshot.album.title, sourceMemoryId: snapshot.album.sourceMemoryId, publishedAt: snapshot.album.publishedAt, version: snapshot.album.version, mediaCount: snapshot.media.length } : null,
+      album: snapshot ? { id: snapshot.album.id, title: snapshot.album.title, travelDate: snapshot.album.travelDate ?? null, sourceMemoryId: snapshot.album.sourceMemoryId, publishedAt: snapshot.album.publishedAt, version: snapshot.album.version, mediaCount: snapshot.media.length } : null,
     });
   } catch (error) { return errorResponse(error); }
 }

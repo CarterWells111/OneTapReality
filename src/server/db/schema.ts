@@ -190,6 +190,7 @@ export const sharedAlbums = pgTable(
     giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
     sourceMemoryId: text("source_memory_id").notNull(),
     title: text("title").notNull(),
+    travelDate: text("travel_date"),
     publishedAt: text("published_at").notNull(),
     version: integer("version").notNull(),
     /** 独立于页面照片的封面对象；旧相册为 null。 */

@@ -41,7 +41,7 @@ export default function GiftManagementScreen() {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [message, setMessage] = React.useState("正在读取礼品管理信息…");
   const [members, setMembers] = React.useState<{ email: string; role: GiftMemberRole }[]>([]);
-  const [album, setAlbum] = React.useState<{ title: string; sourceMemoryId: string; version: number } | null>(null);
+  const [album, setAlbum] = React.useState<{ title: string; travelDate: string | null; sourceMemoryId: string; version: number } | null>(null);
   const [managementRequests, setManagementRequests] = React.useState<GiftManagementRequest[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = React.useState<string | null>(null);
   const [selectedCoverUri, setSelectedCoverUri] = React.useState<string | null>(null);
@@ -70,7 +70,7 @@ export default function GiftManagementScreen() {
         throw new Error("owner_required");
       }
       setMembers(result.members.map((member) => ({ email: member.email, role: member.role })));
-      setAlbum(result.album ? { title: result.album.title, sourceMemoryId: result.album.sourceMemoryId, version: result.album.version } : null);
+      setAlbum(result.album ? { title: result.album.title, travelDate: result.album.travelDate, sourceMemoryId: result.album.sourceMemoryId, version: result.album.version } : null);
       setManagementRequests(requests.filter((request) => request.status === "pending"));
       setSelectedMemoryId((current) => current ?? (typeof memoryId === "string" ? memoryId : null) ?? result.album?.sourceMemoryId ?? null);
       setAuthorizedContextKey(managementContextKey);
@@ -163,6 +163,7 @@ export default function GiftManagementScreen() {
         baseVersion: album?.version ?? 0,
         sourceMemoryId: selectedMemory.id,
         title: selectedMemory.title,
+        travelDate: selectedMemory.travelDate,
         pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page) })),
         media: media.map(({ position, contentType, byteSize }) => ({ position, contentType, byteSize })),
         cover: coverSize && coverContentType ? { contentType: coverContentType, byteSize: coverSize } : null,
@@ -280,50 +281,55 @@ export default function GiftManagementScreen() {
             <>
               <Text style={styles.albumTitle}>{album.title}</Text>
               <Text style={styles.albumMeta}>版本 {album.version}</Text>
+              <Text style={styles.albumMeta}>旅行日期 · {album.travelDate ?? "未设置旅行日期"}</Text>
             </>
           ) : (
             <Text style={styles.hint}>尚未发布共享相册。选择一册本地旅行册后发布。</Text>
           )}
         </View>
-        {coverCandidates.length > 0 ? (
-          <View style={styles.coverPicker}>
-            <Text style={styles.coverLabel}>选择相册封面</Text>
-            <ScrollView contentContainerStyle={styles.coverRow} horizontal showsHorizontalScrollIndicator={false}>
-              {coverCandidates.map((candidate) => {
-                const selected = candidate.uri === selectedCoverUri;
-                return (
-                  <Pressable
-                    accessibilityLabel={isMissingPhotoToken(candidate.uri) ? `${candidate.label}，本地照片缺失` : candidate.label}
-                    accessibilityRole="button"
-                    key={candidate.uri}
-                    onPress={() => setSelectedCoverUri(candidate.uri)}
-                    style={[styles.coverOption, selected && styles.coverOptionSelected]}
-                  >
-                    {isMissingPhotoToken(candidate.uri)
-                      ? <LocalMissingPhotoPlaceholder style={styles.coverThumb} />
-                      : <Image contentFit="cover" source={{ uri: candidate.uri }} style={styles.coverThumb} />}
-                    <Text numberOfLines={1} style={styles.coverOptionLabel}>{candidate.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
-        <AppButton label="新建本地旅行册" tone="secondary" onPress={() => router.push("/memory/new" as never)} />
-        {memories.filter((memory) => memory.status !== "discarded").map((memory) => (
-          <AppButton
-            key={memory.id}
-            label={selectedMemoryId === memory.id ? `已选择：${memory.title}` : memory.title}
-            tone={selectedMemoryId === memory.id ? "warm" : "secondary"}
-            onPress={() => setSelectedMemoryId(memory.id)}
-          />
-        ))}
-        <AppButton
-          disabled={busy || !selectedMemory}
-          label={album ? "更新共享相册" : "发布共享相册"}
-          onPress={() => void publish()}
-        />
-        {album ? <AppButton label="编辑当前共享相册" tone="warm" onPress={() => router.push(`/gifts/shared/${encodeURIComponent(id)}?access=owner` as never)} /> : null}
+        {album ? (
+          <AppButton label="查看当前共享相册" tone="warm" onPress={() => router.push(`/gifts/shared/${encodeURIComponent(id)}?access=owner` as never)} />
+        ) : (
+          <>
+            {coverCandidates.length > 0 ? (
+              <View style={styles.coverPicker}>
+                <Text style={styles.coverLabel}>选择相册封面</Text>
+                <ScrollView contentContainerStyle={styles.coverRow} horizontal showsHorizontalScrollIndicator={false}>
+                  {coverCandidates.map((candidate) => {
+                    const selected = candidate.uri === selectedCoverUri;
+                    return (
+                      <Pressable
+                        accessibilityLabel={isMissingPhotoToken(candidate.uri) ? `${candidate.label}，本地照片缺失` : candidate.label}
+                        accessibilityRole="button"
+                        key={candidate.uri}
+                        onPress={() => setSelectedCoverUri(candidate.uri)}
+                        style={[styles.coverOption, selected && styles.coverOptionSelected]}
+                      >
+                        {isMissingPhotoToken(candidate.uri)
+                          ? <LocalMissingPhotoPlaceholder style={styles.coverThumb} />
+                          : <Image contentFit="cover" source={{ uri: candidate.uri }} style={styles.coverThumb} />}
+                        <Text numberOfLines={1} style={styles.coverOptionLabel}>{candidate.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null}
+            {memories.some((memory) => memory.status !== "discarded") ? memories.filter((memory) => memory.status !== "discarded").map((memory) => (
+              <AppButton
+                key={memory.id}
+                label={selectedMemoryId === memory.id ? `已选择：${memory.title}` : memory.title}
+                tone={selectedMemoryId === memory.id ? "warm" : "secondary"}
+                onPress={() => setSelectedMemoryId(memory.id)}
+              />
+            )) : <Text style={styles.hint}>请先返回主页创建本地旅行册，再回来完成首次发布。</Text>}
+            <AppButton
+              disabled={busy || !selectedMemory}
+              label="发布共享相册"
+              onPress={() => void publish()}
+            />
+          </>
+        )}
       </PaperCard>
     </Section>
 

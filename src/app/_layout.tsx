@@ -40,6 +40,7 @@ export default function RootLayout() {
               <Stack.Screen name="login" options={{ title: "登录" }} />
               <Stack.Screen name="gifts/index" options={{ title: "我的纪念品" }} />
               <Stack.Screen name="gifts/shared/[id]" options={{ title: "分享相册" }} />
+              <Stack.Screen name="gifts/shared/[id]/edit" options={{ title: "编辑共享相册" }} />
               <Stack.Screen name="gift/[token]" options={{ title: "NFC 纪念礼品" }} />
               <Stack.Screen name="memory" options={{ headerShown: false }} />
               <Stack.Screen name="city/[city]" options={{ title: "城市收藏" }} />

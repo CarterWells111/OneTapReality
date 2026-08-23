@@ -1,18 +1,27 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
+const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockGetInvitedGiftAlbum = jest.fn();
 const mockGetOwnedGiftAlbum = jest.fn();
 const mockListTargets = jest.fn();
 const mockUseAuth = jest.fn();
 const mockPageReader = jest.fn();
-const mockSharedEditor = jest.fn();
-const mockRouter = { back: mockBack, replace: mockReplace };
-let mockParams = { id: "gift-1" };
+const mockUseFocusEffect = jest.fn();
+const mockRouter = { back: mockBack, push: mockPush, replace: mockReplace };
+let mockParams: { id: string; access?: string; pageId?: string; pageIndex?: string } = { id: "gift-1" };
 
 jest.mock("expo-router", () => ({
+  Stack: {
+    Screen: ({ options }: { options?: { headerRight?: () => React.ReactNode } }) => options?.headerRight?.() ?? null,
+  },
   useLocalSearchParams: () => mockParams,
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = require("react");
+    mockUseFocusEffect(callback);
+    React.useEffect(callback, [callback]);
+  },
   useRouter: () => mockRouter,
 }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
@@ -25,21 +34,13 @@ jest.mock("../src/services/backend/api-client", () => ({
 }));
 jest.mock("../src/features/canvas/page-reader", () => {
   const React = require("react");
-  const { Text } = require("react-native");
-  return { PageReader: (props: { pages: unknown[]; initialPageId?: string; fallbackIndex?: number }) => {
-    mockPageReader(props);
-    return <Text testID="reader">{`reader:${props.pages.length}`}</Text>;
-  } };
-});
-jest.mock("../src/features/gifts/shared-album-editor", () => {
-  const React = require("react");
   const { Button, Text } = require("react-native");
-  return { SharedAlbumEditor: (props: any) => {
-    mockSharedEditor(props);
+  return { PageReader: (props: { pages: unknown[]; initialPageId?: string; fallbackIndex?: number; onActivePageChange?: (cursor: { pageId: string; index: number }) => void }) => {
+    mockPageReader(props);
     return <>
-    <Text testID="shared-editor">editor</Text>
-    <Button title="publish from second page" onPress={() => void props.onPublished({ pageId: "p2", index: 1 })} />
-  </>;
+      <Text testID="reader">{`reader:${props.pages.length}`}</Text>
+      <Button title="report second page" onPress={() => props.onActivePageChange?.({ pageId: "p1", index: 1 })} />
+    </>;
   } };
 });
 
@@ -48,6 +49,7 @@ import SharedGiftDetailScreen from "../src/app/gifts/shared/[id]";
 const album = {
   role: "viewer",
   title: "我们的杭州之旅",
+  travelDate: "2026-08-21",
   pages: [
     { position: 0, page: { id: "p0", position: 0, kind: "cover", headline: "杭州", body: "西湖边的记忆", layout: { aspectRatio: 0.75, elements: [{ id: "i0", type: "image", uri: "file:///local.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }] } } },
     { position: 1, page: { id: "p1", position: 1, kind: "photo", headline: "断桥", body: "小雪", layout: { aspectRatio: 0.75, elements: [] } } },
@@ -71,6 +73,7 @@ describe("shared gift album viewer", () => {
   it("starts on the album cover and opens the reader on demand", async () => {
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(screen.getByText("我们的杭州之旅")).toBeTruthy());
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
     expect(screen.queryByTestId("reader")).toBeNull();
 
     fireEvent.press(screen.getByText("打开相册"));
@@ -80,112 +83,75 @@ describe("shared gift album viewer", () => {
   it("does not offer editing to viewers", async () => {
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(screen.getByText(album.title)).toBeTruthy());
-    expect(screen.queryByText("编辑共享相册")).toBeNull();
+    expect(screen.queryByLabelText("编辑共享相册")).toBeNull();
   });
 
-  it("lets editors enter the complete canvas editor", async () => {
+  it("uses the published title and legacy date fallback for a viewer", async () => {
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, title: "服务器共享名称", travelDate: null });
+    render(<SharedGiftDetailScreen />);
+
+    await screen.findByText("服务器共享名称");
+    expect(screen.getByText("旅行日期 · 未设置旅行日期")).toBeTruthy();
+    expect(screen.queryByText("旅行日期 · 2026-07-20")).toBeNull();
+    expect(screen.queryByLabelText("编辑共享相册")).toBeNull();
+  });
+
+  it("opens editor albums directly and sends the current page to the dedicated edit route", async () => {
     mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
     render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    expect(screen.getByTestId("shared-editor")).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("reader")).toBeTruthy());
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
+    expect(screen.queryByText("打开相册")).toBeNull();
+    fireEvent.press(screen.getByText("report second page"));
+    fireEvent.press(screen.getByLabelText("编辑共享相册"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/gifts/shared/[id]/edit",
+      params: { id: "gift-1", pageId: "p1", pageIndex: "1" },
+    });
   });
 
-  it.each(["editor", "owner"])("refreshes the latest %s album and restores the published page", async (role) => {
-    const editableAlbum = { ...album, role };
-    const latestAlbum = {
-      ...editableAlbum,
-      version: 2,
-      pages: [
-        ...album.pages,
-        { position: 2, page: { id: "p2", position: 2, kind: "text", headline: "Latest", body: "Published", layout: { aspectRatio: 0.75, elements: [] } } },
-      ],
-    };
-    if (role === "owner") {
-      mockParams = { id: "gift-1", access: "owner" } as typeof mockParams & { access: string };
-      mockGetOwnedGiftAlbum.mockResolvedValueOnce(editableAlbum).mockResolvedValueOnce(latestAlbum);
-    } else {
-      mockGetInvitedGiftAlbum.mockResolvedValueOnce(editableAlbum).mockResolvedValueOnce(latestAlbum);
-    }
-    render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    fireEvent.press(screen.getByText("publish from second page"));
-
-    await waitFor(() => expect(screen.getByTestId("reader")).toHaveTextContent("reader:3"));
-    expect(screen.queryByTestId("shared-editor")).toBeNull();
-    expect(mockPageReader).toHaveBeenLastCalledWith(expect.objectContaining({ initialPageId: "p2", fallbackIndex: 1 }));
-  });
-
-  it("does not show the stale preview when the post-publish refresh fails", async () => {
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" }).mockRejectedValueOnce(new Error("offline"));
-    render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    fireEvent.press(screen.getByText("publish from second page"));
-
-    await waitFor(() => expect(screen.getByText("无法读取此分享相册，请检查网络后重试。")).toBeTruthy());
-    expect(screen.queryByTestId("reader")).toBeNull();
-    expect(screen.queryByTestId("shared-editor")).toBeNull();
-  });
-
-  it("ignores a publish completion captured by an old gift and account context", async () => {
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
-    const view = render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    const oldOnPublished = mockSharedEditor.mock.calls.at(-1)?.[0].onPublished;
-
-    const newerAlbum = { ...album, title: "New account album" };
-    mockParams = { id: "gift-2" };
-    mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "new-token", user: { id: "user-2", email: "new@example.com", isAdmin: false } }, signOut: jest.fn() });
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce(newerAlbum);
-    view.rerender(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("New account album")).toBeTruthy());
-
-    await oldOnPublished({ pageId: "p2", index: 1 });
-
-    expect(screen.getByText("New account album")).toBeTruthy();
-    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);
-    expect(mockGetInvitedGiftAlbum).toHaveBeenLastCalledWith("gift-2", "new-token");
-  });
-
-  it("ignores access loss from a publish captured by an old gift and account context", async () => {
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
-    const view = render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    const oldOnAccessLost = mockSharedEditor.mock.calls.at(-1)?.[0].onAccessLost;
-
-    const newerAlbum = { ...album, title: "New account album" };
-    mockParams = { id: "gift-2" };
-    mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "new-token", user: { id: "user-2", email: "new@example.com", isAdmin: false } }, signOut: jest.fn() });
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce(newerAlbum);
-    view.rerender(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("New account album")).toBeTruthy());
-
-    act(() => oldOnAccessLost());
-
-    expect(screen.getByText("New account album")).toBeTruthy();
-    expect(screen.queryByText("编辑权限已被移除，请返回纪念品列表。")).toBeNull();
-  });
-
-  it("keeps the editor entry visible after an editor opens the full album", async () => {
-    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
-    render(<SharedGiftDetailScreen />);
-    await waitFor(() => expect(screen.getByText("编辑共享相册")).toBeTruthy());
-    fireEvent.press(screen.getByText("打开相册"));
-    expect(screen.getByTestId("reader")).toBeTruthy();
-    fireEvent.press(screen.getByText("编辑共享相册"));
-    expect(screen.getByTestId("shared-editor")).toBeTruthy();
-  });
-
-  it("loads the owner snapshot and offers the same editor", async () => {
-    mockParams = { id: "gift-1", access: "owner" } as typeof mockParams & { access: string };
+  it("loads the owner snapshot directly and preserves owner access in the edit route", async () => {
+    mockParams = { id: "gift-1", access: "owner" };
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(mockGetOwnedGiftAlbum).toHaveBeenCalledWith("gift-1", "account-token"));
     expect(mockGetInvitedGiftAlbum).not.toHaveBeenCalled();
-    expect(screen.getByText("编辑共享相册")).toBeTruthy();
+    expect(screen.getByTestId("reader")).toBeTruthy();
+    expect(screen.getByText("旅行日期 · 2026-08-21")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("编辑共享相册"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/gifts/shared/[id]/edit",
+      params: { access: "owner", id: "gift-1", pageId: "p0", pageIndex: "0" },
+    });
+  });
+
+  it("restores a requested preview page and uses it for the edit route", async () => {
+    mockParams = { id: "gift-1", pageId: "p1", pageIndex: "1" };
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
+    render(<SharedGiftDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId("reader")).toBeTruthy());
+    expect(mockPageReader).toHaveBeenLastCalledWith(expect.objectContaining({ fallbackIndex: 1, initialPageId: "p1" }));
+    fireEvent.press(screen.getByLabelText("编辑共享相册"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/gifts/shared/[id]/edit",
+      params: { id: "gift-1", pageId: "p1", pageIndex: "1" },
+    });
+  });
+
+  it("reloads an editable preview when it regains focus after publishing", async () => {
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce({ ...album, role: "editor" });
+    render(<SharedGiftDetailScreen />);
+    await waitFor(() => expect(screen.getByTestId("reader")).toHaveTextContent("reader:2"));
+    const latestAlbum = {
+      ...album,
+      role: "editor",
+      version: 2,
+      pages: [...album.pages, { ...album.pages[1], position: 2, page: { ...album.pages[1].page, id: "p2", position: 2 } }],
+    };
+    mockGetInvitedGiftAlbum.mockResolvedValueOnce(latestAlbum);
+    const focusCallback = mockUseFocusEffect.mock.calls.at(-1)?.[0];
+    act(() => { focusCallback(); });
+    await waitFor(() => expect(screen.getByTestId("reader")).toHaveTextContent("reader:3"));
+    expect(mockGetInvitedGiftAlbum).toHaveBeenCalledTimes(2);
   });
 
   it("returns to the souvenir list from the cover", async () => {

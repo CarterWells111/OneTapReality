@@ -174,6 +174,24 @@ describe("editor shared publication contract", () => {
     expect(prepared.payload.media[0].objectKey).toMatch(/^gifts\/gift-1\/session-1\//u);
   });
 
+  it("normalizes a shared album travel date into the server-owned payload", () => {
+    const dated = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate: "2026-08-21", pages: [], media: [] }, "gift-1", "session-1");
+    const undated = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate: null, pages: [], media: [] }, "gift-1", "session-1");
+
+    expect(dated.payload.travelDate).toBe("2026-08-21");
+    expect(undated.payload.travelDate).toBeNull();
+  });
+
+  it("accepts four-digit shared album years below 100", () => {
+    const prepared = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate: "0099-01-01", pages: [], media: [] }, "gift-1", "session-1");
+
+    expect(prepared.payload.travelDate).toBe("0099-01-01");
+  });
+
+  it.each(["21/08/2026", "2026-02-30"]) ("rejects invalid shared album travel date %s", (travelDate) => {
+    expect(() => prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", travelDate, pages: [], media: [] }, "gift-1", "session-1")).toThrow(expect.objectContaining({ status: 400, code: "validation_failed" }));
+  });
+
   it.each([
     { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: {}, media: [] },
     { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [null], media: [] },

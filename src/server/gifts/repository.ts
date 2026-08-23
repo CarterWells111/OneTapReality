@@ -7,6 +7,8 @@ import { giftCardEvents, giftCards, giftEmailCodes, giftManagementRequests, gift
 export type GiftPublicationPayload = {
   sourceMemoryId: string;
   title: string;
+  /** Optional solely for upgraded publish sessions whose stored JSON predates travelDate. */
+  travelDate?: string | null;
   pages: { position: number; page: unknown }[];
   media: { position: number; objectKey: string; contentType: string; byteSize: number; source?: "existing" | "upload" }[];
   /** 独立封面对象；旧客户端载荷可能缺失该字段，按 null 处理。 */
@@ -95,6 +97,7 @@ export async function listOwnedGifts(db: BackendDatabase, email: string) {
     claimedAt: gifts.claimedAt,
     albumId: sharedAlbums.id,
     albumTitle: sharedAlbums.title,
+    travelDate: sharedAlbums.travelDate,
     publishedAt: sharedAlbums.publishedAt,
     version: sharedAlbums.version,
     coverObjectKey: sharedAlbums.coverObjectKey,
@@ -116,6 +119,7 @@ export async function listInvitedGifts(db: BackendDatabase, userId: string, emai
     role: giftMembers.role,
     albumId: sharedAlbums.id,
     albumTitle: sharedAlbums.title,
+    travelDate: sharedAlbums.travelDate,
     publishedAt: sharedAlbums.publishedAt,
     version: sharedAlbums.version,
     coverObjectKey: sharedAlbums.coverObjectKey,
@@ -190,6 +194,7 @@ export async function getGiftAccessByTokenHash(db: BackendDatabase, tokenHash: s
     role: giftMembers.role,
     albumId: sharedAlbums.id,
     albumTitle: sharedAlbums.title,
+    travelDate: sharedAlbums.travelDate,
     publishedAt: sharedAlbums.publishedAt,
     version: sharedAlbums.version,
   })
@@ -321,6 +326,7 @@ export async function getActivatedGiftAccessByGiftId(db: BackendDatabase, giftId
     role: giftMembers.role,
     albumId: sharedAlbums.id,
     albumTitle: sharedAlbums.title,
+    travelDate: sharedAlbums.travelDate,
     publishedAt: sharedAlbums.publishedAt,
     version: sharedAlbums.version,
     coverObjectKey: sharedAlbums.coverObjectKey,
@@ -456,6 +462,7 @@ export async function completeGiftPublishSession(
     const oldCoverKey = current?.coverObjectKey ?? null;
     const sessionPayload = session.payloadJson as GiftPublicationPayload;
     const payload = input.payload ?? sessionPayload;
+    const travelDate = Object.prototype.hasOwnProperty.call(payload, "travelDate") ? payload.travelDate ?? null : current?.travelDate ?? null;
     const albumId = current?.id ?? crypto.randomUUID();
     const version = (current?.version ?? 0) + 1;
 
@@ -467,6 +474,7 @@ export async function completeGiftPublishSession(
       giftId: session.giftId,
       sourceMemoryId: payload.sourceMemoryId,
       title: payload.title,
+      travelDate,
       publishedAt: input.now,
       version,
       coverObjectKey: payload.cover?.objectKey ?? null,

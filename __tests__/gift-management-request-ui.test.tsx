@@ -7,7 +7,15 @@ let mockAuth = { isAuthReady: true, session: { accessToken: "token", user: { id:
 let mockParams = { id: "gift-1" };
 const mockRouter = { back: jest.fn(), replace: jest.fn() };
 
-jest.mock("expo-router", () => ({ useLocalSearchParams: () => mockParams, useRouter: () => mockRouter }));
+jest.mock("expo-router", () => ({
+  Stack: { Screen: () => null },
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = require("react");
+    React.useEffect(callback, [callback]);
+  },
+  useLocalSearchParams: () => mockParams,
+  useRouter: () => mockRouter,
+}));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockAuth }));
 jest.mock("../src/services/backend/api-client", () => ({ BackendApiClient: jest.fn(() => ({ getInvitedGiftAlbum: mockGetAlbum, listInvitedGiftManagementTargets: mockListTargets, createInvitedGiftManagementRequest: mockCreateRequest })) }));
 jest.mock("../src/features/canvas/page-reader", () => ({ PageReader: () => null }));
