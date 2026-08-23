@@ -1,5 +1,6 @@
 import type { InvitedGiftAlbum } from "../../services/backend/api-client";
 import type { CanvasElement, CanvasLayout, StoryPage } from "../../types/memory";
+import { canvasPages } from "../canvas/editor-pages";
 
 type SnapshotImageElement = Extract<CanvasElement, { type: "image" }> & {
   mediaId?: string;
@@ -127,4 +128,14 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
       ...(typeof raw.coverImage === "string" && resolveStableUri(raw.coverImage) ? { coverImage: resolveStableUri(raw.coverImage) } : {}),
     };
   });
+}
+
+/**
+ * Shared previews preserve the published snapshot as-is, while editing requires
+ * the same normalized Canvas shape used by local albums. In particular, older
+ * shared snapshots only contain photoUri/headline/body and would otherwise make
+ * BookCanvasEditor render nothing because they have no layout.
+ */
+export function mapSharedAlbumToEditablePages(album: InvitedGiftAlbum): StoryPage[] {
+  return canvasPages(mapSharedAlbumToStoryPages(album));
 }

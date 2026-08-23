@@ -4,6 +4,8 @@ const mockStart = jest.fn();
 const mockFinish = jest.fn();
 const mockStartOwned = jest.fn();
 const mockFinishOwned = jest.fn();
+const mockPrepareSave = jest.fn();
+const mockReleaseSaveLock = jest.fn();
 
 jest.mock("../src/services/backend/api-client", () => ({
   BackendApiClient: jest.fn(() => ({
@@ -21,21 +23,31 @@ jest.mock("../src/services/backend/api-client", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text } = require("react-native");
-  return { BookCanvasEditor: ({ fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange }: any) => <>
-    <Text testID="canvas-entry">{`${initialPageId ?? ""}:${fallbackIndex ?? 0}`}</Text>
-    <Text testID="canvas-pages">{JSON.stringify(pages)}</Text>
-    <Button title="report second page" onPress={() => onActivePageChange?.({ pageId: "p2", index: 1 })} />
-    <Button title="change text" onPress={() => onPagesChange([{ ...pages[0], headline: "Changed" }, ...pages.slice(1)], "text")} />
-    <Button title="begin transform" onPress={() => onTransformPendingChange?.(true)} />
-    <Button title="end transform" onPress={() => onTransformPendingChange?.(false)} />
-    <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
-    <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
-    <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
-    <Button title="add two local photos" onPress={() => onPagesChange([
-      { ...pages[0], id: "new-a", photoUri: "file:///a.jpg" },
-      { ...pages[0], id: "new-b", position: 1, photoUri: "file:///b.jpg" },
-    ], "structure")} />
-  </> };
+  return { BookCanvasEditor: React.forwardRef(({ fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange }: any, ref: any) => {
+    const cursor = React.useRef({ pageId: initialPageId ?? pages[0]?.id ?? "", index: fallbackIndex ?? 0 });
+    React.useImperativeHandle(ref, () => ({
+      prepareSave: () => mockPrepareSave(pages, cursor.current),
+      releaseSaveLock: mockReleaseSaveLock,
+    }), [pages]);
+    return <>
+      <Text testID="canvas-entry">{`${initialPageId ?? ""}:${fallbackIndex ?? 0}`}</Text>
+      <Text testID="canvas-pages">{JSON.stringify(pages)}</Text>
+      <Button title="report second page" onPress={() => {
+        cursor.current = { pageId: "p2", index: 1 };
+        onActivePageChange?.(cursor.current);
+      }} />
+      <Button title="change text" onPress={() => onPagesChange([{ ...pages[0], headline: "Changed" }, ...pages.slice(1)], "text")} />
+      <Button title="begin transform" onPress={() => onTransformPendingChange?.(true)} />
+      <Button title="end transform" onPress={() => onTransformPendingChange?.(false)} />
+      <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
+      <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
+      <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
+      <Button title="add two local photos" onPress={() => onPagesChange([
+        { ...pages[0], id: "new-a", photoUri: "file:///a.jpg" },
+        { ...pages[0], id: "new-b", position: 1, photoUri: "file:///b.jpg" },
+      ], "structure")} />
+    </>;
+  }) };
 });
 
 import { SharedAlbumEditor } from "../src/features/gifts/shared-album-editor";
@@ -49,6 +61,7 @@ const album: any = {
 describe("SharedAlbumEditor", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrepareSave.mockImplementation(async (pages, cursor) => ({ pages, cursor }));
     mockStart.mockResolvedValue({ publicationId: "pub-1", uploads: [{ position: 1, uploadUrl: "https://upload.test/new", objectKey: "server-key" }], coverUpload: null });
     mockFinish.mockResolvedValue({ albumId: "album-1" });
     mockStartOwned.mockResolvedValue({ publicationId: "owned-pub", uploads: [], coverUpload: null });
@@ -185,9 +198,60 @@ describe("SharedAlbumEditor", () => {
     fireEvent.press(screen.getByText("change text"));
     fireEvent.press(screen.getByText("保存当前修改"));
     fireEvent.press(screen.getByText("正在发布…"));
-    expect(mockStart).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
+  });
+
+  it("publishes the Canvas editor's settled save snapshot instead of stale parent pages", async () => {
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-prepared", uploads: [], coverUpload: null });
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({
+      cursor,
+      pages: [{ ...pages[0], headline: "Prepared latest" }, ...pages.slice(1)],
+    }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存当前修改"));
+
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(mockPrepareSave).toHaveBeenCalledTimes(1);
+    expect(mockStart.mock.calls[0][2].pages[0].page.headline).toBe("Prepared latest");
+    expect(mockReleaseSaveLock).toHaveBeenCalled();
+  });
+
+  it("publishes an open Canvas style draft before the parent dirty state changes", async () => {
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-open-draft", uploads: [], coverUpload: null });
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({
+      cursor,
+      pages: [{ ...pages[0], headline: "Open style draft" }, ...pages.slice(1)],
+    }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+
+    expect(screen.getByRole("button", { name: "保存当前修改" }).props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(screen.getByText("保存当前修改"));
+
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(mockStart.mock.calls[0][2].pages[0].page.headline).toBe("Open style draft");
+  });
+
+  it("retains a prepared Canvas draft as dirty when publication fails so retry can publish it", async () => {
+    mockStart
+      .mockRejectedValueOnce(new Error("temporary network failure"))
+      .mockResolvedValueOnce({ publicationId: "pub-retry-draft", uploads: [], coverUpload: null });
+    mockPrepareSave.mockImplementationOnce(async (pages, cursor) => ({
+      cursor,
+      pages: [{ ...pages[0], headline: "Retry this draft" }, ...pages.slice(1)],
+    }));
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+
+    fireEvent.press(screen.getByText("保存当前修改"));
+    await waitFor(() => expect(screen.getByText("temporary network failure")).toBeTruthy());
+    fireEvent.press(screen.getByText("保存当前修改"));
+
+    await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-retry-draft"));
+    expect(mockStart).toHaveBeenCalledTimes(2);
+    expect(mockStart.mock.calls[1][2].pages[0].page.headline).toBe("Retry this draft");
   });
 
   it("opens the complete canvas at the requested page and blocks both saves during transforms", () => {
@@ -201,12 +265,12 @@ describe("SharedAlbumEditor", () => {
     expect(mockStart).not.toHaveBeenCalled();
   });
 
-  it("returns without publishing when there are no changes", () => {
+  it("returns without publishing when there are no changes", async () => {
     const onExit = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onExit={onExit} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(onExit).toHaveBeenCalledWith({ pageId: "p0", index: 0 }));
     expect(mockStart).not.toHaveBeenCalled();
-    expect(onExit).toHaveBeenCalledWith({ pageId: "p0", index: 0 });
   });
 
   it("reports dirty state and resets the baseline after a successful stay save", async () => {

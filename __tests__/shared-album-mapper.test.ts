@@ -1,4 +1,7 @@
-import { mapSharedAlbumToStoryPages } from "../src/features/gifts/shared-album-mapper";
+import {
+  mapSharedAlbumToEditablePages,
+  mapSharedAlbumToStoryPages,
+} from "../src/features/gifts/shared-album-mapper";
 
 describe("shared album snapshot mapper", () => {
   it("prefers stable media references and preserves the complete canvas page", () => {
@@ -169,5 +172,32 @@ describe("shared album snapshot mapper", () => {
       backgroundId: "paper",
       elements: [expect.objectContaining({ id: "good", text: "safe" })],
     }));
+  });
+
+  it("normalizes every shared snapshot page into the same editable canvas shape as a local album", () => {
+    const pages = mapSharedAlbumToEditablePages({
+      role: "editor",
+      title: "Legacy editable album",
+      pages: [{ position: 0, page: { id: "legacy-cover", kind: "cover", headline: "封面", body: "", coverColor: "#123456" } }],
+      media: [{ id: "cover-photo", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/legacy.jpg" }],
+      publishedAt: "2026-08-16T00:00:00Z",
+      version: 1,
+      cover: null,
+    });
+
+    expect(pages).toEqual([
+      expect.objectContaining({
+        id: "legacy-cover",
+        position: 0,
+        layout: expect.objectContaining({
+          aspectRatio: 0.75,
+          coverColor: "#123456",
+          elements: expect.arrayContaining([
+            expect.objectContaining({ type: "image", uri: "https://cdn.test/legacy.jpg" }),
+            expect.objectContaining({ type: "text", text: "封面" }),
+          ]),
+        }),
+      }),
+    ]);
   });
 });

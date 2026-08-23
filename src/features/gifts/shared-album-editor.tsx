@@ -4,8 +4,11 @@ import { Text, View } from "react-native";
 import { AppButton, bodyFont, colors } from "../../components/ui";
 import { BackendApiClient, BackendApiError, type InvitedGiftAlbum } from "../../services/backend/api-client";
 import type { CanvasElement, StoryPage } from "../../types/memory";
-import { BookCanvasEditor } from "../canvas/book-canvas-editor";
-import { mapSharedAlbumToStoryPages } from "./shared-album-mapper";
+import {
+  BookCanvasEditor,
+  type BookCanvasEditorHandle,
+} from "../canvas/book-canvas-editor";
+import { mapSharedAlbumToEditablePages } from "./shared-album-mapper";
 
 type Props = {
   accessToken: string;
@@ -21,6 +24,8 @@ type Props = {
 };
 
 type MediaSource = { uri: string; existingId?: string; contentType?: string; byteSize?: number };
+
+const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
 
 function pageImageUris(page: StoryPage) {
   const uris: string[] = [];
@@ -70,7 +75,7 @@ export function SharedAlbumEditor({
   onReload,
 }: Props) {
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const initialPages = React.useMemo(() => mapSharedAlbumToStoryPages(album), [album]);
+  const initialPages = React.useMemo(() => mapSharedAlbumToEditablePages(album), [album]);
   const [pages, setPages] = React.useState(initialPages);
   const [busy, setBusy] = React.useState(false);
   const [busyIntent, setBusyIntent] = React.useState<"stay" | "exit" | null>(null);
@@ -79,6 +84,7 @@ export function SharedAlbumEditor({
   const [transformPending, setTransformPending] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const inFlight = React.useRef(false);
+  const editorRef = React.useRef<BookCanvasEditorHandle>(null);
   const initialIndex = resolveInitialIndex(initialPages, initialPageId, fallbackIndex);
   const activePage = React.useRef({ pageId: initialPages[initialIndex]?.id ?? "", index: initialIndex });
   const handleActivePageChange = React.useCallback((cursor: { pageId: string; index: number }) => {
@@ -94,22 +100,36 @@ export function SharedAlbumEditor({
     changeDirty(true);
   }, [changeDirty]);
 
+  React.useEffect(() => () => {
+    editorRef.current?.releaseSaveLock();
+  }, []);
+
   const publish = async (intent: "stay" | "exit") => {
     if (inFlight.current || stale || transformPending) return;
-    const publishCursor = activePage.current;
-    if (!dirty) {
-      if (intent === "exit") onExit?.(publishCursor);
-      return;
-    }
     inFlight.current = true;
     setBusy(true);
     setBusyIntent(intent);
     setMessage("");
     try {
+      const prepared = await editorRef.current?.prepareSave();
+      if (!prepared) {
+        setMessage(PREPARE_SAVE_PENDING_MESSAGE);
+        return;
+      }
+      const publishPages = prepared.pages;
+      const publishCursor = prepared.cursor;
+      activePage.current = publishCursor;
+      const hasPreparedChanges = dirty || publishPages !== pages;
+      if (!hasPreparedChanges) {
+        if (intent === "exit") onExit?.(publishCursor);
+        return;
+      }
+      if (!dirty) changeDirty(true);
+      setPages(publishPages);
       const existingByUrl = new Map(album.media.map((media) => [media.readUrl, media]));
       const sources: MediaSource[] = [];
       const seen = new Set<string>();
-      pages.flatMap(pageImageUris).forEach((uri) => {
+      publishPages.flatMap(pageImageUris).forEach((uri) => {
         if (seen.has(uri)) return;
         seen.add(uri);
         const existing = existingByUrl.get(uri);
@@ -134,7 +154,7 @@ export function SharedAlbumEditor({
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
         title: album.title,
-        pages: pages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
+        pages: publishPages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
         media: sources.map((source, position) => source.existingId
           ? { position, mediaId: source.existingId }
           : { position, contentType: source.contentType!, byteSize: source.byteSize! }),
@@ -175,6 +195,7 @@ export function SharedAlbumEditor({
         setMessage(error instanceof Error ? error.message : "发布失败，请重试。");
       }
     } finally {
+      editorRef.current?.releaseSaveLock();
       inFlight.current = false;
       setBusy(false);
       setBusyIntent(null);
@@ -190,11 +211,12 @@ export function SharedAlbumEditor({
         onPagesChange={handlePagesChange}
         onTransformPendingChange={setTransformPending}
         pages={pages}
+        ref={editorRef}
       />
     </View>
     {message ? <Text style={{ color: colors.muted, fontFamily: bodyFont }}>{message}</Text> : null}
     <AppButton
-      disabled={!dirty || busy || stale || transformPending}
+      disabled={busy || stale || transformPending}
       label={busyIntent === "stay" ? "正在发布…" : "保存当前修改"}
       onPress={() => void publish("stay")}
       tone="secondary"
