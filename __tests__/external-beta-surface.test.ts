@@ -54,8 +54,12 @@ describe("external Beta release surface", () => {
 
     expect(Object.keys(env).sort()).toEqual([
       "EXPO_PUBLIC_API_ORIGIN",
+      "EXPO_PUBLIC_GIFT_ORIGIN",
       "EXPO_PUBLIC_RELEASE_AUDIENCE",
     ]);
+    expect(env.EXPO_PUBLIC_GIFT_ORIGIN).toBe(
+      "https://staging.onetapreality.com",
+    );
     expect(JSON.stringify(env)).not.toMatch(
       /DATABASE_URL|PEPPER|SECRET|PASSWORD|RESEND_API_KEY|R2_ACCESS_KEY/i,
     );

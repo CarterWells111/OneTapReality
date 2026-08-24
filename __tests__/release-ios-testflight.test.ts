@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 describe("iOS TestFlight release guards", () => {
@@ -7,6 +8,77 @@ describe("iOS TestFlight release guards", () => {
     "scripts",
     "release-ios-testflight-guards.cjs",
   );
+
+  it("validates and injects the exact API/gift environment pair for local releases", () => {
+    const releaseModulePath = join(
+      process.cwd(),
+      "scripts",
+      "release-ios-testflight.cjs",
+    );
+    const { readReleaseContract } = require(releaseModulePath) as {
+      readReleaseContract: (cwd: string, profile: string) => {
+        audience: string;
+        giftOrigin: string;
+        origin: string;
+        version: string;
+      };
+    };
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "onetap-release-contract-"));
+
+    try {
+      writeFileSync(join(fixtureRoot, "app.json"), JSON.stringify({
+        expo: { version: "1.1.2" },
+      }));
+      const writeEas = (
+        giftOrigin?: string,
+        apiOrigin = "https://api-staging.onetapreality.com",
+      ) => writeFileSync(
+        join(fixtureRoot, "eas.json"),
+        JSON.stringify({
+          build: {
+            "staging-testflight": {
+              env: {
+                EXPO_PUBLIC_API_ORIGIN: apiOrigin,
+                EXPO_PUBLIC_GIFT_ORIGIN: giftOrigin,
+                EXPO_PUBLIC_RELEASE_AUDIENCE: "internal",
+              },
+            },
+          },
+        }),
+      );
+
+      writeEas("https://staging.onetapreality.com");
+      expect(readReleaseContract(fixtureRoot, "staging-testflight")).toEqual({
+        audience: "internal",
+        giftOrigin: "https://staging.onetapreality.com",
+        origin: "https://api-staging.onetapreality.com",
+        version: "1.1.2",
+      });
+
+      writeEas("https://onetapreality.com");
+      expect(() => readReleaseContract(fixtureRoot, "staging-testflight")).toThrow(
+        "staging-testflight API/gift origins are not an allowed environment pair",
+      );
+
+      writeEas(
+        "https://onetapreality.com",
+        "https://api.onetapreality.com",
+      );
+      expect(() => readReleaseContract(fixtureRoot, "staging-testflight")).toThrow(
+        "staging-testflight API/gift origins are not an allowed environment pair",
+      );
+
+      writeEas();
+      expect(() => readReleaseContract(fixtureRoot, "staging-testflight")).toThrow(
+        "EXPO_PUBLIC_GIFT_ORIGIN is not set",
+      );
+    } finally {
+      rmSync(fixtureRoot, { force: true, recursive: true });
+    }
+
+    const releaseSource = require("node:fs").readFileSync(releaseModulePath, "utf8");
+    expect(releaseSource).toContain("EXPO_PUBLIC_GIFT_ORIGIN: giftOrigin");
+  });
 
   it("keeps the selected profile in the build-only resume command", () => {
     if (!existsSync(modulePath)) {

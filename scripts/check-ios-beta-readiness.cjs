@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const STAGING_API_ORIGIN = "https://api-staging.onetapreality.com";
+const STAGING_GIFT_ORIGIN = "https://staging.onetapreality.com";
 const STAGING_ASSOCIATED_DOMAIN = "applinks:staging.onetapreality.com";
 const IOS_BUNDLE_IDENTIFIER = "com.onereality.onetapreality";
 const EXTERNAL_BETA_PROFILE = "beta-external";
@@ -9,6 +10,7 @@ const EXTERNAL_BETA_VERSION = "1.1.2";
 const EXTERNAL_BETA_AUDIENCE = "external-beta";
 const EXTERNAL_BETA_PUBLIC_ENV = new Set([
   "EXPO_PUBLIC_API_ORIGIN",
+  "EXPO_PUBLIC_GIFT_ORIGIN",
   "EXPO_PUBLIC_RELEASE_AUDIENCE",
 ]);
 const SERVER_SECRET_NAMES = new Set([
@@ -56,6 +58,9 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
     if (profileEnv.EXPO_PUBLIC_API_ORIGIN !== STAGING_API_ORIGIN) {
       errors.push(`alpha API origin must be ${STAGING_API_ORIGIN}`);
     }
+    if (profileEnv.EXPO_PUBLIC_GIFT_ORIGIN !== STAGING_GIFT_ORIGIN) {
+      errors.push(`alpha gift origin must be ${STAGING_GIFT_ORIGIN}`);
+    }
   } else if (profile === EXTERNAL_BETA_PROFILE) {
     if (selectedProfile.distribution !== "store") {
       errors.push("beta-external distribution must be store");
@@ -68,6 +73,9 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
     }
     if (profileEnv.EXPO_PUBLIC_API_ORIGIN !== STAGING_API_ORIGIN) {
       errors.push(`beta-external API origin must be ${STAGING_API_ORIGIN}`);
+    }
+    if (profileEnv.EXPO_PUBLIC_GIFT_ORIGIN !== STAGING_GIFT_ORIGIN) {
+      errors.push(`beta-external gift origin must be ${STAGING_GIFT_ORIGIN}`);
     }
     if (profileEnv.EXPO_PUBLIC_RELEASE_AUDIENCE !== EXTERNAL_BETA_AUDIENCE) {
       errors.push(`beta-external release audience must be ${EXTERNAL_BETA_AUDIENCE}`);
@@ -136,6 +144,7 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
     platform: "ios",
     profile,
     apiOrigin: STAGING_API_ORIGIN,
+    giftOrigin: STAGING_GIFT_ORIGIN,
     bundleIdentifier: IOS_BUNDLE_IDENTIFIER,
     associatedDomain: STAGING_ASSOCIATED_DOMAIN,
     nfcEntitlement: "TAG-only",

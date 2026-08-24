@@ -30,6 +30,22 @@ const POLL_INTERVAL_MS = 30_000;
 const POLL_TIMEOUT_MS = 90 * 60 * 1000;
 const EXTERNAL_BETA_PROFILE = "beta-external";
 const EXTERNAL_BETA_VERSION = "1.1.2";
+const STAGING_RELEASE_ORIGINS = Object.freeze({
+  api: "https://api-staging.onetapreality.com",
+  gift: "https://staging.onetapreality.com",
+});
+const PRODUCTION_RELEASE_ORIGINS = Object.freeze({
+  api: "https://api.onetapreality.com",
+  gift: "https://onetapreality.com",
+});
+const RELEASE_ORIGINS_BY_PROFILE = new Map([
+  ["development", PRODUCTION_RELEASE_ORIGINS],
+  ["preview", PRODUCTION_RELEASE_ORIGINS],
+  ["alpha", STAGING_RELEASE_ORIGINS],
+  ["staging-testflight", STAGING_RELEASE_ORIGINS],
+  [EXTERNAL_BETA_PROFILE, STAGING_RELEASE_ORIGINS],
+  ["production", PRODUCTION_RELEASE_ORIGINS],
+]);
 
 function parseArgs(argv) {
   const options = {
@@ -141,20 +157,30 @@ function assertCleanTree(allowDirty) {
   );
 }
 
-function readProfileOrigin(cwd, profile) {
-  const easJson = JSON.parse(readFileSync(join(cwd, "eas.json"), "utf8"));
-  const origin = easJson.build?.[profile]?.env?.EXPO_PUBLIC_API_ORIGIN;
-  if (!origin) throw new Error(`eas.json build.${profile}.env.EXPO_PUBLIC_API_ORIGIN is not set`);
-  return origin;
-}
-
 function readReleaseContract(cwd, profile) {
   const easJson = JSON.parse(readFileSync(join(cwd, "eas.json"), "utf8"));
   const appJson = JSON.parse(readFileSync(join(cwd, "app.json"), "utf8")).expo;
   const buildProfile = easJson.build?.[profile];
   if (!buildProfile) throw new Error(`eas.json build.${profile} is not configured`);
+  const origin = buildProfile.env?.EXPO_PUBLIC_API_ORIGIN;
+  const giftOrigin = buildProfile.env?.EXPO_PUBLIC_GIFT_ORIGIN;
+  if (!origin) {
+    throw new Error(`eas.json build.${profile}.env.EXPO_PUBLIC_API_ORIGIN is not set`);
+  }
+  if (!giftOrigin) {
+    throw new Error(`eas.json build.${profile}.env.EXPO_PUBLIC_GIFT_ORIGIN is not set`);
+  }
+  const expectedOrigins = RELEASE_ORIGINS_BY_PROFILE.get(profile);
+  if (
+    !expectedOrigins
+    || expectedOrigins.api !== origin
+    || expectedOrigins.gift !== giftOrigin
+  ) {
+    throw new Error(`${profile} API/gift origins are not an allowed environment pair`);
+  }
   return {
-    origin: readProfileOrigin(cwd, profile),
+    origin,
+    giftOrigin,
     audience: buildProfile.env?.EXPO_PUBLIC_RELEASE_AUDIENCE ?? "internal",
     version: appJson?.version,
   };
@@ -168,13 +194,14 @@ function readProjectId(cwd) {
 }
 
 // The router origin is injected at config-evaluation time by app.config.ts, so
-// it is only correct when EXPO_PUBLIC_API_ORIGIN matches the build profile.
-function verifyExpoConfig(cwd, { origin, audience, version }) {
+// it is only correct when the public origins match the build profile.
+function verifyExpoConfig(cwd, { origin, giftOrigin, audience, version }) {
   const result = spawnPortable("npx", ["expo", "config", "--json"], {
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       EXPO_PUBLIC_API_ORIGIN: origin,
+      EXPO_PUBLIC_GIFT_ORIGIN: giftOrigin,
       EXPO_PUBLIC_RELEASE_AUDIENCE: audience,
     },
   });
@@ -426,4 +453,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, parseArgs, verifyExpoConfig };
+module.exports = { main, parseArgs, readReleaseContract, verifyExpoConfig };

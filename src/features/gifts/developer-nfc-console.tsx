@@ -10,13 +10,21 @@ import {
 } from "../../services/backend/admin-gift-card-api-client";
 import { BackendApiError } from "../../services/backend/api-client";
 import { clearPendingGiftCard, loadPendingGiftCard, savePendingGiftCard, type PendingGiftCard } from "../../services/gifts/gift-card-pending";
+import {
+  createInternalNfcUrlPolicy,
+  InternalNfcUrlPolicyError,
+  type InternalNfcUrlPolicy,
+} from "../../services/nfc/internal-nfc-url-policy";
 import { createNfcUrlWriter, type NfcUrlWriter } from "../../services/nfc/nfc-url-writer";
 import { useAuth } from "../auth/auth-provider";
 
-const activationUrl = "https://onetapreality.com/activate";
 type ConsoleClient = Pick<AdminGiftCardApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
 type AccountSession = { accessToken: string };
 type AccessState = "checking" | "signedOut" | "noAccess" | "ready";
+type PolicyResolution = {
+  readonly error: unknown;
+  readonly policy: InternalNfcUrlPolicy | null;
+};
 
 function canRetire(card: AdminGiftCard) {
   return card.state === "active" && card.giftStatus === "unclaimed";
@@ -35,7 +43,21 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWriter }: { client?: ConsoleClient; writer?: NfcUrlWriter }) {
+function policyErrorMessage(error: unknown) {
+  return error instanceof InternalNfcUrlPolicyError
+    ? error.message
+    : "NFC link validation failed. Stop and contact support.";
+}
+
+export function DeveloperNfcConsole({
+  client: injectedClient,
+  urlPolicy: injectedUrlPolicy,
+  writer: injectedWriter,
+}: {
+  client?: ConsoleClient;
+  urlPolicy?: InternalNfcUrlPolicy;
+  writer?: NfcUrlWriter;
+}) {
   const router = useRouter();
   const { isAuthReady, session } = useAuth();
   const client = React.useMemo(
@@ -43,6 +65,21 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     [injectedClient],
   );
   const writer = React.useMemo(() => injectedWriter ?? createNfcUrlWriter(), [injectedWriter]);
+  const policyResolution = React.useMemo<PolicyResolution>(() => {
+    if (injectedUrlPolicy) return { error: null, policy: injectedUrlPolicy };
+    try {
+      return {
+        error: null,
+        policy: createInternalNfcUrlPolicy({
+          apiOrigin: process.env.EXPO_PUBLIC_API_ORIGIN,
+          giftOrigin: process.env.EXPO_PUBLIC_GIFT_ORIGIN,
+        }),
+      };
+    } catch (error) {
+      return { error, policy: null };
+    }
+  }, [injectedUrlPolicy]);
+  const urlPolicy = policyResolution.policy;
   const [access, setAccess] = React.useState<AccessState>("checking");
   const [cards, setCards] = React.useState<AdminGiftCard[]>([]);
   const [detail, setDetail] = React.useState<AdminGiftCardDetail | null>(null);
@@ -52,6 +89,7 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
   const [search, setSearch] = React.useState("");
   const [message, setMessage] = React.useState("Checking developer access...");
   const [busy, setBusy] = React.useState(false);
+  const [recoveryComplete, setRecoveryComplete] = React.useState(false);
 
   const loadCards = React.useCallback(async (activeSession: AccountSession, filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string }) => {
     try {
@@ -72,8 +110,17 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
   }, [client]);
 
   const recoverPending = React.useCallback(async (activeSession: AccountSession) => {
+    if (!urlPolicy) return;
     const saved = await loadPendingGiftCard();
     if (!saved) return;
+    try {
+      urlPolicy.validateGiftUrl(saved.giftUrl);
+    } catch (error) {
+      await clearPendingGiftCard();
+      setPending(null);
+      setMessage(policyErrorMessage(error));
+      return;
+    }
     try {
       const current = await client.getAdminGiftCard(activeSession.accessToken, saved.cardId);
       if (current.card.state !== "initializing") {
@@ -85,51 +132,88 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
       // Keep the local reservation so a transient network failure never creates another card.
       setPending(saved);
     }
-  }, [client]);
+  }, [client, urlPolicy]);
 
   React.useEffect(() => {
     if (!isAuthReady) return;
+    setRecoveryComplete(false);
+    if (!urlPolicy) {
+      setAccess("noAccess");
+      setMessage(policyErrorMessage(policyResolution.error));
+      return;
+    }
     if (!session) {
       setAccess("signedOut");
       setMessage("Sign in with a developer allow-list email to continue.");
       return;
     }
-    void loadCards(session);
-    void recoverPending(session);
-  }, [isAuthReady, loadCards, recoverPending, session]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        await loadCards(session);
+        await recoverPending(session);
+        if (!cancelled) setRecoveryComplete(true);
+      } catch {
+        if (!cancelled) {
+          setMessage("Unable to check the saved NFC reservation. Restart the app before initializing another card.");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthReady, loadCards, policyResolution.error, recoverPending, session, urlPolicy]);
 
   const prepareBlankCard = async () => {
+    if (!urlPolicy || !recoveryComplete) return;
     try {
       setBusy(true);
-      await writer.replaceHttpsUrl(null, activationUrl);
+      await writer.replaceHttpsUrl(null, urlPolicy.activationUrl);
       setMessage("Blank card is ready. It now opens the developer activation screen.");
     } catch (error) { setMessage(errorMessage(error, "Unable to prepare this NFC card. Keep it against the top of the phone and retry.")); }
     finally { setBusy(false); }
   };
 
   const initializeCard = async () => {
-    if (!session || pending) return;
+    if (!session || !urlPolicy || !recoveryComplete || pending) return;
     try {
       setBusy(true);
       const reservation = await client.reserveGiftCard(session.accessToken, note);
-      await savePendingGiftCard(reservation);
-      setPending(reservation);
+      const validatedReservation = {
+        ...reservation,
+        giftUrl: urlPolicy.validateGiftUrl(reservation.giftUrl),
+      };
+      await savePendingGiftCard(validatedReservation);
+      setPending(validatedReservation);
       try {
         setCards(await client.listAdminGiftCards(session.accessToken));
       } catch {
         // The saved reservation remains retryable even if the inventory refresh fails.
       }
-      await writePending(reservation);
+      await writePending(validatedReservation);
     } catch (error) {
-      setMessage(`Unable to reserve this gift card. ${errorMessage(error, "Check the network and retry.")}`.trim());
+      const detail = error instanceof InternalNfcUrlPolicyError
+        ? policyErrorMessage(error)
+        : errorMessage(error, "Check the network and retry.");
+      setMessage(`Unable to reserve this gift card. ${detail}`.trim());
     } finally { setBusy(false); }
   };
 
   const writePending = async (reservation = pending) => {
-    if (!session || !reservation || reservation.writeVerified) return;
+    if (!session || !urlPolicy || !reservation || reservation.writeVerified) return;
     try {
       setBusy(true);
-      await writer.replaceHttpsUrl(activationUrl, reservation.giftUrl);
+      let giftUrl: string;
+      try {
+        giftUrl = urlPolicy.validateReplacement(
+          urlPolicy.activationUrl,
+          reservation.giftUrl,
+        );
+      } catch (error) {
+        await clearPendingGiftCard();
+        setPending(null);
+        setMessage(policyErrorMessage(error));
+        return;
+      }
+      await writer.replaceHttpsUrl(urlPolicy.activationUrl, giftUrl);
       const verifiedReservation = { ...reservation, writeVerified: true };
       await savePendingGiftCard(verifiedReservation);
       setPending(verifiedReservation);
@@ -194,9 +278,9 @@ export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWr
     <PaperCard tone="paper" style={styles.card}>
       <Text style={styles.heading}>Initialize NFC cards</Text>
       <Text style={styles.hint}>Each action uses one NFC scan. After tapping, hold the card against the top of the phone until verification finishes.</Text>
-      <AppButton disabled={busy || Boolean(pending)} label="Prepare blank card" onPress={() => void prepareBlankCard()} />
+      <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Prepare blank card" onPress={() => void prepareBlankCard()} />
       <TextInput accessibilityLabel="Card note" onChangeText={setNote} placeholder="Optional batch, order, or note" style={styles.input} value={note} />
-      <AppButton disabled={busy || Boolean(pending)} label="Initialize current blank card" tone="warm" onPress={() => void initializeCard()} />
+      <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Initialize current blank card" tone="warm" onPress={() => void initializeCard()} />
       {pending && !pending.writeVerified ? <AppButton disabled={busy} label="Retry NFC write" tone="warm" onPress={() => void writePending()} /> : null}
       {pending?.writeVerified ? <AppButton disabled={busy} label="Retry activation" tone="warm" onPress={() => void activatePending()} /> : null}
     </PaperCard>

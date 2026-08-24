@@ -123,6 +123,7 @@ describe("Expo Router production origin", () => {
       distribution: "internal",
       env: {
         EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+        EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
         EXPO_PUBLIC_RELEASE_AUDIENCE: "internal",
       },
     }));
@@ -143,6 +144,24 @@ describe("Expo Router production origin", () => {
       "staging-testflight": "internal",
       "beta-external": "external-beta",
       production: "public",
+    });
+  });
+
+  it("pairs every local build profile with its exact public gift origin", () => {
+    const profiles = require("../eas.json").build;
+
+    expect(Object.fromEntries(
+      Object.entries(profiles).map(([name, profile]: [string, any]) => [
+        name,
+        profile.env?.EXPO_PUBLIC_GIFT_ORIGIN,
+      ]),
+    )).toEqual({
+      development: "https://onetapreality.com",
+      preview: "https://onetapreality.com",
+      alpha: "https://staging.onetapreality.com",
+      "staging-testflight": "https://staging.onetapreality.com",
+      "beta-external": "https://staging.onetapreality.com",
+      production: "https://onetapreality.com",
     });
   });
 

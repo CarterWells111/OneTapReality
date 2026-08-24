@@ -3,6 +3,7 @@ const { checkIosBetaReadiness } = require("../scripts/check-ios-beta-readiness.c
     platform: string;
     profile: string;
     apiOrigin: string;
+    giftOrigin: string;
     bundleIdentifier: string;
     associatedDomain: string;
     nfcEntitlement: string;
@@ -17,7 +18,10 @@ function validConfig() {
       build: {
         alpha: {
           distribution: "internal",
-          env: { EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com" },
+          env: {
+            EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+            EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
+          },
         },
         "beta-external": {
           distribution: "store",
@@ -25,6 +29,7 @@ function validConfig() {
           autoIncrement: true,
           env: {
             EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+            EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
             EXPO_PUBLIC_RELEASE_AUDIENCE: "external-beta",
           },
         },
@@ -65,6 +70,7 @@ describe("iOS Beta readiness preflight", () => {
       platform: "ios",
       profile: "alpha",
       apiOrigin: "https://api-staging.onetapreality.com",
+      giftOrigin: "https://staging.onetapreality.com",
       bundleIdentifier: "com.onereality.onetapreality",
       associatedDomain: "applinks:staging.onetapreality.com",
       nfcEntitlement: "TAG-only",
@@ -116,11 +122,21 @@ describe("iOS Beta readiness preflight", () => {
     );
   });
 
+  it("rejects an alpha profile with a mismatched gift origin", () => {
+    const input = validConfig();
+    input.eas.build.alpha.env.EXPO_PUBLIC_GIFT_ORIGIN = "https://onetapreality.com";
+
+    expect(() => checkIosBetaReadiness(input)).toThrow(
+      "alpha gift origin must be https://staging.onetapreality.com",
+    );
+  });
+
   it("accepts the external Beta profile only with its exact release contract", () => {
     expect(checkIosBetaReadiness(validConfig(), { profile: "beta-external" })).toEqual({
       platform: "ios",
       profile: "beta-external",
       apiOrigin: "https://api-staging.onetapreality.com",
+      giftOrigin: "https://staging.onetapreality.com",
       releaseAudience: "external-beta",
       version: "1.1.2",
       bundleIdentifier: "com.onereality.onetapreality",
@@ -133,6 +149,7 @@ describe("iOS Beta readiness preflight", () => {
     ["distribution", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].distribution = "internal"; }],
     ["environment", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].environment = "production"; }],
     ["API origin", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].env.EXPO_PUBLIC_API_ORIGIN = "https://api.onetapreality.com"; }],
+    ["gift origin", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].env.EXPO_PUBLIC_GIFT_ORIGIN = "https://onetapreality.com"; }],
     ["release audience", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].env.EXPO_PUBLIC_RELEASE_AUDIENCE = "internal"; }],
   ])("rejects an external profile with the wrong %s", (_label, mutate) => {
     const input = validConfig();
