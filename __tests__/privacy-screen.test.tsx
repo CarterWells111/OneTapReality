@@ -167,4 +167,25 @@ describe("PrivacyScreen", () => {
       expect.any(Array),
     );
   });
+
+  it("does not direct a signed-out user to delete the guest library when account cleanup needs support", async () => {
+    mockDeleteAccountLibrary.mockRejectedValue(new Error("local cleanup unavailable"));
+    const screen = render(<PrivacyScreen />);
+
+    fireEvent.press(screen.getByText("永久删除账号及云端数据"));
+    await screen.findByText(/验证码已发送至 owner@example.com/);
+    fireEvent.changeText(screen.getByLabelText("账号删除验证码"), "123456");
+    fireEvent.changeText(screen.getByLabelText("账号删除确认文字"), "DELETE");
+    fireEvent.press(screen.getByText("确认永久删除"));
+
+    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith(
+      "账号删除已受理",
+      expect.stringContaining("support@onetapreality.com"),
+      expect.any(Array),
+    ));
+    const message = String(mockAlert.mock.calls.find(([title]) => title === "账号删除已受理")?.[1]);
+    expect(message).not.toContain("重试删除本机旅行册");
+    expect(mockDeleteAccountLibrary).toHaveBeenCalledTimes(2);
+    expect(mockClearAllMemories).not.toHaveBeenCalled();
+  });
 });

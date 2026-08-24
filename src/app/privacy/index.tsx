@@ -132,7 +132,7 @@ export default function PrivacyScreen() {
       setChallenge(null);
       Alert.alert(
         "账号删除已受理",
-        `受理编号：${nextReceipt.receiptId}\n预计最晚完成：${nextReceipt.completeBy}${localCleanupComplete ? "" : "\n本机账号旅行册清理未完成，请重试删除本机旅行册或联系支持。"}`,
+        `受理编号：${nextReceipt.receiptId}\n预计最晚完成：${nextReceipt.completeBy}${localCleanupComplete ? "" : "\n本机账号旅行册清理未完成。独立访客旅行册不会因此删除，请联系 support@onetapreality.com 协助处理设备残留。"}`,
         [{ text: "知道了" }],
       );
     } catch (error) {
