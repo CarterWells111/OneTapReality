@@ -5,6 +5,17 @@ import {
   parseReleaseAudience,
 } from "../src/features/release/release-audience";
 
+const { scanExternalBetaSurface } = require("../scripts/external-beta-surface-guards.cjs") as {
+  readonly scanExternalBetaSurface: (projectRoot: string) => {
+    readonly forbiddenModules: readonly unknown[];
+    readonly forbiddenReferences: readonly unknown[];
+    readonly forbiddenRoutes: readonly unknown[];
+    readonly ok: boolean;
+    readonly parseFailures: readonly unknown[];
+    readonly unresolvedLocalSpecifiers: readonly unknown[];
+  };
+};
+
 function readJson(path: string): Record<string, any> {
   return JSON.parse(readFileSync(join(process.cwd(), path), "utf8"));
 }
@@ -22,13 +33,6 @@ function collectSourceFiles(directory: string): string[] {
 
 function readSources(paths: readonly string[]): string {
   return paths.map((path) => readFileSync(join(process.cwd(), path), "utf8")).join("\n");
-}
-
-const forbiddenExternalRoutePattern =
-  /^src\/app\/(?:(?:\(tabs\)\/)?shop(?:\/|\.[cm]?[jt]sx?$)|backend(?:\/|\.[cm]?[jt]sx?$)|nfc-demo(?:\/|\.[cm]?[jt]sx?$))/u;
-
-function normalizeSourcePath(path: string): string {
-  return path.replaceAll("\\", "/");
 }
 
 describe("external Beta release surface", () => {
@@ -103,25 +107,13 @@ describe("external Beta release surface", () => {
       expect(existsSync(join(process.cwd(), path))).toBe(false);
     }
 
-    const routeModules = collectSourceFiles("src/app");
-    expect(
-      routeModules.map(normalizeSourcePath).filter((path) => forbiddenExternalRoutePattern.test(path)),
-    ).toEqual([]);
-    for (const prohibitedExample of [
-      "src/app/shop/index.tsx",
-      "src/app/shop/category/[id].tsx",
-      "src/app/backend/status.tsx",
-      "src/app/nfc-demo/index.tsx",
-      "src/app/(tabs)/shop/index.tsx",
-    ]) {
-      expect(forbiddenExternalRoutePattern.test(prohibitedExample)).toBe(true);
-    }
-
-    const routeGraph = readSources(routeModules);
-    expect(routeGraph).not.toMatch(
-      /["'`](?:\/shop(?:\/[^"'`]*)?|\/backend(?:\/[^"'`]*)?|\/nfc-demo(?:\/[^"'`]*)?)["'`]|name=["'](?:shop|backend|nfc-demo)/u,
-    );
-    expect(routeGraph).not.toMatch(/DeveloperNfcConsole|developer-nfc-console|nfc-url-writer/u);
+    const report = scanExternalBetaSurface(process.cwd());
+    expect(report.forbiddenRoutes).toEqual([]);
+    expect(report.forbiddenReferences).toEqual([]);
+    expect(report.forbiddenModules).toEqual([]);
+    expect(report.unresolvedLocalSpecifiers).toEqual([]);
+    expect(report.parseFailures).toEqual([]);
+    expect(report.ok).toBe(true);
   });
 
   it("keeps named test scripts free of deleted route-specific suites", () => {
