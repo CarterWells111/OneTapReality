@@ -111,6 +111,31 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.ok).toBe(false);
   });
 
+  it("selects one iOS route implementation and ignores Android or web-only routes", () => {
+    const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
+    if (!scanExternalBetaSurface) return;
+    const root = createFixture({
+      "src/app/(public)/index.tsx": "export default function Home() { return null; }",
+      "src/app/(public)/profile.ios.tsx": "export default function Profile() { return null; }",
+      "src/app/(public)/profile.native.tsx":
+        "export const DeveloperNfcConsole = null; export default DeveloperNfcConsole;",
+      "src/app/(public)/profile.tsx":
+        "export const DeveloperNfcConsole = null; export default DeveloperNfcConsole;",
+      "src/app/(public)/shop.android.tsx": "export default function Shop() { return null; }",
+      "src/app/(public)/backend.web.tsx": "export default function Backend() { return null; }",
+    });
+
+    const report = scanExternalBetaSurface(root);
+
+    expect(report.routeEntries).toEqual([
+      { file: "src/app/(public)/index.tsx", routeUrl: "/" },
+      { file: "src/app/(public)/profile.ios.tsx", routeUrl: "/profile" },
+    ]);
+    expect(report.forbiddenRoutes).toEqual([]);
+    expect(report.forbiddenModules).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
   it("follows aliases and nested re-exports into forbidden client modules", () => {
     const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
     if (!scanExternalBetaSurface) return;
@@ -184,13 +209,55 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.ok).toBe(false);
   });
 
+  it("resolves one imported module using iOS, native, then generic precedence", () => {
+    const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
+    if (!scanExternalBetaSurface) return;
+    const root = createFixture({
+      "src/app/index.tsx": [
+        "import '@/safe/ios-choice';",
+        "import '@/safe/ios-forbidden';",
+        "import '@/safe/native-choice';",
+        "import '@/safe/generic-choice';",
+        "import '@/safe/web-choice';",
+        "export default null;",
+      ].join("\n"),
+      "src/safe/ios-choice.ios.tsx": "export const choice = 'ios';",
+      "src/safe/ios-choice.android.tsx": "export const DeveloperNfcConsole = null;",
+      "src/safe/ios-forbidden.ios.tsx": "export const DeveloperNfcConsole = null;",
+      "src/safe/ios-forbidden.tsx": "export const choice = 'generic';",
+      "src/safe/native-choice.native.tsx": "export const choice = 'native';",
+      "src/safe/native-choice.tsx": "export const DeveloperNfcConsole = null;",
+      "src/safe/generic-choice.tsx": "export const choice = 'generic';",
+      "src/safe/web-choice.tsx": "export const choice = 'generic';",
+      "src/safe/web-choice.web.tsx": "export const DeveloperNfcConsole = null;",
+    });
+
+    const report = scanExternalBetaSurface(root);
+
+    expect(report.reachableModules).toEqual([
+      "src/app/index.tsx",
+      "src/safe/generic-choice.tsx",
+      "src/safe/ios-choice.ios.tsx",
+      "src/safe/ios-forbidden.ios.tsx",
+      "src/safe/native-choice.native.tsx",
+      "src/safe/web-choice.tsx",
+    ]);
+    expect(report.forbiddenModules).toEqual([
+      {
+        file: "src/safe/ios-forbidden.ios.tsx",
+        reason: "forbidden external surface token",
+      },
+    ]);
+    expect(report.unresolvedLocalSpecifiers).toEqual([]);
+    expect(report.ok).toBe(false);
+  });
+
   it("follows static imports, exports, dynamic imports and require calls with safe cycles", () => {
     const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
     if (!scanExternalBetaSurface) return;
     const root = createFixture({
       "src/app/(public)/index.tsx":
-        "export { value as default } from '@/safe/a'; import '@/safe/android-only'; void import('@/safe/lazy');",
-      "src/safe/android-only.android.ts": "export const androidOnly = true;",
+        "export { value as default } from '@/safe/a'; void import('@/safe/lazy');",
       "src/safe/a.ts": "export { value } from './b';",
       "src/safe/b.ts": "const cycle = require('./c'); export const value = cycle.value;",
       "src/safe/c.ts":
@@ -205,7 +272,6 @@ describe("external Beta static route and module graph guards", () => {
       expect.arrayContaining([
         "src/app/(public)/index.tsx",
         "src/safe/a.ts",
-        "src/safe/android-only.android.ts",
         "src/safe/b.ts",
         "src/safe/c.ts",
         "src/safe/lazy.ts",
@@ -219,7 +285,8 @@ describe("external Beta static route and module graph guards", () => {
     if (!scanExternalBetaSurface) return;
     const root = createFixture({
       "src/app/index.tsx":
-        "import '@/missing/alias'; const missing = require('./missing-relative'); export default missing;",
+        "import '@/missing/alias'; import '@/safe/android-only'; const missing = require('./missing-relative'); export default missing;",
+      "src/safe/android-only.android.ts": "export const androidOnly = true;",
     });
 
     const report = scanExternalBetaSurface(root);
@@ -227,6 +294,7 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.unresolvedLocalSpecifiers).toEqual([
       { importer: "src/app/index.tsx", specifier: "./missing-relative" },
       { importer: "src/app/index.tsx", specifier: "@/missing/alias" },
+      { importer: "src/app/index.tsx", specifier: "@/safe/android-only" },
     ]);
     expect(report.ok).toBe(false);
   });
