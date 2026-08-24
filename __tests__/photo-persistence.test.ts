@@ -3,6 +3,8 @@ import * as MediaLibrary from "expo-media-library";
 
 import {
   ensureMemoryPhotosPersisted,
+  deleteAccountPhotoDirectory,
+  deleteAccountPhotoDirectoryStrict,
   deleteMemoryPhotoDirectory,
   cleanupMigratedLegacyPhotoUris,
   persistPhotoUri,
@@ -147,6 +149,10 @@ describe("persistPhotoUri", () => {
 });
 
 describe("photo directory cleanup", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("deletes only the selected account and memory directory", async () => {
     await deleteMemoryPhotoDirectory("account:owner@example.com", "memory/1");
     expect(deleteAsyncMock).toHaveBeenCalledWith(
@@ -164,6 +170,22 @@ describe("photo directory cleanup", () => {
     expect(deleteAsyncMock).not.toHaveBeenCalledWith(legacyUnused, expect.anything());
     expect(deleteAsyncMock).not.toHaveBeenCalledWith(legacyReferenced, expect.anything());
     expect(deleteAsyncMock).not.toHaveBeenCalledWith("file:///var/mobile/external.jpg", expect.anything());
+  });
+
+  it("propagates account-directory deletion failures on the strict account-deletion path", async () => {
+    deleteAsyncMock.mockRejectedValueOnce(new Error("filesystem unavailable"));
+
+    await expect(
+      deleteAccountPhotoDirectoryStrict("account:owner@example.com"),
+    ).rejects.toThrow("filesystem unavailable");
+  });
+
+  it("keeps ordinary album cleanup best-effort", async () => {
+    deleteAsyncMock.mockRejectedValueOnce(new Error("filesystem unavailable"));
+
+    await expect(
+      deleteAccountPhotoDirectory("account:owner@example.com"),
+    ).resolves.toBeUndefined();
   });
 });
 

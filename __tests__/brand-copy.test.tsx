@@ -62,7 +62,7 @@ describe("OneTapReality brand copy", () => {
     expect(expo.scheme).toBe("onetapreality");
     expect(expo.android).toBeUndefined();
     const imagePickerPlugin = expo.plugins.find((plugin: unknown) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
-    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Allow OneTapReality to access your selected photos to create albums.");
+    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Choose specific photos to create or edit a travel album.");
     expect(expo.plugins).toContainEqual(
       expect.arrayContaining([
         "expo-splash-screen",

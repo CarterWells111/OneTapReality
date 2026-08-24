@@ -69,10 +69,15 @@ export async function deleteMemoryPhotoDirectory(accountKey: LocalLibraryOwner, 
 
 export async function deleteAccountPhotoDirectory(accountKey: LocalLibraryOwner): Promise<void> {
   try {
-    await FileSystem.deleteAsync(getAccountPhotosDirectory(accountKey), { idempotent: true });
+    await deleteAccountPhotoDirectoryStrict(accountKey);
   } catch (error) {
     console.warn("[photo-persistence] 无法清理账号照片目录：", error);
   }
+}
+
+/** Account deletion must fail closed so the UI can retry or direct the user to support. */
+export async function deleteAccountPhotoDirectoryStrict(accountKey: LocalLibraryOwner): Promise<void> {
+  await FileSystem.deleteAsync(getAccountPhotosDirectory(accountKey), { idempotent: true });
 }
 
 function getExtension(uri: string): string {
