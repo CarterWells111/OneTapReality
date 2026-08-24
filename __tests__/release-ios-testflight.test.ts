@@ -148,6 +148,7 @@ describe("iOS TestFlight release guards", () => {
       gitCommitHash: "abc123",
       fingerprintHash: "fingerprint-123",
       requireArtifactMetadata: true,
+      expectedAppBuildVersion: 23,
     };
     const validBuild = {
       id: "build-112",
@@ -156,6 +157,7 @@ describe("iOS TestFlight release guards", () => {
       distribution: "STORE",
       buildProfile: "beta-external",
       appVersion: "1.1.2",
+      appBuildVersion: "23",
       gitCommitHash: "abc123",
       fingerprint: { hash: "fingerprint-123" },
       app: { id: "project-123" },
@@ -167,11 +169,81 @@ describe("iOS TestFlight release guards", () => {
       { gitCommitHash: "different" },
       { fingerprint: { hash: "different" } },
       { fingerprint: null },
+      { appBuildVersion: "22" },
+      { appBuildVersion: undefined },
+      { appBuildVersion: "24" },
     ]) {
       expect(() =>
         assertBuildMatchesSubmission({ ...validBuild, ...changed }, expected),
       ).toThrow();
     }
+  });
+
+  it("requires every resumed external build to be numeric and newer than Build 22", () => {
+    const { assertBuildMatchesSubmission } = require(modulePath) as {
+      assertBuildMatchesSubmission: (
+        build: Record<string, unknown>,
+        expected: Record<string, unknown>,
+      ) => void;
+    };
+    const expected = {
+      buildId: "build-resume",
+      profile: "beta-external",
+      projectId: "project-123",
+    };
+    const validBuild = {
+      id: "build-resume",
+      status: "FINISHED",
+      platform: "IOS",
+      distribution: "STORE",
+      buildProfile: "beta-external",
+      appBuildVersion: "23",
+      app: { id: "project-123" },
+    };
+
+    expect(() => assertBuildMatchesSubmission(validBuild, expected)).not.toThrow();
+    for (const appBuildVersion of ["22", undefined, "not-a-number"]) {
+      expect(() =>
+        assertBuildMatchesSubmission({ ...validBuild, appBuildVersion }, expected),
+      ).toThrow(/appBuildVersion/);
+    }
+
+    const internalExpected = {
+      ...expected,
+      profile: "staging-testflight",
+    };
+    expect(() =>
+      assertBuildMatchesSubmission(
+        {
+          ...validBuild,
+          buildProfile: "staging-testflight",
+          appBuildVersion: undefined,
+        },
+        internalExpected,
+      ),
+    ).not.toThrow();
+  });
+
+  it("derives the external candidate from the authoritative remote iOS build number", () => {
+    const {
+      getExpectedExternalBuildNumber,
+      parseRemoteBuildNumber,
+    } = require(modulePath) as {
+      getExpectedExternalBuildNumber: (output: string) => number;
+      parseRemoteBuildNumber: (output: string) => number | null;
+    };
+
+    expect(parseRemoteBuildNumber("iOS build number: 22")).toBe(22);
+    expect(parseRemoteBuildNumber("buildNumber - 41")).toBe(41);
+    expect(parseRemoteBuildNumber('{"buildNumber":"22"}')).toBe(22);
+    expect(getExpectedExternalBuildNumber("iOS build number: 22")).toBe(23);
+    expect(getExpectedExternalBuildNumber("buildNumber - 41")).toBe(42);
+    expect(() => getExpectedExternalBuildNumber("no remote version available")).toThrow(
+      "remote iOS build number",
+    );
+    expect(() => getExpectedExternalBuildNumber("iOS build number: 21")).toThrow(
+      "at least 23",
+    );
   });
 
   it("uses the EAS build fragment version field and fixed staging follow-up", () => {

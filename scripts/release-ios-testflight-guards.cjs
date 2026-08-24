@@ -10,6 +10,64 @@ function assertApprovalSequence({ profile, submit, buildId }) {
   }
 }
 
+const MINIMUM_EXTERNAL_BUILD_NUMBER = 23;
+
+function parseRemoteBuildNumberValue(value) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^\d+$/u.test(value)) return null;
+  const buildNumber = Number(value);
+  return Number.isSafeInteger(buildNumber) ? buildNumber : null;
+}
+
+function parseRemoteBuildNumber(output) {
+  const normalized = String(output ?? "").replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+  const jsonStart = normalized.indexOf("{");
+  const jsonEnd = normalized.lastIndexOf("}");
+  if (jsonStart !== -1 && jsonEnd > jsonStart) {
+    try {
+      const payload = JSON.parse(normalized.slice(jsonStart, jsonEnd + 1));
+      const jsonBuildNumber = parseRemoteBuildNumberValue(payload?.buildNumber);
+      if (jsonBuildNumber !== null) return jsonBuildNumber;
+    } catch {
+      // Fall back to the stable human-readable output used by older EAS CLI versions.
+    }
+  }
+  const match =
+    normalized.match(/\bios\s+build\s*number\s*(?:[-:=]\s*)?(\d+)\b/iu) ??
+    normalized.match(/\bbuildnumber\s*(?:[-:=]\s*)?(\d+)\b/iu);
+  if (!match) return null;
+  return parseRemoteBuildNumberValue(match[1]);
+}
+
+function getExpectedExternalBuildNumber(output) {
+  const currentBuildNumber = parseRemoteBuildNumber(output);
+  if (currentBuildNumber === null) {
+    throw new Error("Could not read the authoritative remote iOS build number from EAS");
+  }
+  const expectedBuildNumber = currentBuildNumber + 1;
+  if (!Number.isSafeInteger(expectedBuildNumber)) {
+    throw new Error("The next remote iOS build number is outside the safe integer range");
+  }
+  if (expectedBuildNumber < MINIMUM_EXTERNAL_BUILD_NUMBER) {
+    throw new Error(
+      `External Beta build number must be at least ${MINIMUM_EXTERNAL_BUILD_NUMBER}; ` +
+        `remote ${currentBuildNumber} would produce ${expectedBuildNumber}`,
+    );
+  }
+  return expectedBuildNumber;
+}
+
+function parseAppBuildVersion(value) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^[1-9]\d*$/u.test(value)) return null;
+  const buildNumber = Number(value);
+  return Number.isSafeInteger(buildNumber) ? buildNumber : null;
+}
+
 function assertReleaseOptions(options) {
   const { profile, profileExplicit, checks, allowDirty } = options;
   if (profile === "beta-external") {
@@ -65,6 +123,7 @@ function assertBuildMatchesSubmission(
     gitCommitHash,
     fingerprintHash,
     requireArtifactMetadata = false,
+    expectedAppBuildVersion,
   },
 ) {
   const problems = [];
@@ -86,6 +145,27 @@ function assertBuildMatchesSubmission(
   }
   if (appVersion && build?.appVersion !== appVersion) {
     problems.push(`appVersion ${build?.appVersion ?? "missing"} != ${appVersion}`);
+  }
+
+  if (profile === "beta-external") {
+    const actualBuildNumber = parseAppBuildVersion(build?.appBuildVersion);
+    if (actualBuildNumber === null) {
+      problems.push("appBuildVersion must be a numeric external Beta build number");
+    } else {
+      if (actualBuildNumber < MINIMUM_EXTERNAL_BUILD_NUMBER) {
+        problems.push(
+          `appBuildVersion ${actualBuildNumber} must be at least ${MINIMUM_EXTERNAL_BUILD_NUMBER}`,
+        );
+      }
+      if (
+        expectedAppBuildVersion !== undefined &&
+        actualBuildNumber !== expectedAppBuildVersion
+      ) {
+        problems.push(
+          `appBuildVersion ${actualBuildNumber} != expected remote next ${expectedAppBuildVersion}`,
+        );
+      }
+    }
   }
 
   const actualGitCommitHash = build?.gitCommitHash;
@@ -116,4 +196,6 @@ module.exports = {
   formatBuildVersion,
   formatResumeCommand,
   getSubmissionFollowUp,
+  getExpectedExternalBuildNumber,
+  parseRemoteBuildNumber,
 };

@@ -18,7 +18,9 @@ const {
   assertReleaseOptions,
   formatBuildVersion,
   formatResumeCommand,
+  getExpectedExternalBuildNumber,
   getSubmissionFollowUp,
+  parseRemoteBuildNumber,
 } = require("./release-ios-testflight-guards.cjs");
 
 const EAS_CLI = process.env.EAS_CLI ?? "eas-cli@latest";
@@ -281,6 +283,7 @@ async function main() {
   let finishedBuild;
   let gitCommitHash;
   let fingerprintHash;
+  let expectedAppBuildVersion;
   const validateLocalRelease = !buildId || options.profile === EXTERNAL_BETA_PROFILE;
 
   if (validateLocalRelease) {
@@ -332,12 +335,25 @@ async function main() {
   if (!buildId) {
     step("8. EAS account and credentials");
     npx(["whoami"]);
-    const version = npx(["build:version:get", "--platform", "ios", "--profile", options.profile], {
+    const version = npx(["build:version:get", "--platform", "ios", "--profile", options.profile, "--json", "--non-interactive"], {
       capture: true,
-      allowFailure: true,
+      allowFailure: options.profile !== EXTERNAL_BETA_PROFILE,
     });
-    const currentBuildNumber = version.stdout.match(/buildNumber\s*[-:]?\s*(\d+)/i)?.[1];
-    if (currentBuildNumber) console.log(`  current remote buildNumber: ${currentBuildNumber} (next: ${Number(currentBuildNumber) + 1})`);
+    const versionOutput = `${version.stdout}\n${version.stderr}`;
+    if (options.profile === EXTERNAL_BETA_PROFILE) {
+      expectedAppBuildVersion = getExpectedExternalBuildNumber(versionOutput);
+      console.log(
+        `  current remote buildNumber: ${expectedAppBuildVersion - 1} ` +
+          `(required next: ${expectedAppBuildVersion})`,
+      );
+    } else {
+      const currentBuildNumber = parseRemoteBuildNumber(versionOutput);
+      if (currentBuildNumber !== null) {
+        console.log(
+          `  current remote buildNumber: ${currentBuildNumber} (next: ${currentBuildNumber + 1})`,
+        );
+      }
+    }
 
     step(`9. EAS build (${options.profile})`);
     const build = startBuild(options.profile);
@@ -361,6 +377,8 @@ async function main() {
     gitCommitHash: options.profile === EXTERNAL_BETA_PROFILE ? gitCommitHash : undefined,
     fingerprintHash: options.profile === EXTERNAL_BETA_PROFILE ? fingerprintHash : undefined,
     requireArtifactMetadata: options.profile === EXTERNAL_BETA_PROFILE,
+    expectedAppBuildVersion:
+      options.profile === EXTERNAL_BETA_PROFILE ? expectedAppBuildVersion : undefined,
   });
 
   if (!options.submit) {

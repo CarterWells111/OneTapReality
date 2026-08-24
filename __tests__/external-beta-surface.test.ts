@@ -53,5 +53,13 @@ describe("external Beta release surface", () => {
     expect(releaseScript).toContain('"fingerprint:generate"');
     expect(releaseScript).toContain("gitCommitHash");
     expect(releaseScript).toContain("fingerprintHash");
+    expect(releaseScript).toContain("expectedAppBuildVersion");
+    expect(releaseScript).toContain("getExpectedExternalBuildNumber");
+    expect(releaseScript).toContain(
+      "allowFailure: options.profile !== EXTERNAL_BETA_PROFILE",
+    );
+    expect(releaseScript.indexOf("getExpectedExternalBuildNumber(versionOutput)")).toBeLessThan(
+      releaseScript.indexOf("startBuild(options.profile)"),
+    );
   });
 });
