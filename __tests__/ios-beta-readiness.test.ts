@@ -159,6 +159,21 @@ describe("iOS Beta readiness preflight", () => {
   });
 
   it.each([
+    "APPLE_REVIEW_EMAIL",
+    "APPLE_REVIEW_CODE",
+    "APPLE_REVIEW_ACCESS_ENABLED",
+    "APPLE_REVIEW_FIXTURE_SECRET",
+    "APPLE_REVIEW_CLAIM_TOKEN",
+  ])("rejects server-only Apple review credential %s in the external build env", (key) => {
+    const input = validConfig();
+    Object.assign(input.eas.build["beta-external"].env, { [key]: "must-not-ship" });
+
+    expect(() => checkIosBetaReadiness(input, { profile: "beta-external" })).toThrow(
+      `EAS build env must not contain server-only secret ${key}`,
+    );
+  });
+
+  it.each([
     ["distribution", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].distribution = "internal"; }],
     ["environment", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].environment = "production"; }],
     ["API origin", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].env.EXPO_PUBLIC_API_ORIGIN = "https://api.onetapreality.com"; }],

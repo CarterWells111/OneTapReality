@@ -1,5 +1,11 @@
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
-jest.mock("../src/server/gifts/email-auth", () => ({ createGiftEmailCode: jest.fn(async () => ({ email: "owner@example.com", code: "123456", codeHash: "code-hash", expiresAt: "2026-07-25T00:05:00.000Z" })), normalizeGiftEmail: jest.fn((email: string) => email.trim().toLowerCase()) }));
+jest.mock("../src/server/gifts/email-auth", () => {
+  const actual = jest.requireActual("../src/server/gifts/email-auth") as typeof import("../src/server/gifts/email-auth");
+  return {
+    createGiftEmailCode: jest.fn(async () => ({ email: "owner@example.com", code: "123456", codeHash: "code-hash", expiresAt: "2026-07-25T00:05:00.000Z" })),
+    normalizeGiftEmail: actual.normalizeGiftEmail,
+  };
+});
 jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificationEmail: jest.fn(async () => undefined) }));
 jest.mock("../src/server/auth/repository", () => ({
   createAuthEmailCode: jest.fn(async () => undefined),
@@ -54,8 +60,6 @@ describe("unified account authentication APIs", () => {
   });
 
   it("rejects an invalid email as a client error", async () => {
-    const { createGiftEmailCode } = jest.requireMock("../src/server/gifts/email-auth") as { createGiftEmailCode: jest.Mock };
-    createGiftEmailCode.mockRejectedValueOnce(new Error("Invalid email address"));
     const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "not-an-email" }) }));
     expect(response.status).toBe(400);
   });
