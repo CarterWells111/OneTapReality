@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { acceptAccountDeletion, createAccountDeletionChallenge } from "../src/server/auth/account-deletion";
 import { createAuthSession, createOrGetUserByEmail } from "../src/server/auth/repository";
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { appMaintenanceState, giftMediaCleanupJobs } from "../src/server/db/schema";
+import { appMaintenanceState, giftContentReports, giftMediaCleanupJobs } from "../src/server/db/schema";
 import { claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession } from "../src/server/gifts/repository";
 import type { PrivateMediaStore } from "../src/server/gifts/r2-media";
 import { runGiftMaintenance } from "../src/server/maintenance/run-gift-maintenance";
@@ -147,5 +147,41 @@ describe("gift maintenance runner", () => {
       dateNow.mockRestore();
       await close();
     }
+  });
+
+  it("retries a persisted content-report support notice after delivery fails", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const reporter = await createOrGetUserByEmail(db, "reporter@example.com", "2026-08-24T12:00:00.000Z");
+      await createGift(db, { id: "gift-report", tokenHash: "report-token", createdAt: "2026-08-24T12:00:00.000Z" });
+      await db.insert(giftContentReports).values({
+        id: "report-retry", giftId: "gift-report", reporterUserId: reporter.id,
+        reason: "spam", details: "private report body", snapshotVersion: 2,
+        state: "open", disposition: null, dispositionNote: null, disposedAt: null,
+        supportNotifiedAt: null, createdAt: "2026-08-24T12:00:00.000Z",
+      });
+      const sendContentReportNotice = jest.fn()
+        .mockRejectedValueOnce(new Error("mail unavailable with private report body"))
+        .mockResolvedValueOnce(undefined);
+
+      const failed = await runGiftMaintenance({
+        db, store: createStore(), mode: "scheduled", now: new Date("2026-08-24T12:01:00.000Z"), sendContentReportNotice,
+      });
+      let [report] = await db.select().from(giftContentReports).where(eq(giftContentReports.id, "report-retry"));
+      expect(failed).toEqual(expect.objectContaining({ attemptedContentReportNotices: 1, notifiedContentReports: 0, failedContentReportNotices: 1 }));
+      expect(report.supportNotifiedAt).toBeNull();
+
+      const retried = await runGiftMaintenance({
+        db, store: createStore(), mode: "scheduled", now: new Date("2026-08-24T12:02:00.000Z"), sendContentReportNotice,
+      });
+      [report] = await db.select().from(giftContentReports).where(eq(giftContentReports.id, "report-retry"));
+      expect(retried).toEqual(expect.objectContaining({ attemptedContentReportNotices: 1, notifiedContentReports: 1, failedContentReportNotices: 0 }));
+      expect(report.supportNotifiedAt).toBe("2026-08-24T12:02:00.000Z");
+      expect(sendContentReportNotice).toHaveBeenLastCalledWith({
+        reportId: "report-retry", giftId: "gift-report", snapshotVersion: 2, reason: "spam",
+      });
+      expect(JSON.stringify(sendContentReportNotice.mock.calls)).not.toMatch(/reporter@example\.com|private report body/u);
+    } finally { await close(); }
   });
 });

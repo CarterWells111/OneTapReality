@@ -14,12 +14,18 @@ import {
   accountDeletionChallenges,
   accountDeletionMediaObjects,
   authSessions,
+  giftContentReports,
   giftMediaCleanupJobs,
   giftPublishSessions,
   gifts,
+  sharedAlbums,
+  userBlocks,
   users,
 } from "../src/server/db/schema";
+import { blockGiftUser, reportGiftContent } from "../src/server/gifts/content-safety";
 import {
+  activateGiftViewerByTokenHash,
+  addGiftMember,
   claimGiftByTokenHash,
   createGift,
   createGiftPublishSession,
@@ -203,6 +209,68 @@ describe("account deletion repository", () => {
       await expect(db.select().from(accountDeletionJobs)).resolves.toEqual([
         expect.objectContaining({ id: "receipt-1", userId: null, accountEmail: null, state: "completed", completedAt: "2026-08-24T10:01:00.000Z" }),
       ]);
+    } finally { await close(); }
+  });
+
+  it("removes report and block identities when the deletion worker completes", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const deletingUser = await seedAccount(db);
+      const firstOwner = await createOrGetUserByEmail(db, "first-owner@example.com", now);
+      const secondOwner = await createOrGetUserByEmail(db, "second-owner@example.com", now);
+
+      await createGift(db, { id: "shared-report", tokenHash: "shared-report-token", createdAt: now });
+      await claimGiftByTokenHash(db, "shared-report-token", firstOwner.email, now);
+      await addGiftMember(db, "shared-report", deletingUser.email, now, "viewer");
+      await activateGiftViewerByTokenHash(db, "shared-report-token", deletingUser, now);
+      await db.insert(sharedAlbums).values({
+        id: "shared-report-album", giftId: "shared-report", sourceMemoryId: "memory-1",
+        title: "Shared", travelDate: null, publishedAt: now, version: 1,
+        coverObjectKey: null, coverContentType: null, coverByteSize: null,
+      });
+      await reportGiftContent(db, {
+        giftId: "shared-report", reporterUserId: deletingUser.id, reporterEmail: deletingUser.email,
+        reason: "other", details: "identifiable report details", now,
+      });
+      await blockGiftUser(db, {
+        giftId: "shared-report", actorUserId: deletingUser.id, actorEmail: deletingUser.email,
+        targetEmail: firstOwner.email, now,
+      });
+
+      await createGift(db, { id: "shared-blocked", tokenHash: "shared-blocked-token", createdAt: now });
+      await claimGiftByTokenHash(db, "shared-blocked-token", secondOwner.email, now);
+      await addGiftMember(db, "shared-blocked", deletingUser.email, now, "viewer");
+      await blockGiftUser(db, {
+        giftId: "shared-blocked", actorUserId: secondOwner.id, actorEmail: secondOwner.email,
+        targetEmail: deletingUser.email, now,
+      });
+      // A block may predate the blocked account, so email cleanup must not depend on a populated FK.
+      await db.update(userBlocks).set({ blockedUserId: null }).where(eq(userBlocks.blockedEmail, deletingUser.email));
+      expect(await db.select().from(giftContentReports)).toHaveLength(1);
+      expect(await db.select().from(userBlocks)).toHaveLength(2);
+
+      await createAccountDeletionChallenge(db, {
+        id: "challenge-safety", userId: deletingUser.id, sessionId: "session-current",
+        codeHash: "hash", createdAt: now, expiresAt,
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "challenge-safety", userId: deletingUser.id, sessionId: "session-current",
+        codeHash: "hash", confirmation: "DELETE", receiptId: "receipt-safety", now, completeBy,
+      });
+      await expect(processAccountDeletionJobs({
+        db, store: createStore(), now: new Date("2026-08-24T10:01:00.000Z"), notifyFailure: jest.fn(),
+      })).resolves.toEqual(expect.objectContaining({ completed: 1, failed: 0 }));
+
+      await expect(db.select().from(giftContentReports)).resolves.toEqual([]);
+      await expect(db.select().from(userBlocks)).resolves.toEqual([]);
+      await expect(db.select({ id: users.id }).from(users)).resolves.toEqual(expect.arrayContaining([
+        { id: firstOwner.id }, { id: secondOwner.id },
+      ]));
+      const [receipt] = await db.select().from(accountDeletionJobs).where(eq(accountDeletionJobs.id, "receipt-safety"));
+      expect(receipt).toEqual(expect.objectContaining({ state: "completed", userId: null, accountEmail: null }));
+      expect(JSON.stringify(receipt)).not.toContain(deletingUser.email);
+      expect(JSON.stringify(receipt)).not.toContain(deletingUser.id);
     } finally { await close(); }
   });
 

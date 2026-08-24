@@ -1,6 +1,7 @@
 import {
   sendAccountDeletionFailureEmail,
   sendAccountDeletionVerificationEmail,
+  sendGiftContentReportSupportEmail,
   sendGiftVerificationEmail,
 } from "../src/server/gifts/resend-email-sender";
 
@@ -43,6 +44,34 @@ describe("Resend gift email sender", () => {
     const body = JSON.parse((request.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
     expect(body).toEqual(expect.objectContaining({ to: ["support@onetapreality.com"], text: expect.stringContaining("receipt-1") }));
     expect(JSON.stringify(body)).not.toMatch(/owner@example\.com|private\/photo/u);
+  });
+
+  it("sends a sanitized content report notice without reporter text or identity", async () => {
+    const request = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ id: "email-1" }), { status: 200 }));
+
+    await sendGiftContentReportSupportEmail({
+      apiKey: "resend-key",
+      from: "support@onetapreality.com",
+      to: "support@onetapreality.com",
+      reportId: "report-1",
+      giftId: "gift-1",
+      snapshotVersion: 7,
+      reason: "harassment",
+      request,
+    });
+
+    const body = JSON.parse((request.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body).toEqual(expect.objectContaining({
+      to: ["support@onetapreality.com"],
+      subject: "OneTapReality 礼品内容举报待处理",
+      text: expect.stringContaining("report-1"),
+    }));
+    expect(JSON.stringify(body)).toContain("gift-1");
+    expect(JSON.stringify(body)).toContain("版本 7");
+    expect(JSON.stringify(body)).not.toMatch(/reporter@example\.com|令人不适|gift-token|https:\/\//u);
+    expect((request.mock.calls[0][1] as RequestInit).headers).toEqual(expect.objectContaining({
+      "Idempotency-Key": "gift-content-report-report-1",
+    }));
   });
 
   it("labels an account deletion code as permanent deletion rather than gift access", async () => {

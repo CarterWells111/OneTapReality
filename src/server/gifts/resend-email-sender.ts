@@ -34,6 +34,62 @@ export async function sendAccountDeletionVerificationEmail({ apiKey, from, email
   if (!response.ok) throw new Error("Unable to send account deletion verification email");
 }
 
+type SendGiftContentReportSupportEmailInput = {
+  apiKey: string;
+  from: string;
+  to: string;
+  reportId: string;
+  giftId: string;
+  snapshotVersion: number;
+  reason: "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
+  request?: typeof fetch;
+};
+
+/** Deliberately excludes reporter identity, free-form details, media, URLs and gift tokens. */
+export async function sendGiftContentReportSupportEmail({
+  apiKey,
+  from,
+  to,
+  reportId,
+  giftId,
+  snapshotVersion,
+  reason,
+  request = fetch,
+}: SendGiftContentReportSupportEmailInput): Promise<void> {
+  const response = await request("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `gift-content-report-${reportId}`,
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: "OneTapReality 礼品内容举报待处理",
+      text: `举报记录 ${reportId} 等待处置。礼品内部编号：${giftId}；快照版本 ${snapshotVersion}；原因代码：${reason}。请仅在受控支持工具中查看处置记录。`,
+    }),
+  });
+  if (!response.ok) throw new Error("Unable to send gift content report support notice");
+}
+
+export async function sendGiftContentReportSupportEmailFromEnvironment(input: {
+  reportId: string;
+  giftId: string;
+  snapshotVersion: number;
+  reason: "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
+}): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.GIFT_EMAIL_FROM;
+  if (!apiKey || !from) throw new Error("Gift content support email is not configured");
+  await sendGiftContentReportSupportEmail({
+    ...input,
+    apiKey,
+    from,
+    to: process.env.GIFT_CONTENT_SUPPORT_EMAIL ?? "support@onetapreality.com",
+  });
+}
+
 type SendAccountDeletionFailureEmailInput = {
   apiKey: string;
   from: string;

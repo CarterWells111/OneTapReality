@@ -12,6 +12,7 @@ export type AuthenticatedAccountSession = { accessToken: string; user: Authentic
 export type AccountDeletionChallenge = { challengeId: string; expiresAt: string };
 export type AccountDeletionReceipt = { receiptId: string; completeBy: string };
 export type GiftMemberRole = "owner" | "viewer" | "editor";
+export type GiftContentReportReason = "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
 export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
 export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
 
@@ -231,6 +232,29 @@ export class BackendApiClient {
 
   getInvitedGiftAlbum(id: string, accessToken: string): Promise<InvitedGiftAlbum> {
     return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  reportGiftContent(id: string, accessToken: string, reason: GiftContentReportReason, details?: string): Promise<{ status: "created" | "existing"; report: { id: string; snapshotVersion: number } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ reason, ...(details ? { details } : {}) }),
+    });
+  }
+
+  blockGiftUser(id: string, accessToken: string, target: { targetUserId?: string; targetEmail?: string } = {}): Promise<{ status: "created" | "existing"; block: { id: string } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(target),
+    });
+  }
+
+  async leaveGiftMembership(id: string, accessToken: string): Promise<void> {
+    await this.send<null>(`/api/gifts/${encodeURIComponent(id)}/membership`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
   }
 
   startInvitedGiftPublish(id: string, accessToken: string, payload: SharedAlbumPublishPayload) {

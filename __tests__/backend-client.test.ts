@@ -117,6 +117,29 @@ describe("backend client", () => {
     ]);
   });
 
+  it("uses authenticated internal gift-id endpoints for report, block and leave", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", report: { id: "report-1", snapshotVersion: 4 } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", block: { id: "block-1" } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.reportGiftContent("gift-1", "session", "harassment", "说明")).resolves.toEqual({ status: "created", report: { id: "report-1", snapshotVersion: 4 } });
+    await expect(client.blockGiftUser("gift-1", "session", { targetEmail: "owner@example.com" })).resolves.toEqual({ status: "created", block: { id: "block-1" } });
+    await expect(client.leaveGiftMembership("gift-1", "session")).resolves.toBeUndefined();
+
+    expect(request).toHaveBeenNthCalledWith(1, "/api/gifts/gift-1/reports", expect.objectContaining({
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer session" },
+      body: JSON.stringify({ reason: "harassment", details: "说明" }),
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, "/api/gifts/gift-1/blocks", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ targetEmail: "owner@example.com" }),
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, "/api/gifts/gift-1/membership", expect.objectContaining({ method: "DELETE" }));
+  });
+
   it("serializes the shared album title and travel date for every publish endpoint", async () => {
     const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ publicationId: "publish-1", uploads: [], coverUpload: null, expiresAt: "2026-07-24T00:10:00.000Z" }), { status: 201 }));
     const client = new BackendApiClient(request);

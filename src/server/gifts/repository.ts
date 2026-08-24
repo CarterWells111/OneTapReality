@@ -2,7 +2,8 @@ import { and, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "dr
 
 import type { BackendDatabase } from "../db/client";
 import type { GiftMemberRole } from "../db/schema";
-import { giftCardEvents, giftCards, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, users } from "../db/schema";
+import { giftCardEvents, giftCards, giftContentReports, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, userBlocks, users } from "../db/schema";
+import { blockedEmailPairCondition } from "./content-safety";
 
 export type GiftPublicationPayload = {
   sourceMemoryId: string;
@@ -23,6 +24,11 @@ export class GiftAlbumVersionConflictError extends Error {
 export class GiftPublicationUnavailableError extends Error {
   readonly code = "gift_publication_unavailable";
   constructor() { super("This gift is no longer available for publishing"); }
+}
+
+export class GiftRelationshipBlockedError extends Error {
+  readonly code = "gift_relationship_blocked";
+  constructor() { super("These accounts cannot share gifts"); }
 }
 
 export async function resolveExistingGiftMedia(db: BackendDatabase, giftId: string, baseVersion: number, refs: { position: number; mediaId: string }[]) {
@@ -77,6 +83,17 @@ export async function claimGiftByTokenHash(
 ): Promise<{ id: string; status: "bound"; ownerEmail: string } | null> {
   const ownerEmail = normalizeEmail(email);
   return db.transaction(async (tx) => {
+    const priorMembers = await tx.select({ email: giftMembers.email })
+      .from(gifts)
+      .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
+      .where(eq(gifts.tokenHash, tokenHash));
+    for (const member of priorMembers) {
+      const [blocked] = await tx.select({ id: userBlocks.id })
+        .from(userBlocks)
+        .where(blockedEmailPairCondition(ownerEmail, member.email))
+        .limit(1);
+      if (blocked) throw new GiftRelationshipBlockedError();
+    }
     // This conditional update is the ownership lock: only one concurrent claimant can win.
     const updated = await tx.update(gifts)
       .set({ status: "bound", claimedAt })
@@ -134,8 +151,9 @@ export async function listInvitedGifts(db: BackendDatabase, userId: string, emai
     .from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
     .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, userId)))
     .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-    .where(and(eq(giftMembers.email, viewerEmail), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), eq(gifts.status, "bound")));
+    .where(and(eq(giftMembers.email, viewerEmail), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), eq(gifts.status, "bound"), isNull(giftContentReports.id)));
 }
 
 export async function activateGiftViewerByTokenHash(
@@ -145,13 +163,26 @@ export async function activateGiftViewerByTokenHash(
   activatedAt: string,
 ): Promise<{ giftId: string; role: "viewer" | "editor"; albumPublished: boolean } | null> {
   return db.transaction(async (tx) => {
+    const lockedGift = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` })
+      .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "bound")))
+      .returning({ id: gifts.id });
+    if (!lockedGift.length) return null;
     const [eligible] = await tx.select({ memberId: giftMembers.id, giftId: gifts.id, role: giftMembers.role, albumId: sharedAlbums.id })
       .from(gifts)
       .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
       .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-      .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(account.email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor"))))
+      .where(and(eq(gifts.id, lockedGift[0].id), eq(giftMembers.email, normalizeEmail(account.email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor"))))
       .limit(1);
     if (!eligible) return null;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, eligible.giftId), eq(giftMembers.role, "owner")))
+      .limit(1);
+    if (!ownerMember) return null;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(account.email, ownerMember.email))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     await tx.insert(giftMemberActivations)
       .values({ memberId: eligible.memberId, userId: account.id, activatedAt })
       .onConflictDoUpdate({ target: giftMemberActivations.memberId, set: { userId: account.id, activatedAt } });
@@ -180,6 +211,14 @@ export async function addGiftMember(db: BackendDatabase, giftId: string, email: 
     if (!locked.length) return false;
     const members = await tx.select({ email: giftMembers.email }).from(giftMembers).where(eq(giftMembers.giftId, giftId));
     if (members.length >= 3 || members.some((member) => member.email === normalized)) return false;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, giftId), eq(giftMembers.role, "owner"))).limit(1);
+    if (!ownerMember) return false;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(ownerMember.email, normalized))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     await tx.insert(giftMembers).values({ id: crypto.randomUUID(), giftId, email: normalized, role, createdAt });
     return true;
   });
@@ -213,11 +252,20 @@ export async function getGiftAccessByTokenHash(db: BackendDatabase, tokenHash: s
 
 export async function updateGiftMemberRole(db: BackendDatabase, giftId: string, email: string, role: "viewer" | "editor"): Promise<boolean> {
   if (role !== "viewer" && role !== "editor") return false;
+  const normalized = normalizeEmail(email);
   return db.transaction(async (tx) => {
     const locked = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` }).where(eq(gifts.id, giftId)).returning({ id: gifts.id });
     if (!locked.length) return false;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, giftId), eq(giftMembers.role, "owner"))).limit(1);
+    if (!ownerMember) return false;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(ownerMember.email, normalized))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     const rows = await tx.update(giftMembers).set({ role }).where(and(
-      eq(giftMembers.giftId, giftId), eq(giftMembers.email, normalizeEmail(email)),
+      eq(giftMembers.giftId, giftId), eq(giftMembers.email, normalized),
       or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")),
     )).returning({ id: giftMembers.id });
     return rows.length === 1;
@@ -341,8 +389,9 @@ export async function getActivatedGiftAccessByGiftId(db: BackendDatabase, giftId
     .from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
     .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, userId)))
     .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-    .where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId)))
+    .where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), isNull(giftContentReports.id)))
     .limit(1);
   return access ?? null;
 }

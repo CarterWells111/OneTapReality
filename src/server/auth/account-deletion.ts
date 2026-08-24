@@ -18,6 +18,7 @@ import {
   gifts,
   sharedAlbumMedia,
   sharedAlbums,
+  userBlocks,
   users,
 } from "../db/schema";
 import type { PrivateMediaStore } from "../gifts/r2-media";
@@ -334,6 +335,8 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
     await tx.delete(giftManagementRequests).where(eq(giftManagementRequests.targetEmail, email));
     await tx.delete(giftPublishSessions).where(eq(giftPublishSessions.ownerEmail, email));
     await tx.delete(giftMembers).where(eq(giftMembers.email, email));
+    // Email fallback covers blocks created before the blocked party registered and received a user id.
+    await tx.delete(userBlocks).where(or(eq(userBlocks.blockerEmail, email), eq(userBlocks.blockedEmail, email)));
     await tx.delete(giftEmailCodes).where(eq(giftEmailCodes.email, email));
     await tx.delete(giftSessions).where(eq(giftSessions.email, email));
     await tx.delete(authEmailCodes).where(eq(authEmailCodes.email, email));

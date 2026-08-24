@@ -1,7 +1,7 @@
 import { getServerDatabase } from "../../../../server/db/client";
 import { addGiftMember, getGiftAccessByTokenHash, listGiftMembers, removeGiftMember, updateGiftMemberRole } from "../../../../server/gifts/repository";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
-import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { ApiError, errorResponse, isErrorWithCode } from "../../../../server/http/errors";
 import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
 import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     const members = await listGiftMembers(db, giftId);
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ members, maximumMembers: 3 }, { status: 201 });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(isErrorWithCode(error, "gift_relationship_blocked") ? new ApiError(409, error.code, "These accounts cannot share gifts") : error); }
 }
 
 export async function PATCH(request: Request, { token }: { token: string }): Promise<Response> {
@@ -41,7 +41,7 @@ export async function PATCH(request: Request, { token }: { token: string }): Pro
     const { db, giftId } = await requireOwner(request, token);
     if (!await updateGiftMemberRole(db, giftId, email, role)) throw new ApiError(404, "gift_member_not_found", "That invited member was not found");
     return Response.json({ members: await listGiftMembers(db, giftId), maximumMembers: 3 });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(isErrorWithCode(error, "gift_relationship_blocked") ? new ApiError(409, error.code, "These accounts cannot share gifts") : error); }
 }
 
 export async function DELETE(request: Request, { token }: { token: string }): Promise<Response> {

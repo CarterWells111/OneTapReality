@@ -1,6 +1,6 @@
 import { addGiftMember, listGiftMembers, removeGiftMember, updateGiftMemberRole } from "../../../../server/gifts/repository";
 import { requireOwnedGift } from "../../../../server/gifts/owner-access";
-import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { ApiError, errorResponse, isErrorWithCode } from "../../../../server/http/errors";
 import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
 export async function GET(request: Request, { id }: { id: string }): Promise<Response> {
@@ -21,7 +21,7 @@ export async function POST(request: Request, { id }: { id: string }): Promise<Re
     const members = await listGiftMembers(db, id);
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ members }, { status: 201 });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(isErrorWithCode(error, "gift_relationship_blocked") ? new ApiError(409, error.code, "These accounts cannot share gifts") : error); }
 }
 
 export async function PATCH(request: Request, { id }: { id: string }): Promise<Response> {
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, { id }: { id: string }): Promise<R
     if (typeof body.email !== "string" || (body.role !== "viewer" && body.role !== "editor")) throw new ApiError(400, "validation_failed", "Email and a viewer/editor role are required");
     if (!await updateGiftMemberRole(db, id, body.email, body.role)) throw new ApiError(404, "gift_member_not_found", "That invited member was not found");
     return Response.json({ members: await listGiftMembers(db, id) });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(isErrorWithCode(error, "gift_relationship_blocked") ? new ApiError(409, error.code, "These accounts cannot share gifts") : error); }
 }
 
 export async function DELETE(request: Request, { id }: { id: string }): Promise<Response> {

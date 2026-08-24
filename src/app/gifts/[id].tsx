@@ -237,6 +237,22 @@ export default function GiftManagementScreen() {
     finally { finishOwnerOperation(operation); }
   };
 
+  const blockMember = async (email: string) => {
+    if (!session || !id) return;
+    const operation = beginOwnerOperation();
+    if (!operation) return;
+    try {
+      await client.blockGiftUser(id, session.accessToken, { targetEmail: email });
+      if (!operationIsCurrent(operation)) return;
+      setMembers((current) => current.filter((member) => member.email !== email));
+      setMessage("已屏蔽并移除该成员；双方将无法再次互相邀请。");
+    } catch (error) {
+      if (operationIsCurrent(operation)) setMessage(toUserFacingBackendError(error, "无法屏蔽该成员，请检查网络后重试。"));
+    } finally {
+      finishOwnerOperation(operation);
+    }
+  };
+
   const decideRequest = async (requestId: string, decision: "approved" | "rejected") => {
     if (!session || !id) return; const operation = beginOwnerOperation(); if (!operation) return;
     try { await client.decideOwnedGiftManagementRequest(session.accessToken, id, requestId, decision); if (!operationIsCurrent(operation)) return; await load(operation.generation, () => operationIsCurrent(operation)); if (operationIsCurrent(operation)) setMessage(decision === "approved" ? "申请已批准。" : "申请已拒绝。"); }
@@ -358,6 +374,15 @@ export default function GiftManagementScreen() {
                   <Text style={styles.roleButtonText}>{member.role === "viewer" ? "改为读写" : "改为只读"}</Text>
                 </Pressable>
                 <AppButton disabled={busy} label="移除" tone="secondary" onPress={() => void remove(member.email)} />
+                <Pressable
+                  accessibilityLabel={`屏蔽并移除 ${member.email}`}
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => void blockMember(member.email)}
+                  style={[styles.roleButton, busy && styles.controlDisabled]}
+                >
+                  <Text style={styles.blockButtonText}>屏蔽</Text>
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -423,6 +448,7 @@ const styles = StyleSheet.create({
   memberActions: { alignItems: "center", flexDirection: "row", gap: 8 },
   roleButton: { borderColor: colors.line, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
   roleButtonText: { color: colors.accent, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
+  blockButtonText: { color: colors.danger, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
   controlDisabled: { opacity: 0.45 },
   requestRow: { borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth, gap: 6, paddingVertical: 10 },
   requestActions: { flexDirection: "row", gap: 8 },
