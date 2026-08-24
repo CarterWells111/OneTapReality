@@ -10,15 +10,11 @@ const mockUseAuth = jest.fn();
 const mockUseLocalLibrary = jest.fn();
 const mockRequestDeletionChallenge = jest.fn();
 const mockDeleteAccount = jest.fn();
-const mockClearMemories = jest.fn();
-const mockDeleteAccountPhotoDirectory = jest.fn();
-const mockDeleteLocalChoice = jest.fn();
-const mockDatabase = { name: "local", runAsync: (...args: unknown[]) => mockDeleteLocalChoice(...args) };
+const mockDeleteAccountLibrary = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
-jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
-jest.mock("../src/features/auth/local-library-provider", () => ({ useLocalLibrary: () => mockUseLocalLibrary() }));
+jest.mock("../src/features/auth/privacy-local-library", () => ({ usePrivacyLocalLibrary: () => mockUseLocalLibrary() }));
 jest.mock("../src/services/backend/api-client", () => ({
   ...jest.requireActual("../src/services/backend/api-client"),
   BackendApiClient: jest.fn().mockImplementation(() => ({
@@ -26,13 +22,6 @@ jest.mock("../src/services/backend/api-client", () => ({
     requestAccountDeletionChallenge: (...args: unknown[]) => mockRequestDeletionChallenge(...args),
   })),
 }));
-jest.mock("../src/storage/memory-repository", () => ({
-  clearMemories: (...args: unknown[]) => mockClearMemories(...args),
-}));
-jest.mock("../src/features/memories/photo-persistence", () => ({
-  deleteAccountPhotoDirectory: (...args: unknown[]) => mockDeleteAccountPhotoDirectory(...args),
-}));
-
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ clearAllMemories: mockClearAllMemories }),
 }));
@@ -50,16 +39,15 @@ describe("PrivacyScreen", () => {
       user: { id: "user-1", email: "owner@example.com", isAdmin: false },
     });
     mockUseLocalLibrary.mockReturnValue({
-      accountOwner: "account:owner@example.com",
-      isReady: true,
-      owner: "account:owner@example.com",
+      accountLibraryKey: "account:owner@example.com",
+      currentLibraryIsGuest: false,
+      deleteAccountLibrary: mockDeleteAccountLibrary,
+      isLibraryReady: true,
     });
     mockClearAllMemories.mockResolvedValue(undefined);
-    mockClearMemories.mockResolvedValue(undefined);
-    mockDeleteAccountPhotoDirectory.mockResolvedValue(undefined);
+    mockDeleteAccountLibrary.mockResolvedValue(undefined);
     mockSignOut.mockResolvedValue(undefined);
     mockForgetRememberedEmail.mockResolvedValue(undefined);
-    mockDeleteLocalChoice.mockResolvedValue({ changes: 1 });
     mockRequestDeletionChallenge.mockResolvedValue({
       challengeId: "challenge-1",
       expiresAt: "2026-08-24T10:05:00.000Z",
@@ -132,7 +120,12 @@ describe("PrivacyScreen", () => {
       signOut: mockSignOut,
       user: null,
     });
-    mockUseLocalLibrary.mockReturnValue({ accountOwner: null, isReady: true, owner: "guest" });
+    mockUseLocalLibrary.mockReturnValue({
+      accountLibraryKey: null,
+      currentLibraryIsGuest: true,
+      deleteAccountLibrary: mockDeleteAccountLibrary,
+      isLibraryReady: true,
+    });
     const screen = render(<PrivacyScreen />);
 
     expect(screen.getByText("删除本机旅行册")).toBeTruthy();
@@ -164,12 +157,7 @@ describe("PrivacyScreen", () => {
       code: "123456",
       confirmation: "DELETE",
     }));
-    expect(mockClearMemories).toHaveBeenCalledWith(mockDatabase, "account:owner@example.com");
-    expect(mockDeleteLocalChoice).toHaveBeenCalledWith(
-      "DELETE FROM local_library_account_choices WHERE account_owner = ?",
-      "account:owner@example.com",
-    );
-    expect(mockDeleteAccountPhotoDirectory).toHaveBeenCalledWith("account:owner@example.com");
+    expect(mockDeleteAccountLibrary).toHaveBeenCalledWith("account:owner@example.com");
     expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
     expect(mockClearAllMemories).not.toHaveBeenCalled();

@@ -1,20 +1,17 @@
 import * as React from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useSQLiteContext } from "expo-sqlite";
 
 import { AppButton, colors, Section } from "../../components/ui";
 import { useMemories } from "../../features/memories/memories-provider";
-import { deleteAccountPhotoDirectory } from "../../features/memories/photo-persistence";
 import { useAuth } from "../../features/auth/auth-provider";
-import { useLocalLibrary } from "../../features/auth/local-library-provider";
+import { usePrivacyLocalLibrary } from "../../features/auth/privacy-local-library";
 import {
   BackendApiClient,
   BackendApiError,
   type AccountDeletionChallenge,
   type AccountDeletionReceipt,
 } from "../../services/backend/api-client";
-import { clearMemories } from "../../storage/memory-repository";
 
 function deletionErrorMessage(error: unknown): string {
   if (!(error instanceof BackendApiError)) return "暂时无法完成账号删除，请检查网络后重试。";
@@ -30,10 +27,14 @@ function deletionErrorMessage(error: unknown): string {
 
 export default function PrivacyScreen() {
   const router = useRouter();
-  const db = useSQLiteContext();
   const client = React.useMemo(() => new BackendApiClient(), []);
   const { forgetRememberedEmail, isAuthReady, session, signOut, user } = useAuth();
-  const { accountOwner, isReady: isLibraryReady, owner: localLibraryOwner } = useLocalLibrary();
+  const {
+    accountLibraryKey,
+    currentLibraryIsGuest,
+    deleteAccountLibrary,
+    isLibraryReady,
+  } = usePrivacyLocalLibrary();
   const { clearAllMemories } = useMemories();
   const [challenge, setChallenge] = React.useState<AccountDeletionChallenge | null>(null);
   const [code, setCode] = React.useState("");
@@ -46,7 +47,7 @@ export default function PrivacyScreen() {
   activeSessionToken.current = session?.accessToken ?? null;
 
   const confirmClear = () => {
-    const libraryName = localLibraryOwner === "guest" ? "本机访客旅行册" : "当前账户的本机旅行册";
+    const libraryName = currentLibraryIsGuest ? "本机访客旅行册" : "当前账户的本机旅行册";
     Alert.alert("删除本机旅行册？", `这会删除${libraryName}中的旅行册、照片引用和草稿，操作不可恢复；独立的其他本机库及已发布礼品不会因此删除。`, [
       { text: "取消", style: "cancel" },
       {
@@ -86,8 +87,8 @@ export default function PrivacyScreen() {
 
   const confirmAccountDeletion = async () => {
     const accessToken = session?.accessToken;
-    const requestedAccountOwner = accountOwner;
-    if (!accessToken || !challenge || !requestedAccountOwner) return;
+    const requestedAccountKey = accountLibraryKey;
+    if (!accessToken || !challenge || !requestedAccountKey) return;
     if (!/^\d{6}$/u.test(code)) {
       setDeletionError("请输入邮件中的六位验证码。");
       return;
@@ -108,15 +109,10 @@ export default function PrivacyScreen() {
       let localCleanupComplete = false;
       for (let attempt = 0; attempt < 2 && !localCleanupComplete; attempt += 1) {
         try {
-          await clearMemories(db, requestedAccountOwner);
-          await db.runAsync(
-            "DELETE FROM local_library_account_choices WHERE account_owner = ?",
-            requestedAccountOwner,
-          );
-          await deleteAccountPhotoDirectory(requestedAccountOwner);
+          await deleteAccountLibrary(requestedAccountKey);
           localCleanupComplete = true;
         } catch {
-          // A second idempotent attempt covers transient SQLite or filesystem failures.
+          // A second idempotent attempt covers transient local-storage failures.
         }
       }
       if (activeSessionToken.current === accessToken) {
@@ -192,7 +188,7 @@ export default function PrivacyScreen() {
 
       <Section title="数据管理">
         <PrivacyCard title="当前本机库">
-          {localLibraryOwner === "guest"
+          {currentLibraryIsGuest
             ? "当前为本机访客旅行册。删除只影响这一本机库，不会删除独立账户库或云端礼品。"
             : "当前为账户的本机旅行册。删除只影响当前本机库，不会停用或删除云端礼品。"}
         </PrivacyCard>
