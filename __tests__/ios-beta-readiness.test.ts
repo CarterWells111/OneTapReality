@@ -1,4 +1,4 @@
-const { checkIosBetaReadiness } = require("../scripts/check-ios-beta-readiness.cjs") as {
+const { checkIosBetaReadiness, loadProjectConfig, parseProfileArgs } = require("../scripts/check-ios-beta-readiness.cjs") as {
   checkIosBetaReadiness: (input: { eas: unknown; app: unknown; pkg?: unknown }, options?: { profile?: string }) => {
     platform: string;
     profile: string;
@@ -8,6 +8,8 @@ const { checkIosBetaReadiness } = require("../scripts/check-ios-beta-readiness.c
     associatedDomain: string;
     nfcEntitlement: string;
   };
+  loadProjectConfig: (root?: string, options?: { profile?: string }) => any;
+  parseProfileArgs: (argv: string[]) => { profile: string };
 };
 
 function validConfig() {
@@ -48,10 +50,7 @@ function validConfig() {
         version: "1.1.2",
         ios: {
           bundleIdentifier: "com.onereality.onetapreality",
-          associatedDomains: [
-            "applinks:onetapreality.com",
-            "applinks:staging.onetapreality.com",
-          ],
+          associatedDomains: ["applinks:staging.onetapreality.com"],
           infoPlist: { ITSAppUsesNonExemptEncryption: false, MinimumOSVersion: "15.1" },
         },
         plugins: [
@@ -70,7 +69,7 @@ function validConfig() {
 
 describe("iOS Beta readiness preflight", () => {
   it("accepts the internal alpha profile with staging links and TAG-only NFC", () => {
-    expect(checkIosBetaReadiness(validConfig())).toEqual({
+    expect(checkIosBetaReadiness(validConfig(), { profile: "alpha" })).toEqual({
       platform: "ios",
       profile: "alpha",
       apiOrigin: "https://api-staging.onetapreality.com",
@@ -85,17 +84,26 @@ describe("iOS Beta readiness preflight", () => {
     const input = validConfig();
     input.eas.build.alpha.env.EXPO_PUBLIC_API_ORIGIN = "https://api.onetapreality.com";
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
       "alpha API origin must be https://api-staging.onetapreality.com",
     );
   });
 
   it("rejects a missing staging associated domain", () => {
     const input = validConfig();
-    input.app.expo.ios.associatedDomains = ["applinks:onetapreality.com"];
+    input.app.expo.ios.associatedDomains = [];
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
-      "iOS associatedDomains must include applinks:staging.onetapreality.com",
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
+      "iOS associatedDomains must equal applinks:staging.onetapreality.com",
+    );
+  });
+
+  it("rejects production Universal Links in the external Beta entitlement", () => {
+    const input = validConfig();
+    input.app.expo.ios.associatedDomains.push("applinks:onetapreality.com");
+
+    expect(() => checkIosBetaReadiness(input, { profile: "beta-external" })).toThrow(
+      "iOS associatedDomains must equal applinks:staging.onetapreality.com",
     );
   });
 
@@ -103,7 +111,7 @@ describe("iOS Beta readiness preflight", () => {
     const input = validConfig();
     input.app.expo.plugins = [];
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
       "react-native-nfc-manager must be configured",
     );
   });
@@ -112,7 +120,7 @@ describe("iOS Beta readiness preflight", () => {
     const input = validConfig();
     input.app.expo.ios.bundleIdentifier = "com.example.wrong";
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
       "iOS bundleIdentifier must be com.onereality.onetapreality",
     );
   });
@@ -121,7 +129,7 @@ describe("iOS Beta readiness preflight", () => {
     const input = validConfig();
     Object.assign(input.eas.build.alpha.env, { GIFT_TOKEN_PEPPER: "must-not-ship" });
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
       "EAS build env must not contain server-only secret GIFT_TOKEN_PEPPER",
     );
   });
@@ -130,7 +138,7 @@ describe("iOS Beta readiness preflight", () => {
     const input = validConfig();
     input.eas.build.alpha.env.EXPO_PUBLIC_GIFT_ORIGIN = "https://onetapreality.com";
 
-    expect(() => checkIosBetaReadiness(input)).toThrow(
+    expect(() => checkIosBetaReadiness(input, { profile: "alpha" })).toThrow(
       "alpha gift origin must be https://staging.onetapreality.com",
     );
   });
@@ -147,6 +155,24 @@ describe("iOS Beta readiness preflight", () => {
       associatedDomain: "applinks:staging.onetapreality.com",
       nfcEntitlement: "TAG-only",
     });
+  });
+
+  it("defaults direct preflight checks to the external Beta contract", () => {
+    expect(checkIosBetaReadiness(validConfig())).toEqual(expect.objectContaining({
+      profile: "beta-external",
+      releaseAudience: "external-beta",
+      version: "1.1.2",
+    }));
+  });
+
+  it("resolves the checked project config to staging-only domains and rejects profile overrides", () => {
+    expect(loadProjectConfig(process.cwd(), { profile: "beta-external" }).app.expo.ios.associatedDomains)
+      .toEqual(["applinks:staging.onetapreality.com"]);
+    expect(parseProfileArgs([])).toEqual({ profile: "beta-external" });
+    expect(() => parseProfileArgs(["--profile", "beta-external", "--profile", "alpha"]))
+      .toThrow("--profile may only be provided once");
+    expect(require("../package.json").scripts["beta:preflight:ios"])
+      .toContain("--profile beta-external");
   });
 
   it("rejects a writable NFC purpose string or an iOS target other than 15.1", () => {

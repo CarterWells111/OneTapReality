@@ -349,7 +349,7 @@ async function main() {
 
     if (options.profile === EXTERNAL_BETA_PROFILE) {
       step("4. External Beta profile preflight");
-      run("npm", ["run", "beta:preflight:ios", "--", "--profile", options.profile]);
+      run("npm", ["run", "beta:preflight:ios"]);
     }
 
     if (options.checks) {

@@ -41,7 +41,7 @@ function findPlugin(plugins, name) {
   return null;
 }
 
-function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
+function checkIosBetaReadiness({ eas, app, pkg }, { profile = EXTERNAL_BETA_PROFILE } = {}) {
   const errors = [];
   const selectedProfile = eas?.build?.[profile];
   const expo = app?.expo;
@@ -131,8 +131,10 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
   if (expo?.locales?.en !== "./locales/en.json" || expo?.locales?.["zh-Hans"] !== "./locales/zh-Hans.json") {
     errors.push("iOS permission descriptions must provide English and zh-Hans localizations");
   }
-  if (!Array.isArray(ios?.associatedDomains) || !ios.associatedDomains.includes(STAGING_ASSOCIATED_DOMAIN)) {
-    errors.push(`iOS associatedDomains must include ${STAGING_ASSOCIATED_DOMAIN}`);
+  if (!Array.isArray(ios?.associatedDomains)
+      || ios.associatedDomains.length !== 1
+      || ios.associatedDomains[0] !== STAGING_ASSOCIATED_DOMAIN) {
+    errors.push(`iOS associatedDomains must equal ${STAGING_ASSOCIATED_DOMAIN}`);
   }
   if (!nfcPlugin) {
     errors.push("react-native-nfc-manager must be configured");
@@ -170,22 +172,35 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
   return summary;
 }
 
-function loadProjectConfig(root = process.cwd()) {
+function loadProjectConfig(root = process.cwd(), { profile = EXTERNAL_BETA_PROFILE } = {}) {
+  const eas = JSON.parse(fs.readFileSync(path.join(root, "eas.json"), "utf8"));
+  const app = JSON.parse(fs.readFileSync(path.join(root, "app.json"), "utf8"));
+  const audience = eas?.build?.[profile]?.env?.EXPO_PUBLIC_RELEASE_AUDIENCE;
+  if (audience === "public") {
+    app.expo.ios.associatedDomains = ["applinks:onetapreality.com"];
+  } else if (audience === "internal" || audience === EXTERNAL_BETA_AUDIENCE) {
+    app.expo.ios.associatedDomains = [STAGING_ASSOCIATED_DOMAIN];
+  }
   return {
-    eas: JSON.parse(fs.readFileSync(path.join(root, "eas.json"), "utf8")),
-    app: JSON.parse(fs.readFileSync(path.join(root, "app.json"), "utf8")),
+    eas,
+    app,
     pkg: JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")),
   };
 }
 
 function parseProfileArgs(argv) {
-  let profile = "alpha";
+  let profile = EXTERNAL_BETA_PROFILE;
+  let profileWasExplicit = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg.startsWith("--profile=")) {
+      if (profileWasExplicit) throw new Error("--profile may only be provided once");
       profile = arg.slice("--profile=".length);
+      profileWasExplicit = true;
     } else if (arg === "--profile") {
+      if (profileWasExplicit) throw new Error("--profile may only be provided once");
       profile = argv[index + 1];
+      profileWasExplicit = true;
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -199,9 +214,10 @@ module.exports = { checkIosBetaReadiness, loadProjectConfig, parseProfileArgs };
 
 if (require.main === module) {
   try {
+    const options = parseProfileArgs(process.argv.slice(2));
     const summary = checkIosBetaReadiness(
-      loadProjectConfig(),
-      parseProfileArgs(process.argv.slice(2)),
+      loadProjectConfig(process.cwd(), options),
+      options,
     );
     console.log(JSON.stringify({ ok: true, ...summary }));
   } catch (error) {

@@ -1,4 +1,4 @@
-const { withReleaseAudience, withRouterOrigin } = require("../app.config");
+const { withAssociatedDomains, withReleaseAudience, withRouterOrigin } = require("../app.config");
 
 describe("Expo Router production origin", () => {
   const baseConfig = {
@@ -55,13 +55,23 @@ describe("Expo Router production origin", () => {
     expect(fs.existsSync(path.resolve(__dirname, "..", "assets/expo.icon/Assets/onetapreality-icon.png"))).toBe(true);
   });
 
-  it("registers production and staging gift links for iOS only", () => {
+  it("keeps raw production and staging links declarative but resolves an exact audience-specific entitlement", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
-    expect(expoConfig.ios.associatedDomains).toContain("applinks:onetapreality.com");
-    expect(expoConfig.ios.associatedDomains).toContain("applinks:staging.onetapreality.com");
+    expect(withAssociatedDomains(expoConfig, "external-beta").ios.associatedDomains)
+      .toEqual(["applinks:staging.onetapreality.com"]);
+    expect(withAssociatedDomains(expoConfig, "internal").ios.associatedDomains)
+      .toEqual(["applinks:staging.onetapreality.com"]);
+    expect(withAssociatedDomains(expoConfig, "public").ios.associatedDomains)
+      .toEqual(["applinks:onetapreality.com"]);
     expect(expoConfig.android).toBeUndefined();
+  });
+
+  it("fails closed instead of resolving domains for an unknown release audience", () => {
+    expect(() => withAssociatedDomains(baseConfig, "unexpected")).toThrow(
+      "Unsupported release audience",
+    );
   });
 
   it("configures the NFC native module with the TAG-only iOS entitlement", () => {

@@ -35,10 +35,30 @@ function withReleaseAudience(config, audience) {
   };
 }
 
-module.exports = ({ config }) =>
-  withReleaseAudience(
-    withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN),
-    process.env.EXPO_PUBLIC_RELEASE_AUDIENCE,
+function withAssociatedDomains(config, audience) {
+  const normalizedAudience = normalizeReleaseAudience(audience);
+  const associatedDomains = normalizedAudience === "public"
+    ? ["applinks:onetapreality.com"]
+    : ["applinks:staging.onetapreality.com"];
+  return {
+    ...config,
+    ios: {
+      ...(config.ios ?? {}),
+      associatedDomains,
+    },
+  };
+}
+
+module.exports = ({ config }) => {
+  const audience = process.env.EXPO_PUBLIC_RELEASE_AUDIENCE;
+  return withReleaseAudience(
+    withAssociatedDomains(
+      withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN),
+      audience,
+    ),
+    audience,
   );
+};
+module.exports.withAssociatedDomains = withAssociatedDomains;
 module.exports.withRouterOrigin = withRouterOrigin;
 module.exports.withReleaseAudience = withReleaseAudience;
