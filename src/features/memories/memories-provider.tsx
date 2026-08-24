@@ -5,7 +5,7 @@ import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import { useLocalLibrary } from "../auth/local-library-provider";
 import type { LocalLibraryOwner } from "../auth/local-library-owner";
 import { isMissingPhotoToken } from "./photo-references";
-import { deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
+import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
   getMemoryEditDraft as getMemoryEditDraftFromDb,
@@ -344,7 +344,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
 
   const clearAllMemories = React.useCallback(async () => runWrite(async (owner, assertActive) => {
     await clearMemories(db, owner);
-    await deleteAccountPhotoDirectory(owner);
+    await deleteAccountPhotoDirectoryStrict(owner);
     await refresh(owner, assertActive);
   }), [db, refresh, runWrite]);
 

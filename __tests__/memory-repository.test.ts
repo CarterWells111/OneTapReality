@@ -325,7 +325,10 @@ describe("memory draft lifecycle repository", () => {
     expect(execStatements.join(" ")).toContain(
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
-    expect(runCalls).toEqual([]);
+    expect(runCalls).toContainEqual({
+      statement: "UPDATE memories SET ownerAccountKey = ? WHERE id = ?",
+      parameters: ["guest", "legacy-memory"],
+    });
   });
 
   it("creates the local city collection arrangements table with cascading memory cleanup", async () => {

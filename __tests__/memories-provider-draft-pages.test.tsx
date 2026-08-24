@@ -30,6 +30,7 @@ jest.mock("../src/features/auth/local-library-provider", () => ({
 jest.mock("../src/features/memories/photo-persistence", () => ({
   cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),
   deleteAccountPhotoDirectory: jest.fn(async () => undefined),
+  deleteAccountPhotoDirectoryStrict: jest.fn(async () => undefined),
   deleteMemoryPhotoDirectory: jest.fn(async () => undefined),
   ensureMemoryPhotosPersisted: jest.fn(async (memory) => ({ memory, changed: false })),
   findMigratedLegacyPhotoUris: jest.fn(() => []),

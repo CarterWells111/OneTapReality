@@ -1,7 +1,10 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import { createLegacyLayout, normalizeLayout } from "../features/canvas/canvas-layout";
-import type { LocalLibraryOwner } from "../features/auth/local-library-owner";
+import {
+  normalizeLegacyLocalLibraryOwner,
+  type LocalLibraryOwner,
+} from "../features/auth/local-library-owner";
 import type { CanvasLayout, Memory, MemoryStatus, StoryPage } from "../types/memory";
 
 type MemoryRow = Omit<Memory, "photoUris" | "pages"> & {
@@ -13,6 +16,7 @@ type MemoryRow = Omit<Memory, "photoUris" | "pages"> & {
 type PhotoRow = { uri: string };
 type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string | null; layout_json: string | null };
 type ColumnRow = { name: string };
+type StoredMemoryOwnerRow = { id: string; ownerAccountKey: unknown };
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   await db.execAsync(`
@@ -124,6 +128,30 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       );
 
     CREATE INDEX IF NOT EXISTS memories_owner_updated_idx ON memories (ownerAccountKey, updatedAt);
+  `);
+
+  // SQLite has no portable regular-expression primitive. Reuse the exact
+  // runtime validator so malformed legacy owners can never be normalized into
+  // an account namespace that the app itself is unable to select.
+  const storedOwners = await db.getAllAsync<StoredMemoryOwnerRow>(
+    "SELECT id, ownerAccountKey FROM memories",
+  );
+  await db.withTransactionAsync(async () => {
+    for (const row of storedOwners) {
+      const normalizedOwner = normalizeLegacyLocalLibraryOwner(row.ownerAccountKey);
+      if (row.ownerAccountKey === normalizedOwner) continue;
+      await db.runAsync(
+        "UPDATE memories SET ownerAccountKey = ? WHERE id = ?",
+        normalizedOwner,
+        row.id,
+      );
+    }
+  });
+  await db.execAsync(`
+    UPDATE memory_edit_drafts
+      SET owner_account_key = (
+        SELECT ownerAccountKey FROM memories WHERE memories.id = memory_edit_drafts.memory_id
+      );
   `);
   const pageColumns = await db.getAllAsync<ColumnRow>("PRAGMA table_info(story_pages)");
   if (!pageColumns.some((column) => column.name === "layout_json")) {

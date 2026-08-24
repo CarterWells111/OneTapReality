@@ -6,6 +6,8 @@ const mockUseAuth = jest.fn();
 const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
 const mockClearMemoryEditDraft = jest.fn();
+const mockDeleteAccountPhotoDirectory = jest.fn();
+const mockDeleteAccountPhotoDirectoryStrict = jest.fn();
 const mockRunWrite = (operation: (requestedOwner: string, assertActive: () => void) => Promise<unknown>) => {
   const auth = mockUseAuth();
   const owner = auth.user ? `account:${auth.user.email.trim().toLowerCase()}` : "guest";
@@ -24,6 +26,21 @@ jest.mock("../src/features/auth/local-library-provider", () => ({
       runWrite: mockRunWrite,
     };
   },
+}));
+jest.mock("../src/features/memories/photo-persistence", () => ({
+  cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),
+  deleteAccountPhotoDirectory: (...args: unknown[]) => mockDeleteAccountPhotoDirectory(...args),
+  deleteAccountPhotoDirectoryStrict: (...args: unknown[]) => mockDeleteAccountPhotoDirectoryStrict(...args),
+  deleteMemoryPhotoDirectory: jest.fn(async () => undefined),
+  ensureMemoryPhotosPersisted: jest.fn(async (memory) => ({ memory, changed: false })),
+  findMigratedLegacyPhotoUris: jest.fn(() => []),
+  hydrateMemoryPhotoReferences: jest.fn(async (memory) => ({
+    changed: false,
+    runtimeMemory: memory,
+    storageMemory: memory,
+    unresolved: [],
+  })),
+  persistPhotoUriStrict: jest.fn(async (uri) => uri),
 }));
 jest.mock("../src/storage/memory-edit-draft-repository", () => ({
   clearMemoryEditDraft: (...args: unknown[]) => mockClearMemoryEditDraft(...args),
@@ -57,6 +74,8 @@ describe("MemoriesProvider account gate", () => {
     jest.clearAllMocks();
     captured = undefined;
     mockListMemories.mockResolvedValue([]);
+    mockDeleteAccountPhotoDirectory.mockResolvedValue(undefined);
+    mockDeleteAccountPhotoDirectoryStrict.mockResolvedValue(undefined);
   });
 
   it("reads and manages the guest local library while signed out", async () => {
@@ -75,6 +94,16 @@ describe("MemoriesProvider account gate", () => {
     render(<MemoriesProvider><Capture /></MemoriesProvider>);
 
     await waitFor(() => expect(mockListMemories).toHaveBeenCalledWith(mockDatabase, "account:owner@example.com"));
+  });
+
+  it("fails closed when deleting the active local library photo directory fails", async () => {
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: null });
+    mockDeleteAccountPhotoDirectoryStrict.mockRejectedValueOnce(new Error("filesystem unavailable"));
+    render(<MemoriesProvider><Capture /></MemoriesProvider>);
+    await waitFor(() => expect(captured?.isReady).toBe(true));
+
+    await expect(captured!.clearAllMemories()).rejects.toThrow("filesystem unavailable");
+    expect(mockDeleteAccountPhotoDirectoryStrict).toHaveBeenCalledWith("guest");
   });
 
   it("ignores a stale account refresh after switching accounts", async () => {
