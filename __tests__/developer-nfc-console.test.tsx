@@ -44,6 +44,8 @@ const initializingCard = {
 };
 
 const TOKEN = "A".repeat(43);
+const TEST_NOW_MS = Date.parse("2026-07-24T00:10:00.000Z");
+const testNow = () => TEST_NOW_MS;
 const STAGING_GIFT_ORIGIN = "https://staging.onetapreality.com";
 const PRODUCTION_GIFT_ORIGIN = "https://onetapreality.com";
 const STAGING_GIFT_URL = `${STAGING_GIFT_ORIGIN}/gift/${TOKEN}`;
@@ -107,7 +109,10 @@ function closestPressable(node: unknown): TestTreeNode {
   return current;
 }
 
-function pendingReservation(ownerUserId = "user-1") {
+function pendingReservation(
+  ownerUserId = "user-1",
+  expiresAt = "2026-07-24T00:15:00.000Z",
+) {
   return {
     ownerUserId,
     operationId: "card-2",
@@ -115,7 +120,7 @@ function pendingReservation(ownerUserId = "user-1") {
     cardId: "card-2",
     cardCode: "CARD-002",
     giftUrl: STAGING_GIFT_URL,
-    expiresAt: "2026-07-24T00:15:00.000Z",
+    expiresAt,
   };
 }
 
@@ -133,10 +138,12 @@ function renderConsole(
   client = createClient(),
   writer = {} as NfcUrlWriter,
   urlPolicy: InternalNfcUrlPolicy = stagingPolicy,
+  now = testNow,
 ) {
   return render(
     <DeveloperNfcConsole
       client={client as never}
+      now={now}
       urlPolicy={urlPolicy}
       writer={writer}
     />,
@@ -147,10 +154,12 @@ function consoleElement(
   client = createClient(),
   writer = {} as NfcUrlWriter,
   urlPolicy: InternalNfcUrlPolicy = stagingPolicy,
+  now = testNow,
 ) {
   return (
     <DeveloperNfcConsole
       client={client as never}
+      now={now}
       urlPolicy={urlPolicy}
       writer={writer}
     />
@@ -406,6 +415,109 @@ describe("developer NFC console", () => {
     expect(screen.queryByText("Retry NFC write")).toBeNull();
     expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
     expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["past", "2026-07-24T00:09:59.000Z"],
+    ["exact safety boundary", "2026-07-24T00:12:00.000Z"],
+    ["under safety boundary", "2026-07-24T00:11:59.999Z"],
+    ["invalid", "not-an-iso-instant"],
+  ])("clears a recovered %s expiry before it can become actionable", async (_kind, expiresAt) => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1", expiresAt));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: { ...initializingCard, expiresAt },
+      events: [],
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    expect(await screen.findByText(
+      "The saved NFC reservation is too close to expiry. Start a new reservation.",
+    )).toBeTruthy();
+    expect(clearPendingGiftCard).toHaveBeenCalledWith("user-1", "card-2");
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(closestPressable(
+      screen.getByText("Initialize current blank card"),
+    ).props.disabled).toBe(false);
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(screen.queryByText(expiresAt)).toBeNull();
+    expect(screen.queryByText(new RegExp(TOKEN, "u"))).toBeNull();
+  });
+
+  it("allows a recovered expiry just beyond the safety window", async () => {
+    const expiresAt = "2026-07-24T00:12:00.001Z";
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1", expiresAt));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: { ...initializingCard, expiresAt },
+      events: [],
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    fireEvent.press(await screen.findByText("Retry NFC write"));
+
+    await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1));
+    expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["near-expiry", "2026-07-24T00:12:00.000Z"],
+    ["invalid-expiry", "not-an-iso-instant"],
+  ])("rejects a fresh %s response before save or write", async (_kind, expiresAt) => {
+    const client = createClient();
+    client.reserveGiftCard.mockResolvedValue({
+      cardId: "card-2",
+      cardCode: "CARD-002",
+      giftUrl: STAGING_GIFT_URL,
+      expiresAt,
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+
+    expect(await screen.findByText(
+      "The new NFC reservation does not leave enough time. Request another reservation.",
+    )).toBeTruthy();
+    expect(savePendingGiftCard).not.toHaveBeenCalled();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(screen.queryByText(expiresAt)).toBeNull();
+    expect(screen.queryByText(new RegExp(TOKEN, "u"))).toBeNull();
+  });
+
+  it("allows a fresh expiry just beyond the safety window", async () => {
+    const client = createClient();
+    client.reserveGiftCard.mockResolvedValue({
+      cardId: "card-2",
+      cardCode: "CARD-002",
+      giftUrl: STAGING_GIFT_URL,
+      expiresAt: "2026-07-24T00:12:00.001Z",
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+
+    await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1));
+    expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1);
   });
 
   it("makes a captured retry handler inert immediately after sign-out", async () => {

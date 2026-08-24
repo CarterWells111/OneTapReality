@@ -41,6 +41,20 @@ type OperationContext = {
   readonly urlPolicy: InternalNfcUrlPolicy;
 };
 
+/** Leaves enough time for one physical NFC write plus server activation. */
+export const NFC_RESERVATION_SAFETY_WINDOW_MS = 2 * 60 * 1000;
+
+function hasActionableReservationExpiry(expiresAt: string, nowMs: number): boolean {
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(nowMs) || !Number.isFinite(expiresAtMs)) return false;
+  try {
+    if (new Date(expiresAtMs).toISOString() !== expiresAt) return false;
+  } catch {
+    return false;
+  }
+  return expiresAtMs > nowMs + NFC_RESERVATION_SAFETY_WINDOW_MS;
+}
+
 function canRetire(card: AdminGiftCard) {
   return card.state === "active" && card.giftStatus === "unclaimed";
 }
@@ -108,10 +122,12 @@ function isConfirmedReservationDetail(
 
 export function DeveloperNfcConsole({
   client: injectedClient,
+  now: injectedNow,
   urlPolicy: injectedUrlPolicy,
   writer: injectedWriter,
 }: {
   client?: ConsoleClient;
+  now?: () => number;
   urlPolicy?: InternalNfcUrlPolicy;
   writer?: NfcUrlWriter;
 }) {
@@ -122,6 +138,7 @@ export function DeveloperNfcConsole({
     [injectedClient],
   );
   const writer = React.useMemo(() => injectedWriter ?? createNfcUrlWriter(), [injectedWriter]);
+  const now = injectedNow ?? Date.now;
   const policyResolution = React.useMemo<PolicyResolution>(() => {
     if (injectedUrlPolicy) return { error: null, policy: injectedUrlPolicy };
     try {
@@ -248,6 +265,11 @@ export function DeveloperNfcConsole({
         return failTransientRecovery();
       }
     };
+    const clearUnsafeRecoveredReservation = async (saved: PendingGiftCard) => {
+      if (!await clearRecoveredReservation(saved) || !isCurrentContext(context)) return false;
+      setMessage("The saved NFC reservation is too close to expiry. Start a new reservation.");
+      return true;
+    };
 
     if (!isCurrentContext(context)) return false;
     const saved = await loadPendingGiftCard(context.ownerUserId);
@@ -261,6 +283,9 @@ export function DeveloperNfcConsole({
       setMessage(policyErrorMessage(error));
       return true;
     }
+    if (!hasActionableReservationExpiry(saved.expiresAt, now())) {
+      return clearUnsafeRecoveredReservation(saved);
+    }
     try {
       if (!isCurrentContext(context)) return false;
       const current = await client.getAdminGiftCard(context.accessToken, saved.cardId);
@@ -270,6 +295,9 @@ export function DeveloperNfcConsole({
       }
       if (current.card.state !== "initializing") {
         return clearRecoveredReservation(saved);
+      }
+      if (!hasActionableReservationExpiry(saved.expiresAt, now())) {
+        return clearUnsafeRecoveredReservation(saved);
       }
       setPending(saved);
       return true;
@@ -291,7 +319,7 @@ export function DeveloperNfcConsole({
       // until the same session confirms the initializing server reservation.
       return failTransientRecovery();
     }
-  }, [client, isCurrentContext]);
+  }, [client, isCurrentContext, now]);
 
   React.useEffect(() => {
     if (!isAuthReady) return;
@@ -369,6 +397,22 @@ export function DeveloperNfcConsole({
     ) return;
     try {
       if (manageBusy) setBusy(true);
+      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
+        const cleared = await clearPendingGiftCard(
+          context.ownerUserId,
+          reservation.operationId,
+        );
+        if (!isCurrentContext(context)) return;
+        if (!cleared) {
+          setPending(null);
+          setRecoveryComplete(false);
+          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
+          return;
+        }
+        setPending(null);
+        setMessage("The saved NFC reservation is too close to expiry. Start a new reservation.");
+        return;
+      }
       if (!isCurrentContext(context)) return;
       await client.activateAdminGiftCard(context.accessToken, reservation.cardId);
       if (!isCurrentContext(context)) return;
@@ -407,6 +451,22 @@ export function DeveloperNfcConsole({
     ) return;
     try {
       if (manageBusy) setBusy(true);
+      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
+        const cleared = await clearPendingGiftCard(
+          context.ownerUserId,
+          reservation.operationId,
+        );
+        if (!isCurrentContext(context)) return;
+        if (!cleared) {
+          setPending(null);
+          setRecoveryComplete(false);
+          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
+          return;
+        }
+        setPending(null);
+        setMessage("The saved NFC reservation is too close to expiry. Start a new reservation.");
+        return;
+      }
       let giftUrl: string;
       try {
         giftUrl = context.urlPolicy.validateReplacement(
@@ -490,13 +550,18 @@ export function DeveloperNfcConsole({
       if (!isCurrentContext(context)) return;
       const reservation = await client.reserveGiftCard(context.accessToken, note);
       if (!isCurrentContext(context)) return;
+      const giftUrl = context.urlPolicy.validateGiftUrl(reservation.giftUrl);
+      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
+        setMessage("The new NFC reservation does not leave enough time. Request another reservation.");
+        return;
+      }
       const validatedReservation: PendingGiftCard = {
         ownerUserId: context.ownerUserId,
         operationId: reservation.cardId,
         revision: 1,
         cardId: reservation.cardId,
         cardCode: reservation.cardCode,
-        giftUrl: context.urlPolicy.validateGiftUrl(reservation.giftUrl),
+        giftUrl,
         expiresAt: reservation.expiresAt,
       };
       const saved = await savePendingGiftCard(
