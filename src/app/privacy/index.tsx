@@ -32,7 +32,7 @@ export default function PrivacyScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const { isAuthReady, session, signOut, user } = useAuth();
+  const { forgetRememberedEmail, isAuthReady, session, signOut, user } = useAuth();
   const { accountOwner, isReady: isLibraryReady, owner: localLibraryOwner } = useLocalLibrary();
   const { clearAllMemories } = useMemories();
   const [challenge, setChallenge] = React.useState<AccountDeletionChallenge | null>(null);
@@ -109,13 +109,29 @@ export default function PrivacyScreen() {
       for (let attempt = 0; attempt < 2 && !localCleanupComplete; attempt += 1) {
         try {
           await clearMemories(db, requestedAccountOwner);
+          await db.runAsync(
+            "DELETE FROM local_library_account_choices WHERE account_owner = ?",
+            requestedAccountOwner,
+          );
           await deleteAccountPhotoDirectory(requestedAccountOwner);
           localCleanupComplete = true;
         } catch {
           // A second idempotent attempt covers transient SQLite or filesystem failures.
         }
       }
-      if (activeSessionToken.current === accessToken) await signOut();
+      if (activeSessionToken.current === accessToken) {
+        let rememberedEmailCleared = false;
+        for (let attempt = 0; attempt < 2 && !rememberedEmailCleared; attempt += 1) {
+          try {
+            await forgetRememberedEmail();
+            rememberedEmailCleared = true;
+          } catch {
+            // Retry once before clearing the revoked local session.
+          }
+        }
+        localCleanupComplete = localCleanupComplete && rememberedEmailCleared;
+        await signOut();
+      }
       setReceipt(nextReceipt);
       setChallenge(null);
       Alert.alert(

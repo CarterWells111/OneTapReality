@@ -5,13 +5,15 @@ const mockClearAllMemories = jest.fn();
 const mockAlert = jest.spyOn(Alert, "alert");
 const mockPush = jest.fn();
 const mockSignOut = jest.fn();
+const mockForgetRememberedEmail = jest.fn();
 const mockUseAuth = jest.fn();
 const mockUseLocalLibrary = jest.fn();
 const mockRequestDeletionChallenge = jest.fn();
 const mockDeleteAccount = jest.fn();
 const mockClearMemories = jest.fn();
 const mockDeleteAccountPhotoDirectory = jest.fn();
-const mockDatabase = { name: "local" };
+const mockDeleteLocalChoice = jest.fn();
+const mockDatabase = { name: "local", runAsync: (...args: unknown[]) => mockDeleteLocalChoice(...args) };
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
@@ -42,6 +44,7 @@ describe("PrivacyScreen", () => {
     jest.clearAllMocks();
     mockUseAuth.mockReturnValue({
       isAuthReady: true,
+      forgetRememberedEmail: mockForgetRememberedEmail,
       session: { accessToken: "session-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } },
       signOut: mockSignOut,
       user: { id: "user-1", email: "owner@example.com", isAdmin: false },
@@ -55,6 +58,8 @@ describe("PrivacyScreen", () => {
     mockClearMemories.mockResolvedValue(undefined);
     mockDeleteAccountPhotoDirectory.mockResolvedValue(undefined);
     mockSignOut.mockResolvedValue(undefined);
+    mockForgetRememberedEmail.mockResolvedValue(undefined);
+    mockDeleteLocalChoice.mockResolvedValue({ changes: 1 });
     mockRequestDeletionChallenge.mockResolvedValue({
       challengeId: "challenge-1",
       expiresAt: "2026-08-24T10:05:00.000Z",
@@ -120,7 +125,13 @@ describe("PrivacyScreen", () => {
   });
 
   it("lets a signed-out guest delete only the active local library", async () => {
-    mockUseAuth.mockReturnValue({ isAuthReady: true, session: null, signOut: mockSignOut, user: null });
+    mockUseAuth.mockReturnValue({
+      forgetRememberedEmail: mockForgetRememberedEmail,
+      isAuthReady: true,
+      session: null,
+      signOut: mockSignOut,
+      user: null,
+    });
     mockUseLocalLibrary.mockReturnValue({ accountOwner: null, isReady: true, owner: "guest" });
     const screen = render(<PrivacyScreen />);
 
@@ -154,7 +165,12 @@ describe("PrivacyScreen", () => {
       confirmation: "DELETE",
     }));
     expect(mockClearMemories).toHaveBeenCalledWith(mockDatabase, "account:owner@example.com");
+    expect(mockDeleteLocalChoice).toHaveBeenCalledWith(
+      "DELETE FROM local_library_account_choices WHERE account_owner = ?",
+      "account:owner@example.com",
+    );
     expect(mockDeleteAccountPhotoDirectory).toHaveBeenCalledWith("account:owner@example.com");
+    expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
     expect(mockClearAllMemories).not.toHaveBeenCalled();
     expect(mockAlert).toHaveBeenCalledWith(
