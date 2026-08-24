@@ -5,6 +5,7 @@ import * as React from "react";
 import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, bodyFont, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
+import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
@@ -13,6 +14,13 @@ export default function MemoriesHomeScreen() {
   const router = useRouter();
   const { memories, isReady, discardMemory } = useMemories();
   const { isAuthReady, user } = useAuth();
+  const {
+    continueWithGuest,
+    isMigrating,
+    migrateToAccount,
+    needsMigrationChoice,
+    owner: localLibraryOwner,
+  } = useLocalLibrary();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -92,7 +100,7 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>本地规则生成的可编辑初稿，不分析照片内容</Text>
         <Text selectable style={styles.subtitle}>本地草稿默认保存在此设备；只有你主动发布礼品时，所选内容才会上传给受邀成员。</Text>
         <View style={styles.heroActions}>
-          {user ? <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} /> : null}
+          <AppButton disabled={isMigrating} label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
           <AppButton
             disabled={!isAuthReady}
             label="我的纪念品"
@@ -104,13 +112,13 @@ export default function MemoriesHomeScreen() {
             }}
           />
         </View>
-        {user ? <Pressable
+        <Pressable
           accessibilityRole="button"
           onPress={() => router.push({ pathname: "/memory/[id]", params: { id: sampleMemory.id } })}
           style={({ pressed }) => [styles.heroLink, pressed && styles.pressed]}
         >
           <Text selectable style={styles.heroLinkText}>先翻一册杭州示例 ›</Text>
-        </Pressable> : null}
+        </Pressable>
       </PaperCard>
 
       {isAuthReady ? (
@@ -129,7 +137,27 @@ export default function MemoriesHomeScreen() {
         </PaperCard>
       ) : null}
 
-      {user ? <Section
+      {needsMigrationChoice ? (
+        <PaperCard style={styles.accountCard}>
+          <Text selectable style={styles.accountTitle}>选择本机旅行册</Text>
+          <Text selectable style={styles.accountEmail}>
+            此设备上已有访客旅行册。你可以继续使用访客库，或将它完整迁移到 {user?.email}。我们不会自动移动任何内容。
+          </Text>
+          <AppButton
+            disabled={isMigrating}
+            label="继续使用访客旅行册"
+            tone="secondary"
+            onPress={() => void Promise.resolve().then(continueWithGuest).catch(() => Alert.alert("无法保存选择", "请稍后重试。"))}
+          />
+          <AppButton
+            disabled={isMigrating}
+            label={isMigrating ? "正在迁移…" : "迁移到当前账户"}
+            onPress={() => void Promise.resolve().then(migrateToAccount).catch(() => Alert.alert("迁移未完成", "访客旅行册仍保留在本机，请稍后重试。"))}
+          />
+        </PaperCard>
+      ) : null}
+
+      <Section
         title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}
         caption="MY TRAVEL ALBUMS"
       >
@@ -210,9 +238,11 @@ export default function MemoriesHomeScreen() {
             <AppButton label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
           </PaperCard>
         )}
-      </Section> : null}
+      </Section>
 
-      <Text selectable style={styles.footer}>每一册旅行记忆，都是独一无二的故事。</Text>
+      <Text selectable style={styles.footer}>
+        {localLibraryOwner === "guest" ? "当前使用本机访客旅行册。" : "每一册旅行记忆，都是独一无二的故事。"}
+      </Text>
     </ScrollView>
   );
 }

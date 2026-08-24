@@ -53,6 +53,9 @@ jest.mock("expo-router", () => ({
 jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => ({ user: { email: "owner@example.com" } }),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({ owner: "account:owner@example.com" }),
+}));
 
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({

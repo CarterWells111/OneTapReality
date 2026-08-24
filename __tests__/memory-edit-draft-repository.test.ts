@@ -43,7 +43,7 @@ function createDraftDatabase(
   initialRows: DraftRow[] = [],
   formalMemories: FormalMemoryRow[] = [{
     id: "memory-1",
-    ownerAccountKey: "owner@example.com",
+    ownerAccountKey: "account:owner@example.com",
     updatedAt: "2026-08-10T11:00:00.000Z",
     status: "saved",
   }],
@@ -201,9 +201,9 @@ describe("memory edit draft repository", () => {
   it("round trips normalized safe story pages", async () => {
     const { database } = createDraftDatabase();
 
-    await saveMemoryEditDraft(database, baseMemory, [firstPage, secondPage], "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [firstPage, secondPage], "account:owner@example.com");
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toEqual([
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toEqual([
       {
         ...secondPage,
         position: 0,
@@ -233,9 +233,9 @@ describe("memory edit draft repository", () => {
       },
     };
 
-    await saveMemoryEditDraft(database, baseMemory, [fullBleedPage], "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [fullBleedPage], "account:owner@example.com");
 
-    const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
     expect(restored?.[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 
@@ -251,9 +251,9 @@ describe("memory edit draft repository", () => {
       },
     };
 
-    await saveMemoryEditDraft(database, baseMemory, [scaledPage], "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [scaledPage], "account:owner@example.com");
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
       .resolves.toEqual([expect.objectContaining({
         layout: expect.objectContaining({
           elements: [expect.objectContaining({ fontSize })],
@@ -269,9 +269,9 @@ describe("memory edit draft repository", () => {
       layout: { ...secondPage.layout!, coverColor: "#D4E5F6" },
     };
 
-    await saveMemoryEditDraft(database, baseMemory, [coloredPage], "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [coloredPage], "account:owner@example.com");
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
       .resolves.toEqual([expect.objectContaining({
         coverColor: "#aBc123",
         layout: expect.objectContaining({ coverColor: "#D4E5F6" }),
@@ -283,32 +283,32 @@ describe("memory edit draft repository", () => {
     const ownerBMemory = { ...baseMemory, id: "memory-b" };
     const otherMemory = { ...baseMemory, id: "memory-2" };
     const { database } = createDraftDatabase([], [
-      { id: ownerAMemory.id, ownerAccountKey: "owner-a@example.com", updatedAt: ownerAMemory.updatedAt, status: "saved" },
-      { id: ownerBMemory.id, ownerAccountKey: "owner-b@example.com", updatedAt: ownerBMemory.updatedAt, status: "saved" },
-      { id: otherMemory.id, ownerAccountKey: "owner-a@example.com", updatedAt: otherMemory.updatedAt, status: "saved" },
+      { id: ownerAMemory.id, ownerAccountKey: "account:owner-a@example.com", updatedAt: ownerAMemory.updatedAt, status: "saved" },
+      { id: ownerBMemory.id, ownerAccountKey: "account:owner-b@example.com", updatedAt: ownerBMemory.updatedAt, status: "saved" },
+      { id: otherMemory.id, ownerAccountKey: "account:owner-a@example.com", updatedAt: otherMemory.updatedAt, status: "saved" },
     ]);
     const ownerAPages = [{ ...firstPage, headline: "Owner A" }];
     const ownerBPages = [{ ...firstPage, headline: "Owner B" }];
     const otherAlbumPages = [{ ...firstPage, headline: "Other album" }];
 
-    await saveMemoryEditDraft(database, ownerAMemory, ownerAPages, "owner-a@example.com");
-    await saveMemoryEditDraft(database, ownerBMemory, ownerBPages, "owner-b@example.com");
-    await saveMemoryEditDraft(database, otherMemory, otherAlbumPages, "owner-a@example.com");
+    await saveMemoryEditDraft(database, ownerAMemory, ownerAPages, "account:owner-a@example.com");
+    await saveMemoryEditDraft(database, ownerBMemory, ownerBPages, "account:owner-b@example.com");
+    await saveMemoryEditDraft(database, otherMemory, otherAlbumPages, "account:owner-a@example.com");
 
-    await expect(getMemoryEditDraft(database, ownerAMemory, "owner-a@example.com"))
+    await expect(getMemoryEditDraft(database, ownerAMemory, "account:owner-a@example.com"))
       .resolves.toEqual([{ ...ownerAPages[0], position: 0 }]);
-    await expect(getMemoryEditDraft(database, ownerBMemory, "owner-b@example.com"))
+    await expect(getMemoryEditDraft(database, ownerBMemory, "account:owner-b@example.com"))
       .resolves.toEqual([{ ...ownerBPages[0], position: 0 }]);
-    await expect(getMemoryEditDraft(database, otherMemory, "owner-a@example.com"))
+    await expect(getMemoryEditDraft(database, otherMemory, "account:owner-a@example.com"))
       .resolves.toEqual([{ ...otherAlbumPages[0], position: 0 }]);
-    await expect(getMemoryEditDraft(database, otherMemory, "owner-b@example.com"))
+    await expect(getMemoryEditDraft(database, otherMemory, "account:owner-b@example.com"))
       .resolves.toBeNull();
   });
 
   it("rejects saving a draft for an album not owned by the account", async () => {
     const { database, rows } = createDraftDatabase();
 
-    await expect(saveMemoryEditDraft(database, baseMemory, [firstPage], "attacker@example.com"))
+    await expect(saveMemoryEditDraft(database, baseMemory, [firstPage], "account:attacker@example.com"))
       .rejects.toThrow(/stale or unowned/i);
     expect(rows.size).toBe(0);
   });
@@ -317,30 +317,30 @@ describe("memory edit draft repository", () => {
     const { database, rows } = createDraftDatabase();
     const staleMemory = { ...baseMemory, updatedAt: "2026-08-10T10:30:00.000Z" };
 
-    await expect(saveMemoryEditDraft(database, staleMemory, [firstPage], "owner@example.com"))
+    await expect(saveMemoryEditDraft(database, staleMemory, [firstPage], "account:owner@example.com"))
       .rejects.toThrow(/stale or unowned/i);
     expect(rows.size).toBe(0);
   });
 
   it("deletes a stale draft when the formal memory version changed", async () => {
     const { database } = createDraftDatabase();
-    await saveMemoryEditDraft(database, baseMemory, [firstPage], "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [firstPage], "account:owner@example.com");
 
     const changedMemory = { ...baseMemory, updatedAt: "2026-08-10T12:00:00.000Z" };
-    await expect(getMemoryEditDraft(database, changedMemory, "owner@example.com")).resolves.toBeNull();
+    await expect(getMemoryEditDraft(database, changedMemory, "account:owner@example.com")).resolves.toBeNull();
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toBeNull();
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toBeNull();
     expect(mockEmitDiagnostic).toHaveBeenCalledWith("recovery_discarded", {
       memoryId: "memory-1",
       reason: "stale",
     });
-    expect(JSON.stringify(mockEmitDiagnostic.mock.calls)).not.toContain("owner@example.com");
+    expect(JSON.stringify(mockEmitDiagnostic.mock.calls)).not.toContain("account:owner@example.com");
   });
 
   it("does not delete a newer replacement while evicting an observed stale row", async () => {
     const staleRow: DraftRow = {
       memory_id: baseMemory.id,
-      owner_account_key: "owner@example.com",
+      owner_account_key: "account:owner@example.com",
       base_updated_at: "2026-08-10T10:00:00.000Z",
       pages_json: JSON.stringify([firstPage]),
       updated_at: "2026-08-10T10:30:00.000Z",
@@ -352,30 +352,30 @@ describe("memory edit draft repository", () => {
       updated_at: "2026-08-10T11:30:00.000Z",
     };
     const { database, rows } = createDraftDatabase([staleRow], undefined, {
-      onDraftRead: (_row, storedRows) => storedRows.set(rowKey(baseMemory.id, "owner@example.com"), replacement),
+      onDraftRead: (_row, storedRows) => storedRows.set(rowKey(baseMemory.id, "account:owner@example.com"), replacement),
     });
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toBeNull();
-    expect(rows.get(rowKey(baseMemory.id, "owner@example.com"))).toEqual(replacement);
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toBeNull();
+    expect(rows.get(rowKey(baseMemory.id, "account:owner@example.com"))).toEqual(replacement);
   });
 
   it("falls back to null when stale cleanup fails", async () => {
     const staleRow: DraftRow = {
       memory_id: baseMemory.id,
-      owner_account_key: "owner@example.com",
+      owner_account_key: "account:owner@example.com",
       base_updated_at: "2026-08-10T10:00:00.000Z",
       pages_json: JSON.stringify([firstPage]),
       updated_at: "2026-08-10T10:30:00.000Z",
     };
     const { database } = createDraftDatabase([staleRow], undefined, { failDeletes: true });
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toBeNull();
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toBeNull();
   });
 
   it("rejects saving an empty page collection", async () => {
     const { database, rows } = createDraftDatabase();
 
-    await expect(saveMemoryEditDraft(database, baseMemory, [], "owner@example.com"))
+    await expect(saveMemoryEditDraft(database, baseMemory, [], "account:owner@example.com"))
       .rejects.toThrow(/unsafe/i);
     expect(rows.size).toBe(0);
   });
@@ -460,14 +460,14 @@ describe("memory edit draft repository", () => {
   ])("deletes %s instead of returning unsafe pages", async (_label, pagesJson) => {
     const { database, rows } = createDraftDatabase([{
       memory_id: baseMemory.id,
-      owner_account_key: "owner@example.com",
+      owner_account_key: "account:owner@example.com",
       base_updated_at: baseMemory.updatedAt,
       pages_json: pagesJson,
       updated_at: "2026-08-10T11:30:00.000Z",
     }]);
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toBeNull();
-    expect(rows.has(rowKey(baseMemory.id, "owner@example.com"))).toBe(false);
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toBeNull();
+    expect(rows.has(rowKey(baseMemory.id, "account:owner@example.com"))).toBe(false);
     expect(mockEmitDiagnostic).toHaveBeenCalledWith("recovery_discarded", {
       memoryId: "memory-1",
       reason: "corrupt",
@@ -495,14 +495,14 @@ describe("memory edit draft repository", () => {
     };
     const { database, rows } = createDraftDatabase([{
       memory_id: baseMemory.id,
-      owner_account_key: "owner@example.com",
+      owner_account_key: "account:owner@example.com",
       base_updated_at: baseMemory.updatedAt,
       pages_json: JSON.stringify([corruptPage]),
       updated_at: "2026-08-10T11:30:00.000Z",
     }]);
 
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com")).resolves.toBeNull();
-    expect(rows.has(rowKey(baseMemory.id, "owner@example.com"))).toBe(false);
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com")).resolves.toBeNull();
+    expect(rows.has(rowKey(baseMemory.id, "account:owner@example.com"))).toBe(false);
   });
 
   it("clears only the selected album and owner recovery draft", async () => {
@@ -510,18 +510,18 @@ describe("memory edit draft repository", () => {
     const ownerBMemory = { ...baseMemory, id: "memory-b" };
     const otherMemory = { ...baseMemory, id: "memory-2" };
     const { database } = createDraftDatabase([], [
-      { id: ownerAMemory.id, ownerAccountKey: "owner-a@example.com", updatedAt: ownerAMemory.updatedAt, status: "saved" },
-      { id: ownerBMemory.id, ownerAccountKey: "owner-b@example.com", updatedAt: ownerBMemory.updatedAt, status: "saved" },
-      { id: otherMemory.id, ownerAccountKey: "owner-a@example.com", updatedAt: otherMemory.updatedAt, status: "saved" },
+      { id: ownerAMemory.id, ownerAccountKey: "account:owner-a@example.com", updatedAt: ownerAMemory.updatedAt, status: "saved" },
+      { id: ownerBMemory.id, ownerAccountKey: "account:owner-b@example.com", updatedAt: ownerBMemory.updatedAt, status: "saved" },
+      { id: otherMemory.id, ownerAccountKey: "account:owner-a@example.com", updatedAt: otherMemory.updatedAt, status: "saved" },
     ]);
-    await saveMemoryEditDraft(database, ownerAMemory, [firstPage], "owner-a@example.com");
-    await saveMemoryEditDraft(database, ownerBMemory, [secondPage], "owner-b@example.com");
-    await saveMemoryEditDraft(database, otherMemory, [secondPage], "owner-a@example.com");
+    await saveMemoryEditDraft(database, ownerAMemory, [firstPage], "account:owner-a@example.com");
+    await saveMemoryEditDraft(database, ownerBMemory, [secondPage], "account:owner-b@example.com");
+    await saveMemoryEditDraft(database, otherMemory, [secondPage], "account:owner-a@example.com");
 
-    await clearMemoryEditDraft(database, ownerAMemory.id, "owner-a@example.com");
+    await clearMemoryEditDraft(database, ownerAMemory.id, "account:owner-a@example.com");
 
-    await expect(getMemoryEditDraft(database, ownerAMemory, "owner-a@example.com")).resolves.toBeNull();
-    await expect(getMemoryEditDraft(database, ownerBMemory, "owner-b@example.com")).resolves.not.toBeNull();
-    await expect(getMemoryEditDraft(database, otherMemory, "owner-a@example.com")).resolves.not.toBeNull();
+    await expect(getMemoryEditDraft(database, ownerAMemory, "account:owner-a@example.com")).resolves.toBeNull();
+    await expect(getMemoryEditDraft(database, ownerBMemory, "account:owner-b@example.com")).resolves.not.toBeNull();
+    await expect(getMemoryEditDraft(database, otherMemory, "account:owner-a@example.com")).resolves.not.toBeNull();
   });
 });

@@ -2,8 +2,8 @@ import * as React from "react";
 import { useSQLiteContext } from "expo-sqlite";
 
 import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
-import { useAuth } from "../auth/auth-provider";
-import { normalizeLocalAccountKey } from "../auth/local-account";
+import { useLocalLibrary } from "../auth/local-library-provider";
+import type { LocalLibraryOwner } from "../auth/local-library-owner";
 import { isMissingPhotoToken } from "./photo-references";
 import { deleteAccountPhotoDirectory, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
 import {
@@ -13,7 +13,6 @@ import {
 } from "../../storage/memory-edit-draft-repository";
 import {
   clearMemories,
-  claimUnownedMemories,
   createDraft as createDraftInDb,
   deleteMemory as deleteMemoryFromDb,
   discardDraft as discardDraftInDb,
@@ -90,23 +89,23 @@ function restoreKnownMissingPhotoTokens(memory: Memory, baseline: ReadonlyMap<st
 
 export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
-  const { isAuthReady, user } = useAuth();
-  const accountKey = user ? normalizeLocalAccountKey(user.email) : null;
+  const { isMigrating, isReady: isLibraryReady, owner: accountKey } = useLocalLibrary();
   const [memories, setMemories] = React.useState<Memory[]>([]);
   const [isReady, setIsReady] = React.useState(false);
   const refreshGeneration = React.useRef(0);
   const missingPhotoBaselines = React.useRef(new Map<string, Map<string, string>>());
-  const currentAccountKey = React.useRef<string | null>(accountKey);
+  const currentAccountKey = React.useRef<string>(accountKey);
   currentAccountKey.current = accountKey;
 
   const requireAccountKey = React.useCallback(() => {
-    if (!isAuthReady || !accountKey) throw new Error("请先登录后再管理本地旅行册");
+    if (!isLibraryReady) throw new Error("本机旅行册仍在准备中");
+    if (isMigrating) throw new Error("本机旅行册正在迁移，请稍后再试");
     return accountKey;
-  }, [accountKey, isAuthReady]);
+  }, [accountKey, isLibraryReady, isMigrating]);
 
-  const baselineKey = React.useCallback((owner: string, memoryId: string) => `${owner}\0${memoryId}`, []);
+  const baselineKey = React.useCallback((owner: LocalLibraryOwner, memoryId: string) => `${owner}\0${memoryId}`, []);
 
-  const recordHydration = React.useCallback((memoryId: string, owner: string, hydrated: Awaited<ReturnType<typeof hydrateMemoryPhotoReferences>>) => {
+  const recordHydration = React.useCallback((memoryId: string, owner: LocalLibraryOwner, hydrated: Awaited<ReturnType<typeof hydrateMemoryPhotoReferences>>) => {
     const baseline = new Map<string, string>();
     for (const unresolved of hydrated.unresolved) baseline.set(unresolved.token, unresolved.storedReference);
     missingPhotoBaselines.current.set(baselineKey(owner, memoryId), baseline);
@@ -114,15 +113,15 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   }, [baselineKey]);
 
   const baselineFor = React.useCallback(
-    (owner: string, memoryId: string) => missingPhotoBaselines.current.get(baselineKey(owner, memoryId)) ?? new Map<string, string>(),
+    (owner: LocalLibraryOwner, memoryId: string) => missingPhotoBaselines.current.get(baselineKey(owner, memoryId)) ?? new Map<string, string>(),
     [baselineKey],
   );
 
-  const hydrateForStorage = React.useCallback(async (memory: Memory, owner: string) => (
+  const hydrateForStorage = React.useCallback(async (memory: Memory, owner: LocalLibraryOwner) => (
     recordHydration(memory.id, owner, await hydrateMemoryPhotoReferences(memory, owner))
   ), [recordHydration]);
 
-  const hydrateForRuntime = React.useCallback(async (memory: Memory, owner: string): Promise<Memory> => {
+  const hydrateForRuntime = React.useCallback(async (memory: Memory, owner: LocalLibraryOwner): Promise<Memory> => {
     const hydrated = await hydrateForStorage(memory, owner);
     if (hydrated.changed) {
       const replaced = await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner);
@@ -132,10 +131,9 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   }, [db, hydrateForStorage]);
 
   /** 读取当前账号的记忆，并以原子快照迁移照片引用。 */
-  const refresh = React.useCallback(async (requestedAccountKey?: string) => {
+  const refresh = React.useCallback(async (requestedAccountKey?: LocalLibraryOwner) => {
     const owner = requestedAccountKey ?? requireAccountKey();
     const generation = ++refreshGeneration.current;
-    await claimUnownedMemories(db, owner);
     const runtimeMemories = await Promise.all(
       (await listMemories(db, owner)).map((memory) => hydrateForRuntime(memory, owner)),
     );
@@ -149,12 +147,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     refreshGeneration.current += 1;
     missingPhotoBaselines.current.clear();
     setMemories([]);
-    if (!isAuthReady) {
+    if (!isLibraryReady) {
       setIsReady(false);
-      return;
-    }
-    if (!accountKey) {
-      setIsReady(true);
       return;
     }
     setIsReady(false);
@@ -164,7 +158,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         setIsReady(true);
       }
     });
-  }, [accountKey, isAuthReady, refresh]);
+  }, [accountKey, isLibraryReady, refresh]);
 
   const createMemory = React.useCallback(
     async (input: MemoryDraftInput) => {

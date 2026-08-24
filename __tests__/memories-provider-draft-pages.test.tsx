@@ -17,6 +17,9 @@ jest.mock("expo-sqlite", () => ({
 jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => ({ isAuthReady: true, user: { id: "user-1", email: "Owner@Example.com", isAdmin: false } }),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({ isReady: true, owner: "account:owner@example.com" }),
+}));
 jest.mock("../src/features/memories/photo-persistence", () => ({
   cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),
   deleteAccountPhotoDirectory: jest.fn(async () => undefined),
@@ -35,7 +38,6 @@ jest.mock("../src/storage/memory-edit-draft-repository", () => ({
 
 jest.mock("../src/storage/memory-repository", () => ({
   clearMemories: jest.fn(),
-  claimUnownedMemories: jest.fn(async () => 0),
   createDraft: jest.fn(),
   deleteMemory: jest.fn(),
   discardDraft: jest.fn(),
@@ -113,7 +115,7 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(
       mockDatabase,
       expect.objectContaining({ id: "draft-1", pages }),
-      "owner@example.com",
+      "account:owner@example.com",
     );
     expect(mockListMemories).toHaveBeenCalledTimes(1);
   });
@@ -131,7 +133,7 @@ describe("MemoriesProvider draft page persistence", () => {
       .resolves.toBe("file:///documents/account/draft-1/photo.jpg");
     expect(mockPersistPhotoUriStrict).toHaveBeenCalledWith(
       "file:///temporary.jpg",
-      "owner@example.com",
+      "account:owner@example.com",
       "draft-1",
     );
   });
@@ -174,7 +176,7 @@ describe("MemoriesProvider draft page persistence", () => {
       mockDatabase,
       draft,
       [{ ...pages[0], photoUri: storageUri }],
-      "owner@example.com",
+      "account:owner@example.com",
     );
   });
 
@@ -211,6 +213,6 @@ describe("MemoriesProvider draft page persistence", () => {
 
     await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
     expect(capturedMemories?.memories).toEqual([runtimeMemory]);
-    expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(mockDatabase, storageMemory, "owner@example.com");
+    expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(mockDatabase, storageMemory, "account:owner@example.com");
   });
 });

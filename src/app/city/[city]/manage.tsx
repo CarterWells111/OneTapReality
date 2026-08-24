@@ -4,8 +4,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { ScrollView, Text } from "react-native";
 
 import { colors } from "../../../components/ui";
-import { useAuth } from "../../../features/auth/auth-provider";
-import { normalizeLocalAccountKey } from "../../../features/auth/local-account";
+import { useLocalLibrary } from "../../../features/auth/local-library-provider";
 import { CityCollectionManager } from "../../../features/cities/city-collection-manager";
 import { resolveCityRouteParam } from "../../../features/cities/city-route";
 import { resolveCityCollection, saveCityCollection, type ResolvedCityCollection } from "../../../storage/city-collection-repository";
@@ -16,21 +15,16 @@ export const CITY_COLLECTION_SAVE_ERROR = "暂时无法保存城市旅行册，�
 export default function ManageCityCollectionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const { isAuthReady, user } = useAuth();
+  const { isReady: isLibraryReady, owner: accountKey } = useLocalLibrary();
   const { city: rawCity } = useLocalSearchParams<{ city: string }>();
   const city = resolveCityRouteParam(rawCity);
-  const accountKey = user ? normalizeLocalAccountKey(user.email) : null;
   const [loaded, setLoaded] = React.useState<{ accountKey: string; collection: ResolvedCityCollection } | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
 
   useFocusEffect(React.useCallback(() => {
     let active = true;
-    if (!isAuthReady) return () => { active = false; };
-    if (!accountKey) {
-      router.replace(`/login?returnTo=${encodeURIComponent(`/city/${city}/manage`)}` as never);
-      return () => { active = false; };
-    }
+    if (!isLibraryReady) return () => { active = false; };
     const requestedAccountKey = accountKey;
     setError("");
     void resolveCityCollection(db, city, requestedAccountKey)
@@ -41,7 +35,7 @@ export default function ManageCityCollectionScreen() {
         if (active) setError(CITY_COLLECTION_LOAD_ERROR);
       });
     return () => { active = false; };
-  }, [accountKey, city, db, isAuthReady, router]));
+  }, [accountKey, city, db, isLibraryReady]));
 
   const collection = loaded?.accountKey === accountKey && loaded.collection.city === city ? loaded.collection : null;
 
@@ -50,8 +44,8 @@ export default function ManageCityCollectionScreen() {
     setIsSaving(true);
     try {
       const updatedAt = new Date().toISOString();
-      if (!accountKey || loaded?.accountKey !== accountKey || loaded.collection.city !== city) {
-        setError("请先登录并重新打开城市旅行册。");
+      if (loaded?.accountKey !== accountKey || loaded.collection.city !== city) {
+        setError("本机旅行册已经切换，请重新打开这座城市。");
         return;
       }
       await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt, accountKey);

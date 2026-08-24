@@ -16,6 +16,12 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => {
+    const auth = mockUseAuth();
+    return { isReady: auth.isAuthReady, owner: auth.user ? `account:${auth.user.email.toLowerCase()}` : "guest" };
+  },
+}));
 jest.mock("../src/storage/city-collection-repository", () => ({
   resolveCityCollection: (...args: unknown[]) => mockResolveCityCollection(...args),
   saveCityCollection: (...args: unknown[]) => mockSaveCityCollection(...args),
@@ -40,13 +46,13 @@ describe("city collection management route", () => {
 
   it("atomically persists the selected representative with the full order and returns", async () => {
     const screen = render(<ManageCityCollectionScreen />);
-    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", "owner@example.com"));
+    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", "account:owner@example.com"));
 
     await act(async () => { fireEvent.press(screen.getByLabelText("将Two设为精选旅行册")); });
     await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
 
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
-    expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "owner@example.com");
+    expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "account:owner@example.com");
   });
 
   it("cancels without writing any database changes", async () => {

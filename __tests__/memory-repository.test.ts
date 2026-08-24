@@ -55,7 +55,7 @@ const draftMemory = {
   createdAt: "2026-07-22T10:00:00.000Z",
   updatedAt: "2026-07-22T10:00:00.000Z",
 };
-const accountKey = "owner@example.com";
+const accountKey = "account:owner@example.com";
 
 const mediaSnapshotMemory: Memory = {
   ...draftMemory,

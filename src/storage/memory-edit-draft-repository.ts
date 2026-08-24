@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import { normalizeLayout } from "../features/canvas/canvas-layout";
+import type { LocalLibraryOwner } from "../features/auth/local-library-owner";
 import { localDiagnostics } from "../features/diagnostics/local-diagnostics";
 import { normalizeStoryPages } from "../features/pages/story-page-manager";
 import type { CanvasElement, CanvasLayout, Memory, StoryPage } from "../types/memory";
@@ -171,7 +172,7 @@ export async function saveMemoryEditDraft(
   db: SQLiteDatabase,
   memory: Memory,
   pages: StoryPage[],
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await migrateMemoryEditDrafts(db);
   const normalizedPages = parseAndNormalizePages(pages);
@@ -203,7 +204,7 @@ export async function saveMemoryEditDraft(
 async function discardObservedDraft(
   db: SQLiteDatabase,
   memoryId: string,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
   row: MemoryEditDraftRow,
 ) {
   try {
@@ -228,7 +229,7 @@ async function discardObservedDraft(
 export async function getMemoryEditDraft(
   db: SQLiteDatabase,
   memory: Memory,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ): Promise<StoryPage[] | null> {
   await migrateMemoryEditDrafts(db);
   const row = await db.getFirstAsync<MemoryEditDraftRow>(
@@ -274,7 +275,7 @@ export async function getMemoryEditDraft(
 export async function clearMemoryEditDraft(
   db: SQLiteDatabase,
   memoryId: string,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await migrateMemoryEditDrafts(db);
   await db.runAsync(

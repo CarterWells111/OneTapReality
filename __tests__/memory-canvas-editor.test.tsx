@@ -76,6 +76,9 @@ jest.mock("expo-router", () => ({
 jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => ({ user: { email: mockAccountEmail } }),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({ owner: `account:${mockAccountEmail.trim().toLowerCase()}` }),
+}));
 
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react") as typeof import("react");

@@ -6,6 +6,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, bodyFont, colors, Section } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
+import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import {
   maxBioLength,
   normalizeBio,
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
     session,
     signOut,
   } = useAuth();
+  const { needsMigrationChoice, owner: localLibraryOwner } = useLocalLibrary();
   const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -125,8 +127,15 @@ export default function SettingsScreen() {
 
       <Section title="数据与隐私">
         <View style={styles.privacyCard}>
-          <Text selectable style={styles.privacyTitle}>资料不会同步到云端</Text>
-          <Text selectable style={styles.helper}>昵称与头像用于个人展示；选择照片不会上传或分享。</Text>
+          <Text selectable style={styles.privacyTitle}>
+            {localLibraryOwner === "guest" ? "本机访客旅行册" : "当前账户的本机旅行册"}
+          </Text>
+          <Text selectable style={styles.helper}>
+            昵称、旅行册与未发布照片保存在本机；只有你主动发布礼品时，所选内容才会上传给受邀成员。
+          </Text>
+          {needsMigrationChoice ? (
+            <Text selectable style={styles.helper}>请回到首页选择继续使用访客库或迁移到当前账户。</Text>
+          ) : null}
         </View>
       </Section>
 

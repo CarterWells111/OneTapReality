@@ -14,6 +14,12 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => {
+    const auth = mockUseAuth();
+    return { isReady: auth.isAuthReady, owner: auth.user ? `account:${auth.user.email.toLowerCase()}` : "guest" };
+  },
+}));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({ isReady: true, memories: [] }),
 }));
@@ -33,7 +39,7 @@ describe("city archive route", () => {
   it("loads its local collection on entry and renders the local archive without NFC content", async () => {
     const screen = render(<CityScreen />);
 
-    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "hangzhou", "owner@example.com"));
+    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "hangzhou", "account:owner@example.com"));
     expect(screen.getByText("0")).toBeTruthy();
     expect(screen.getByText("册旅行记忆")).toBeTruthy();
     expect(screen.getByText("开始记录这座城")).toBeTruthy();

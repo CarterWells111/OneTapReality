@@ -8,6 +8,7 @@ const mockProfile = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockForgetRememberedEmail = jest.fn();
 const mockUseAuth = jest.fn();
+const mockUseLocalLibrary = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
 jest.mock("expo-image-picker", () => ({
@@ -23,6 +24,9 @@ jest.mock("../src/features/profile/profile-provider", () => ({
 }));
 jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => mockUseAuth(),
+}));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => mockUseLocalLibrary(),
 }));
 
 import SettingsScreen from "../src/app/settings";
@@ -42,6 +46,7 @@ describe("SettingsScreen", () => {
       rememberedEmail: "owner@example.com",
       forgetRememberedEmail: mockForgetRememberedEmail,
     });
+    mockUseLocalLibrary.mockReturnValue({ owner: "guest", needsMigrationChoice: false });
   });
 
   it("requests photo permission when tapping the avatar", async () => {
@@ -186,5 +191,14 @@ describe("SettingsScreen", () => {
 
     expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("accurately identifies the active local library without implying cloud sync", () => {
+    const screen = render(<SettingsScreen />);
+    expect(screen.getByText("本机访客旅行册")).toBeTruthy();
+
+    mockUseLocalLibrary.mockReturnValue({ owner: "account:owner@example.com", needsMigrationChoice: false });
+    screen.rerender(<SettingsScreen />);
+    expect(screen.getByText("当前账户的本机旅行册")).toBeTruthy();
   });
 });

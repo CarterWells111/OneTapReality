@@ -1,20 +1,11 @@
-import { usePathname, useRouter } from "expo-router";
 import * as React from "react";
 
 import { useAuth } from "./auth-provider";
 
-/** Prevents protected route children from mounting before a local account is known. */
+/** Local libraries are available to guests; only wait for auth bootstrap stability. */
 export function AccountRouteGate({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { isAuthReady, user } = useAuth();
+  const { isAuthReady } = useAuth();
 
-  React.useEffect(() => {
-    if (isAuthReady && !user) {
-      router.replace(`/login?returnTo=${encodeURIComponent(pathname)}` as never);
-    }
-  }, [isAuthReady, pathname, router, user]);
-
-  if (!isAuthReady || !user) return null;
+  if (!isAuthReady) return null;
   return <>{children}</>;
 }

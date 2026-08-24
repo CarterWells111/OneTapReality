@@ -23,6 +23,12 @@ jest.mock("../src/features/auth/auth-provider", () => ({
     user: null,
   }),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({
+    continueWithGuest: jest.fn(), isMigrating: false, migrateToAccount: jest.fn(),
+    needsMigrationChoice: false, owner: "guest",
+  }),
+}));
 
 import MemoriesHomeScreen from "../src/app/(tabs)/index";
 import ProfileScreen from "../src/app/(tabs)/profile";

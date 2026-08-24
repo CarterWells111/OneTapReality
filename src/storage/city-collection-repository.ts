@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import type { LocalLibraryOwner } from "../features/auth/local-library-owner";
 
 import { listMemories } from "./memory-repository";
 import type { City, Memory } from "../types/memory";
@@ -40,7 +41,7 @@ function toArrangement(row: CityCollectionArrangementRow): CityCollectionArrange
 export async function fetchCityCollectionArrangements(
   db: SQLiteDatabase,
   city: City,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ): Promise<CityCollectionArrangement[]> {
   const rows = await db.getAllAsync<CityCollectionArrangementRow>(
     "SELECT arrangements.memory_id, arrangements.city, arrangements.position, arrangements.is_featured, arrangements.updated_at FROM city_collection_arrangements AS arrangements INNER JOIN memories ON memories.id = arrangements.memory_id WHERE arrangements.city = ? AND memories.ownerAccountKey = ? ORDER BY arrangements.position ASC",
@@ -55,7 +56,7 @@ export async function persistCityCollectionOrder(
   city: City,
   memoryIds: readonly string[],
   updatedAt: string,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const [memories, existingArrangements] = await Promise.all([
@@ -101,7 +102,7 @@ export async function saveCityCollection(
   memoryIds: readonly string[],
   featuredMemoryId: string | null,
   updatedAt: string,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const memories = await listMemories(transaction, accountKey);
@@ -140,7 +141,7 @@ export async function setFeaturedCityMemory(
   city: City,
   memoryId: string,
   updatedAt: string,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
@@ -167,7 +168,7 @@ export async function setFeaturedCityMemory(
 export async function resolveCityCollection(
   db: SQLiteDatabase,
   city: City,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ): Promise<ResolvedCityCollection> {
   const [memories, arrangements] = await Promise.all([
     listMemories(db, accountKey),

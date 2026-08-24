@@ -8,6 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { colors, serifFont } from "../components/ui";
 import { PageCaptureProvider } from "../features/export/page-capture-provider";
 import { AuthProvider } from "../features/auth/auth-provider";
+import { LocalLibraryProvider } from "../features/auth/local-library-provider";
 import { MemoriesProvider } from "../features/memories/memories-provider";
 import { ProfileProvider } from "../features/profile/profile-provider";
 import { FontLoadingProvider } from "../features/typography/font-loading-provider";
@@ -22,6 +23,7 @@ export default function RootLayout() {
         <FontLoadingProvider>
         <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
           <AuthProvider>
+          <LocalLibraryProvider>
           <ProfileProvider>
             <MemoriesProvider>
               <PageCaptureProvider>
@@ -56,6 +58,7 @@ export default function RootLayout() {
             </PageCaptureProvider>
             </MemoriesProvider>
           </ProfileProvider>
+          </LocalLibraryProvider>
           </AuthProvider>
         </SQLiteProvider>
         </FontLoadingProvider>

@@ -5,6 +5,12 @@ const mockUseAuth = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({
+    continueWithGuest: jest.fn(), isMigrating: false, migrateToAccount: jest.fn(),
+    needsMigrationChoice: false, owner: "account:user@example.com",
+  }),
+}));
 jest.mock("../src/features/memories/memories-provider", () => ({
   useMemories: () => ({
     discardMemory: jest.fn(),
