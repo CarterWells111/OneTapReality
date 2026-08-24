@@ -160,6 +160,9 @@ describe("PrivacyScreen", () => {
     expect(mockDeleteAccountLibrary).toHaveBeenCalledWith("account:owner@example.com");
     expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockSignOut.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteAccountLibrary.mock.invocationCallOrder[0],
+    );
     expect(mockClearAllMemories).not.toHaveBeenCalled();
     expect(mockAlert).toHaveBeenCalledWith(
       "账号删除已受理",

@@ -106,6 +106,17 @@ export default function PrivacyScreen() {
         code,
         confirmation: "DELETE",
       });
+      let localSessionCleared = false;
+      for (let attempt = 0; attempt < 2 && !localSessionCleared; attempt += 1) {
+        try {
+          // signOut invalidates the auth generation before its first await, so
+          // no account-scoped write can start after local deletion begins.
+          await signOut();
+          localSessionCleared = true;
+        } catch {
+          // Retry once because a persisted revoked session must not survive relaunch.
+        }
+      }
       let localCleanupComplete = false;
       for (let attempt = 0; attempt < 2 && !localCleanupComplete; attempt += 1) {
         try {
@@ -115,19 +126,16 @@ export default function PrivacyScreen() {
           // A second idempotent attempt covers transient local-storage failures.
         }
       }
-      if (activeSessionToken.current === accessToken) {
-        let rememberedEmailCleared = false;
-        for (let attempt = 0; attempt < 2 && !rememberedEmailCleared; attempt += 1) {
-          try {
-            await forgetRememberedEmail();
-            rememberedEmailCleared = true;
-          } catch {
-            // Retry once before clearing the revoked local session.
-          }
+      let rememberedEmailCleared = false;
+      for (let attempt = 0; attempt < 2 && !rememberedEmailCleared; attempt += 1) {
+        try {
+          await forgetRememberedEmail();
+          rememberedEmailCleared = true;
+        } catch {
+          // Retry once before reporting that device cleanup needs support.
         }
-        localCleanupComplete = localCleanupComplete && rememberedEmailCleared;
-        await signOut();
       }
+      localCleanupComplete = localCleanupComplete && localSessionCleared && rememberedEmailCleared;
       setReceipt(nextReceipt);
       setChallenge(null);
       Alert.alert(
