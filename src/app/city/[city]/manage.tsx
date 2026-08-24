@@ -15,7 +15,7 @@ export const CITY_COLLECTION_SAVE_ERROR = "暂时无法保存城市旅行册，�
 export default function ManageCityCollectionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const { isReady: isLibraryReady, owner: accountKey } = useLocalLibrary();
+  const { isReady: isLibraryReady, owner: accountKey, runWrite } = useLocalLibrary();
   const { city: rawCity } = useLocalSearchParams<{ city: string }>();
   const city = resolveCityRouteParam(rawCity);
   const [loaded, setLoaded] = React.useState<{ accountKey: string; collection: ResolvedCityCollection } | null>(null);
@@ -43,12 +43,14 @@ export default function ManageCityCollectionScreen() {
     setError("");
     setIsSaving(true);
     try {
-      const updatedAt = new Date().toISOString();
-      if (loaded?.accountKey !== accountKey || loaded.collection.city !== city) {
-        setError("本机旅行册已经切换，请重新打开这座城市。");
-        return;
-      }
-      await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt, accountKey);
+      await runWrite(async (writeOwner, assertActive) => {
+        const updatedAt = new Date().toISOString();
+        if (loaded?.accountKey !== writeOwner || loaded.collection.city !== city) {
+          throw new Error("local_library_switched");
+        }
+        assertActive();
+        await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt, writeOwner);
+      });
       router.back();
     } catch {
       setError(CITY_COLLECTION_SAVE_ERROR);

@@ -107,7 +107,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
           )
         );
     UPDATE memories
-      SET ownerAccountKey = 'account:' || lower(trim(substr(ownerAccountKey, 9)))
+      SET ownerAccountKey = 'account:' || lower(trim(substr(trim(ownerAccountKey), 9)))
       WHERE lower(trim(ownerAccountKey)) LIKE 'account:%@%.%';
     UPDATE memories
       SET ownerAccountKey = 'account:' || lower(trim(ownerAccountKey))

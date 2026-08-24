@@ -6,15 +6,22 @@ const mockUseAuth = jest.fn();
 const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
 const mockClearMemoryEditDraft = jest.fn();
+const mockRunWrite = (operation: (requestedOwner: string, assertActive: () => void) => Promise<unknown>) => {
+  const auth = mockUseAuth();
+  const owner = auth.user ? `account:${auth.user.email.trim().toLowerCase()}` : "guest";
+  return operation(owner, () => undefined);
+};
 
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/auth/local-library-provider", () => ({
   useLocalLibrary: () => {
     const auth = mockUseAuth();
+    const owner = auth.user ? `account:${auth.user.email.trim().toLowerCase()}` : "guest";
     return {
       isReady: auth.isAuthReady,
-      owner: auth.user ? `account:${auth.user.email.trim().toLowerCase()}` : "guest",
+      owner,
+      runWrite: mockRunWrite,
     };
   },
 }));
@@ -58,7 +65,9 @@ describe("MemoriesProvider account gate", () => {
     await waitFor(() => expect(captured?.isReady).toBe(true));
 
     expect(mockListMemories).toHaveBeenCalledWith(mockDatabase, "guest");
-    await expect(captured!.clearAllMemories()).resolves.toBeUndefined();
+    await act(async () => {
+      await expect(captured!.clearAllMemories()).resolves.toBeUndefined();
+    });
   });
 
   it("reads only the explicit normalized account owner", async () => {

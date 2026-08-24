@@ -17,6 +17,7 @@ export default function MemoriesHomeScreen() {
   const { isAuthReady, user } = useAuth();
   const {
     continueWithGuest,
+    isReady: isLocalLibraryReady,
     isMigrating,
     migrateToAccount,
     needsMigrationChoice,
@@ -101,7 +102,7 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>本地规则生成的可编辑初稿，不分析照片内容</Text>
         <Text selectable style={styles.subtitle}>本地草稿默认保存在此设备；只有你主动发布礼品时，所选内容才会上传给受邀成员。</Text>
         <View style={styles.heroActions}>
-          <AppButton disabled={isMigrating} label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
+          <AppButton disabled={!isLocalLibraryReady || isMigrating} label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
           <AppButton
             disabled={!isAuthReady}
             label="我的纪念品"
@@ -237,7 +238,7 @@ export default function MemoriesHomeScreen() {
             <Text selectable style={styles.mutedText}>
               从一组照片开始，留住你们下一段一起出发的日子。
             </Text>
-            <AppButton label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
+            <AppButton disabled={!isLocalLibraryReady} label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
           </PaperCard>
         )}
       </Section>

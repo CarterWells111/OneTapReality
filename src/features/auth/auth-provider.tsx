@@ -20,6 +20,8 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   switchAccount: () => Promise<void>;
   forgetRememberedEmail: () => Promise<void>;
+  getSessionGeneration: () => number;
+  sessionGeneration: number;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -30,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [rememberedEmail, setRememberedEmail] = React.useState<string | null>(null);
   const [isAuthReady, setAuthReady] = React.useState(false);
   const operationGeneration = React.useRef(0);
+  const [sessionGeneration, setSessionGeneration] = React.useState(0);
 
   React.useEffect(() => {
     let active = true;
@@ -67,9 +70,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const requestCode = React.useCallback((email: string) => client.requestAuthEmailCode(email), [client]);
   const verifyCode = React.useCallback(async (email: string, code: string) => {
-    operationGeneration.current += 1;
+    const generation = ++operationGeneration.current;
+    setSessionGeneration(generation);
+    // Hide and invalidate the previous account before the first asynchronous
+    // boundary. Old local-library callbacks consult this same generation.
+    setSession(null);
+    await clearAuthSession();
     const verified = await client.verifyAuthEmailCode(email, code);
+    if (generation !== operationGeneration.current) {
+      throw new Error("Authentication changed during verification");
+    }
     await saveAuthSession(verified);
+    if (generation !== operationGeneration.current) {
+      await clearAuthSession().catch(() => undefined);
+      throw new Error("Authentication changed during verification");
+    }
     setSession(verified);
     await saveRememberedEmail(verified.user.email)
       .then(() => setRememberedEmail(verified.user.email))
@@ -79,9 +94,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = React.useCallback(async () => {
     const token = session?.accessToken;
     operationGeneration.current += 1;
-    await clearAuthSession();
+    setSessionGeneration(operationGeneration.current);
     setSession(null);
+    let storageError: unknown;
+    try {
+      await clearAuthSession();
+    } catch (error) {
+      storageError = error;
+    }
     if (token) await client.logoutAuthSession(token).catch(() => undefined);
+    if (storageError) throw storageError;
   }, [client, session?.accessToken]);
   const forgetRememberedEmail = React.useCallback(async () => {
     await clearRememberedEmail();
@@ -92,10 +114,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         forgetRememberedEmail,
+        getSessionGeneration: () => operationGeneration.current,
         isAuthReady,
         rememberedEmail,
         requestCode,
         session,
+        sessionGeneration,
         signOut,
         switchAccount: signOut,
         user: session?.user ?? null,

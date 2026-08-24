@@ -194,4 +194,24 @@ describe("SettingsScreen", () => {
     screen.rerender(<SettingsScreen />);
     expect(screen.getByText("当前账户的本机旅行册")).toBeTruthy();
   });
+
+  it("lets a signed-in guest-library user switch or migrate later from settings", async () => {
+    const switchToAccount = jest.fn().mockResolvedValue(undefined);
+    const migrateToAccount = jest.fn().mockResolvedValue(undefined);
+    mockUseLocalLibrary.mockReturnValue({
+      accountOwner: "account:owner@example.com",
+      isMigrating: false,
+      migrateToAccount,
+      needsMigrationChoice: false,
+      owner: "guest",
+      switchToAccount,
+    });
+    const screen = render(<SettingsScreen />);
+
+    await act(async () => fireEvent.press(screen.getByText("切换到当前账户旅行册")));
+    await act(async () => fireEvent.press(screen.getByText("迁移访客旅行册到当前账户")));
+
+    expect(switchToAccount).toHaveBeenCalledTimes(1);
+    expect(migrateToAccount).toHaveBeenCalledTimes(1);
+  });
 });

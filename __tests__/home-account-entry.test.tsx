@@ -19,6 +19,7 @@ describe("home account entry", () => {
     jest.clearAllMocks();
     mockUseLocalLibrary.mockReturnValue({
       continueWithGuest: jest.fn(),
+      isReady: true,
       isMigrating: false,
       migrateToAccount: jest.fn(),
       needsMigrationChoice: false,
@@ -43,6 +44,7 @@ describe("home account entry", () => {
     mockUseAuth.mockReturnValue({ isAuthReady: true, user: { email: "owner@example.com" } });
     mockUseLocalLibrary.mockReturnValue({
       continueWithGuest,
+      isReady: false,
       isMigrating: false,
       migrateToAccount,
       needsMigrationChoice: true,
@@ -51,6 +53,9 @@ describe("home account entry", () => {
     const screen = render(<MemoriesHomeScreen />);
 
     expect(screen.getByText("选择本机旅行册")).toBeTruthy();
+    fireEvent.press(screen.getByText("创建纪念册"));
+    fireEvent.press(screen.getByText("从第一段旅程开始"));
+    expect(mockPush).not.toHaveBeenCalledWith("/memory/new");
     fireEvent.press(screen.getByText("继续使用访客旅行册"));
     fireEvent.press(screen.getByText("迁移到当前账户"));
     await waitFor(() => expect(continueWithGuest).toHaveBeenCalledTimes(1));

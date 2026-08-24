@@ -25,7 +25,15 @@ export default function SettingsScreen() {
     session,
     signOut,
   } = useAuth();
-  const { needsMigrationChoice, owner: localLibraryOwner } = useLocalLibrary();
+  const {
+    accountOwner,
+    continueWithGuest,
+    isMigrating,
+    migrateToAccount,
+    needsMigrationChoice,
+    owner: localLibraryOwner,
+    switchToAccount,
+  } = useLocalLibrary();
   const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -129,6 +137,29 @@ export default function SettingsScreen() {
           </Text>
           {needsMigrationChoice ? (
             <Text selectable style={styles.helper}>请回到首页选择继续使用访客库或迁移到当前账户。</Text>
+          ) : null}
+          {accountOwner && !needsMigrationChoice && localLibraryOwner === "guest" ? (
+            <>
+              <AppButton
+                disabled={isMigrating}
+                label="切换到当前账户旅行册"
+                tone="secondary"
+                onPress={() => void switchToAccount().catch(() => setError("无法切换本机旅行册，请重试。"))}
+              />
+              <AppButton
+                disabled={isMigrating}
+                label="迁移访客旅行册到当前账户"
+                onPress={() => void migrateToAccount().catch(() => setError("迁移未完成，访客旅行册仍保留在本机。"))}
+              />
+            </>
+          ) : null}
+          {accountOwner && !needsMigrationChoice && localLibraryOwner !== "guest" ? (
+            <AppButton
+              disabled={isMigrating}
+              label="切换到访客旅行册"
+              tone="secondary"
+              onPress={() => void continueWithGuest().catch(() => setError("无法切换本机旅行册，请重试。"))}
+            />
           ) : null}
         </View>
       </Section>

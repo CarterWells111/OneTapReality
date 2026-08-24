@@ -7,6 +7,7 @@ const mockDatabase = { name: "local" };
 const mockResolveCityCollection = jest.fn();
 const mockSaveCityCollection = jest.fn();
 const mockUseAuth = jest.fn();
+const mockRunWrite = jest.fn();
 let mockCity = "shanghai";
 
 jest.mock("expo-router", () => ({
@@ -19,7 +20,11 @@ jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseA
 jest.mock("../src/features/auth/local-library-provider", () => ({
   useLocalLibrary: () => {
     const auth = mockUseAuth();
-    return { isReady: auth.isAuthReady, owner: auth.user ? `account:${auth.user.email.toLowerCase()}` : "guest" };
+    return {
+      isReady: auth.isAuthReady,
+      owner: auth.user ? `account:${auth.user.email.toLowerCase()}` : "guest",
+      runWrite: mockRunWrite,
+    };
   },
 }));
 jest.mock("../src/storage/city-collection-repository", () => ({
@@ -40,6 +45,9 @@ describe("city collection management route", () => {
     mockReplace.mockReset();
     mockCity = "shanghai";
     mockUseAuth.mockReturnValue({ isAuthReady: true, user: { email: "Owner@Example.com" } });
+    mockRunWrite.mockReset().mockImplementation(async (operation) => (
+      operation("account:owner@example.com", () => undefined)
+    ));
     mockSaveCityCollection.mockReset().mockResolvedValue(undefined);
     mockResolveCityCollection.mockReset().mockResolvedValue({ city: "shanghai", featuredMemory: memories[0], memories });
   });
@@ -53,6 +61,7 @@ describe("city collection management route", () => {
 
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
     expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "account:owner@example.com");
+    expect(mockRunWrite).toHaveBeenCalledTimes(1);
   });
 
   it("cancels without writing any database changes", async () => {

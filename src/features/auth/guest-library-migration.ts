@@ -7,11 +7,19 @@ import {
   isLocalLibraryOwner,
   type AccountLocalLibraryOwner,
 } from "./local-library-owner";
+import { beginGuestLibraryMigration } from "./local-library-write-lease";
 
 export type LocalLibrarySelection = "guest" | "account";
 
-type GuestMemoryRow = { id: string };
 type ChoiceRow = { selection: LocalLibrarySelection };
+
+type GuestLibrarySnapshot = {
+  memories: (Record<string, unknown> & { id: string })[];
+  photos: Record<string, unknown>[];
+  pages: Record<string, unknown>[];
+  drafts: Record<string, unknown>[];
+  arrangements: Record<string, unknown>[];
+};
 
 export type PreparedGuestLibraryFiles = {
   replacements: ReadonlyMap<string, string>;
@@ -33,12 +41,50 @@ function assertAccountOwner(owner: AccountLocalLibraryOwner) {
   }
 }
 
-async function guestMemoryIds(db: SQLiteDatabase): Promise<string[]> {
-  const rows = await db.getAllAsync<GuestMemoryRow>(
-    "SELECT id FROM memories WHERE ownerAccountKey = ? ORDER BY id ASC",
+async function guestLibrarySnapshot(db: SQLiteDatabase): Promise<GuestLibrarySnapshot> {
+  const memories = await db.getAllAsync<Record<string, unknown> & { id: string }>(
+    `SELECT id, title, city, travelDate, status, coverColor, coverImage,
+      createdAt, updatedAt, ownerAccountKey
+      FROM memories WHERE ownerAccountKey = ? ORDER BY id ASC`,
     GUEST_LIBRARY_OWNER,
   );
-  return rows.map((row) => row.id);
+  const photos = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT photos.memory_id, photos.id, photos.uri, photos.position
+      FROM memory_photos AS photos
+      INNER JOIN memories AS memory ON memory.id = photos.memory_id
+      WHERE memory.ownerAccountKey = ?
+      ORDER BY photos.memory_id ASC, photos.position ASC, photos.id ASC`,
+    GUEST_LIBRARY_OWNER,
+  );
+  const pages = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT pages.memory_id, pages.id, pages.position, pages.kind, pages.headline,
+      pages.body, pages.photo_uri, pages.layout_json
+      FROM story_pages AS pages
+      INNER JOIN memories AS memory ON memory.id = pages.memory_id
+      WHERE memory.ownerAccountKey = ?
+      ORDER BY pages.memory_id ASC, pages.position ASC, pages.id ASC`,
+    GUEST_LIBRARY_OWNER,
+  );
+  const drafts = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT drafts.memory_id, drafts.owner_account_key, drafts.base_updated_at,
+      drafts.pages_json, drafts.updated_at
+      FROM memory_edit_drafts AS drafts
+      INNER JOIN memories AS memory ON memory.id = drafts.memory_id
+      WHERE memory.ownerAccountKey = ? AND drafts.owner_account_key = ?
+      ORDER BY drafts.memory_id ASC`,
+    GUEST_LIBRARY_OWNER,
+    GUEST_LIBRARY_OWNER,
+  );
+  const arrangements = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT arrangements.memory_id, arrangements.city, arrangements.position,
+      arrangements.is_featured, arrangements.updated_at
+      FROM city_collection_arrangements AS arrangements
+      INNER JOIN memories AS memory ON memory.id = arrangements.memory_id
+      WHERE memory.ownerAccountKey = ?
+      ORDER BY arrangements.memory_id ASC`,
+    GUEST_LIBRARY_OWNER,
+  );
+  return { arrangements, drafts, memories, pages, photos };
 }
 
 export async function hasGuestLibrary(db: SQLiteDatabase): Promise<boolean> {
@@ -86,6 +132,15 @@ export async function chooseGuestLibrary(
 ): Promise<void> {
   assertAccountOwner(owner);
   await saveSelection(db, owner, "guest", updatedAt);
+}
+
+export async function chooseAccountLibrary(
+  db: SQLiteDatabase,
+  owner: AccountLocalLibraryOwner,
+  updatedAt = new Date().toISOString(),
+): Promise<void> {
+  assertAccountOwner(owner);
+  await saveSelection(db, owner, "account", updatedAt);
 }
 
 function photosRoot(owner: string) {
@@ -186,8 +241,8 @@ async function prepareGuestLibraryFiles(
   };
 }
 
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function sameSnapshot(left: GuestLibrarySnapshot, right: GuestLibrarySnapshot): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 async function replaceReference(
@@ -233,40 +288,46 @@ export async function migrateGuestLibraryToAccount(
   dependencies: MigrationDependencies = {},
 ): Promise<void> {
   assertAccountOwner(owner);
-  const beforeIds = await guestMemoryIds(db);
-  const prepared = await (dependencies.prepareFiles ?? prepareGuestLibraryFiles)(owner, beforeIds);
-  const updatedAt = (dependencies.now ?? (() => new Date().toISOString()))();
-
+  const migrationLease = await beginGuestLibraryMigration(db);
   try {
-    await db.withExclusiveTransactionAsync(async (tx) => {
-      const currentIds = await guestMemoryIds(tx);
-      if (!sameIds(beforeIds, currentIds)) {
-        throw new Error("Guest library changed during migration; please retry");
-      }
-      for (const [before, after] of prepared.replacements) {
-        await replaceReference(tx, before, after);
-      }
-      await tx.runAsync(
-        `UPDATE memory_edit_drafts SET owner_account_key = ?
-          WHERE owner_account_key = ?
-            AND memory_id IN (SELECT id FROM memories WHERE ownerAccountKey = ?)`,
-        owner,
-        GUEST_LIBRARY_OWNER,
-        GUEST_LIBRARY_OWNER,
-      );
-      await tx.runAsync(
-        "UPDATE memories SET ownerAccountKey = ? WHERE ownerAccountKey = ?",
-        owner,
-        GUEST_LIBRARY_OWNER,
-      );
-      await saveSelection(tx, owner, "account", updatedAt);
-    });
-  } catch (error) {
-    await prepared.rollback();
-    throw error;
-  }
+    const before = await guestLibrarySnapshot(db);
+    const memoryIds = before.memories.map((memory) => memory.id);
+    const prepared = await (dependencies.prepareFiles ?? prepareGuestLibraryFiles)(owner, memoryIds);
+    const updatedAt = (dependencies.now ?? (() => new Date().toISOString()))();
 
-  // SQLite is already committed. A cleanup failure may leave only redundant
-  // guest files and must never make the UI present the migration as rolled back.
-  await prepared.commitCleanup().catch(() => undefined);
+    try {
+      await db.withExclusiveTransactionAsync(async (tx) => {
+        const current = await guestLibrarySnapshot(tx);
+        if (!sameSnapshot(before, current)) {
+          throw new Error("Guest library changed during migration; please retry");
+        }
+        for (const [source, destination] of prepared.replacements) {
+          await replaceReference(tx, source, destination);
+        }
+        await tx.runAsync(
+          `UPDATE memory_edit_drafts SET owner_account_key = ?
+            WHERE owner_account_key = ?
+              AND memory_id IN (SELECT id FROM memories WHERE ownerAccountKey = ?)`,
+          owner,
+          GUEST_LIBRARY_OWNER,
+          GUEST_LIBRARY_OWNER,
+        );
+        await tx.runAsync(
+          "UPDATE memories SET ownerAccountKey = ? WHERE ownerAccountKey = ?",
+          owner,
+          GUEST_LIBRARY_OWNER,
+        );
+        await saveSelection(tx, owner, "account", updatedAt);
+      });
+    } catch (error) {
+      await prepared.rollback();
+      throw error;
+    }
+
+    // SQLite is already committed. A cleanup failure may leave only redundant
+    // guest files and must never make the UI present the migration as rolled back.
+    await prepared.commitCleanup().catch(() => undefined);
+  } finally {
+    migrationLease.release();
+  }
 }

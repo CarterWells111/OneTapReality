@@ -12,10 +12,28 @@ function migrationDatabase(options?: { failOwnerUpdate?: boolean }) {
   const events: string[] = [];
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   let guestOwner = "guest";
+  const content = { draft: "draft-v1", memory: "memory-v1", page: "page-v1", photo: "photo-v1" };
+  const queryRows = <T,>(sql: string): T[] => {
+    if (guestOwner !== "guest") return [];
+    if (sql.includes("FROM memory_photos")) {
+      return [{ memory_id: "memory-1", uri: content.photo, position: 0 }] as T[];
+    }
+    if (sql.includes("FROM story_pages")) {
+      return [{ memory_id: "memory-1", id: "page-1", body: content.page }] as T[];
+    }
+    if (sql.includes("FROM memory_edit_drafts")) {
+      return [{ memory_id: "memory-1", owner_account_key: "guest", pages_json: content.draft }] as T[];
+    }
+    if (sql.includes("FROM city_collection_arrangements")) return [];
+    if (sql.includes("FROM memories")) {
+      return [{ id: "memory-1", title: content.memory, ownerAccountKey: "guest" }] as T[];
+    }
+    return [];
+  };
   const tx = {
     getAllAsync: async <T>(sql: string) => {
       events.push(`query:${sql.slice(0, 20)}`);
-      return guestOwner === "guest" ? [{ id: "memory-1" }] as T[] : [] as T[];
+      return queryRows<T>(sql);
     },
     runAsync: async (sql: string, ...params: unknown[]) => {
       calls.push({ sql, params });
@@ -27,7 +45,7 @@ function migrationDatabase(options?: { failOwnerUpdate?: boolean }) {
     },
   };
   const db = {
-    getAllAsync: async <T>() => guestOwner === "guest" ? [{ id: "memory-1" }] as T[] : [] as T[],
+    getAllAsync: async <T>(sql: string) => queryRows<T>(sql),
     withExclusiveTransactionAsync: async (callback: (transaction: typeof tx) => Promise<void>) => {
       events.push("transaction:start");
       const before = guestOwner;
@@ -41,7 +59,13 @@ function migrationDatabase(options?: { failOwnerUpdate?: boolean }) {
       }
     },
   } as unknown as SQLiteDatabase;
-  return { calls, db, events, getGuestOwner: () => guestOwner };
+  return {
+    calls,
+    db,
+    events,
+    getGuestOwner: () => guestOwner,
+    mutateContent: (kind: keyof typeof content) => { content[kind] = `${kind}-v2`; },
+  };
 }
 
 function preparedFiles(events: string[]): PreparedGuestLibraryFiles {
@@ -69,6 +93,10 @@ describe("explicit guest library migration", () => {
     expect(events).toEqual([
       "files:prepared:memory-1",
       "transaction:start",
+      expect.stringMatching(/^query:/),
+      expect.stringMatching(/^query:/),
+      expect.stringMatching(/^query:/),
+      expect.stringMatching(/^query:/),
       expect.stringMatching(/^query:/),
       "transaction:commit",
       "files:source-cleaned",
@@ -131,4 +159,23 @@ describe("explicit guest library migration", () => {
     expect(events).toContain("transaction:commit");
     expect(events).not.toContain("files:copies-rolled-back");
   });
+
+  it.each(["memory", "photo", "page", "draft"] as const)(
+    "rejects a same-id guest %s change made while files are being prepared",
+    async (kind) => {
+      const { db, events, getGuestOwner, mutateContent } = migrationDatabase();
+
+      await expect(migrateGuestLibraryToAccount(db, owner, {
+        prepareFiles: async () => {
+          mutateContent(kind);
+          return preparedFiles(events);
+        },
+        now: () => "2026-08-24T12:00:00.000Z",
+      })).rejects.toThrow("Guest library changed during migration");
+
+      expect(getGuestOwner()).toBe("guest");
+      expect(events).toContain("files:copies-rolled-back");
+      expect(events).not.toContain("files:source-cleaned");
+    },
+  );
 });

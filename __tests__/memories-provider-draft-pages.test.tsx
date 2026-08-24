@@ -10,6 +10,9 @@ const mockHydrateMemoryPhotoReferences = jest.fn();
 const mockReplaceMemoryMediaSnapshot = jest.fn();
 const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
+const mockRunWrite = (operation: (owner: string, assertActive: () => void) => Promise<unknown>) => (
+  operation("account:owner@example.com", () => undefined)
+);
 
 jest.mock("expo-sqlite", () => ({
   useSQLiteContext: () => mockDatabase,
@@ -18,7 +21,11 @@ jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => ({ isAuthReady: true, user: { id: "user-1", email: "Owner@Example.com", isAdmin: false } }),
 }));
 jest.mock("../src/features/auth/local-library-provider", () => ({
-  useLocalLibrary: () => ({ isReady: true, owner: "account:owner@example.com" }),
+  useLocalLibrary: () => ({
+    isReady: true,
+    owner: "account:owner@example.com",
+    runWrite: mockRunWrite,
+  }),
 }));
 jest.mock("../src/features/memories/photo-persistence", () => ({
   cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),

@@ -153,19 +153,72 @@ describe("AuthProvider remembered account", () => {
     expect(mockClearAuthSession).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the current account visible when local sign-out storage cannot be cleared", async () => {
+  it("hides the current account synchronously even when local sign-out cleanup is still pending", async () => {
     const savedSession = {
       accessToken: "saved-token",
       user: { id: "user-1", email: "owner@example.com", isAdmin: false },
     };
     mockLoadAuthSession.mockResolvedValue(savedSession);
     mockGetCurrentAuthUser.mockResolvedValue(savedSession.user);
-    mockClearAuthSession.mockRejectedValue(new Error("keychain unavailable"));
+    let rejectClear: ((error: Error) => void) | undefined;
+    mockClearAuthSession.mockReturnValue(new Promise<void>((_resolve, reject) => {
+      rejectClear = reject;
+    }));
     render(<AuthProvider><CaptureAuth /></AuthProvider>);
     await waitFor(() => expect(auth?.session).toEqual(savedSession));
 
-    await expect(auth?.signOut()).rejects.toThrow("keychain unavailable");
-    expect(auth?.session).toEqual(savedSession);
-    expect(mockLogoutAuthSession).not.toHaveBeenCalled();
+    let pendingSignOut: Promise<void> | undefined;
+    act(() => { pendingSignOut = auth!.signOut(); });
+    expect(auth?.session).toBeNull();
+
+    rejectClear?.(new Error("keychain unavailable"));
+    await expect(pendingSignOut).rejects.toThrow("keychain unavailable");
+    expect(auth?.session).toBeNull();
+    expect(mockLogoutAuthSession).toHaveBeenCalledWith("saved-token");
+  });
+
+  it("hides account A before an account B verification request can complete", async () => {
+    const savedSession = {
+      accessToken: "saved-token",
+      user: { id: "user-a", email: "a@example.com", isAdmin: false },
+    };
+    mockLoadAuthSession.mockResolvedValue(savedSession);
+    mockGetCurrentAuthUser.mockResolvedValue(savedSession.user);
+    let resolveVerification: ((session: typeof savedSession) => void) | undefined;
+    mockVerifyAuthEmailCode.mockReturnValue(new Promise((resolve) => {
+      resolveVerification = resolve;
+    }));
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.session).toEqual(savedSession));
+
+    let pendingVerification: Promise<typeof savedSession> | undefined;
+    act(() => {
+      pendingVerification = auth!.verifyCode("b@example.com", "123456") as Promise<typeof savedSession>;
+    });
+    expect(auth?.session).toBeNull();
+
+    const nextSession = {
+      accessToken: "next-token",
+      user: { id: "user-b", email: "b@example.com", isAdmin: false },
+    };
+    await act(async () => {
+      resolveVerification?.(nextSession);
+      await expect(pendingVerification).resolves.toEqual(nextSession);
+    });
+    await waitFor(() => expect(auth?.session).toEqual(nextSession));
+  });
+
+  it("publishes a new session generation even when verification fails while already signed out", async () => {
+    mockVerifyAuthEmailCode.mockRejectedValue(new Error("invalid code"));
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+    const initialGeneration = auth!.sessionGeneration;
+
+    let failedVerification: Promise<unknown> | undefined;
+    act(() => { failedVerification = auth!.verifyCode("owner@example.com", "000000"); });
+    await expect(failedVerification).rejects.toThrow("invalid code");
+
+    await waitFor(() => expect(auth?.sessionGeneration).toBe(initialGeneration + 1));
+    expect(auth?.session).toBeNull();
   });
 });
