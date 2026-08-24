@@ -74,6 +74,15 @@ node scripts/release-ios-testflight.cjs --profile=beta-external --build-id=<appr
 
 上传处理完成后，在 App Store Connect 手动加入现有外部测试群组，填写已审阅的 Beta 元数据并提交 Beta App Review。不得开放公共链接，不得通过 EAS 自动分配外部组，也不得点击公开 App Store 版本的提交或发布操作。Apple 批准与内部 smoke 完成前不邀请外部测试者。
 
+外测实际操作前必须使用以下受版本控制的非秘密工件，禁止从聊天记录或旧版本复制字段：
+
+- [App Store Connect 1.1.2 填写稿](./APP-STORE-CONNECT-1.1.2.md)
+- [外部 Beta 放行与停测清单](./EXTERNAL-BETA-1.1.2.md)
+- [NFC 真机测试脱敏证据模板](./NFC-TEST-EVIDENCE.template.md)
+- [10 人测试者矩阵模板](./BETA-TESTER-MATRIX.template.md)
+
+上述模板里的审核邮箱、固定验证码、礼品链接、真实姓名和电话必须保留占位符，直到发布负责人在 App Store Connect 中手工填写；不得把真实值回写仓库。
+
 ## 脚本做了什么
 
 1. **仓库状态** — 工作区必须干净。EAS 归档的是工作目录，未提交的改动会一起打进包里。

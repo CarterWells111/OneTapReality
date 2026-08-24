@@ -32,7 +32,10 @@ test("provides the marketing, support, and privacy routes Apple requires", () =>
   assert.match(support, /App 版本号/);
   assert.match(privacy, /登录并明确发布 NFC 礼品/);
   assert.match(privacy, /私有 R2/);
-  assert.match(privacy, /本地“删除所有数据”只删除设备本地内容/);
+  assert.match(privacy, /“删除本机旅行册”只删除当前本地库/);
+  assert.match(privacy, /“永久删除账号及云端数据”/);
+  assert.match(privacy, /Railway PostgreSQL/);
+  assert.match(privacy, /Resend/);
   assert.match(support, /主动发布 NFC 礼品/);
   assert.match(support, /停用礼品/);
 });
