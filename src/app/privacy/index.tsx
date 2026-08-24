@@ -28,7 +28,7 @@ function deletionErrorMessage(error: unknown): string {
 export default function PrivacyScreen() {
   const router = useRouter();
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const { forgetRememberedEmail, isAuthReady, session, signOut, user } = useAuth();
+  const { forgetRememberedEmail, isAuthReady, session, sessionGeneration, signOut, user } = useAuth();
   const {
     accountLibraryKey,
     currentLibraryIsGuest,
@@ -89,6 +89,11 @@ export default function PrivacyScreen() {
     const accessToken = session?.accessToken;
     const requestedAccountKey = accountLibraryKey;
     if (!accessToken || !challenge || !requestedAccountKey) return;
+    const requestedIdentity = {
+      accessToken,
+      email: session.user.email,
+      generation: sessionGeneration,
+    };
     if (!/^\d{6}$/u.test(code)) {
       setDeletionError("请输入邮件中的六位验证码。");
       return;
@@ -111,7 +116,7 @@ export default function PrivacyScreen() {
         try {
           // signOut invalidates the auth generation before its first await, so
           // no account-scoped write can start after local deletion begins.
-          await signOut();
+          await signOut(requestedIdentity);
           localSessionCleared = true;
         } catch {
           // Retry once because a persisted revoked session must not survive relaunch.
@@ -129,7 +134,7 @@ export default function PrivacyScreen() {
       let rememberedEmailCleared = false;
       for (let attempt = 0; attempt < 2 && !rememberedEmailCleared; attempt += 1) {
         try {
-          await forgetRememberedEmail();
+          await forgetRememberedEmail(requestedIdentity);
           rememberedEmailCleared = true;
         } catch {
           // Retry once before reporting that device cleanup needs support.

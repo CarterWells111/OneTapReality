@@ -10,6 +10,12 @@ import {
   saveRememberedEmail,
 } from "./auth-storage";
 
+export type AuthIdentityScope = Readonly<{
+  accessToken: string;
+  email: string;
+  generation: number;
+}>;
+
 type AuthContextValue = {
   isAuthReady: boolean;
   session: AuthenticatedAccountSession | null;
@@ -17,14 +23,25 @@ type AuthContextValue = {
   rememberedEmail: string | null;
   requestCode: (email: string) => Promise<{ email: string }>;
   verifyCode: (email: string, code: string) => Promise<AuthenticatedAccountSession>;
-  signOut: () => Promise<void>;
-  switchAccount: () => Promise<void>;
-  forgetRememberedEmail: () => Promise<void>;
+  signOut: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
+  switchAccount: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
+  forgetRememberedEmail: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
   getSessionGeneration: () => number;
   sessionGeneration: number;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
+
+type InvalidatedIdentity = {
+  identity: AuthIdentityScope | null;
+  invalidatedGeneration: number;
+};
+
+function sameIdentity(left: AuthIdentityScope | null, right: AuthIdentityScope): boolean {
+  return left?.accessToken === right.accessToken
+    && left.email.trim().toLowerCase() === right.email.trim().toLowerCase()
+    && left.generation === right.generation;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const client = React.useMemo(() => new BackendApiClient(), []);
@@ -33,6 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthReady, setAuthReady] = React.useState(false);
   const operationGeneration = React.useRef(0);
   const [sessionGeneration, setSessionGeneration] = React.useState(0);
+  const sessionRef = React.useRef<AuthenticatedAccountSession | null>(null);
+  const rememberedEmailRef = React.useRef<string | null>(null);
+  const invalidatedIdentity = React.useRef<InvalidatedIdentity | null>(null);
+  const storageTransitionTail = React.useRef<Promise<void>>(Promise.resolve());
+  const runStorageTransition = React.useCallback((operation: () => Promise<void>): Promise<void> => {
+    const pending = storageTransitionTail.current.then(operation);
+    storageTransitionTail.current = pending.then(() => undefined, () => undefined);
+    return pending;
+  }, []);
 
   React.useEffect(() => {
     let active = true;
@@ -42,12 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loadAuthSession().catch(() => null),
     ]).then(async ([savedEmail, savedSession]) => {
       if (!active || generation !== operationGeneration.current) return;
+      rememberedEmailRef.current = savedEmail;
       setRememberedEmail(savedEmail);
       if (!savedSession) return;
       try {
         const user = await client.getCurrentAuthUser(savedSession.accessToken);
         const refreshed = { accessToken: savedSession.accessToken, user };
         if (active && generation === operationGeneration.current) {
+          sessionRef.current = refreshed;
           setSession(refreshed);
         }
       } catch (error) {
@@ -57,8 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? Number(error.status)
             : undefined;
         if (status === 401 || status === 403) {
-          await clearAuthSession().catch(() => undefined);
+          await runStorageTransition(async () => {
+            if (!active || generation !== operationGeneration.current) return;
+            await clearAuthSession();
+          }).catch(() => undefined);
         } else {
+          sessionRef.current = savedSession;
           setSession(savedSession);
         }
       }
@@ -66,49 +98,130 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (active) setAuthReady(true);
     });
     return () => { active = false; };
-  }, [client]);
+  }, [client, runStorageTransition]);
 
   const requestCode = React.useCallback((email: string) => client.requestAuthEmailCode(email), [client]);
   const verifyCode = React.useCallback(async (email: string, code: string) => {
     const generation = ++operationGeneration.current;
+    invalidatedIdentity.current = null;
     setSessionGeneration(generation);
     // Hide and invalidate the previous account before the first asynchronous
     // boundary. Old local-library callbacks consult this same generation.
+    sessionRef.current = null;
     setSession(null);
-    await clearAuthSession();
+    await runStorageTransition(async () => {
+      if (generation !== operationGeneration.current) return;
+      await clearAuthSession();
+    });
+    if (generation !== operationGeneration.current) {
+      throw new Error("Authentication changed during verification");
+    }
     const verified = await client.verifyAuthEmailCode(email, code);
     if (generation !== operationGeneration.current) {
       throw new Error("Authentication changed during verification");
     }
-    await saveAuthSession(verified);
-    if (generation !== operationGeneration.current) {
-      await clearAuthSession().catch(() => undefined);
+    let savedForCurrentGeneration = false;
+    await runStorageTransition(async () => {
+      if (generation !== operationGeneration.current) return;
+      await saveAuthSession(verified);
+      savedForCurrentGeneration = generation === operationGeneration.current;
+    });
+    if (!savedForCurrentGeneration || generation !== operationGeneration.current) {
       throw new Error("Authentication changed during verification");
     }
+    sessionRef.current = verified;
     setSession(verified);
-    await saveRememberedEmail(verified.user.email)
-      .then(() => setRememberedEmail(verified.user.email))
-      .catch(() => undefined);
+    await runStorageTransition(async () => {
+      if (generation !== operationGeneration.current) return;
+      await saveRememberedEmail(verified.user.email);
+      if (generation !== operationGeneration.current) return;
+      rememberedEmailRef.current = verified.user.email;
+      setRememberedEmail(verified.user.email);
+    }).catch(() => undefined);
     return verified;
-  }, [client]);
-  const signOut = React.useCallback(async () => {
-    const token = session?.accessToken;
-    operationGeneration.current += 1;
-    setSessionGeneration(operationGeneration.current);
-    setSession(null);
+  }, [client, runStorageTransition]);
+  const signOut = React.useCallback(async (expectedIdentity?: AuthIdentityScope) => {
+    const currentSession = sessionRef.current;
+    const currentGeneration = operationGeneration.current;
+    let invalidation = invalidatedIdentity.current;
+
+    if (expectedIdentity) {
+      const currentIdentity = currentSession ? {
+        accessToken: currentSession.accessToken,
+        email: currentSession.user.email,
+        generation: currentGeneration,
+      } : null;
+      const isCurrentIdentity = sameIdentity(currentIdentity, expectedIdentity);
+      const isOwnedRetry = invalidation !== null
+        && sameIdentity(invalidation.identity, expectedIdentity)
+        && invalidation.invalidatedGeneration === currentGeneration
+        && currentSession === null;
+      if (!isCurrentIdentity && !isOwnedRetry) return;
+      if (isCurrentIdentity) {
+        invalidation = {
+          identity: expectedIdentity,
+          invalidatedGeneration: currentGeneration + 1,
+        };
+        invalidatedIdentity.current = invalidation;
+        operationGeneration.current = invalidation.invalidatedGeneration;
+        setSessionGeneration(invalidation.invalidatedGeneration);
+        sessionRef.current = null;
+        setSession(null);
+      }
+    } else {
+      const currentIdentity = currentSession ? {
+        accessToken: currentSession.accessToken,
+        email: currentSession.user.email,
+        generation: currentGeneration,
+      } : null;
+      invalidation = {
+        identity: currentIdentity,
+        invalidatedGeneration: currentGeneration + 1,
+      };
+      invalidatedIdentity.current = invalidation;
+      operationGeneration.current = invalidation.invalidatedGeneration;
+      setSessionGeneration(invalidation.invalidatedGeneration);
+      sessionRef.current = null;
+      setSession(null);
+    }
+
+    const ownedInvalidation = invalidation;
+    if (!ownedInvalidation) return;
     let storageError: unknown;
     try {
-      await clearAuthSession();
+      await runStorageTransition(async () => {
+        if (invalidatedIdentity.current !== ownedInvalidation
+          || operationGeneration.current !== ownedInvalidation.invalidatedGeneration
+          || sessionRef.current !== null) return;
+        await clearAuthSession();
+      });
     } catch (error) {
       storageError = error;
     }
+    const token = ownedInvalidation.identity?.accessToken;
     if (token) await client.logoutAuthSession(token).catch(() => undefined);
     if (storageError) throw storageError;
-  }, [client, session?.accessToken]);
-  const forgetRememberedEmail = React.useCallback(async () => {
-    await clearRememberedEmail();
-    setRememberedEmail(null);
-  }, []);
+  }, [client, runStorageTransition]);
+  const forgetRememberedEmail = React.useCallback(async (expectedIdentity?: AuthIdentityScope) => {
+    const ownedInvalidation = invalidatedIdentity.current;
+    if (expectedIdentity && (
+      ownedInvalidation === null
+      || !sameIdentity(ownedInvalidation.identity, expectedIdentity)
+      || ownedInvalidation.invalidatedGeneration !== operationGeneration.current
+      || sessionRef.current !== null
+    )) return;
+    await runStorageTransition(async () => {
+      if (expectedIdentity && (
+        invalidatedIdentity.current !== ownedInvalidation
+        || operationGeneration.current !== ownedInvalidation?.invalidatedGeneration
+        || sessionRef.current !== null
+      )) return;
+      await clearRememberedEmail();
+      if (expectedIdentity && invalidatedIdentity.current !== ownedInvalidation) return;
+      rememberedEmailRef.current = null;
+      setRememberedEmail(null);
+    });
+  }, [runStorageTransition]);
 
   return (
     <AuthContext.Provider

@@ -34,6 +34,7 @@ describe("PrivacyScreen", () => {
     mockUseAuth.mockReturnValue({
       isAuthReady: true,
       forgetRememberedEmail: mockForgetRememberedEmail,
+      sessionGeneration: 7,
       session: { accessToken: "session-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } },
       signOut: mockSignOut,
       user: { id: "user-1", email: "owner@example.com", isAdmin: false },
@@ -158,8 +159,16 @@ describe("PrivacyScreen", () => {
       confirmation: "DELETE",
     }));
     expect(mockDeleteAccountLibrary).toHaveBeenCalledWith("account:owner@example.com");
-    expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
-    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockForgetRememberedEmail).toHaveBeenCalledWith({
+      accessToken: "session-token",
+      email: "owner@example.com",
+      generation: 7,
+    });
+    expect(mockSignOut).toHaveBeenCalledWith({
+      accessToken: "session-token",
+      email: "owner@example.com",
+      generation: 7,
+    });
     expect(mockSignOut.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteAccountLibrary.mock.invocationCallOrder[0],
     );

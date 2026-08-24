@@ -221,4 +221,172 @@ describe("AuthProvider remembered account", () => {
     await waitFor(() => expect(auth?.sessionGeneration).toBe(initialGeneration + 1));
     expect(auth?.session).toBeNull();
   });
+
+  it("serializes session storage so a stale verification cannot erase a newer account", async () => {
+    const sessionA = {
+      accessToken: "token-a",
+      user: { id: "user-a", email: "a@example.com", isAdmin: false },
+    };
+    const sessionB = {
+      accessToken: "token-b",
+      user: { id: "user-b", email: "b@example.com", isAdmin: false },
+    };
+    let storedSession: typeof sessionA | null = null;
+    let releaseSessionAWrite: (() => void) | undefined;
+    mockClearAuthSession.mockImplementation(async () => { storedSession = null; });
+    mockSaveAuthSession.mockImplementation((nextSession: typeof sessionA) => {
+      if (nextSession.accessToken !== sessionA.accessToken) {
+        storedSession = nextSession;
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        releaseSessionAWrite = () => {
+          storedSession = nextSession;
+          resolve();
+        };
+      });
+    });
+    mockVerifyAuthEmailCode.mockImplementation(async (email: string) => (
+      email === sessionA.user.email ? sessionA : sessionB
+    ));
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+
+    let verificationA: Promise<unknown> | undefined;
+    act(() => { verificationA = auth!.verifyCode(sessionA.user.email, "111111"); });
+    await waitFor(() => expect(mockSaveAuthSession).toHaveBeenCalledWith(sessionA));
+
+    let verificationB: Promise<unknown> | undefined;
+    act(() => { verificationB = auth!.verifyCode(sessionB.user.email, "222222"); });
+    await act(async () => {
+      releaseSessionAWrite?.();
+      await expect(verificationA).rejects.toThrow("Authentication changed during verification");
+      await expect(verificationB).resolves.toEqual(sessionB);
+    });
+    await waitFor(() => expect(auth?.session).toEqual(sessionB));
+    expect(storedSession).toEqual(sessionB);
+    expect(mockClearAuthSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let deleted-account cleanup sign out or forget a newer account", async () => {
+    const sessionA = {
+      accessToken: "token-a",
+      user: { id: "user-a", email: "a@example.com", isAdmin: false },
+    };
+    const sessionB = {
+      accessToken: "token-b",
+      user: { id: "user-b", email: "b@example.com", isAdmin: false },
+    };
+    mockVerifyAuthEmailCode
+      .mockResolvedValueOnce(sessionA)
+      .mockResolvedValueOnce(sessionB);
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+
+    await act(async () => auth?.verifyCode(sessionA.user.email, "111111"));
+    const deletedAccount = {
+      accessToken: sessionA.accessToken,
+      email: sessionA.user.email,
+      generation: auth!.sessionGeneration,
+    };
+    await act(async () => auth?.verifyCode(sessionB.user.email, "222222"));
+    const clearsBeforeDeletedCleanup = mockClearAuthSession.mock.calls.length;
+    const rememberedClearsBeforeDeletedCleanup = mockClearRememberedEmail.mock.calls.length;
+
+    await act(async () => auth?.signOut(deletedAccount));
+    await act(async () => auth?.forgetRememberedEmail(deletedAccount));
+
+    expect(auth?.session).toEqual(sessionB);
+    expect(auth?.rememberedEmail).toBe(sessionB.user.email);
+    expect(mockClearAuthSession).toHaveBeenCalledTimes(clearsBeforeDeletedCleanup);
+    expect(mockClearRememberedEmail).toHaveBeenCalledTimes(rememberedClearsBeforeDeletedCleanup);
+  });
+
+  it("makes a failed deleted-account sign-out retry a no-op after account B logs in", async () => {
+    const sessionA = {
+      accessToken: "token-a",
+      user: { id: "user-a", email: "a@example.com", isAdmin: false },
+    };
+    const sessionB = {
+      accessToken: "token-b",
+      user: { id: "user-b", email: "b@example.com", isAdmin: false },
+    };
+    mockVerifyAuthEmailCode
+      .mockResolvedValueOnce(sessionA)
+      .mockResolvedValueOnce(sessionB);
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+    await act(async () => auth?.verifyCode(sessionA.user.email, "111111"));
+    const deletedAccount = {
+      accessToken: sessionA.accessToken,
+      email: sessionA.user.email,
+      generation: auth!.sessionGeneration,
+    };
+    let rejectAccountAClear: ((error: Error) => void) | undefined;
+    mockClearAuthSession.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectAccountAClear = reject;
+    }));
+
+    const clearsBeforeSignOut = mockClearAuthSession.mock.calls.length;
+    let failedSignOut: Promise<void> | undefined;
+    act(() => { failedSignOut = auth!.signOut(deletedAccount); });
+    await waitFor(() => expect(mockClearAuthSession).toHaveBeenCalledTimes(clearsBeforeSignOut + 1));
+    let verificationB: Promise<unknown> | undefined;
+    act(() => { verificationB = auth!.verifyCode(sessionB.user.email, "222222"); });
+    await act(async () => {
+      rejectAccountAClear?.(new Error("keychain unavailable"));
+      await expect(failedSignOut).rejects.toThrow("keychain unavailable");
+      await expect(verificationB).resolves.toEqual(sessionB);
+    });
+    const clearsBeforeRetry = mockClearAuthSession.mock.calls.length;
+    const rememberedClearsBeforeRetry = mockClearRememberedEmail.mock.calls.length;
+
+    await act(async () => auth?.signOut(deletedAccount));
+    await act(async () => auth?.forgetRememberedEmail(deletedAccount));
+
+    expect(auth?.session).toEqual(sessionB);
+    expect(auth?.rememberedEmail).toBe(sessionB.user.email);
+    expect(mockClearAuthSession).toHaveBeenCalledTimes(clearsBeforeRetry);
+    expect(mockClearRememberedEmail).toHaveBeenCalledTimes(rememberedClearsBeforeRetry);
+  });
+
+  it("queues a bootstrap 401 cleanup ahead of a concurrent verified session", async () => {
+    const expiredSession = {
+      accessToken: "expired-token",
+      user: { id: "old-user", email: "old@example.com", isAdmin: false },
+    };
+    const sessionB = {
+      accessToken: "token-b",
+      user: { id: "user-b", email: "b@example.com", isAdmin: false },
+    };
+    let storedSession: typeof expiredSession | null = expiredSession;
+    let releaseBootstrapClear: (() => void) | undefined;
+    mockLoadAuthSession.mockResolvedValue(expiredSession);
+    mockGetCurrentAuthUser.mockRejectedValue(Object.assign(new Error("unauthorized"), { status: 401 }));
+    mockClearAuthSession
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        releaseBootstrapClear = () => {
+          storedSession = null;
+          resolve();
+        };
+      }))
+      .mockImplementation(async () => { storedSession = null; });
+    mockSaveAuthSession.mockImplementation(async (nextSession: typeof expiredSession) => {
+      storedSession = nextSession;
+    });
+    mockVerifyAuthEmailCode.mockResolvedValue(sessionB);
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(mockClearAuthSession).toHaveBeenCalledTimes(1));
+
+    let verificationB: Promise<unknown> | undefined;
+    act(() => { verificationB = auth!.verifyCode(sessionB.user.email, "222222"); });
+    await act(async () => {
+      releaseBootstrapClear?.();
+      await expect(verificationB).resolves.toEqual(sessionB);
+    });
+
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+    expect(auth?.session).toEqual(sessionB);
+    expect(storedSession).toEqual(sessionB);
+  });
 });
