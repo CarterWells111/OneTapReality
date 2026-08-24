@@ -9,6 +9,7 @@ import { PageReader } from "../../../features/canvas/page-reader";
 import { useAuth } from "../../../features/auth/auth-provider";
 import { mapSharedAlbumToStoryPages } from "../../../features/gifts/shared-album-mapper";
 import { BackendApiClient, type InvitedGiftAlbum } from "../../../services/backend/api-client";
+import { toUserFacingBackendError } from "../../../services/backend/user-facing-error";
 
 export default function SharedGiftDetailScreen() {
   const router = useRouter();
@@ -112,7 +113,7 @@ export default function SharedGiftDetailScreen() {
     setRequestBusy(true); setRequestMessage("");
     const current = () => generation === requestGeneration.current && operationContextKey === contextKeyRef.current;
     try { await client.createInvitedGiftManagementRequest(id, session.accessToken, input); if (current()) setRequestMessage("申请已提交，等待拥有者处理。"); }
-    catch (error) { if (current()) setRequestMessage(error instanceof Error ? error.message : "申请提交失败，请重试。"); }
+    catch (error) { if (current()) setRequestMessage(toUserFacingBackendError(error, "申请提交失败，请刷新后重试。")); }
     finally { if (current()) { requestInFlight.current = false; setRequestBusy(false); } }
   };
 
@@ -125,7 +126,7 @@ export default function SharedGiftDetailScreen() {
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
       {loadFailed && session && id ? <AppButton label="重试" tone="secondary" onPress={() => void load()} /> : null}
-      {loadedContextKey === contextKey && album?.role === "editor" ? <Section title="管理申请" caption="OWNER APPROVAL REQUIRED"><PaperCard tone="surface" style={{ gap: 10 }}>
+      {loadedContextKey === contextKey && album?.role === "editor" ? <Section title="管理申请" caption="需要礼品拥有者批准"><PaperCard tone="surface" style={{ gap: 10 }}>
         <Text style={styles.message}>这些操作需要拥有者批准后才会生效。</Text>{requestMessage ? <Text selectable style={styles.message}>{requestMessage}</Text> : null}
         <AppButton disabled={requestBusy} label="申请删除整册" tone="danger" onPress={() => void requestManagement({ action: "delete_album" })} />
         {targets.map((target) => <View key={target.email} style={styles.targetRow}><Text style={styles.targetEmail}>{target.email}</Text><Text style={styles.message}>{target.role === "editor" ? "读写成员" : "只读成员"}</Text>

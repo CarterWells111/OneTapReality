@@ -65,7 +65,8 @@ describe("travel-book share action sheet", () => {
 
     await choosePdf();
 
-    expect(alertSpy).toHaveBeenLastCalledWith("导出失败", "printer unavailable");
+    expect(alertSpy).toHaveBeenLastCalledWith("导出失败", "暂时无法生成 PDF，请稍后重试。");
+    expect(alertSpy).not.toHaveBeenLastCalledWith("导出失败", "printer unavailable");
   });
 
   it("blocks export before capture when a local photo is missing", async () => {
@@ -99,12 +100,13 @@ describe("travel-book share action sheet", () => {
     expect(mockPrintToFileAsync).not.toHaveBeenCalled();
     expect(mockCopyAsync).not.toHaveBeenCalled();
 
-    const tralbumOption = buttons.find((button) => button.text === "导出为 .tralbum 格式");
-    if (!tralbumOption?.onPress) throw new Error("Tralbum export action is missing");
-    await tralbumOption.onPress();
+    expect(buttons.map((button) => button.text)).toEqual(["导出为 PDF", "取消"]);
+  });
 
-    expect(mockCapturePagesAsImages).not.toHaveBeenCalled();
-    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
-    expect(mockCopyAsync).not.toHaveBeenCalled();
+  it("offers only PDF and cancel in the external share sheet", async () => {
+    await showShareActionSheet({ title: "夏日旅行", pages: [] });
+
+    const buttons = alertSpy.mock.calls[0][2] ?? [];
+    expect(buttons.map((button) => button.text)).toEqual(["导出为 PDF", "取消"]);
   });
 });

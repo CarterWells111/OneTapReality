@@ -10,6 +10,9 @@ import { CityCollectionManager } from "../../../features/cities/city-collection-
 import { resolveCityRouteParam } from "../../../features/cities/city-route";
 import { resolveCityCollection, saveCityCollection, type ResolvedCityCollection } from "../../../storage/city-collection-repository";
 
+export const CITY_COLLECTION_LOAD_ERROR = "暂时无法读取这座城市的旅行册，请稍后重试。";
+export const CITY_COLLECTION_SAVE_ERROR = "暂时无法保存城市旅行册，请检查本机空间后重试。";
+
 export default function ManageCityCollectionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -29,9 +32,14 @@ export default function ManageCityCollectionScreen() {
       return () => { active = false; };
     }
     const requestedAccountKey = accountKey;
-    void resolveCityCollection(db, city, requestedAccountKey).then((nextCollection) => {
-      if (active) setLoaded({ accountKey: requestedAccountKey, collection: nextCollection });
-    });
+    setError("");
+    void resolveCityCollection(db, city, requestedAccountKey)
+      .then((nextCollection) => {
+        if (active) setLoaded({ accountKey: requestedAccountKey, collection: nextCollection });
+      })
+      .catch(() => {
+        if (active) setError(CITY_COLLECTION_LOAD_ERROR);
+      });
     return () => { active = false; };
   }, [accountKey, city, db, isAuthReady, router]));
 
@@ -42,11 +50,14 @@ export default function ManageCityCollectionScreen() {
     setIsSaving(true);
     try {
       const updatedAt = new Date().toISOString();
-      if (!accountKey || loaded?.accountKey !== accountKey || loaded.collection.city !== city) throw new Error("请先登录");
+      if (!accountKey || loaded?.accountKey !== accountKey || loaded.collection.city !== city) {
+        setError("请先登录并重新打开城市旅行册。");
+        return;
+      }
       await saveCityCollection(db, city, memoryIds, featuredMemoryId, updatedAt, accountKey);
       router.back();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unable to save the city collection.");
+    } catch {
+      setError(CITY_COLLECTION_SAVE_ERROR);
     } finally {
       setIsSaving(false);
     }
@@ -54,7 +65,7 @@ export default function ManageCityCollectionScreen() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 18, padding: 20 }}>
-      <Text selectable style={{ color: colors.ink, fontSize: 24, fontWeight: "800" }}>Manage city collection</Text>
+      <Text selectable style={{ color: colors.ink, fontSize: 24, fontWeight: "800" }}>管理城市旅行册</Text>
       {collection ? (
         <CityCollectionManager
           featuredMemoryId={collection.featuredMemory?.id ?? null}
@@ -62,8 +73,8 @@ export default function ManageCityCollectionScreen() {
           onCancel={() => router.back()}
           onSave={(memoryIds, featuredMemoryId) => { void save(memoryIds, featuredMemoryId); }}
         />
-      ) : <Text selectable style={{ color: colors.muted }}>Loading local memories…</Text>}
-      {isSaving ? <Text selectable style={{ color: colors.muted }}>Saving local collection…</Text> : null}
+      ) : <Text selectable style={{ color: colors.muted }}>正在读取本机旅行册…</Text>}
+      {isSaving ? <Text selectable style={{ color: colors.muted }}>正在保存城市旅行册…</Text> : null}
       {error ? <Text selectable style={{ color: colors.danger }}>{error}</Text> : null}
     </ScrollView>
   );

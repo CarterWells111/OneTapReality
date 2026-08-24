@@ -42,7 +42,7 @@ describe("UnvisitedCitiesScreen", () => {
     expect(screen.getByText(cityContent.shanghai.discoverySlogan)).toBeTruthy();
     expect(screen.getAllByText("尚未打卡").length).toBeGreaterThan(0);
     expect(screen.getByTestId("city-card-illustration-shanghai")).toBeTruthy();
-    expect(screen.getByTestId("city-card-placeholder-urumqi")).toBeTruthy();
+    expect(screen.getByTestId("city-card-generic-urumqi")).toBeTruthy();
   });
 
   it("routes to a city's existing detail page when its card is pressed", async () => {

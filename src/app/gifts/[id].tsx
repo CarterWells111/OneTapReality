@@ -12,6 +12,11 @@ import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../..
 import { isMissingPhotoToken } from "../../features/memories/photo-references";
 import { BackendApiClient } from "../../services/backend/api-client";
 import type { GiftManagementRequest, GiftMemberRole } from "../../services/backend/api-client";
+import {
+  toUserFacingBackendError,
+  toUserFacingOperationError,
+  UserActionRequiredError,
+} from "../../services/backend/user-facing-error";
 import type { Memory } from "../../types/memory";
 
 function imageContentType(uri: string) {
@@ -144,7 +149,7 @@ export default function GiftManagementScreen() {
       const photoPages = selectedMemory.pages.filter((page) => Boolean(page.photoUri));
       const media = await Promise.all(photoPages.map(async (page, position) => {
         const info = await FileSystem.getInfoAsync(page.photoUri!);
-        if (!info.exists || typeof info.size !== "number" || info.size < 1) throw new Error("有照片无法读取，请在本机重新选择后再发布");
+        if (!info.exists || typeof info.size !== "number" || info.size < 1) throw new UserActionRequiredError("有照片无法读取，请在本机重新选择后再发布。");
         return { position, contentType: imageContentType(page.photoUri!), byteSize: info.size, uri: page.photoUri! };
       }));
       if (!operationIsCurrent(operation)) return;
@@ -154,7 +159,7 @@ export default function GiftManagementScreen() {
         const coverInfo = await FileSystem.getInfoAsync(selectedCoverUri);
         if (!operationIsCurrent(operation)) return;
         if (!coverInfo.exists || typeof coverInfo.size !== "number" || coverInfo.size < 1) {
-          throw new Error("封面图片无法读取，请重新选择后再发布");
+          throw new UserActionRequiredError("封面图片无法读取，请重新选择后再发布。");
         }
         coverSize = coverInfo.size;
         coverContentType = imageContentType(selectedCoverUri);
@@ -171,14 +176,14 @@ export default function GiftManagementScreen() {
       if (!operationIsCurrent(operation)) return;
       for (const upload of publication.uploads) {
         const file = media.find((item) => item.position === upload.position);
-        if (!file) throw new Error("上传清单不完整");
+        if (!file) throw new UserActionRequiredError("照片准备不完整，请重新发布。");
         const response = await FileSystem.uploadAsync(upload.uploadUrl, file.uri, {
           httpMethod: "PUT",
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
           headers: { "Content-Type": file.contentType },
         });
         if (!operationIsCurrent(operation)) return;
-        if (response.status < 200 || response.status >= 300) throw new Error("照片上传失败");
+        if (response.status < 200 || response.status >= 300) throw new UserActionRequiredError("照片上传失败，请检查网络后重新发布。");
       }
       if (publication.coverUpload && selectedCoverUri) {
         const response = await FileSystem.uploadAsync(publication.coverUpload.uploadUrl, selectedCoverUri, {
@@ -187,13 +192,13 @@ export default function GiftManagementScreen() {
           headers: { "Content-Type": imageContentType(selectedCoverUri) },
         });
         if (!operationIsCurrent(operation)) return;
-        if (response.status < 200 || response.status >= 300) throw new Error("封面上传失败");
+        if (response.status < 200 || response.status >= 300) throw new UserActionRequiredError("封面上传失败，请检查网络后重新发布。");
       }
       await client.finishOwnedGiftPublish(session.accessToken, id, publication.publicationId);
       if (!operationIsCurrent(operation)) return;
       setMessage("共享相册已发布。日后本机修改不会自动上传，请在此页面手动更新。");
       await load(operation.generation, () => operationIsCurrent(operation));
-    } catch (error) { if (operationIsCurrent(operation)) setMessage(error instanceof Error ? error.message : "发布失败，可重试；当前已发布相册不会变化。"); }
+    } catch (error) { if (operationIsCurrent(operation)) setMessage(toUserFacingOperationError(error, "发布失败，可重试；当前已发布相册不会变化。")); }
     finally { finishOwnerOperation(operation); }
   };
 
@@ -202,7 +207,7 @@ export default function GiftManagementScreen() {
     const operation = beginOwnerOperation();
     if (!operation) return;
     try { const result = await client.addOwnedGiftMember(session.accessToken, id, inviteEmail, inviteRole); if (!operationIsCurrent(operation)) return; setMembers(result.members); setInviteEmail(""); setMessage("已添加成员；对方需要先用 NFC 礼品完成首次激活。"); }
-    catch (error) { if (operationIsCurrent(operation)) setMessage(error instanceof Error ? error.message : "无法添加访问邮箱。"); }
+    catch (error) { if (operationIsCurrent(operation)) setMessage(toUserFacingBackendError(error, "无法添加访问邮箱，请检查邮箱后重试。")); }
     finally { finishOwnerOperation(operation); }
   };
 
@@ -217,7 +222,7 @@ export default function GiftManagementScreen() {
       setMembers(result.members);
       setMessage(`已将 ${email} 调整为${nextRole === "editor" ? "读写成员" : "只读成员"}。`);
     } catch (error) {
-      if (operationIsCurrent(operation)) setMessage(error instanceof Error ? error.message : "无法更新成员权限。");
+      if (operationIsCurrent(operation)) setMessage(toUserFacingBackendError(error, "无法更新成员权限，请刷新后重试。"));
     } finally {
       finishOwnerOperation(operation);
     }
@@ -235,7 +240,7 @@ export default function GiftManagementScreen() {
   const decideRequest = async (requestId: string, decision: "approved" | "rejected") => {
     if (!session || !id) return; const operation = beginOwnerOperation(); if (!operation) return;
     try { await client.decideOwnedGiftManagementRequest(session.accessToken, id, requestId, decision); if (!operationIsCurrent(operation)) return; await load(operation.generation, () => operationIsCurrent(operation)); if (operationIsCurrent(operation)) setMessage(decision === "approved" ? "申请已批准。" : "申请已拒绝。"); }
-    catch (error) { if (operationIsCurrent(operation)) setMessage(error instanceof Error ? error.message : "无法处理该申请，请重试。"); }
+    catch (error) { if (operationIsCurrent(operation)) setMessage(toUserFacingBackendError(error, "无法处理该申请，请刷新后重试。")); }
     finally { finishOwnerOperation(operation); }
   };
 
@@ -255,7 +260,7 @@ export default function GiftManagementScreen() {
 
   if (!managementLoaded || authorizedContextKey !== managementContextKey) {
     return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
-      <ScreenTitle title="礼品管理" caption="OWNER ONLY" />
+      <ScreenTitle title="礼品管理" caption="仅礼品拥有者" />
       <Text selectable style={styles.message}>{message}</Text>
       {managementLoaded ? <AppButton label="重试" tone="secondary" onPress={retryLoad} /> : null}
       {managementLoaded ? <AppButton label="返回我的礼品" tone="secondary" onPress={() => router.replace("/gifts" as never)} /> : null}
@@ -263,7 +268,7 @@ export default function GiftManagementScreen() {
   }
 
   return <ScrollView contentContainerStyle={styles.content} style={{ backgroundColor: colors.background }}>
-    <ScreenTitle title="礼品管理" caption="OWNER ONLY" />
+    <ScreenTitle title="礼品管理" caption="仅礼品拥有者" />
     <Text selectable style={styles.message}>{message}</Text>
 
     <Section title="待处理申请" caption={`${managementRequests.length} PENDING`}><PaperCard tone="surface" style={{ gap: 10 }}>

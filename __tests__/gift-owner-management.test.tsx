@@ -252,7 +252,8 @@ describe("gift owner member management", () => {
     await screen.findByText(viewer.email);
 
     fireEvent.press(screen.getByLabelText(`更改 ${viewer.email} 的权限`));
-    await screen.findByText("权限更新失败");
+    await screen.findByText("无法更新成员权限，请刷新后重试。");
+    expect(screen.queryByText("权限更新失败")).toBeNull();
   });
 
   it("does not render owner controls while authorization is loading", () => {

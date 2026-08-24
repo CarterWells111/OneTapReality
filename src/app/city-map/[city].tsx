@@ -16,6 +16,12 @@ export default function CityCheckinMapScreen() {
   const content = cityContent[city];
   const source = getCityCheckinMapImage(city);
 
+  React.useEffect(() => {
+    if (!source) router.replace(`/city/${city}` as never);
+  }, [city, router, source]);
+
+  if (!source) return null;
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]} testID="city-checkin-map-screen">
       <View style={styles.header} testID="city-checkin-map-header">
@@ -34,20 +40,13 @@ export default function CityCheckinMapScreen() {
         </Pressable>
       </View>
 
-      {source ? (
-        <Image
-          accessibilityLabel={`${content.name}城市打卡地图`}
-          resizeMode="contain"
-          source={source}
-          style={styles.image}
-          testID="city-checkin-map-image"
-        />
-      ) : (
-        <View style={styles.placeholder} testID="city-checkin-map-placeholder">
-          <Text selectable style={styles.placeholderTitle}>{content.name}</Text>
-          <Text selectable style={styles.placeholderText}>打卡地图筹备中</Text>
-        </View>
-      )}
+      <Image
+        accessibilityLabel={`${content.name}城市打卡地图`}
+        resizeMode="contain"
+        source={source}
+        style={styles.image}
+        testID="city-checkin-map-image"
+      />
     </View>
   );
 }
@@ -99,23 +98,5 @@ const styles = StyleSheet.create({
   image: {
     flex: 1,
     width: "100%",
-  },
-  placeholder: {
-    alignItems: "center",
-    flex: 1,
-    gap: 8,
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  placeholderTitle: {
-    color: colors.ink,
-    fontFamily: serifFont,
-    fontSize: 24,
-    fontWeight: "800",
-  },
-  placeholderText: {
-    color: colors.muted,
-    fontFamily: bodyFont,
-    fontSize: 14,
   },
 });

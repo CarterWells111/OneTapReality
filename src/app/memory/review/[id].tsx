@@ -347,7 +347,7 @@ export default function DraftReviewScreen() {
             state={autosaveState}
           />
           <Text selectable style={styles.aiDisclaimer}>
-            AI 辅助生成的内容可能存在偏差，请在保存前校对。
+            本地规则生成的可编辑初稿，不分析照片内容
           </Text>
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
         </ScrollView>

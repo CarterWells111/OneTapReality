@@ -22,9 +22,9 @@ type CityWorkspaceContentProps = {
   readonly allMemories?: readonly Memory[];
 };
 
-function CityArchiveLineArt({ city }: { readonly city: City }) {
+function CityArchiveGenericIllustration({ city }: { readonly city: City }) {
   return (
-    <View style={styles.lineArt} testID={`city-archive-hero-placeholder-${city}`}>
+    <View style={styles.lineArt} testID={`city-archive-hero-generic-${city}`}>
       <Svg height="100%" viewBox="0 0 280 170" width="100%">
         <Circle cx="222" cy="41" fill="none" r="21" stroke={colors.warmAccent} strokeWidth="2" />
         <Path d="M18 126C54 94 78 110 108 79C138 49 165 98 195 71C221 48 242 73 267 42" fill="none" stroke={colors.accent} strokeLinecap="round" strokeWidth="3" />
@@ -57,7 +57,7 @@ function CityArchiveHero({ city }: { readonly city: City }) {
           testID={`city-archive-hero-illustration-${city}`}
         />
       ) : (
-        <CityArchiveLineArt city={city} />
+        <CityArchiveGenericIllustration city={city} />
       )}
     </PaperCard>
   );
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   heroRule: { backgroundColor: colors.warmAccent, borderRadius: 2, height: 3, marginVertical: 4, width: 38 },
   slogan: { color: colors.muted, fontSize: 15, lineHeight: 24 },
   heroIllustration: { borderColor: colors.paperEdge, borderRadius: 16, borderWidth: 1, height: 188, width: "100%" },
-  lineArt: { alignItems: "center", borderColor: colors.paperEdge, borderRadius: 16, borderStyle: "dashed", borderWidth: 1, height: 188, justifyContent: "center", overflow: "hidden", width: "100%" },
+  lineArt: { alignItems: "center", backgroundColor: colors.paper, borderColor: colors.paperEdge, borderRadius: 16, borderWidth: 1, height: 188, justifyContent: "center", overflow: "hidden", width: "100%" },
   summary: { alignItems: "center", flexDirection: "row", gap: 16, paddingVertical: 16 },
   summaryCount: { alignItems: "baseline", borderRightColor: colors.line, borderRightWidth: 1, flexDirection: "row", gap: 4, paddingRight: 16 },
   countNumber: { color: colors.warmAccent, fontFamily: serifFont, fontSize: 31, fontWeight: "800" },

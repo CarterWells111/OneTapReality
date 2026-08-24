@@ -1,13 +1,18 @@
-import { Platform, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { PaperCard, ScreenTitle, colors } from "../components/ui";
-import { DeveloperNfcConsole } from "../features/gifts/developer-nfc-console";
 
-export function ActivateScreen({ platform = Platform.OS }: { platform?: "ios" | "android" | "web" | "macos" | "windows" }) {
-  if (platform === "web") {
-    return <View style={{ backgroundColor: colors.background, flex: 1, justifyContent: "center", padding: 20 }}><PaperCard tone="paper" style={{ gap: 12 }}><ScreenTitle title="Open this NFC card in the One Tap Reality app" caption="APP REQUIRED" /><Text selectable style={{ color: colors.muted, lineHeight: 22 }}>Card preparation and activation require the native app. Install or open One Tap Reality, then tap this card again.</Text></PaperCard></View>;
-  }
-  return <DeveloperNfcConsole />;
+export function ActivateScreen({ platform: _platform }: { platform?: "ios" | "android" | "web" | "macos" | "windows" }) {
+  return (
+    <View style={{ backgroundColor: colors.background, flex: 1, justifyContent: "center", padding: 20 }}>
+      <PaperCard tone="paper" style={{ gap: 12 }}>
+        <ScreenTitle title="礼品尚未准备好，请联系赠送者" caption="ONETAPREALITY" />
+        <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
+          如需帮助，请联系 support@onetapreality.com
+        </Text>
+      </PaperCard>
+    </View>
+  );
 }
 
 export default function ActivateRoute() {

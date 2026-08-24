@@ -42,8 +42,8 @@ describe("city collection management route", () => {
     const screen = render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", "owner@example.com"));
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Set Two as representative")); });
-    await act(async () => { fireEvent.press(screen.getByLabelText("Save collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("将Two设为精选旅行册")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
 
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
     expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "owner@example.com");
@@ -53,7 +53,7 @@ describe("city collection management route", () => {
     const screen = render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalled());
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Cancel collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消城市旅行册更改")); });
 
     expect(mockBack).toHaveBeenCalledTimes(1);
     expect(mockSaveCityCollection).not.toHaveBeenCalled();
@@ -68,7 +68,7 @@ describe("city collection management route", () => {
     screen.rerender(<ManageCityCollectionScreen />);
 
     expect(screen.queryByText("One")).toBeNull();
-    expect(screen.queryByLabelText("Save collection changes")).toBeNull();
+    expect(screen.queryByLabelText("保存城市旅行册更改")).toBeNull();
   });
 
   it("removes the previous city collection and save controls during a route change", async () => {
@@ -80,6 +80,25 @@ describe("city collection management route", () => {
     screen.rerender(<ManageCityCollectionScreen />);
 
     expect(screen.queryByText("One")).toBeNull();
-    expect(screen.queryByLabelText("Save collection changes")).toBeNull();
+    expect(screen.queryByLabelText("保存城市旅行册更改")).toBeNull();
+  });
+
+  it("maps storage failures to a stable Chinese action without raw exception text", async () => {
+    mockResolveCityCollection.mockRejectedValueOnce(new Error("SQLite disk image malformed"));
+    const screen = render(<ManageCityCollectionScreen />);
+
+    await waitFor(() => expect(screen.getByText("暂时无法读取这座城市的旅行册，请稍后重试。")).toBeTruthy());
+    expect(screen.queryByText(/SQLite|malformed/u)).toBeNull();
+  });
+
+  it("does not render a raw save exception", async () => {
+    mockSaveCityCollection.mockRejectedValueOnce(new Error("raw write failure"));
+    const screen = render(<ManageCityCollectionScreen />);
+    await waitFor(() => expect(screen.getByText("One")).toBeTruthy());
+
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
+
+    await waitFor(() => expect(screen.getByText("暂时无法保存城市旅行册，请检查本机空间后重试。")).toBeTruthy());
+    expect(screen.queryByText(/raw write failure/u)).toBeNull();
   });
 });

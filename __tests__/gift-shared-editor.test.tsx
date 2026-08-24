@@ -183,7 +183,9 @@ describe("SharedAlbumEditor", () => {
     await waitFor(() => expect(reads.get("file:///a.jpg")).toBe(2));
     expect(reads.get("file:///b.jpg")).toBe(1);
     releaseFirstPut();
-    await waitFor(() => expect(screen.getByText("照片上传失败。")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("照片上传失败，请检查网络后重新发布。")).toBeTruthy(),
+    );
     expect(reads.get("file:///b.jpg")).toBe(1);
     expect(mockFinish).not.toHaveBeenCalled();
     expect(onPublished).not.toHaveBeenCalled();
@@ -306,7 +308,8 @@ describe("SharedAlbumEditor", () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
 
     fireEvent.press(screen.getByText("保存并发布更新"));
-    await waitFor(() => expect(screen.getByText("temporary network failure")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("发布失败，请检查网络后重试。")).toBeTruthy());
+    expect(screen.queryByText("temporary network failure")).toBeNull();
     fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-retry-draft"));
@@ -515,7 +518,8 @@ describe("SharedAlbumEditor", () => {
     fireEvent.press(screen.getByText("暂存当前修改"));
     await screen.findByText("正在完成编辑，请稍后重试。");
     fireEvent.press(screen.getByText("暂存当前修改"));
-    await screen.findByText("prepare failed");
+    await screen.findByText("正在完成编辑，请稍后重试。");
+    expect(screen.queryByText("prepare failed")).toBeNull();
     expect(screen.getByTestId("canvas-pages").props.children).toContain("Changed");
     fireEvent.press(screen.getByText("暂存当前修改"));
     await screen.findByText("修改已暂存在当前编辑会话，尚未发布。");

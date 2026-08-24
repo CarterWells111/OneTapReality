@@ -19,8 +19,6 @@ type ListEntry = {
 
 const listEntries: ListEntry[] = [
   { key: "nfc-gifts", title: "我的纪念品", href: "/gifts" },
-  { key: "orders", title: "我的订单", href: "/shop/orders" },
-  { key: "favorites", title: "我的收藏", href: "/shop/favorites" },
   { key: "cities", title: "去过的城市", href: "/cities" },
   { key: "recycle-bin", title: "回收站", href: "/recycle-bin" },
   { key: "feedback", title: "意见反馈", href: "/feedback" },
@@ -99,7 +97,6 @@ export default function ProfileScreen() {
               ? "正在检查本机保存的登录状态。"
               : user?.email ?? "登录后可认领和管理 NFC 纪念品。"}
           </Text>
-          {user?.isAdmin ? <Text selectable style={styles.adminBadge}>开发者管理员</Text> : null}
           {accountError ? <Text selectable style={styles.accountError}>{accountError}</Text> : null}
         </View>
         {!isAuthReady ? null : user ? (
@@ -202,7 +199,6 @@ const styles = StyleSheet.create({
   accountCopy: { gap: 5 },
   accountTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
   accountEmail: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  adminBadge: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800" },
   accountError: { color: colors.danger, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   accountActions: { gap: 10 },
   heroCopy: { flex: 1, gap: 5 },

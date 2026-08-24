@@ -45,17 +45,12 @@ export default function RootLayout() {
               <Stack.Screen name="memory" options={{ headerShown: false }} />
               <Stack.Screen name="city/[city]" options={{ title: "城市收藏" }} />
               <Stack.Screen name="cities/unvisited" options={{ title: "未打卡城市" }} />
-              <Stack.Screen name="city/[city]/manage" options={{ title: "Manage city collection" }} />
+              <Stack.Screen name="city/[city]/manage" options={{ title: "管理城市旅行册" }} />
               <Stack.Screen name="city-map/index" options={{ headerShown: false, presentation: "fullScreenModal" }} />
               <Stack.Screen name="city-map/[city]" options={{ headerShown: false, presentation: "fullScreenModal" }} />
-              <Stack.Screen name="nfc-demo/[city]" options={{ title: "城市钥匙" }} />
-              <Stack.Screen name="shop/[skuId]" options={{ headerShown: false }} />
-              <Stack.Screen name="shop/orders" options={{ title: "购物袋" }} />
-              <Stack.Screen name="shop/favorites" options={{ title: "我的收藏" }} />
               <Stack.Screen name="recycle-bin" options={{ headerShown: false }} />
               <Stack.Screen name="feedback/index" options={{ title: "意见反馈" }} />
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
-              <Stack.Screen name="backend/index" options={{ title: "后端状态" }} />
               <Stack.Screen name="privacy/index" options={{ title: "数据与隐私" }} />
               </Stack>
             </PageCaptureProvider>

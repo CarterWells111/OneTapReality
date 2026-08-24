@@ -128,8 +128,8 @@ export default function NewMemoryScreen() {
       const memory = await createDraft({ title, city, travelDate, photoUris, coverColor, coverImage });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "无法创建旅行册，请重试。");
+    } catch {
+      setError("无法创建旅行册，请检查所选照片后重试。");
     } finally {
       setIsSaving(false);
     }

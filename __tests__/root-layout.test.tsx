@@ -77,7 +77,17 @@ describe("RootLayout", () => {
   it("registers the city collection management route", async () => {
     const screen = await render(<RootLayout />);
 
-    expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+    expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("管理城市旅行册");
+  });
+
+  it("does not register commerce, backend, or NFC writer screens", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.queryByTestId("screen-shop/[skuId]")).toBeNull();
+    expect(screen.queryByTestId("screen-shop/orders")).toBeNull();
+    expect(screen.queryByTestId("screen-shop/favorites")).toBeNull();
+    expect(screen.queryByTestId("screen-backend/index")).toBeNull();
+    expect(screen.queryByTestId("screen-nfc-demo/[city]")).toBeNull();
   });
 
   it("registers the unvisited cities browser with its Chinese title", async () => {

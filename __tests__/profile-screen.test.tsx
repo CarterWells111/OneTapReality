@@ -81,19 +81,17 @@ describe("ProfileScreen", () => {
     mockMemories.mockReturnValue([]);
     const screen = render(<ProfileScreen />);
 
-    await fireEvent.press(screen.getByText("我的订单"));
-    await fireEvent.press(screen.getByText("我的收藏"));
+    expect(screen.queryByText("我的订单")).toBeNull();
+    expect(screen.queryByText("我的收藏")).toBeNull();
     await fireEvent.press(screen.getByText("去过的城市"));
     await fireEvent.press(screen.getByText("回收站"));
     await fireEvent.press(screen.getByText("意见反馈"));
     await fireEvent.press(screen.getByText("数据与隐私"));
 
-    expect(mockPush).toHaveBeenNthCalledWith(1, "/shop/orders");
-    expect(mockPush).toHaveBeenNthCalledWith(2, "/shop/favorites");
-    expect(mockPush).toHaveBeenNthCalledWith(3, "/cities");
-    expect(mockPush).toHaveBeenNthCalledWith(4, "/recycle-bin");
-    expect(mockPush).toHaveBeenNthCalledWith(5, "/feedback");
-    expect(mockPush).toHaveBeenNthCalledWith(6, "/privacy");
+    expect(mockPush).toHaveBeenNthCalledWith(1, "/cities");
+    expect(mockPush).toHaveBeenNthCalledWith(2, "/recycle-bin");
+    expect(mockPush).toHaveBeenNthCalledWith(3, "/feedback");
+    expect(mockPush).toHaveBeenNthCalledWith(4, "/privacy");
   });
 
   it("shows a local loading state before SQLite memories are ready", async () => {
@@ -114,7 +112,7 @@ describe("ProfileScreen", () => {
     expect(mockPush).toHaveBeenCalledWith("/login?returnTo=/(tabs)/profile");
   });
 
-  it("shows the account identity and administrator badge", () => {
+  it("shows the account identity without an internal administrator badge", () => {
     mockMemories.mockReturnValue([]);
     mockUseAuth.mockReturnValue({
       isAuthReady: true,
@@ -125,7 +123,7 @@ describe("ProfileScreen", () => {
     const screen = render(<ProfileScreen />);
 
     expect(screen.getByText("owner@example.com")).toBeTruthy();
-    expect(screen.getByText("开发者管理员")).toBeTruthy();
+    expect(screen.queryByText("开发者管理员")).toBeNull();
   });
 
   it("switches account by clearing the session before opening login", async () => {

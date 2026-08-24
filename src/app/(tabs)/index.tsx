@@ -41,10 +41,9 @@ export default function MemoriesHomeScreen() {
   };
 
   const shareSelected = () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length !== 1) return;
     const selected = memories.filter((m) => selectedIds.includes(m.id));
-    if (selected.length === 0) return;
-    // 取第一个选中的记忆做导出
+    if (selected.length !== 1) return;
     const memory = selected[0];
     showShareActionSheet({
       coverImage: memory.coverImage,
@@ -90,7 +89,8 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>
           选择照片，开启一册专属你们的旅行记忆。
         </Text>
-        <Text selectable style={styles.subtitle}>选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。</Text>
+        <Text selectable style={styles.subtitle}>本地规则生成的可编辑初稿，不分析照片内容</Text>
+        <Text selectable style={styles.subtitle}>本地草稿默认保存在此设备；只有你主动发布礼品时，所选内容才会上传给受邀成员。</Text>
         <View style={styles.heroActions}>
           {user ? <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} /> : null}
           <AppButton
@@ -154,11 +154,11 @@ export default function MemoriesHomeScreen() {
                 <Pressable
                   accessibilityLabel="分享所选"
                   accessibilityRole="button"
-                  disabled={selectedIds.length === 0}
+                  disabled={selectedIds.length !== 1}
                   onPress={shareSelected}
-                  style={[styles.selectionAction, selectedIds.length === 0 && styles.disabledAction]}
+                  style={[styles.selectionAction, selectedIds.length !== 1 && styles.disabledAction]}
                 >
-                  <Text style={[styles.selectionShareText, selectedIds.length === 0 && styles.disabledText]}>分享</Text>
+                  <Text style={[styles.selectionShareText, selectedIds.length !== 1 && styles.disabledText]}>分享</Text>
                 </Pressable>
                 <Pressable
                   accessibilityLabel="删除所选"
@@ -178,6 +178,9 @@ export default function MemoriesHomeScreen() {
                   <Text style={styles.selectionCancelText}>取消</Text>
                 </Pressable>
               </View>
+            ) : null}
+            {multiSelect && selectedIds.length > 1 ? (
+              <Text selectable style={styles.selectionHelp}>一次只能分享一本，请只保留一本旅行册。</Text>
             ) : null}
             <View style={styles.bookGrid}>
               {memories.map((memory) => (
@@ -208,21 +211,6 @@ export default function MemoriesHomeScreen() {
           </PaperCard>
         )}
       </Section> : null}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push("/shop")}
-        style={({ pressed }) => [styles.shopCard, pressed && styles.pressed]}
-      >
-        <View style={styles.shopCopy}>
-          <Text selectable style={styles.shopEyebrow}>纪念品商店</Text>
-          <Text selectable style={styles.shopTitle}>把回忆做成实物</Text>
-          <Text selectable style={styles.shopMeta}>
-            城市系列纪念钥匙、打印旅行册，可选样式、可刻字。
-          </Text>
-        </View>
-        <Text selectable style={styles.shopArrow}>→</Text>
-      </Pressable>
 
       <Text selectable style={styles.footer}>每一册旅行记忆，都是独一无二的故事。</Text>
     </ScrollView>
@@ -265,26 +253,10 @@ const styles = StyleSheet.create({
   selectionCancelText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   disabledAction: { opacity: 0.4 },
   disabledText: { opacity: 0.4 },
+  selectionHelp: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 20 },
   emptyCard: { gap: 12 },
   emptyTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "700" },
   mutedText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  shopCard: {
-    alignItems: "center",
-    backgroundColor: colors.paper,
-    borderColor: colors.warmAccent,
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    minHeight: 96,
-    padding: 18,
-  },
-  shopCopy: { flex: 1, gap: 4 },
-  shopEyebrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800", letterSpacing: 0.5 },
-  shopTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
-  shopMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  shopArrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 24, fontWeight: "800" },
   footer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, textAlign: "center" },
   pressed: { opacity: 0.85 },
 });

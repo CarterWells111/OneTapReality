@@ -8,6 +8,10 @@ import {
   type InvitedGiftAlbum,
   type SharedAlbumPublishPayload,
 } from "../../services/backend/api-client";
+import {
+  toUserFacingOperationError,
+  UserActionRequiredError,
+} from "../../services/backend/user-facing-error";
 import type { CanvasElement, StoryPage } from "../../types/memory";
 import {
   BookCanvasEditor,
@@ -176,8 +180,8 @@ export function SharedAlbumEditor({
       setPages(publishPages);
       changeDirty(hasEffectiveChanges(publishPages, metadataRef.current, publishedBaseline.current));
       setMessage(STAGED_MESSAGE);
-    } catch (error) {
-      if (current()) setMessage(error instanceof Error ? error.message : PREPARE_SAVE_PENDING_MESSAGE);
+    } catch {
+      if (current()) setMessage(PREPARE_SAVE_PENDING_MESSAGE);
     } finally {
       operationEditor?.releaseSaveLock();
       inFlight.current = false;
@@ -234,7 +238,7 @@ export function SharedAlbumEditor({
         if (source.existingId) continue;
         const response = await fetch(source.uri);
         if (!current()) return;
-        if (!response.ok) throw new Error("有照片无法读取，请重新选择后再发布。");
+        if (!response.ok) throw new UserActionRequiredError("有照片无法读取，请重新选择后再发布。");
         const blob = await response.blob();
         if (!current()) return;
         source.contentType = blob.type || "image/jpeg";
@@ -244,7 +248,7 @@ export function SharedAlbumEditor({
       if (album.cover) {
         const response = await fetch(album.cover.readUrl);
         if (!current()) return;
-        if (!response.ok) throw new Error("封面图片无法读取，请重新加载后再发布。");
+        if (!response.ok) throw new UserActionRequiredError("封面图片无法读取，请重新加载后再发布。");
         coverBlob = await response.blob();
         if (!current()) return;
       }
@@ -266,15 +270,15 @@ export function SharedAlbumEditor({
       if (!current()) return;
       for (const upload of publication.uploads) {
         const source = sources[upload.position];
-        if (!source || source.existingId) throw new Error("上传清单不完整。");
+        if (!source || source.existingId) throw new UserActionRequiredError("照片准备不完整，请重新发布。");
         const readResponse = await fetch(source.uri);
         if (!current()) return;
-        if (!readResponse.ok) throw new Error("有照片无法读取，请重新选择后再发布。");
+        if (!readResponse.ok) throw new UserActionRequiredError("有照片无法读取，请重新选择后再发布。");
         const blob = await readResponse.blob();
         if (!current()) return;
         const response = await fetch(upload.uploadUrl, { method: "PUT", headers: { "Content-Type": source.contentType! }, body: blob });
         if (!current()) return;
-        if (!response.ok) throw new Error("照片上传失败。");
+        if (!response.ok) throw new UserActionRequiredError("照片上传失败，请检查网络后重新发布。");
       }
       if (publication.coverUpload && coverBlob) {
         const response = await fetch(publication.coverUpload.uploadUrl, {
@@ -283,7 +287,7 @@ export function SharedAlbumEditor({
           body: coverBlob,
         });
         if (!current()) return;
-        if (!response.ok) throw new Error("封面上传失败。");
+        if (!response.ok) throw new UserActionRequiredError("封面上传失败，请检查网络后重新发布。");
       }
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
@@ -306,7 +310,7 @@ export function SharedAlbumEditor({
         setStale(true);
         setMessage("相册已有新版本，请重新加载后再编辑。");
       } else {
-        setMessage(error instanceof Error ? error.message : "发布失败，请重试。");
+        setMessage(toUserFacingOperationError(error, "发布失败，请检查网络后重试。"));
       }
     } finally {
       operationEditor?.releaseSaveLock();

@@ -14,11 +14,11 @@ describe("CityCard", () => {
     expect(StyleSheet.flatten(screen.getByTestId("city-card-visual-shanghai").props.style)).toMatchObject({ height: 100, width: 112 });
   });
 
-  it("uses the same card design with the line placeholder for unfeatured cities", async () => {
+  it("uses the same card design with the formal generic illustration for unfeatured cities", async () => {
     const screen = await render(<CityCard city="chengdu" onPress={jest.fn()} variant="unvisited" />);
 
     expect(screen.getByText("尚未打卡")).toBeTruthy();
-    expect(screen.getByTestId("city-card-placeholder-chengdu")).toBeTruthy();
+    expect(screen.getByTestId("city-card-generic-chengdu")).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId("city-archive-card-chengdu").props.style)).toMatchObject({ flexDirection: "row" });
   });
 });

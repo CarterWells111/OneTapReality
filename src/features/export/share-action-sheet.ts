@@ -3,10 +3,6 @@ import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Print from "expo-print";
 
-import {
-  type ExportFormat,
-  exportAsTralbumFormat,
-} from "./export-service";
 import { capturePagesAsImages } from "./page-capture-provider";
 import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../memories/local-photo-integrity";
 import type { CanvasImageElement, CanvasTextElement, StoryPage } from "../../types/memory";
@@ -25,11 +21,6 @@ type ShareTarget = {
  * 保证边框、贴纸、背景和自定义字体 100% 还原。
  */
 
-const EXPORT_OPTIONS: { label: string; format: ExportFormat }[] = [
-  { label: "导出为 PDF", format: "pdf" },
-  { label: "导出为 .tralbum 格式", format: "tralbum" },
-];
-
 export async function showShareActionSheet(target: ShareTarget) {
   const { title } = target;
 
@@ -37,35 +28,22 @@ export async function showShareActionSheet(target: ShareTarget) {
     "分享旅行手账",
     `"${title}" 导出为：`,
     [
-      ...EXPORT_OPTIONS.map((opt) => ({
-        text: opt.label,
-        onPress: () => handleExport(opt.format, target),
-      })),
+      { text: "导出为 PDF", onPress: () => handlePdfExport(target) },
       { text: "取消", style: "cancel" as const },
     ],
   );
 }
 
-async function handleExport(format: ExportFormat, target: ShareTarget) {
+async function handlePdfExport(target: ShareTarget) {
   const { pages, title } = target;
   if (hasMissingLocalPhotos({ coverImage: target.coverImage, pages, photoUris: target.photoUris ?? [] })) {
     Alert.alert("无法导出", MISSING_LOCAL_PHOTO_ACTION_MESSAGE);
     return;
   }
   try {
-    switch (format) {
-      case "pdf":
-        await exportPdf(pages, title);
-        break;
-      case "tralbum":
-        await exportTralbum(pages, title);
-        break;
-      case "png":
-        await exportPng(pages, title);
-        break;
-    }
-  } catch (err: any) {
-    Alert.alert("导出失败", err instanceof Error ? err.message : String(err));
+    await exportPdf(pages, title);
+  } catch {
+    Alert.alert("导出失败", "暂时无法生成 PDF，请稍后重试。");
   }
 }
 
@@ -101,8 +79,7 @@ async function exportPdf(pages: StoryPage[], title: string) {
   let captured: (string | null)[] = [];
   try {
     captured = await capturePagesAsImages(pages, PAGE_WIDTH, PAGE_HEIGHT);
-  } catch (err) {
-    console.warn("[PDF] 截图流程失败，回退到纯 HTML 导出:", err);
+  } catch {
     // 截图失败 → 继续用纯 HTML 方案（全部 fallback）
   }
 
@@ -311,32 +288,6 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-/**
- * 导出为 .tralbum JSON 格式，写入临时文件后调起分享。
- */
-async function exportTralbum(pages: StoryPage[], title: string) {
-  const json = exportAsTralbumFormat(pages, title);
-  const fileName = sanitizeFilename(title) || "tralbum";
-  const fileUri = `${FileSystem.cacheDirectory}${fileName}.tralbum`;
-  await FileSystem.writeAsStringAsync(fileUri, json);
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(fileUri, {
-      mimeType: "application/octet-stream",
-      dialogTitle: `分享「${title}」.tralbum`,
-    });
-  } else {
-    Alert.alert("文件已生成", `可在以下路径找到：${fileUri}`);
-  }
-}
-
-/**
- * 暂不支持逐页截图。
- */
-async function exportPng(_pages: StoryPage[], _title: string) {
-  Alert.alert("提示", "图片导出需要配合截图组件，当前版本暂不支持逐页 PNG 导出。请使用 PDF 格式。");
 }
 
 function sanitizeFilename(name: string): string {
