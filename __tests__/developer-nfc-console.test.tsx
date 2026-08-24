@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 import { DeveloperNfcConsole } from "../src/features/gifts/developer-nfc-console";
+import { BackendApiError } from "../src/services/backend/api-client";
 import {
   createInternalNfcUrlPolicy,
   type InternalNfcUrlPolicy,
@@ -17,13 +18,20 @@ jest.mock("../src/services/gifts/gift-card-pending", () => ({
   loadPendingGiftCard: jest.fn(),
   savePendingGiftCard: jest.fn(),
   clearPendingGiftCard: jest.fn(),
+  markPendingGiftCardWriteVerified: jest.fn(),
 }));
 
 const { useAuth } = jest.requireMock("../src/features/auth/auth-provider") as { useAuth: jest.Mock };
-const { loadPendingGiftCard, savePendingGiftCard, clearPendingGiftCard } = jest.requireMock("../src/services/gifts/gift-card-pending") as {
+const {
+  loadPendingGiftCard,
+  savePendingGiftCard,
+  clearPendingGiftCard,
+  markPendingGiftCardWriteVerified,
+} = jest.requireMock("../src/services/gifts/gift-card-pending") as {
   loadPendingGiftCard: jest.Mock;
   savePendingGiftCard: jest.Mock;
   clearPendingGiftCard: jest.Mock;
+  markPendingGiftCardWriteVerified: jest.Mock;
 };
 
 const activeCard = {
@@ -49,6 +57,68 @@ const productionPolicy = createInternalNfcUrlPolicy({
   giftOrigin: PRODUCTION_GIFT_ORIGIN,
 });
 
+type TestAuthState = {
+  isAuthReady: boolean;
+  session: {
+    accessToken: string;
+    user: { id: string; email: string; isAdmin: boolean };
+  } | null;
+};
+
+const oldSession = {
+  accessToken: "old-access-token",
+  user: { id: "user-1", email: "Dev@Example.com", isAdmin: true },
+};
+const refreshedNonAdminSession = {
+  accessToken: "refreshed-access-token",
+  user: { id: "user-1", email: "dev@example.com", isAdmin: false },
+};
+const refreshedAdminSession = {
+  accessToken: "refreshed-admin-access-token",
+  user: { id: "user-1", email: "dev@example.com", isAdmin: true },
+};
+const newAdminSession = {
+  accessToken: "new-access-token",
+  user: { id: "user-2", email: "new-dev@example.com", isAdmin: true },
+};
+let currentAuth: TestAuthState;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+type TestTreeNode = {
+  readonly parent: TestTreeNode | null;
+  readonly props: Record<string, unknown>;
+};
+
+function closestPressable(node: unknown): TestTreeNode {
+  let current = node as TestTreeNode | null;
+  while (current && typeof current.props.onPress !== "function") {
+    current = current.parent;
+  }
+  if (!current) throw new Error("Expected a pressable ancestor");
+  return current;
+}
+
+function pendingReservation(ownerUserId = "user-1") {
+  return {
+    ownerUserId,
+    operationId: "card-2",
+    revision: 1,
+    cardId: "card-2",
+    cardCode: "CARD-002",
+    giftUrl: STAGING_GIFT_URL,
+    expiresAt: "2026-07-24T00:15:00.000Z",
+  };
+}
+
 function createClient(giftUrl = STAGING_GIFT_URL) {
   return {
     listAdminGiftCards: jest.fn().mockResolvedValue([activeCard]),
@@ -73,11 +143,43 @@ function renderConsole(
   );
 }
 
+function consoleElement(
+  client = createClient(),
+  writer = {} as NfcUrlWriter,
+  urlPolicy: InternalNfcUrlPolicy = stagingPolicy,
+) {
+  return (
+    <DeveloperNfcConsole
+      client={client as never}
+      urlPolicy={urlPolicy}
+      writer={writer}
+    />
+  );
+}
+
 describe("developer NFC console", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "session", user: { id: "user-1", email: "dev@example.com", isAdmin: true } } });
-    loadPendingGiftCard.mockResolvedValue(null);
+    currentAuth = {
+      isAuthReady: true,
+      session: {
+        accessToken: "session",
+        user: { id: "user-1", email: "dev@example.com", isAdmin: true },
+      },
+    };
+    useAuth.mockImplementation(() => currentAuth);
+    loadPendingGiftCard.mockReset().mockResolvedValue(null);
+    savePendingGiftCard.mockReset().mockResolvedValue(true);
+    clearPendingGiftCard.mockReset().mockResolvedValue(true);
+    markPendingGiftCardWriteVerified.mockReset().mockImplementation(
+      async (ownerUserId: string, operationId: string) => ({
+        ...pendingReservation(ownerUserId),
+        operationId,
+        cardId: operationId,
+        revision: 2,
+        writeVerified: true,
+      }),
+    );
   });
 
   it("lists active developer cards from the stored gift session", async () => {
@@ -102,6 +204,235 @@ describe("developer NFC console", () => {
     await act(async () => finishRecovery(null));
     fireEvent.press(screen.getByText("Initialize current blank card"));
     await waitFor(() => expect(client.reserveGiftCard).toHaveBeenCalledTimes(1));
+  });
+
+  it("ignores an old admin inventory response after the same user receives a new token without access", async () => {
+    const oldInventory = deferred<(typeof activeCard)[]>();
+    const client = createClient();
+    client.listAdminGiftCards
+      .mockReset()
+      .mockReturnValueOnce(oldInventory.promise)
+      .mockRejectedValueOnce(new BackendApiError(403, "forbidden", "old secret"));
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client);
+
+    await waitFor(() => expect(client.listAdminGiftCards).toHaveBeenCalledWith(
+      oldSession.accessToken,
+      undefined,
+    ));
+    currentAuth = { isAuthReady: true, session: refreshedNonAdminSession };
+    view.rerender(consoleElement(client));
+    await waitFor(() => expect(screen.getByText(
+      "This email does not have developer NFC access.",
+    )).toBeTruthy());
+
+    await act(async () => oldInventory.resolve([activeCard]));
+    expect(screen.queryByText("CARD-001")).toBeNull();
+    expect(screen.getByText("This email does not have developer NFC access.")).toBeTruthy();
+    expect(screen.queryByText(/access-token|old secret/u)).toBeNull();
+  });
+
+  it("does not restore an old account pending reservation after switching accounts", async () => {
+    const oldRecovery = deferred<ReturnType<typeof pendingReservation>>();
+    loadPendingGiftCard
+      .mockReset()
+      .mockReturnValueOnce(oldRecovery.promise)
+      .mockResolvedValueOnce(null);
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({ card: initializingCard, events: [] });
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client);
+
+    await waitFor(() => expect(loadPendingGiftCard).toHaveBeenCalledTimes(1));
+    currentAuth = { isAuthReady: true, session: newAdminSession };
+    view.rerender(consoleElement(client));
+    await waitFor(() => expect(loadPendingGiftCard).toHaveBeenCalledTimes(2));
+
+    await act(async () => oldRecovery.resolve(pendingReservation("user-1")));
+    expect(client.getAdminGiftCard).not.toHaveBeenCalledWith(
+      oldSession.accessToken,
+      "card-2",
+    );
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+  });
+
+  it("makes a captured retry handler inert immediately after sign-out", async () => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({ card: initializingCard, events: [] });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+
+    const retryText = await screen.findByText("Retry NFC write");
+    const capturedRetry = closestPressable(retryText).props.onPress as () => void;
+    expect(typeof capturedRetry).toBe("function");
+    jest.clearAllMocks();
+    currentAuth = { isAuthReady: true, session: null };
+    view.rerender(consoleElement(client, writer));
+    await waitFor(() => expect(screen.getByText(
+      "Sign in with a developer allow-list email to continue.",
+    )).toBeTruthy());
+
+    await act(async () => {
+      capturedRetry();
+      await Promise.resolve();
+    });
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(client.reserveGiftCard).not.toHaveBeenCalled();
+  });
+
+  it("stops a deferred reservation chain after unmount", async () => {
+    const reservation = deferred<ReturnType<typeof pendingReservation>>();
+    const client = createClient();
+    client.reserveGiftCard.mockReturnValue(reservation.promise);
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+    await waitFor(() => expect(client.reserveGiftCard).toHaveBeenCalledTimes(1));
+    view.unmount();
+    await act(async () => reservation.resolve(pendingReservation("user-1")));
+
+    expect(savePendingGiftCard).not.toHaveBeenCalled();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+  });
+
+  it("stops after an owner-scoped pending save finishes under a refreshed same-owner session", async () => {
+    const saved = deferred<boolean>();
+    savePendingGiftCard.mockReturnValueOnce(saved.promise);
+    const client = createClient();
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+
+    await screen.findByText("CARD-001");
+    jest.clearAllMocks();
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+    await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledTimes(1));
+
+    currentAuth = { isAuthReady: true, session: refreshedAdminSession };
+    view.rerender(consoleElement(client, writer));
+    await waitFor(() => expect(client.listAdminGiftCards).toHaveBeenCalledWith(
+      refreshedAdminSession.accessToken,
+      undefined,
+    ));
+    await act(async () => saved.resolve(true));
+
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.listAdminGiftCards).not.toHaveBeenCalledWith(
+      oldSession.accessToken,
+      undefined,
+    );
+  });
+
+  it("cancels a pending NFC write on switch and never activates it with the old session", async () => {
+    const physicalWrite = deferred<void>();
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({ card: initializingCard, events: [] });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockReturnValue(physicalWrite.promise),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+
+    await screen.findByText("Retry NFC write");
+    jest.clearAllMocks();
+    fireEvent.press(screen.getByText("Retry NFC write"));
+    await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1));
+
+    currentAuth = { isAuthReady: true, session: null };
+    view.rerender(consoleElement(client, writer));
+    await waitFor(() => expect(writer.cancel).toHaveBeenCalled());
+    await act(async () => physicalWrite.resolve());
+
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(markPendingGiftCardWriteVerified).toHaveBeenCalledWith(
+      oldSession.user.id,
+      "card-2",
+    );
+  });
+
+  it("does not clear or refresh an old activation after switching accounts", async () => {
+    const activation = deferred<{ activated: boolean }>();
+    const client = createClient();
+    client.activateAdminGiftCard.mockReturnValue(activation.promise);
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+    await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledWith(
+      oldSession.accessToken,
+      "card-2",
+    ));
+    jest.clearAllMocks();
+
+    currentAuth = { isAuthReady: true, session: newAdminSession };
+    view.rerender(consoleElement(client, writer));
+    await waitFor(() => expect(client.listAdminGiftCards).toHaveBeenCalledWith(
+      newAdminSession.accessToken,
+      undefined,
+    ));
+    await act(async () => activation.resolve({ activated: true }));
+
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    expect(client.listAdminGiftCards).not.toHaveBeenCalledWith(
+      oldSession.accessToken,
+      undefined,
+    );
+  });
+
+  it("authorizes a new account without persisting or displaying its access token", async () => {
+    const client = createClient();
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    currentAuth = { isAuthReady: true, session: oldSession };
+    const view = renderConsole(client, writer);
+    await screen.findByText("CARD-001");
+
+    currentAuth = { isAuthReady: true, session: newAdminSession };
+    view.rerender(consoleElement(client, writer));
+    await waitFor(() => expect(client.listAdminGiftCards).toHaveBeenCalledWith(
+      newAdminSession.accessToken,
+      undefined,
+    ));
+    await waitFor(() => expect(loadPendingGiftCard).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(
+      closestPressable(
+        screen.getByText("Initialize current blank card"),
+      ).props.disabled,
+    ).toBe(false));
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+
+    await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledWith(
+      newAdminSession.user.id,
+      expect.objectContaining({ ownerUserId: newAdminSession.user.id }),
+    ));
+    expect(JSON.stringify(savePendingGiftCard.mock.calls)).not.toContain(
+      newAdminSession.accessToken,
+    );
+    expect(screen.queryByText(new RegExp(newAdminSession.accessToken, "u"))).toBeNull();
   });
 
   it("writes, verifies, and only then activates a reserved unique gift card", async () => {
@@ -190,7 +521,10 @@ describe("developer NFC console", () => {
 
     await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
-    await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card-2" })));
+    await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ cardId: "card-2", ownerUserId: "user-1" }),
+    ));
     await waitFor(() => expect(screen.getByText("Retry activation" )).toBeTruthy());
     fireEvent.press(screen.getByText("Retry activation"));
 
@@ -240,6 +574,9 @@ describe("developer NFC console", () => {
 
   it("clears a recovered cross-environment reservation without any NFC write", async () => {
     loadPendingGiftCard.mockResolvedValue({
+      ownerUserId: "user-1",
+      operationId: "card-2",
+      revision: 1,
       cardId: "card-2",
       cardCode: "CARD-002",
       giftUrl: PRODUCTION_GIFT_URL,

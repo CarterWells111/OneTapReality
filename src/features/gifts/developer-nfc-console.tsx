@@ -8,8 +8,17 @@ import {
   type AdminGiftCard,
   type AdminGiftCardDetail,
 } from "../../services/backend/admin-gift-card-api-client";
-import { BackendApiError } from "../../services/backend/api-client";
-import { clearPendingGiftCard, loadPendingGiftCard, savePendingGiftCard, type PendingGiftCard } from "../../services/gifts/gift-card-pending";
+import {
+  BackendApiError,
+  type AuthenticatedAccountSession,
+} from "../../services/backend/api-client";
+import {
+  clearPendingGiftCard,
+  loadPendingGiftCard,
+  markPendingGiftCardWriteVerified,
+  savePendingGiftCard,
+  type PendingGiftCard,
+} from "../../services/gifts/gift-card-pending";
 import {
   createInternalNfcUrlPolicy,
   InternalNfcUrlPolicyError,
@@ -19,11 +28,17 @@ import { createNfcUrlWriter, type NfcUrlWriter } from "../../services/nfc/nfc-ur
 import { useAuth } from "../auth/auth-provider";
 
 type ConsoleClient = Pick<AdminGiftCardApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
-type AccountSession = { accessToken: string };
 type AccessState = "checking" | "signedOut" | "noAccess" | "ready";
 type PolicyResolution = {
   readonly error: unknown;
   readonly policy: InternalNfcUrlPolicy | null;
+};
+type OperationContext = {
+  readonly accessToken: string;
+  readonly contextKey: string;
+  readonly generation: number;
+  readonly ownerUserId: string;
+  readonly urlPolicy: InternalNfcUrlPolicy;
 };
 
 function canRetire(card: AdminGiftCard) {
@@ -47,6 +62,19 @@ function policyErrorMessage(error: unknown) {
   return error instanceof InternalNfcUrlPolicyError
     ? error.message
     : "NFC link validation failed. Stop and contact support.";
+}
+
+function createContextKey(
+  session: AuthenticatedAccountSession,
+  urlPolicy: InternalNfcUrlPolicy,
+) {
+  return JSON.stringify([
+    session.user.id,
+    session.user.email.trim().toLowerCase(),
+    session.accessToken,
+    urlPolicy.apiOrigin,
+    urlPolicy.giftOrigin,
+  ]);
 }
 
 export function DeveloperNfcConsole({
@@ -80,6 +108,11 @@ export function DeveloperNfcConsole({
     }
   }, [injectedUrlPolicy]);
   const urlPolicy = policyResolution.policy;
+  const currentAccessToken = session?.accessToken ?? null;
+  const currentOwnerUserId = session?.user.id ?? null;
+  const contextKey = isAuthReady && session && urlPolicy
+    ? createContextKey(session, urlPolicy)
+    : null;
   const [access, setAccess] = React.useState<AccessState>("checking");
   const [cards, setCards] = React.useState<AdminGiftCard[]>([]);
   const [detail, setDetail] = React.useState<AdminGiftCardDetail | null>(null);
@@ -90,13 +123,62 @@ export function DeveloperNfcConsole({
   const [message, setMessage] = React.useState("Checking developer access...");
   const [busy, setBusy] = React.useState(false);
   const [recoveryComplete, setRecoveryComplete] = React.useState(false);
+  const mountedRef = React.useRef(false);
+  const generationRef = React.useRef(0);
+  const activeContextRef = React.useRef<OperationContext | null>(null);
 
-  const loadCards = React.useCallback(async (activeSession: AccountSession, filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string }) => {
+  const cancelWriter = React.useCallback(() => {
     try {
-      setCards(await client.listAdminGiftCards(activeSession.accessToken, filters));
+      void (writer as Partial<NfcUrlWriter>).cancel?.().catch(() => undefined);
+    } catch {
+      // There is no user-facing action for a best-effort native cancellation.
+    }
+  }, [writer]);
+
+  React.useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
+      activeContextRef.current = null;
+    };
+  }, []);
+
+  React.useLayoutEffect(() => {
+    generationRef.current += 1;
+    activeContextRef.current = null;
+    setCards([]);
+    setDetail(null);
+    setPending(null);
+    setNote("");
+    setStateFilter("");
+    setSearch("");
+    setBusy(false);
+    setRecoveryComplete(false);
+    setAccess("checking");
+    setMessage("Checking developer access...");
+  }, [contextKey]);
+
+  const isCurrentContext = React.useCallback((context: OperationContext) => (
+    mountedRef.current
+    && generationRef.current === context.generation
+    && activeContextRef.current === context
+  ), []);
+
+  const loadCards = React.useCallback(async (
+    context: OperationContext,
+    filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string },
+  ): Promise<boolean> => {
+    if (!isCurrentContext(context)) return false;
+    try {
+      const nextCards = await client.listAdminGiftCards(context.accessToken, filters);
+      if (!isCurrentContext(context)) return false;
+      setCards(nextCards);
       setAccess("ready");
       setMessage("Developer access confirmed. Prepare blank cards, then initialize each card with a unique gift URL.");
+      return true;
     } catch (error) {
+      if (!isCurrentContext(context)) return false;
       setCards([]);
       setDetail(null);
       if (error instanceof BackendApiError && (error.status === 401 || error.status === 403)) {
@@ -106,166 +188,367 @@ export function DeveloperNfcConsole({
         setAccess("checking");
         setMessage("Unable to read card inventory. Check the network and retry.");
       }
+      return false;
     }
-  }, [client]);
+  }, [client, isCurrentContext]);
 
-  const recoverPending = React.useCallback(async (activeSession: AccountSession) => {
-    if (!urlPolicy) return;
-    const saved = await loadPendingGiftCard();
-    if (!saved) return;
+  const recoverPending = React.useCallback(async (
+    context: OperationContext,
+  ): Promise<boolean> => {
+    if (!isCurrentContext(context)) return false;
+    const saved = await loadPendingGiftCard(context.ownerUserId);
+    if (!isCurrentContext(context)) return false;
+    if (!saved) return true;
     try {
-      urlPolicy.validateGiftUrl(saved.giftUrl);
+      context.urlPolicy.validateGiftUrl(saved.giftUrl);
     } catch (error) {
-      await clearPendingGiftCard();
+      if (!isCurrentContext(context)) return false;
+      const cleared = await clearPendingGiftCard(context.ownerUserId, saved.operationId);
+      if (!isCurrentContext(context)) return false;
+      if (!cleared) {
+        setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
+        return false;
+      }
       setPending(null);
       setMessage(policyErrorMessage(error));
-      return;
+      return true;
     }
     try {
-      const current = await client.getAdminGiftCard(activeSession.accessToken, saved.cardId);
+      if (!isCurrentContext(context)) return false;
+      const current = await client.getAdminGiftCard(context.accessToken, saved.cardId);
+      if (!isCurrentContext(context)) return false;
       if (current.card.state !== "initializing") {
-        await clearPendingGiftCard();
-        return;
+        const cleared = await clearPendingGiftCard(context.ownerUserId, saved.operationId);
+        if (!isCurrentContext(context)) return false;
+        if (!cleared) {
+          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
+          return false;
+        }
+        setPending(null);
+        return true;
       }
       setPending(saved);
+      return true;
     } catch {
-      // Keep the local reservation so a transient network failure never creates another card.
+      if (!isCurrentContext(context)) return false;
+      // Keep this owner's reservation so a transient network failure cannot create another card.
       setPending(saved);
+      return true;
     }
-  }, [client, urlPolicy]);
+  }, [client, isCurrentContext]);
 
   React.useEffect(() => {
     if (!isAuthReady) return;
-    setRecoveryComplete(false);
     if (!urlPolicy) {
       setAccess("noAccess");
       setMessage(policyErrorMessage(policyResolution.error));
       return;
     }
-    if (!session) {
+    if (!currentAccessToken || !currentOwnerUserId || !contextKey) {
       setAccess("signedOut");
       setMessage("Sign in with a developer allow-list email to continue.");
       return;
     }
-    let cancelled = false;
+    const context: OperationContext = {
+      accessToken: currentAccessToken,
+      contextKey,
+      generation: generationRef.current,
+      ownerUserId: currentOwnerUserId,
+      urlPolicy,
+    };
+    activeContextRef.current = context;
     void (async () => {
       try {
-        await loadCards(session);
-        await recoverPending(session);
-        if (!cancelled) setRecoveryComplete(true);
+        if (!await loadCards(context) || !isCurrentContext(context)) return;
+        if (!await recoverPending(context) || !isCurrentContext(context)) return;
+        setRecoveryComplete(true);
       } catch {
-        if (!cancelled) {
-          setMessage("Unable to check the saved NFC reservation. Restart the app before initializing another card.");
-        }
+        if (!isCurrentContext(context)) return;
+        setMessage("Unable to check the saved NFC reservation. Restart the app before initializing another card.");
       }
     })();
-    return () => { cancelled = true; };
-  }, [isAuthReady, loadCards, policyResolution.error, recoverPending, session, urlPolicy]);
+    return () => {
+      if (activeContextRef.current === context) activeContextRef.current = null;
+      cancelWriter();
+    };
+  }, [cancelWriter, contextKey, currentAccessToken, currentOwnerUserId, isAuthReady, isCurrentContext, loadCards, policyResolution.error, recoverPending, urlPolicy]);
 
-  const prepareBlankCard = async () => {
-    if (!urlPolicy || !recoveryComplete) return;
-    try {
-      setBusy(true);
-      await writer.replaceHttpsUrl(null, urlPolicy.activationUrl);
-      setMessage("Blank card is ready. It now opens the developer activation screen.");
-    } catch (error) { setMessage(errorMessage(error, "Unable to prepare this NFC card. Keep it against the top of the phone and retry.")); }
-    finally { setBusy(false); }
+  const getCurrentContext = () => {
+    const context = activeContextRef.current;
+    return context
+      && contextKey
+      && context.contextKey === contextKey
+      && isCurrentContext(context)
+      && isAuthReady
+      && currentAccessToken
+      && currentOwnerUserId
+      ? context
+      : null;
   };
 
-  const initializeCard = async () => {
-    if (!session || !urlPolicy || !recoveryComplete || pending) return;
+  const getReadyContext = (reservation?: PendingGiftCard | null) => {
+    const context = getCurrentContext();
+    if (
+      !context
+      || access !== "ready"
+      || !recoveryComplete
+      || busy
+      || (reservation && (
+        reservation.ownerUserId !== context.ownerUserId
+        || pending?.operationId !== reservation.operationId
+      ))
+    ) return null;
+    return context;
+  };
+
+  const activatePendingForContext = async (
+    context: OperationContext,
+    reservation: PendingGiftCard,
+    manageBusy: boolean,
+  ) => {
+    if (
+      !isCurrentContext(context)
+      || reservation.ownerUserId !== context.ownerUserId
+      || !reservation.writeVerified
+    ) return;
     try {
-      setBusy(true);
-      const reservation = await client.reserveGiftCard(session.accessToken, note);
-      const validatedReservation = {
-        ...reservation,
-        giftUrl: urlPolicy.validateGiftUrl(reservation.giftUrl),
-      };
-      await savePendingGiftCard(validatedReservation);
-      setPending(validatedReservation);
-      try {
-        setCards(await client.listAdminGiftCards(session.accessToken));
-      } catch {
-        // The saved reservation remains retryable even if the inventory refresh fails.
+      if (manageBusy) setBusy(true);
+      if (!isCurrentContext(context)) return;
+      await client.activateAdminGiftCard(context.accessToken, reservation.cardId);
+      if (!isCurrentContext(context)) return;
+      const cleared = await clearPendingGiftCard(
+        context.ownerUserId,
+        reservation.operationId,
+      );
+      if (!isCurrentContext(context)) return;
+      if (!cleared) {
+        setPending(null);
+        setRecoveryComplete(false);
+        setMessage("Activation succeeded, but the saved NFC reservation changed. Restart the app before handling another card.");
+        return;
       }
-      await writePending(validatedReservation);
+      setPending(null);
+      setNote("");
+      if (!await loadCards(context) || !isCurrentContext(context)) return;
+      setMessage(`Card ${reservation.cardCode} is active and ready for customer claim.`);
     } catch (error) {
-      const detail = error instanceof InternalNfcUrlPolicyError
-        ? policyErrorMessage(error)
-        : errorMessage(error, "Check the network and retry.");
-      setMessage(`Unable to reserve this gift card. ${detail}`.trim());
-    } finally { setBusy(false); }
+      if (!isCurrentContext(context)) return;
+      setMessage(`Activation was not confirmed. Retry activation for ${reservation.cardCode}; do not write the card again. ${errorMessage(error, "")}`.trim());
+    } finally {
+      if (manageBusy && isCurrentContext(context)) setBusy(false);
+    }
   };
 
-  const writePending = async (reservation = pending) => {
-    if (!session || !urlPolicy || !reservation || reservation.writeVerified) return;
+  const writePendingForContext = async (
+    context: OperationContext,
+    reservation: PendingGiftCard,
+    manageBusy: boolean,
+  ) => {
+    if (
+      !isCurrentContext(context)
+      || reservation.ownerUserId !== context.ownerUserId
+      || reservation.writeVerified
+    ) return;
     try {
-      setBusy(true);
+      if (manageBusy) setBusy(true);
       let giftUrl: string;
       try {
-        giftUrl = urlPolicy.validateReplacement(
-          urlPolicy.activationUrl,
+        giftUrl = context.urlPolicy.validateReplacement(
+          context.urlPolicy.activationUrl,
           reservation.giftUrl,
         );
       } catch (error) {
-        await clearPendingGiftCard();
+        if (!isCurrentContext(context)) return;
+        const cleared = await clearPendingGiftCard(
+          context.ownerUserId,
+          reservation.operationId,
+        );
+        if (!isCurrentContext(context)) return;
+        if (!cleared) {
+          setPending(null);
+          setRecoveryComplete(false);
+          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
+          return;
+        }
         setPending(null);
         setMessage(policyErrorMessage(error));
         return;
       }
-      await writer.replaceHttpsUrl(urlPolicy.activationUrl, giftUrl);
-      const verifiedReservation = { ...reservation, writeVerified: true };
-      await savePendingGiftCard(verifiedReservation);
+      if (!isCurrentContext(context)) return;
+      await writer.replaceHttpsUrl(context.urlPolicy.activationUrl, giftUrl);
+      if (!isCurrentContext(context)) {
+        try {
+          await markPendingGiftCardWriteVerified(
+            context.ownerUserId,
+            reservation.operationId,
+          );
+        } catch {
+          // The owner can recover the server-side initializing record after it expires.
+        }
+        return;
+      }
+      const verifiedReservation = await markPendingGiftCardWriteVerified(
+        context.ownerUserId,
+        reservation.operationId,
+      );
+      if (!isCurrentContext(context)) return;
+      if (!verifiedReservation) {
+        setPending(null);
+        setRecoveryComplete(false);
+        setMessage("NFC verification could not be matched to the saved reservation. Restart the app before handling another card.");
+        return;
+      }
       setPending(verifiedReservation);
-      await activatePending(verifiedReservation);
+      await activatePendingForContext(context, verifiedReservation, false);
     } catch (error) {
+      if (!isCurrentContext(context)) return;
       setMessage(`NFC write failed. The initializing record is saved for 15 minutes. ${errorMessage(error, "Keep the card against the top of the phone and retry.")}`.trim());
     } finally {
-      setBusy(false);
+      if (manageBusy && isCurrentContext(context)) setBusy(false);
     }
   };
 
-  const activatePending = async (reservation = pending) => {
-    if (!session || !reservation?.writeVerified) return;
+  const prepareBlankCard = async () => {
+    const context = getReadyContext();
+    if (!context) return;
     try {
       setBusy(true);
-      await client.activateAdminGiftCard(session.accessToken, reservation.cardId);
-      await clearPendingGiftCard();
-      setPending(null);
-      setNote("");
-      await loadCards(session);
-      setMessage(`Card ${reservation.cardCode} is active and ready for customer claim.`);
+      if (!isCurrentContext(context)) return;
+      await writer.replaceHttpsUrl(null, context.urlPolicy.activationUrl);
+      if (!isCurrentContext(context)) return;
+      setMessage("Blank card is ready. It now opens the developer activation screen.");
     } catch (error) {
-      setMessage(`Activation was not confirmed. Retry activation for ${reservation.cardCode}; do not write the card again. ${errorMessage(error, "")}`.trim());
-    } finally { setBusy(false); }
+      if (isCurrentContext(context)) {
+        setMessage(errorMessage(error, "Unable to prepare this NFC card. Keep it against the top of the phone and retry."));
+      }
+    } finally {
+      if (isCurrentContext(context)) setBusy(false);
+    }
+  };
+
+  const initializeCard = async () => {
+    const context = getReadyContext(pending);
+    if (!context || pending) return;
+    try {
+      setBusy(true);
+      if (!isCurrentContext(context)) return;
+      const reservation = await client.reserveGiftCard(context.accessToken, note);
+      if (!isCurrentContext(context)) return;
+      const validatedReservation: PendingGiftCard = {
+        ownerUserId: context.ownerUserId,
+        operationId: reservation.cardId,
+        revision: 1,
+        cardId: reservation.cardId,
+        cardCode: reservation.cardCode,
+        giftUrl: context.urlPolicy.validateGiftUrl(reservation.giftUrl),
+        expiresAt: reservation.expiresAt,
+      };
+      const saved = await savePendingGiftCard(
+        context.ownerUserId,
+        validatedReservation,
+      );
+      if (!isCurrentContext(context)) return;
+      if (!saved) {
+        setPending(null);
+        setRecoveryComplete(false);
+        setMessage("Another NFC reservation is already saved for this account. Restart the app and recover it before handling another card.");
+        return;
+      }
+      setPending(validatedReservation);
+      try {
+        if (!isCurrentContext(context)) return;
+        const nextCards = await client.listAdminGiftCards(context.accessToken);
+        if (!isCurrentContext(context)) return;
+        setCards(nextCards);
+      } catch {
+        if (!isCurrentContext(context)) return;
+        // The owner-scoped reservation remains retryable when refresh fails.
+      }
+      if (!isCurrentContext(context)) return;
+      await writePendingForContext(context, validatedReservation, false);
+    } catch (error) {
+      if (!isCurrentContext(context)) return;
+      const detail = error instanceof InternalNfcUrlPolicyError
+        ? policyErrorMessage(error)
+        : errorMessage(error, "Check the network and retry.");
+      setMessage(`Unable to reserve this gift card. ${detail}`.trim());
+    } finally {
+      if (isCurrentContext(context)) setBusy(false);
+    }
+  };
+
+  const writePending = async (reservation = pending) => {
+    const context = getReadyContext(reservation);
+    if (!context || !reservation) return;
+    await writePendingForContext(context, reservation, true);
+  };
+
+  const activatePending = async (reservation = pending) => {
+    const context = getReadyContext(reservation);
+    if (!context || !reservation) return;
+    await activatePendingForContext(context, reservation, true);
   };
 
   const showDetail = async (cardId: string) => {
-    if (!session) return;
-    try { setBusy(true); setDetail(await client.getAdminGiftCard(session.accessToken, cardId)); }
-    catch (error) { setMessage(errorMessage(error, "Unable to read card details.")); }
-    finally { setBusy(false); }
+    const context = getReadyContext();
+    if (!context) return;
+    try {
+      setBusy(true);
+      if (!isCurrentContext(context)) return;
+      const nextDetail = await client.getAdminGiftCard(context.accessToken, cardId);
+      if (!isCurrentContext(context)) return;
+      setDetail(nextDetail);
+    } catch (error) {
+      if (isCurrentContext(context)) setMessage(errorMessage(error, "Unable to read card details."));
+    } finally {
+      if (isCurrentContext(context)) setBusy(false);
+    }
   };
 
   const retire = async (card: AdminGiftCard) => {
-    if (!session || !canRetire(card)) return;
+    const context = getReadyContext();
+    if (!context || !canRetire(card)) return;
     try {
       setBusy(true);
-      await client.retireAdminGiftCard(session.accessToken, card.id);
+      if (!isCurrentContext(context)) return;
+      await client.retireAdminGiftCard(context.accessToken, card.id);
+      if (!isCurrentContext(context)) return;
       setDetail(null);
-      await loadCards(session);
+      if (!await loadCards(context) || !isCurrentContext(context)) return;
       setMessage(`Card ${card.code} is retired.`);
-    } catch (error) { setMessage(errorMessage(error, "Unable to retire this card.")); }
-    finally { setBusy(false); }
+    } catch (error) {
+      if (isCurrentContext(context)) setMessage(errorMessage(error, "Unable to retire this card."));
+    } finally {
+      if (isCurrentContext(context)) setBusy(false);
+    }
   };
 
   const retryOrFilter = async () => {
-    if (!session) return;
+    const context = getCurrentContext();
+    if (!context || busy) return;
     setBusy(true);
     const validStates: AdminGiftCard["state"][] = ["initializing", "active", "retired"];
-    const state = validStates.includes(stateFilter as AdminGiftCard["state"]) ? stateFilter as AdminGiftCard["state"] : undefined;
-    await loadCards(session, { state, code: search || undefined, note: search || undefined });
-    setBusy(false);
+    const state = validStates.includes(stateFilter as AdminGiftCard["state"])
+      ? stateFilter as AdminGiftCard["state"]
+      : undefined;
+    const ready = await loadCards(context, {
+      state,
+      code: search || undefined,
+      note: search || undefined,
+    });
+    if (!isCurrentContext(context)) return;
+    if (ready && !recoveryComplete) {
+      try {
+        if (await recoverPending(context) && isCurrentContext(context)) {
+          setRecoveryComplete(true);
+        }
+      } catch {
+        if (isCurrentContext(context)) {
+          setMessage("Unable to check the saved NFC reservation. Restart the app before initializing another card.");
+        }
+      }
+    }
+    if (isCurrentContext(context)) setBusy(false);
   };
 
   if (access === "signedOut") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text><AppButton disabled={busy} label="Sign in" onPress={() => router.push("/login?returnTo=/activate" as never)} /></PaperCard></ScrollView>;
