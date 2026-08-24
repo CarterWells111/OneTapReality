@@ -306,11 +306,114 @@ describe("account deletion repository", () => {
 
       expect(first).toEqual(expect.objectContaining({ completed: 0, failed: 1 }));
       await expect(getAuthenticatedUserByTokenHash(db, "token-current", "2026-08-24T10:01:01.000Z")).resolves.toBeNull();
-      expect(notifyFailure).toHaveBeenCalledWith({ receiptId: "receipt-1", errorCode: "account_media_delete_failed", attempt: 1 });
+      expect(notifyFailure).toHaveBeenCalledWith({ receiptId: "receipt-1", errorCode: "account_media_delete_failed", attempt: 1, overdue: false });
       expect(JSON.stringify(notifyFailure.mock.calls)).not.toContain("owner@example.com");
       expect(JSON.stringify(notifyFailure.mock.calls)).not.toContain("private/cover.jpg");
       const [job] = await db.select().from(accountDeletionJobs).where(eq(accountDeletionJobs.id, "receipt-1"));
       expect(job).toEqual(expect.objectContaining({ state: "pending", lastErrorCode: "account_media_delete_failed", nextAttemptAt: "2026-08-24T10:06:00.000Z" }));
+    } finally { await close(); }
+  });
+
+  it("caps retries at completeBy, prioritizes overdue work and raises an overdue support alert", async () => {
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
+    try {
+      await migrateBackendDatabase(db);
+      const user = await seedAccount(db);
+      await createGift(db, { id: "owned-gift", tokenHash: "owned-hash", createdAt: now });
+      await claimGiftByTokenHash(db, "owned-hash", user.email, now);
+      await db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version, cover_object_key)
+        values ('deadline-album', 'owned-gift', 'memory', 'Private', ${now}, 1, 'private/deadline-cover.jpg')
+      `);
+      await createAccountDeletionChallenge(db, {
+        id: "deadline-challenge", userId: user.id, sessionId: "session-current",
+        codeHash: "hash", createdAt: now, expiresAt,
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "deadline-challenge", userId: user.id, sessionId: "session-current",
+        codeHash: "hash", confirmation: "DELETE", receiptId: "deadline-receipt", now,
+        completeBy: "2026-08-24T10:02:00.000Z",
+      });
+      const notifyFailure = jest.fn(async () => undefined);
+      const store = createStore(jest.fn(async () => { throw new Error("R2 unavailable"); }));
+
+      queries.length = 0;
+      await expect(processAccountDeletionJobs({
+        db, store, now: new Date("2026-08-24T10:01:00.000Z"), notifyFailure,
+      })).resolves.toEqual({ claimed: 1, completed: 0, failed: 1 });
+      let [job] = await db.select().from(accountDeletionJobs).where(eq(accountDeletionJobs.id, "deadline-receipt"));
+      expect(job.nextAttemptAt).toBe("2026-08-24T10:02:00.000Z");
+      expect(notifyFailure).toHaveBeenLastCalledWith({
+        receiptId: "deadline-receipt", errorCode: "account_media_delete_failed", attempt: 1, overdue: false,
+      });
+      expect(queries.join("\n")).toMatch(/order by\s+case when complete_by <=/iu);
+
+      await expect(processAccountDeletionJobs({
+        db, store, now: new Date("2026-08-24T10:02:00.000Z"), notifyFailure,
+      })).resolves.toEqual({ claimed: 1, completed: 0, failed: 1 });
+      [job] = await db.select().from(accountDeletionJobs).where(eq(accountDeletionJobs.id, "deadline-receipt"));
+      expect(job.nextAttemptAt).toBe("2026-08-24T10:02:00.000Z");
+      expect(notifyFailure).toHaveBeenLastCalledWith({
+        receiptId: "deadline-receipt", errorCode: "account_media_delete_failed", attempt: 2, overdue: true,
+      });
+    } finally { await close(); }
+  });
+
+  it("deletes a completed editor session's temp upload without collecting another owner's live final", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const user = await seedAccount(db);
+      await createGift(db, { id: "other-gift", tokenHash: "other-hash", createdAt: now });
+      await claimGiftByTokenHash(db, "other-hash", "other-owner@example.com", now);
+      const tempKey = "gifts/other-gift/completed-editor/temp/photo";
+      const liveFinalKey = "gifts/other-gift/completed-editor/final/attempt/photo";
+      await createGiftPublishSession(db, {
+        id: "completed-editor", giftId: "other-gift", ownerEmail: user.email,
+        baseVersion: 0,
+        payload: {
+          sourceMemoryId: "memory", title: "Completed editor draft", pages: [],
+          media: [{ position: 0, objectKey: tempKey, contentType: "image/jpeg", byteSize: 10, source: "upload" }],
+        },
+        createdAt: now, expiresAt: "2026-08-24T10:15:00.000Z",
+      });
+      await db.update(giftPublishSessions).set({ completedAt: now }).where(eq(giftPublishSessions.id, "completed-editor"));
+      await db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version)
+        values ('other-album', 'other-gift', 'memory', 'Live', ${now}, 1)
+      `);
+      await db.execute(sql`
+        insert into shared_album_media (id, shared_album_id, position, object_key, content_type, byte_size, created_at)
+        values ('live-final', 'other-album', 0, ${liveFinalKey}, 'image/jpeg', 10, ${now})
+      `);
+      await db.insert(giftMediaCleanupJobs).values({
+        id: "live-final-tombstone", giftId: "other-gift", objectKey: liveFinalKey,
+        state: "pending", attempts: 0, nextAttemptAt: now, leaseUntil: null,
+        lastError: null, completedAt: null, createdAt: now,
+      });
+      await createAccountDeletionChallenge(db, {
+        id: "completed-editor-challenge", userId: user.id, sessionId: "session-current",
+        codeHash: "hash", createdAt: now, expiresAt,
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "completed-editor-challenge", userId: user.id, sessionId: "session-current",
+        codeHash: "hash", confirmation: "DELETE", receiptId: "completed-editor-receipt", now, completeBy,
+      });
+
+      await expect(db.select({ objectKey: accountDeletionMediaObjects.objectKey }).from(accountDeletionMediaObjects))
+        .resolves.toEqual([{ objectKey: tempKey }]);
+      const deleteObjects = jest.fn(async () => undefined);
+      await expect(processAccountDeletionJobs({
+        db, store: createStore(deleteObjects), now: new Date("2026-08-24T10:01:00.000Z"), notifyFailure: jest.fn(),
+      })).resolves.toEqual({ claimed: 1, completed: 1, failed: 0 });
+      expect(deleteObjects).toHaveBeenCalledWith([tempKey], expect.anything());
+      await expect(db.select({ objectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums).where(eq(sharedAlbums.id, "other-album")))
+        .resolves.toEqual([{ objectKey: null }]);
+      await expect(db.execute(sql`select object_key from shared_album_media where id = 'live-final'`))
+        .resolves.toEqual(expect.objectContaining({ rows: [{ object_key: liveFinalKey }] }));
+      await expect(db.select().from(giftMediaCleanupJobs).where(eq(giftMediaCleanupJobs.id, "live-final-tombstone")))
+        .resolves.toEqual([expect.objectContaining({ state: "pending", objectKey: liveFinalKey })]);
     } finally { await close(); }
   });
 
