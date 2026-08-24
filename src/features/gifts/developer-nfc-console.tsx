@@ -317,6 +317,9 @@ export function DeveloperNfcConsole({
       if (!isConfirmedReservationDetail(current, saved)) {
         return failTransientRecovery();
       }
+      if (saved.writeVerified && current.card.state === "retired") {
+        return preserveExpiredWrittenReservation(saved);
+      }
       if (current.card.state !== "initializing") {
         return clearRecoveredReservation(saved);
       }

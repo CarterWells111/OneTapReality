@@ -671,6 +671,74 @@ describe("developer NFC console", () => {
     ).props.disabled).toBe(true);
   });
 
+  it("preserves verified recovery when the request crosses expiry and returns retired", async () => {
+    const expiresAt = "2026-07-24T00:15:00.000Z";
+    let mutableNow = TEST_NOW_MS;
+    const detail = deferred<{
+      card: typeof initializingCard;
+      events: never[];
+    }>();
+    loadPendingGiftCard.mockResolvedValue({
+      ...pendingReservation("user-1", expiresAt),
+      revision: 2,
+      writeVerified: true,
+    });
+    const client = createClient();
+    client.getAdminGiftCard.mockReturnValue(detail.promise);
+    const writer = {
+      replaceHttpsUrl: jest.fn(),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer, stagingPolicy, () => mutableNow);
+
+    await waitFor(() => expect(client.getAdminGiftCard).toHaveBeenCalledTimes(1));
+    mutableNow = Date.parse("2026-07-24T00:15:00.001Z");
+    await act(async () => detail.resolve({
+      card: {
+        ...initializingCard,
+        state: "retired" as const,
+        expiresAt: null,
+        retiredAt: "2026-07-24T00:15:00.000Z",
+      } as never,
+      events: [],
+    }));
+
+    expect(screen.getByText(
+      "This NFC card was written, but its reservation expired before activation. Do not rewrite it; contact support.",
+    )).toBeTruthy();
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(closestPressable(
+      screen.getByText("Retry activation"),
+    ).props.disabled).toBe(true);
+  });
+
+  it("clears a recovered verified record once the server confirms it active", async () => {
+    loadPendingGiftCard.mockResolvedValue({
+      ...pendingReservation("user-1"),
+      revision: 2,
+      writeVerified: true,
+    });
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: {
+        ...initializingCard,
+        state: "active" as const,
+        expiresAt: null,
+        activatedAt: "2026-07-24T00:11:00.000Z",
+      },
+      events: [],
+    });
+    renderConsole(client);
+
+    await waitFor(() => expect(clearPendingGiftCard).toHaveBeenCalledWith(
+      "user-1",
+      "card-2",
+    ));
+    expect(screen.queryByText("Retry activation")).toBeNull();
+  });
+
   it("makes a captured retry handler inert immediately after sign-out", async () => {
     loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
     const client = createClient();
