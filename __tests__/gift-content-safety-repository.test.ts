@@ -7,6 +7,7 @@ import {
   giftMembers,
   sharedAlbums,
   userBlocks,
+  users,
 } from "../src/server/db/schema";
 import {
   blockGiftUser,
@@ -290,6 +291,87 @@ describe("gift content safety repository", () => {
       await createGift(db, { id: "gift-reverse", tokenHash: "token-reverse", createdAt: now });
       await claimGiftByTokenHash(db, "token-reverse", member.email, now);
       await expect(addGiftMember(db, "gift-reverse", owner.email, now)).rejects.toBeInstanceOf(GiftRelationshipBlockedError);
+    } finally { await close(); }
+  });
+
+  it("locks both active account identities before the gift and rejects a pending deletion target", async () => {
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
+    try {
+      await migrateBackendDatabase(db);
+      const { owner, member } = await createSharedFixture(db, {
+        giftId: "gift-deleting-target",
+        tokenHash: "token-deleting-target",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+      await db.update(users).set({
+        deletionState: "pending",
+        deletionRequestedAt: "2026-08-24T12:01:00.000Z",
+      }).where(eq(users.id, owner.id));
+      queries.length = 0;
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-deleting-target",
+        actorUserId: member.id,
+        actorEmail: member.email,
+        targetEmail: owner.email,
+        now: "2026-08-24T12:02:00.000Z",
+      })).resolves.toEqual({ status: "invalid_target" });
+      expect(await db.select().from(userBlocks)).toEqual([]);
+
+      const executed = queries.join("\n");
+      expect(executed).toMatch(/from "users"[\s\S]*order by "users"\."id"[\s\S]*for update/iu);
+      expect(executed.indexOf('from "users"')).toBeLessThan(executed.indexOf('update "gifts"'));
+    } finally { await close(); }
+  });
+
+  it("still lets an active owner block an unregistered historical member", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const owner = await createOrGetUserByEmail(db, "owner@example.com", now);
+      await createGift(db, { id: "gift-unregistered-history", tokenHash: "token-unregistered-history", createdAt: now });
+      await claimGiftByTokenHash(db, "token-unregistered-history", owner.email, now);
+      await addGiftMember(db, "gift-unregistered-history", "former@example.com", now);
+      await expect(removeGiftMember(db, "gift-unregistered-history", "former@example.com")).resolves.toBe(true);
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-unregistered-history",
+        actorUserId: owner.id,
+        actorEmail: owner.email,
+        targetEmail: "former@example.com",
+        now: "2026-08-24T12:01:00.000Z",
+      })).resolves.toEqual(expect.objectContaining({ status: "created" }));
+      await expect(db.select().from(userBlocks)).resolves.toEqual([
+        expect.objectContaining({ blockerUserId: owner.id, blockedUserId: null, blockedEmail: "former@example.com" }),
+      ]);
+    } finally { await close(); }
+  });
+
+  it("rejects an actor whose deletion became pending after request authentication", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { owner, member } = await createSharedFixture(db, {
+        giftId: "gift-deleting-actor",
+        tokenHash: "token-deleting-actor",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+      await db.update(users).set({
+        deletionState: "pending",
+        deletionRequestedAt: "2026-08-24T12:01:00.000Z",
+      }).where(eq(users.id, member.id));
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-deleting-actor",
+        actorUserId: member.id,
+        actorEmail: member.email,
+        targetEmail: owner.email,
+        now: "2026-08-24T12:02:00.000Z",
+      })).resolves.toEqual({ status: "forbidden" });
+      await expect(db.select().from(userBlocks)).resolves.toEqual([]);
     } finally { await close(); }
   });
 

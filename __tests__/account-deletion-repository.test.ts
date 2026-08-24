@@ -214,7 +214,8 @@ describe("account deletion repository", () => {
   });
 
   it("removes report and block identities when the deletion worker completes", async () => {
-    const { db, close } = createBackendTestDatabase();
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
     try {
       await migrateBackendDatabase(db);
       const deletingUser = await seedAccount(db);
@@ -264,6 +265,7 @@ describe("account deletion repository", () => {
         challengeId: "challenge-safety", userId: deletingUser.id, sessionId: "session-current",
         codeHash: "hash", confirmation: "DELETE", receiptId: "receipt-safety", now, completeBy,
       });
+      queries.length = 0;
       await expect(processAccountDeletionJobs({
         db, store: createStore(), now: new Date("2026-08-24T10:01:00.000Z"), notifyFailure: jest.fn(),
       })).resolves.toEqual(expect.objectContaining({ completed: 1, failed: 0 }));
@@ -278,6 +280,21 @@ describe("account deletion repository", () => {
       expect(receipt).toEqual(expect.objectContaining({ state: "completed", userId: null, accountEmail: null }));
       expect(JSON.stringify(receipt)).not.toContain(deletingUser.email);
       expect(JSON.stringify(receipt)).not.toContain(deletingUser.id);
+
+      const cleanupQueries = queries.join("\n");
+      expect(cleanupQueries).toMatch(/from "users"[\s\S]*for update/iu);
+      expect(cleanupQueries.indexOf('from "users"')).toBeLessThan(cleanupQueries.indexOf('from "gift_members"'));
+
+      await expect(blockGiftUser(db, {
+        giftId: "shared-blocked", actorUserId: secondOwner.id, actorEmail: secondOwner.email,
+        targetEmail: deletingUser.email, now: "2026-08-24T10:02:00.000Z",
+      })).resolves.toEqual({ status: "invalid_target" });
+      const remainingSafetyRows = {
+        blocks: await db.select().from(userBlocks),
+        tombstones: await db.select().from(giftRelationshipTombstones),
+      };
+      expect(JSON.stringify(remainingSafetyRows)).not.toContain(deletingUser.email);
+      expect(JSON.stringify(remainingSafetyRows)).not.toContain(deletingUser.id);
     } finally { await close(); }
   });
 

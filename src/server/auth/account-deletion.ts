@@ -323,6 +323,14 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
     )).limit(1).for("update");
     if (!job?.userId || !job.accountEmail) return false;
     const email = normalizeAccountEmail(job.accountEmail);
+    const [deletingUser] = await tx.select({
+      id: users.id,
+      email: users.email,
+      deletionState: users.deletionState,
+    }).from(users).where(eq(users.id, job.userId)).limit(1).for("update");
+    if (!deletingUser
+      || normalizeAccountEmail(deletingUser.email) !== email
+      || deletingUser.deletionState !== "pending") return false;
     const owned = await tx.select({ giftId: giftMembers.giftId }).from(giftMembers).where(and(
       eq(giftMembers.email, email),
       eq(giftMembers.role, "owner"),

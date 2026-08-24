@@ -231,30 +231,66 @@ export async function blockGiftUser(
 > {
   const actorEmail = normalizeEmail(input.actorEmail);
   return db.transaction(async (tx) => {
+    let targetEmail = input.targetEmail ? normalizeEmail(input.targetEmail) : null;
+    let targetUserId = input.targetUserId;
+
+    // Resolve the implicit owner only to establish the identity lock order. The
+    // relationship is re-read after the gift row is locked below.
+    if (!targetEmail && !targetUserId) {
+      const [ownerCandidate] = await tx.select({ email: giftMembers.email })
+        .from(giftMembers)
+        .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.role, "owner")))
+        .limit(1);
+      if (!ownerCandidate) return { status: "invalid_target" as const };
+      targetEmail = ownerCandidate.email;
+    }
+
+    const identityCondition = targetUserId
+      ? or(eq(users.id, input.actorUserId), eq(users.id, targetUserId))
+      : or(eq(users.id, input.actorUserId), eq(users.email, targetEmail!));
+    const lockedUsers = await tx.select({
+      id: users.id,
+      email: users.email,
+      deletionState: users.deletionState,
+    }).from(users)
+      .where(identityCondition)
+      .orderBy(asc(users.id))
+      .for("update");
+    const actorUser = lockedUsers.find((user) => user.id === input.actorUserId);
+    if (!actorUser || normalizeEmail(actorUser.email) !== actorEmail || actorUser.deletionState !== "active") {
+      return { status: "forbidden" as const };
+    }
+
+    let targetAccountInvalid = false;
+    if (targetUserId) {
+      const targetUser = lockedUsers.find((user) => user.id === targetUserId);
+      if (!targetUser || targetUser.deletionState !== "active" || (targetEmail && normalizeEmail(targetUser.email) !== targetEmail)) {
+        targetAccountInvalid = true;
+      } else {
+        targetEmail = normalizeEmail(targetUser.email);
+      }
+    } else if (targetEmail) {
+      const targetUser = lockedUsers.find((user) => normalizeEmail(user.email) === targetEmail);
+      if (targetUser) {
+        if (targetUser.deletionState !== "active") targetAccountInvalid = true;
+        else targetUserId = targetUser.id;
+      }
+    }
+
     const lockedGift = await tx.update(gifts)
       .set({ createdAt: sql`${gifts.createdAt}` })
       .where(and(eq(gifts.id, input.giftId), eq(gifts.status, "bound")))
       .returning({ id: gifts.id });
     if (!lockedGift.length) return { status: "forbidden" as const };
 
-    let targetEmail = input.targetEmail ? normalizeEmail(input.targetEmail) : null;
-    let targetUserId = input.targetUserId;
-    if (targetUserId) {
-      const [targetUser] = await tx.select({ id: users.id, email: users.email })
-        .from(users)
-        .where(eq(users.id, targetUserId))
-        .limit(1);
-      if (!targetUser || (targetEmail && targetEmail !== targetUser.email)) return { status: "invalid_target" as const };
-      targetEmail = targetUser.email;
-    }
-    if (!targetEmail) {
+    if (!input.targetEmail && !input.targetUserId) {
       const [owner] = await tx.select({ email: giftMembers.email })
         .from(giftMembers)
         .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.role, "owner")))
         .limit(1);
-      if (!owner) return { status: "invalid_target" as const };
-      targetEmail = owner.email;
+      if (!owner || normalizeEmail(owner.email) !== targetEmail) return { status: "invalid_target" as const };
     }
+    if (targetAccountInvalid || !targetEmail) return { status: "invalid_target" as const };
     if (targetEmail === actorEmail) return { status: "invalid_target" as const };
 
     const [emailLow, emailHigh] = normalizeBlockedEmailPair(actorEmail, targetEmail);
@@ -302,11 +338,6 @@ export async function blockGiftUser(
         ))
         .limit(1);
       if (!targetHistory) return { status: "invalid_target" as const };
-    }
-
-    if (!targetUserId) {
-      const [targetUser] = await tx.select({ id: users.id }).from(users).where(eq(users.email, targetEmail)).limit(1);
-      targetUserId = targetUser?.id;
     }
 
     const [created] = await tx.insert(userBlocks).values({
