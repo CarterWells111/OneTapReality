@@ -1,7 +1,7 @@
 import { getServerDatabase } from "../../../server/db/client";
 import { getAppleReviewAccess } from "../../../server/auth/apple-review-access";
 import { hashAccessToken } from "../../../server/auth/device-auth";
-import { createAuthEmailCode, deleteAuthEmailCodeById, isAccountActiveByEmail, isAuthEmailCodeRateLimited } from "../../../server/auth/repository";
+import { createAuthEmailCodeIfAllowed, deleteAuthEmailCodeById, isAccountActiveByEmail } from "../../../server/auth/repository";
 import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
@@ -36,9 +36,16 @@ export async function POST(request: Request): Promise<Response> {
       : await createGiftEmailCode(normalizedEmail, pepper, undefined, now);
     const db = getServerDatabase();
     if (!await isAccountActiveByEmail(db, code.email)) throw new ApiError(403, "account_deletion_pending", "This account is being permanently deleted");
-    if (await isAuthEmailCodeRateLimited(db, code.email, new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString())) throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
     const codeId = crypto.randomUUID();
-    await createAuthEmailCode(db, { id: codeId, email: code.email, codeHash: code.codeHash, createdAt: now, expiresAt: code.expiresAt });
+    const issueStatus = await createAuthEmailCodeIfAllowed(db, {
+      id: codeId,
+      email: code.email,
+      codeHash: code.codeHash,
+      createdAt: now,
+      expiresAt: code.expiresAt,
+      rateLimitSince: new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString(),
+    });
+    if (issueStatus === "rate_limited") throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
     if (!reviewAccess) {
       if (!apiKey || !from) {
         await deleteAuthEmailCodeById(db, codeId);

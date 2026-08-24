@@ -2,6 +2,7 @@ const mockGetServerDatabase = jest.fn((..._args: unknown[]) => ({ database: true
 const mockRequireSession = jest.fn(async (..._args: unknown[]) => ({ id: "user-1", email: "owner@example.com", sessionId: "session-1", isAdmin: false }));
 const mockCreateCode = jest.fn(async (..._args: unknown[]) => ({ email: "owner@example.com", code: "123456", codeHash: "code-hash", expiresAt: "2026-08-24T10:05:00.000Z" }));
 const mockCreateChallenge = jest.fn(async (..._args: unknown[]) => undefined);
+const mockCreateChallengeIfAllowed = jest.fn(async (..._args: unknown[]) => "created");
 const mockDeleteChallenge = jest.fn(async (..._args: unknown[]) => undefined);
 const mockRateLimited = jest.fn(async (..._args: unknown[]) => false);
 const mockAcceptDeletion = jest.fn(async (..._args: unknown[]): Promise<{ status: string; receiptId?: string; completeBy?: string }> => ({ status: "accepted", receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" }));
@@ -15,6 +16,7 @@ jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendAccountDeletio
 jest.mock("../src/server/auth/device-auth", () => ({ hashAccessToken: (value: string, ...args: unknown[]) => mockHash(value, ...args) }));
 jest.mock("../src/server/auth/account-deletion", () => ({
   createAccountDeletionChallenge: (...args: unknown[]) => mockCreateChallenge(...args),
+  createAccountDeletionChallengeIfAllowed: (...args: unknown[]) => mockCreateChallengeIfAllowed(...args),
   deleteAccountDeletionChallenge: (...args: unknown[]) => mockDeleteChallenge(...args),
   isAccountDeletionChallengeRateLimited: (...args: unknown[]) => mockRateLimited(...args),
   acceptAccountDeletion: (...args: unknown[]) => mockAcceptDeletion(...args),
@@ -26,6 +28,7 @@ import { POST as requestChallenge } from "../src/app/api/account/deletion-challe
 describe("account deletion APIs", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreateChallengeIfAllowed.mockResolvedValue("created");
     process.env.GIFT_AUTH_PEPPER = "pepper";
     process.env.RESEND_API_KEY = "resend";
     process.env.GIFT_EMAIL_FROM = "support@onetapreality.com";
@@ -46,7 +49,9 @@ describe("account deletion APIs", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ challengeId: expect.any(String), expiresAt: "2026-08-24T10:05:00.000Z" });
-    expect(mockCreateChallenge).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-1", sessionId: "session-1", codeHash: "code-hash" }));
+    expect(mockCreateChallengeIfAllowed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      userId: "user-1", sessionId: "session-1", codeHash: "code-hash", rateLimitSince: expect.any(String),
+    }));
     expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ email: "owner@example.com", code: "123456" }));
     expect(JSON.stringify(log.mock.calls)).not.toContain("123456");
   });
@@ -57,7 +62,7 @@ describe("account deletion APIs", () => {
     expect(failed.status).toBe(500);
     expect(mockDeleteChallenge).toHaveBeenCalledWith(expect.anything(), expect.any(String));
 
-    mockRateLimited.mockResolvedValueOnce(true);
+    mockCreateChallengeIfAllowed.mockResolvedValueOnce("rate_limited");
     const limited = await requestChallenge(new Request("http://localhost/api/account/deletion-challenge", { method: "POST" }));
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toBe("900");

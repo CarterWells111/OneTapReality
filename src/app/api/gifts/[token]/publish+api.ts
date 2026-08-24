@@ -56,7 +56,7 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     if (!uploaded.every(Boolean) || !(await coverVerified)) {
       throw new ApiError(409, "gift_upload_incomplete", "All photos must finish uploading before publishing");
     }
-    const promoted = await promoteSharedPublicationDurably({ store, db, giftId, payload, now });
+    const promoted = await promoteSharedPublicationDurably({ store, db, giftId, sessionId: publicationId, ownerEmail: email, payload, now });
     // The repository owns the metadata, so the client cannot mark a partial upload as published.
     const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: email, now, payload });
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted"); }

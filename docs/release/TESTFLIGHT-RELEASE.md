@@ -56,6 +56,8 @@ node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=
 
 `beta-external` 是唯一的外部 Beta profile：使用 store 分发、EAS `preview` environment、固定 staging API 和构建受众 `external-beta`。它不会接触 production，也不允许 Build 22 或 1.1.1 进入外部群组。`eas.json` 的外部 submit profile 不得配置 `submit.ios.groups`；EAS 只负责上传，外部群组与审核操作必须在 App Store Connect 中完成。
 
+本地 iOS readiness 还会读取仓库中的服务端配置契约 `.env.example`，并要求 production 的 `APPLE_REVIEW_ACCESS_ENABLED` 明确为 `false`；缺失或任何启用值都会失败。这个静态检查不代表已读取 Railway 云端变量。取得后续构建批准后，发布负责人仍须另行只读核对 production 服务的实际值为 `false`，发现不一致即停止，不得由预检脚本修改云端配置。
+
 外部 Beta 同样使用两个独立审批点。取得云构建批准后，从干净且已提交的分支执行：
 
 ```powershell

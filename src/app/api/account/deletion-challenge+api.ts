@@ -1,7 +1,6 @@
 import {
-  createAccountDeletionChallenge,
+  createAccountDeletionChallengeIfAllowed,
   deleteAccountDeletionChallenge,
-  isAccountDeletionChallengeRateLimited,
 } from "../../../server/auth/account-deletion";
 import { requireAuthenticatedAccountSession } from "../../../server/auth/session-auth";
 import { getServerDatabase } from "../../../server/db/client";
@@ -19,19 +18,20 @@ export async function POST(request: Request): Promise<Response> {
     const account = await requireAuthenticatedAccountSession(request, db);
     const nowDate = new Date();
     const now = nowDate.toISOString();
-    if (await isAccountDeletionChallengeRateLimited(db, account.id, new Date(nowDate.getTime() - 15 * 60_000).toISOString())) {
-      throw new ApiError(429, "deletion_challenge_rate_limited", "Please wait before requesting another deletion code", undefined, { "Retry-After": "900" });
-    }
     const code = await createGiftEmailCode(account.email, pepper, undefined, now);
     const challengeId = crypto.randomUUID();
-    await createAccountDeletionChallenge(db, {
+    const issueStatus = await createAccountDeletionChallengeIfAllowed(db, {
       id: challengeId,
       userId: account.id,
       sessionId: account.sessionId,
       codeHash: code.codeHash,
       createdAt: now,
       expiresAt: code.expiresAt,
+      rateLimitSince: new Date(nowDate.getTime() - 15 * 60_000).toISOString(),
     });
+    if (issueStatus === "rate_limited") {
+      throw new ApiError(429, "deletion_challenge_rate_limited", "Please wait before requesting another deletion code", undefined, { "Retry-After": "900" });
+    }
     try {
       await sendAccountDeletionVerificationEmail({ apiKey, from, email: account.email, code: code.code });
     } catch (error) {

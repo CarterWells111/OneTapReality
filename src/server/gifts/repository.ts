@@ -2,7 +2,7 @@ import { and, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "dr
 
 import type { BackendDatabase } from "../db/client";
 import type { GiftMemberRole } from "../db/schema";
-import { giftCardEvents, giftCards, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums } from "../db/schema";
+import { giftCardEvents, giftCards, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, users } from "../db/schema";
 
 export type GiftPublicationPayload = {
   sourceMemoryId: string;
@@ -398,6 +398,10 @@ export async function createGiftPublishSession(
 ) {
   if (!Number.isInteger(input.baseVersion) || input.baseVersion! < 0) throw new GiftAlbumVersionConflictError();
   await db.transaction(async (tx) => {
+    const email = normalizeEmail(input.ownerEmail);
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") throw new GiftPublicationUnavailableError();
     await tx.execute(sql`select id from gifts where id = ${input.giftId} for update`);
     const [gift] = await tx.select({ id: gifts.id }).from(gifts).where(and(
       eq(gifts.id, input.giftId),
@@ -407,7 +411,7 @@ export async function createGiftPublishSession(
     await tx.insert(giftPublishSessions).values({
       id: input.id,
       giftId: input.giftId,
-      ownerEmail: normalizeEmail(input.ownerEmail),
+      ownerEmail: email,
       memberId: input.memberId ?? null,
       actorUserId: input.actorUserId ?? null,
       baseVersion: input.baseVersion!,
@@ -442,11 +446,15 @@ export async function completeGiftPublishSession(
   if (!candidate) return null;
 
   return withPublicationLock(candidate.giftId, () => db.transaction(async (tx) => {
+    const email = normalizeEmail(input.ownerEmail);
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") return null;
     await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
     await tx.execute(sql`select id from gifts where id = ${candidate.giftId} for update`);
     const [session] = await tx.select().from(giftPublishSessions).where(and(
       eq(giftPublishSessions.id, input.sessionId),
-      eq(giftPublishSessions.ownerEmail, normalizeEmail(input.ownerEmail)),
+      eq(giftPublishSessions.ownerEmail, email),
       isNull(giftPublishSessions.completedAt),
       gt(giftPublishSessions.expiresAt, input.now),
     )).limit(1);
@@ -458,7 +466,7 @@ export async function completeGiftPublishSession(
       .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
       eq(giftMembers.giftId, session.giftId),
-      eq(giftMembers.email, normalizeEmail(input.ownerEmail)),
+      eq(giftMembers.email, email),
       session.memberId
         ? and(eq(giftMembers.id, session.memberId), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, session.actorUserId!))
         : eq(giftMembers.role, "owner"),
@@ -583,6 +591,47 @@ export async function enqueueGiftMediaCleanupJobs(db: BackendDatabase, giftId: s
     id: crypto.randomUUID(), giftId, objectKey, state: "pending" as const, attempts: 0,
     nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: now,
   }))).onConflictDoNothing();
+}
+
+export async function reserveGiftPublicationPromotion(
+  db: BackendDatabase,
+  input: {
+    giftId: string;
+    sessionId: string;
+    ownerEmail: string;
+    objectKeys: string[];
+    now: string;
+  },
+): Promise<void> {
+  const email = normalizeEmail(input.ownerEmail);
+  const uniqueKeys = [...new Set(input.objectKeys)];
+  await db.transaction(async (tx) => {
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") throw new GiftPublicationUnavailableError();
+    await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
+    const [session] = await tx.select({ id: giftPublishSessions.id }).from(giftPublishSessions).where(and(
+      eq(giftPublishSessions.id, input.sessionId),
+      eq(giftPublishSessions.giftId, input.giftId),
+      eq(giftPublishSessions.ownerEmail, email),
+      isNull(giftPublishSessions.completedAt),
+      gt(giftPublishSessions.expiresAt, input.now),
+    )).limit(1);
+    if (!session) throw new GiftPublicationUnavailableError();
+    await tx.execute(sql`select id from gifts where id = ${input.giftId} for update`);
+    const [gift] = await tx.select({ id: gifts.id }).from(gifts).where(and(
+      eq(gifts.id, input.giftId),
+      eq(gifts.status, "bound"),
+    )).limit(1);
+    if (!gift) throw new GiftPublicationUnavailableError();
+    if (uniqueKeys.length) {
+      const nextAttemptAt = new Date(new Date(input.now).getTime() + 15 * 60_000).toISOString();
+      await tx.insert(giftMediaCleanupJobs).values(uniqueKeys.map((objectKey) => ({
+        id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending" as const, attempts: 0,
+        nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now,
+      }))).onConflictDoNothing();
+    }
+  });
 }
 
 export async function isGiftMediaObjectReferenced(db: BackendDatabase, objectKey: string): Promise<boolean> {

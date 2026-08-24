@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import {
   acceptAccountDeletion,
   createAccountDeletionChallenge,
+  createAccountDeletionChallengeIfAllowed,
   isAccountDeletionChallengeRateLimited,
   processAccountDeletionJobs,
 } from "../src/server/auth/account-deletion";
@@ -10,8 +11,10 @@ import { createAuthSession, createOrGetUserByEmail, getAuthenticatedUserByTokenH
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
 import {
   accountDeletionJobs,
+  accountDeletionChallenges,
   accountDeletionMediaObjects,
   authSessions,
+  giftMediaCleanupJobs,
   giftPublishSessions,
   gifts,
   users,
@@ -23,6 +26,8 @@ import {
   GiftPublicationUnavailableError,
 } from "../src/server/gifts/repository";
 import type { PrivateMediaStore } from "../src/server/gifts/r2-media";
+import { promoteSharedPublicationDurably } from "../src/server/gifts/shared-publication";
+import { runGiftMaintenance } from "../src/server/maintenance/run-gift-maintenance";
 
 const now = "2026-08-24T10:00:00.000Z";
 const expiresAt = "2026-08-24T10:05:00.000Z";
@@ -104,6 +109,42 @@ describe("account deletion repository", () => {
 
       await expect(isAccountDeletionChallengeRateLimited(db, user.id, "2026-08-24T09:45:00.000Z")).resolves.toBe(true);
       await expect(isAccountDeletionChallengeRateLimited(db, user.id, "2026-08-24T10:01:30.000Z")).resolves.toBe(false);
+    } finally { await close(); }
+  });
+
+  it("serializes concurrent deletion challenges at the three-challenge window boundary", async () => {
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
+    try {
+      await migrateBackendDatabase(db);
+      const user = await seedAccount(db);
+      for (let index = 0; index < 2; index += 1) {
+        await createAccountDeletionChallenge(db, {
+          id: `existing-${index}`, userId: user.id, sessionId: "session-current",
+          codeHash: `hash-${index}`, createdAt: `2026-08-24T10:0${index}:00.000Z`,
+          expiresAt: "2026-08-24T10:30:00.000Z",
+        });
+      }
+      queries.length = 0;
+
+      const results = await Promise.all([
+        createAccountDeletionChallengeIfAllowed(db, {
+          id: "concurrent-a", userId: user.id, sessionId: "session-current", codeHash: "hash-a",
+          createdAt: "2026-08-24T10:02:00.000Z", expiresAt: "2026-08-24T10:07:00.000Z",
+          rateLimitSince: "2026-08-24T09:47:00.000Z",
+        }),
+        createAccountDeletionChallengeIfAllowed(db, {
+          id: "concurrent-b", userId: user.id, sessionId: "session-current", codeHash: "hash-b",
+          createdAt: "2026-08-24T10:02:00.000Z", expiresAt: "2026-08-24T10:07:00.000Z",
+          rateLimitSince: "2026-08-24T09:47:00.000Z",
+        }),
+      ]);
+
+      expect(results.sort()).toEqual(["created", "rate_limited"]);
+      expect(await db.select().from(accountDeletionChallenges)).toHaveLength(3);
+      const statements = queries.join("\n");
+      expect(statements).toMatch(/pg_advisory_xact_lock/iu);
+      expect(statements.indexOf("pg_advisory_xact_lock")).toBeLessThan(statements.indexOf('from "account_deletion_challenges"'));
     } finally { await close(); }
   });
 
@@ -215,6 +256,15 @@ describe("account deletion repository", () => {
         createdAt: now,
         expiresAt: "2026-08-24T10:15:00.000Z",
       });
+      await createGiftPublishSession(db, {
+        id: "editor-publish-on-owned-gift",
+        giftId: "owned-gift",
+        ownerEmail: "other-editor@example.com",
+        baseVersion: 0,
+        payload: { sourceMemoryId: "memory", title: "Editor pending", pages: [], media: [{ position: 0, objectKey: "private/temp/editor-photo.jpg", contentType: "image/jpeg", byteSize: 10, source: "upload" }] },
+        createdAt: now,
+        expiresAt: "2026-08-24T10:14:00.000Z",
+      });
       await createAccountDeletionChallenge(db, { id: "challenge-1", userId: user.id, sessionId: "session-current", codeHash: "hash", createdAt: now, expiresAt });
       queries.length = 0;
       await acceptAccountDeletion(db, {
@@ -225,6 +275,7 @@ describe("account deletion repository", () => {
       const [job] = await db.select().from(accountDeletionJobs).where(eq(accountDeletionJobs.id, "receipt-1"));
       expect(job.nextAttemptAt).toBe("2026-08-24T10:16:00.000Z");
       expect(await db.select().from(accountDeletionMediaObjects)).toEqual([
+        expect.objectContaining({ objectKey: "private/temp/editor-photo.jpg" }),
         expect.objectContaining({ objectKey: "private/temp/photo.jpg" }),
       ]);
       const deletionQueries = queries.join("\n");
@@ -236,7 +287,99 @@ describe("account deletion repository", () => {
         .resolves.toEqual({ claimed: 0, completed: 0, failed: 0 });
       await expect(processAccountDeletionJobs({ db, store: createStore(deleteObjects), now: new Date("2026-08-24T10:16:00.000Z") }))
         .resolves.toEqual({ claimed: 1, completed: 1, failed: 0 });
-      expect(deleteObjects).toHaveBeenCalledWith(["private/temp/photo.jpg"], expect.anything());
+      expect(deleteObjects).toHaveBeenCalledWith(["private/temp/editor-photo.jpg", "private/temp/photo.jpg"], expect.anything());
+    } finally { await close(); }
+  });
+
+  it("captures an editor's unfinished temp key and absorbs a late reserved final before finalizing", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const user = await seedAccount(db);
+      await createGift(db, { id: "other-gift", tokenHash: "other-hash", createdAt: now });
+      await claimGiftByTokenHash(db, "other-hash", "other-owner@example.com", now);
+      const tempKey = "gifts/other-gift/editor-publish/temp/photo";
+      const finalKey = "gifts/other-gift/editor-publish/final/late-attempt/photo";
+      await createGiftPublishSession(db, {
+        id: "editor-publish", giftId: "other-gift", ownerEmail: user.email,
+        baseVersion: 0,
+        payload: {
+          sourceMemoryId: "memory", title: "Editor draft", pages: [],
+          media: [
+            { position: 0, objectKey: tempKey, contentType: "image/jpeg", byteSize: 10, source: "upload" },
+            { position: 1, objectKey: "gifts/other-gift/live/existing-photo", contentType: "image/jpeg", byteSize: 10, source: "existing" },
+          ],
+        },
+        createdAt: now, expiresAt: "2026-08-24T10:15:00.000Z",
+      });
+      await createAccountDeletionChallenge(db, {
+        id: "challenge-1", userId: user.id, sessionId: "session-current", codeHash: "hash", createdAt: now, expiresAt,
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "challenge-1", userId: user.id, sessionId: "session-current", codeHash: "hash",
+        confirmation: "DELETE", receiptId: "receipt-1", now, completeBy,
+      });
+
+      expect(await db.select().from(accountDeletionMediaObjects)).toEqual([
+        expect.objectContaining({ objectKey: tempKey }),
+      ]);
+      await db.insert(giftMediaCleanupJobs).values({
+        id: "late-final-cleanup", giftId: "other-gift", objectKey: finalKey, state: "pending", attempts: 0,
+        nextAttemptAt: now, leaseUntil: null, lastError: null, completedAt: null, createdAt: now,
+      });
+      const deleteObjects = jest.fn(async () => undefined);
+
+      await expect(processAccountDeletionJobs({
+        db, store: createStore(deleteObjects), now: new Date("2026-08-24T10:16:00.000Z"), notifyFailure: jest.fn(),
+      })).resolves.toEqual({ claimed: 1, completed: 1, failed: 0 });
+
+      expect(deleteObjects).toHaveBeenCalledWith([finalKey, tempKey].sort(), expect.anything());
+      await expect(db.select({ status: gifts.status }).from(gifts).where(eq(gifts.id, "other-gift")))
+        .resolves.toEqual([{ status: "bound" }]);
+      await expect(db.select().from(giftMediaCleanupJobs).where(eq(giftMediaCleanupJobs.id, "late-final-cleanup")))
+        .resolves.toEqual([expect.objectContaining({ state: "pending", objectKey: finalKey })]);
+
+      // A promotion copy can land after the account worker's first idempotent delete.
+      // Keeping the durable row lets ordinary maintenance delete that late object again.
+      const lateDelete = jest.fn(async () => undefined);
+      await runGiftMaintenance({
+        db, store: createStore(lateDelete), mode: "scheduled", now: new Date("2026-08-24T10:17:00.000Z"),
+      });
+      expect(lateDelete).toHaveBeenCalledWith([finalKey], expect.anything());
+      await expect(db.select().from(giftMediaCleanupJobs).where(eq(giftMediaCleanupJobs.id, "late-final-cleanup")))
+        .resolves.toEqual([expect.objectContaining({ state: "completed", objectKey: finalKey })]);
+    } finally { await close(); }
+  });
+
+  it("blocks a late editor promotion once that account is pending deletion", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const user = await seedAccount(db);
+      await createGift(db, { id: "other-gift", tokenHash: "other-hash", createdAt: now });
+      await claimGiftByTokenHash(db, "other-hash", "other-owner@example.com", now);
+      const payload = {
+        sourceMemoryId: "memory", title: "Editor draft", pages: [],
+        media: [{ position: 0, objectKey: "gifts/other-gift/editor-publish/temp/photo", contentType: "image/jpeg", byteSize: 10, source: "upload" as const }],
+      };
+      await createGiftPublishSession(db, {
+        id: "editor-publish", giftId: "other-gift", ownerEmail: user.email,
+        baseVersion: 0, payload, createdAt: now, expiresAt: "2026-08-24T10:15:00.000Z",
+      });
+      await createAccountDeletionChallenge(db, {
+        id: "challenge-1", userId: user.id, sessionId: "session-current", codeHash: "hash", createdAt: now, expiresAt,
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "challenge-1", userId: user.id, sessionId: "session-current", codeHash: "hash",
+        confirmation: "DELETE", receiptId: "receipt-1", now, completeBy,
+      });
+      const store = createStore();
+
+      await expect(promoteSharedPublicationDurably({
+        db, store, giftId: "other-gift", sessionId: "editor-publish", ownerEmail: user.email,
+        payload, now: "2026-08-24T10:00:01.000Z",
+      })).rejects.toBeInstanceOf(GiftPublicationUnavailableError);
+      expect(store.copyObject).not.toHaveBeenCalled();
     } finally { await close(); }
   });
 
@@ -265,7 +408,8 @@ describe("account deletion repository", () => {
         expiresAt: "2026-08-24T10:15:01.000Z",
       })).rejects.toBeInstanceOf(GiftPublicationUnavailableError);
       expect(await db.select().from(giftPublishSessions)).toEqual([]);
-      expect(queries.join("\n")).toMatch(/select id from gifts where id = .*for update/iu);
+      expect(queries.join("\n")).toMatch(/from "users"[\s\S]*for update/iu);
+      expect(queries.join("\n")).not.toMatch(/select id from gifts where id = .*for update/iu);
     } finally { await close(); }
   });
 });

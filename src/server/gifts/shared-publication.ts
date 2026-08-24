@@ -1,6 +1,6 @@
 import type { PrivateMediaStore } from "./r2-media";
 import type { GiftPublicationPayload } from "./repository";
-import { enqueueGiftMediaCleanupJobs } from "./repository";
+import { reserveGiftPublicationPromotion } from "./repository";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
 
@@ -97,8 +97,22 @@ export function getAttemptedFinalObjectKeys(error: unknown): string[] {
   return Array.isArray(keys) && keys.every(key => typeof key === "string") ? keys : [];
 }
 
-export async function promoteSharedPublicationDurably(input: { store: PrivateMediaStore; db: BackendDatabase; giftId: string; payload: GiftPublicationPayload; now: string }): Promise<string[]> {
+export async function promoteSharedPublicationDurably(input: {
+  store: PrivateMediaStore;
+  db: BackendDatabase;
+  giftId: string;
+  sessionId: string;
+  ownerEmail: string;
+  payload: GiftPublicationPayload;
+  now: string;
+}): Promise<string[]> {
   const plan = planSharedPublicationPromotion(input.payload);
-  await enqueueGiftMediaCleanupJobs(input.db, input.giftId, plan.finalObjectKeys, input.now);
+  await reserveGiftPublicationPromotion(input.db, {
+    giftId: input.giftId,
+    sessionId: input.sessionId,
+    ownerEmail: input.ownerEmail,
+    objectKeys: plan.finalObjectKeys,
+    now: input.now,
+  });
   return executeSharedPublicationPromotion(input.store, plan);
 }

@@ -48,7 +48,7 @@ export async function PUT(request: Request, { id }: { id: string }): Promise<Res
         })()
       : Promise.resolve(true);
     if (!verified.every(Boolean) || !(await coverVerified)) throw new ApiError(409, "gift_upload_incomplete", "All photos must finish uploading before publishing");
-    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, payload, now });
+    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, sessionId: publicationId, ownerEmail: email, payload, now });
     const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: email, now, payload });
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted"); }
     scheduleOpportunisticGiftMaintenance();

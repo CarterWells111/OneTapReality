@@ -9,6 +9,7 @@ const reviewAccess = {
 const mockGetAccess = jest.fn((..._args: unknown[]) => reviewAccess);
 const mockResetFixtures = jest.fn(async (..._args: unknown[]) => undefined);
 const mockCreateAuthCode = jest.fn(async (..._args: unknown[]) => undefined);
+const mockCreateAuthCodeIfAllowed = jest.fn(async (..._args: unknown[]) => "created");
 const mockDeleteAuthCode = jest.fn(async (..._args: unknown[]) => undefined);
 const mockIsRateLimited = jest.fn(async (..._args: unknown[]) => false);
 const mockVerifyCode = jest.fn(async (..._args: unknown[]) => ({
@@ -26,6 +27,7 @@ jest.mock("../src/server/auth/apple-review-access", () => ({ getAppleReviewAcces
 jest.mock("../src/server/auth/apple-review-fixtures", () => ({ resetAppleReviewFixtures: (...args: unknown[]) => mockResetFixtures(...args) }));
 jest.mock("../src/server/auth/repository", () => ({
   createAuthEmailCode: (...args: unknown[]) => mockCreateAuthCode(...args),
+  createAuthEmailCodeIfAllowed: (...args: unknown[]) => mockCreateAuthCodeIfAllowed(...args),
   deleteAuthEmailCodeById: (...args: unknown[]) => mockDeleteAuthCode(...args),
   isAuthEmailCodeRateLimited: (...args: unknown[]) => mockIsRateLimited(...args),
   verifyAccountEmailCode: (...args: unknown[]) => mockVerifyCode(...args),
@@ -73,11 +75,13 @@ describe("Apple review authentication API branch", () => {
     expect(response.status).toBe(202);
     const responseBody = await response.json();
     expect(responseBody).toEqual({ email: "reviewer@example.test" });
-    expect(mockIsRateLimited).toHaveBeenCalled();
-    expect(mockCreateAuthCode).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    expect(mockCreateAuthCodeIfAllowed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       email: "reviewer@example.test",
       codeHash: "hash:654321",
+      rateLimitSince: expect.any(String),
     }));
+    expect(mockIsRateLimited).not.toHaveBeenCalled();
+    expect(mockCreateAuthCode).not.toHaveBeenCalled();
     expect(mockCreateRandomCode).not.toHaveBeenCalled();
     expect(mockSendEmail).not.toHaveBeenCalled();
     expect(mockRequireAllowlist).not.toHaveBeenCalled();

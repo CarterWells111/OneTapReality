@@ -41,13 +41,29 @@ function findPlugin(plugins, name) {
   return null;
 }
 
-function checkIosBetaReadiness({ eas, app, pkg }, { profile = EXTERNAL_BETA_PROFILE } = {}) {
+function parseEnvironmentContract(contents) {
+  const environment = {};
+  for (const rawLine of contents.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator <= 0) continue;
+    environment[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  }
+  return environment;
+}
+
+function checkIosBetaReadiness({ eas, app, pkg, productionServiceEnv }, { profile = EXTERNAL_BETA_PROFILE } = {}) {
   const errors = [];
   const selectedProfile = eas?.build?.[profile];
   const expo = app?.expo;
   const ios = expo?.ios;
   const profileEnv = selectedProfile?.env ?? {};
   const nfcPlugin = findPlugin(expo?.plugins, "react-native-nfc-manager");
+
+  if (productionServiceEnv?.APPLE_REVIEW_ACCESS_ENABLED?.trim().toLowerCase() !== "false") {
+    errors.push("Production service APPLE_REVIEW_ACCESS_ENABLED must be explicitly false");
+  }
 
   if (eas?.cli?.appVersionSource !== "remote") {
     errors.push("EAS cli.appVersionSource must be remote");
@@ -185,6 +201,7 @@ function loadProjectConfig(root = process.cwd(), { profile = EXTERNAL_BETA_PROFI
     eas,
     app,
     pkg: JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")),
+    productionServiceEnv: parseEnvironmentContract(fs.readFileSync(path.join(root, ".env.example"), "utf8")),
   };
 }
 
@@ -210,7 +227,7 @@ function parseProfileArgs(argv) {
   return { profile };
 }
 
-module.exports = { checkIosBetaReadiness, loadProjectConfig, parseProfileArgs };
+module.exports = { checkIosBetaReadiness, loadProjectConfig, parseEnvironmentContract, parseProfileArgs };
 
 if (require.main === module) {
   try {

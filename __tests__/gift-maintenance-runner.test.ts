@@ -1,12 +1,14 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
+import { acceptAccountDeletion, createAccountDeletionChallenge } from "../src/server/auth/account-deletion";
+import { createAuthSession, createOrGetUserByEmail } from "../src/server/auth/repository";
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
 import { appMaintenanceState, giftMediaCleanupJobs } from "../src/server/db/schema";
 import { claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession } from "../src/server/gifts/repository";
 import type { PrivateMediaStore } from "../src/server/gifts/r2-media";
 import { runGiftMaintenance } from "../src/server/maintenance/run-gift-maintenance";
 
-function createStore(deleteObjects = jest.fn(async () => undefined)): PrivateMediaStore {
+function createStore(deleteObjects: PrivateMediaStore["deleteObjects"] = jest.fn(async () => undefined)): PrivateMediaStore {
   return {
     createUploadUrl: jest.fn(),
     createReadUrl: jest.fn(),
@@ -95,5 +97,55 @@ describe("gift maintenance runner", () => {
       expect(reclaimed.completedCleanupJobs).toBe(1);
       expect(deleteObjects).toHaveBeenCalledTimes(2);
     } finally { await close(); }
+  });
+
+  it("processes due account deletion before ordinary cleanup can exhaust the run budget", async () => {
+    const { db, close } = createBackendTestDatabase();
+    const dateNow = jest.spyOn(Date, "now");
+    let ordinaryCleanupStarted = false;
+    dateNow.mockImplementation(() => ordinaryCleanupStarted ? 30_000 : 0);
+    try {
+      await migrateBackendDatabase(db);
+      const now = "2026-08-24T10:00:00.000Z";
+      const user = await createOrGetUserByEmail(db, "owner@example.com", "2026-08-24T09:00:00.000Z");
+      await createAuthSession(db, {
+        id: "auth-session", userId: user.id, tokenHash: "auth-token", createdAt: now,
+        expiresAt: "2026-08-25T10:00:00.000Z",
+      });
+      await createGift(db, { id: "owned-gift", tokenHash: "owned-token", createdAt: now });
+      await claimGiftByTokenHash(db, "owned-token", user.email, now);
+      await db.execute(sql`
+        insert into shared_albums (id, gift_id, source_memory_id, title, published_at, version, cover_object_key)
+        values ('owned-album', 'owned-gift', 'memory', 'Private', ${now}, 1, 'account-object')
+      `);
+      await createAccountDeletionChallenge(db, {
+        id: "deletion-challenge", userId: user.id, sessionId: "auth-session", codeHash: "hash",
+        createdAt: now, expiresAt: "2026-08-24T10:05:00.000Z",
+      });
+      await acceptAccountDeletion(db, {
+        challengeId: "deletion-challenge", userId: user.id, sessionId: "auth-session", codeHash: "hash",
+        confirmation: "DELETE", receiptId: "deletion-receipt", now,
+        completeBy: "2026-08-25T10:00:00.000Z",
+      });
+      await createGift(db, { id: "ordinary-gift", tokenHash: "ordinary-token", createdAt: now });
+      await db.insert(giftMediaCleanupJobs).values({
+        id: "ordinary-job", giftId: "ordinary-gift", objectKey: "ordinary-object", state: "pending", attempts: 0,
+        nextAttemptAt: now, leaseUntil: null, lastError: null, completedAt: null, createdAt: now,
+      });
+      const deleteObjects = jest.fn(async (keys: string[]) => {
+        if (keys.includes("ordinary-object")) ordinaryCleanupStarted = true;
+      });
+
+      const stats = await runGiftMaintenance({ db, store: createStore(deleteObjects), mode: "scheduled", now: new Date(now) });
+
+      expect(stats).toEqual(expect.objectContaining({
+        claimedAccountDeletionJobs: 1,
+        completedAccountDeletionJobs: 1,
+      }));
+      expect(deleteObjects.mock.calls[0]?.[0]).toEqual(["account-object"]);
+    } finally {
+      dateNow.mockRestore();
+      await close();
+    }
   });
 });

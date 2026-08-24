@@ -40,7 +40,7 @@ export async function PUT(request: Request, { id }: { id: string }) {
     const now = new Date().toISOString(); const payload = await getGiftPublishPayload(db, publicationId, account.email, now);
     if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
     await verifySharedPublication(store, payload);
-    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, payload, now });
+    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, sessionId: publicationId, ownerEmail: account.email, payload, now });
     const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: account.email, now, payload });
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "Editor access was revoked or the publication expired"); }
     return Response.json({ albumId: result.albumId }, { status: 201 });

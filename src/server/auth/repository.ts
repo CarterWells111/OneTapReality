@@ -3,6 +3,22 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 
 import type { BackendDatabase } from "../db/client";
 import { authEmailCodes, authRateLimits, authSessions, users } from "../db/schema";
 
+const authCodeIssueLocks = new Map<string, Promise<void>>();
+
+async function withAuthCodeIssueLock<T>(email: string, operation: () => Promise<T>): Promise<T> {
+  const previous = authCodeIssueLocks.get(email) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  authCodeIssueLocks.set(email, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (authCodeIssueLocks.get(email) === current) authCodeIssueLocks.delete(email);
+  }
+}
+
 export type AuthenticatedUser = { id: string; email: string; createdAt: string; lastAuthenticatedAt: string };
 export type AuthenticatedUserSession = AuthenticatedUser & { sessionId: string };
 
@@ -34,6 +50,42 @@ export async function createAuthEmailCode(
     ));
     await tx.insert(authEmailCodes).values({ ...input, email, consumedAt: null, failedAttempts: 0 });
   });
+}
+
+export async function createAuthEmailCodeIfAllowed(
+  db: BackendDatabase,
+  input: {
+    id: string;
+    email: string;
+    codeHash: string;
+    createdAt: string;
+    expiresAt: string;
+    rateLimitSince: string;
+  },
+): Promise<"created" | "rate_limited"> {
+  const email = normalizeAccountEmail(input.email);
+  return withAuthCodeIssueLock(email, () => db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auth-email-code'), hashtext(${email}))`);
+    const recent = await tx.select({ id: authEmailCodes.id }).from(authEmailCodes).where(and(
+      eq(authEmailCodes.email, email),
+      gt(authEmailCodes.createdAt, input.rateLimitSince),
+    )).limit(5);
+    if (recent.length >= 5) return "rate_limited" as const;
+    await tx.update(authEmailCodes).set({ consumedAt: input.createdAt }).where(and(
+      eq(authEmailCodes.email, email),
+      isNull(authEmailCodes.consumedAt),
+    ));
+    await tx.insert(authEmailCodes).values({
+      id: input.id,
+      email,
+      codeHash: input.codeHash,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      failedAttempts: 0,
+    });
+    return "created" as const;
+  }));
 }
 
 export async function deleteAuthEmailCodeById(db: BackendDatabase, id: string): Promise<void> {

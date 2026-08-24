@@ -31,7 +31,7 @@ jest.mock("../src/server/gifts/repository", () => {
       try { const result = await mockCompleteSession(...args); return result ? { status: "success", ...result } : { status: "access_denied" }; }
       catch (error) { if (error instanceof Conflict) return { status: "conflict" }; throw error; }
     },
-    enqueueGiftMediaCleanupJobs: (...args: unknown[]) => mockEnqueueCleanup(...args),
+    reserveGiftPublicationPromotion: (...args: unknown[]) => mockEnqueueCleanup(...args),
     resolveExistingGiftMedia: (...args: unknown[]) => mockResolveExisting(...args),
     getGiftAccessByTokenHash: jest.fn(async () => ({ id: "gift-1", status: "bound", role: "owner" })),
   };
@@ -132,7 +132,10 @@ describe("editor shared publication contract", () => {
     const response = await PUT(request("PUT", { publicationId: "session-1" }), { id: "gift-1" });
     expect(response.status).toBe(500);
     expect(mockDeleteObjects).not.toHaveBeenCalledWith([expect.stringContaining("/final/")]);
-    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), "gift-1", [expect.stringContaining("/final/")], expect.any(String));
+    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      giftId: "gift-1", sessionId: "session-1", ownerEmail: "editor@example.com",
+      objectKeys: [expect.stringContaining("/final/")], now: expect.any(String),
+    }));
   });
 
   it("durably records attempted final keys when promotion cleanup cannot establish completion", async () => {
@@ -143,7 +146,10 @@ describe("editor shared publication contract", () => {
 
     expect(response.status).toBe(500);
     expect(mockCompleteSession).not.toHaveBeenCalled();
-    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), "gift-1", [expect.stringContaining("/final/")], expect.any(String));
+    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      giftId: "gift-1", sessionId: "session-1", ownerEmail: "editor@example.com",
+      objectKeys: [expect.stringContaining("/final/")], now: expect.any(String),
+    }));
     expect(mockEnqueueCleanup.mock.invocationCallOrder[0]).toBeLessThan(mockCopyObject.mock.invocationCallOrder[0]);
   });
 

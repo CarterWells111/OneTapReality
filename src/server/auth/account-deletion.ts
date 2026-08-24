@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type { BackendDatabase } from "../db/client";
 import {
@@ -30,6 +30,22 @@ export type AcceptAccountDeletionResult =
 
 type DeletionFailureNotice = { receiptId: string; errorCode: "account_media_delete_failed" | "account_cleanup_failed"; attempt: number };
 
+const deletionChallengeIssueLocks = new Map<string, Promise<void>>();
+
+async function withDeletionChallengeIssueLock<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = deletionChallengeIssueLocks.get(userId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  deletionChallengeIssueLocks.set(userId, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (deletionChallengeIssueLocks.get(userId) === current) deletionChallengeIssueLocks.delete(userId);
+  }
+}
+
 function constantTimeEqual(left: string, right: string): boolean {
   const length = Math.max(left.length, right.length);
   let difference = left.length ^ right.length;
@@ -53,6 +69,43 @@ export async function createAccountDeletionChallenge(
   });
 }
 
+export async function createAccountDeletionChallengeIfAllowed(
+  db: BackendDatabase,
+  input: {
+    id: string;
+    userId: string;
+    sessionId: string;
+    codeHash: string;
+    createdAt: string;
+    expiresAt: string;
+    rateLimitSince: string;
+  },
+): Promise<"created" | "rate_limited"> {
+  return withDeletionChallengeIssueLock(input.userId, () => db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('account-deletion-challenge'), hashtext(${input.userId}))`);
+    const recent = await tx.select({ id: accountDeletionChallenges.id }).from(accountDeletionChallenges).where(and(
+      eq(accountDeletionChallenges.userId, input.userId),
+      gt(accountDeletionChallenges.createdAt, input.rateLimitSince),
+    )).limit(3);
+    if (recent.length >= 3) return "rate_limited" as const;
+    await tx.update(accountDeletionChallenges).set({ consumedAt: input.createdAt }).where(and(
+      eq(accountDeletionChallenges.userId, input.userId),
+      isNull(accountDeletionChallenges.consumedAt),
+    ));
+    await tx.insert(accountDeletionChallenges).values({
+      id: input.id,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      codeHash: input.codeHash,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      failedAttempts: 0,
+    });
+    return "created" as const;
+  }));
+}
+
 export async function deleteAccountDeletionChallenge(db: BackendDatabase, id: string): Promise<void> {
   await db.delete(accountDeletionChallenges).where(eq(accountDeletionChallenges.id, id));
 }
@@ -73,7 +126,9 @@ function collectPublicationObjectKeys(payload: unknown): string[] {
   if (!payload || typeof payload !== "object") return [];
   const value = payload as { media?: unknown; cover?: unknown };
   const media = Array.isArray(value.media)
-    ? value.media.flatMap((item) => item && typeof item === "object" && typeof (item as { objectKey?: unknown }).objectKey === "string"
+    ? value.media.flatMap((item) => item && typeof item === "object"
+      && (item as { source?: unknown }).source !== "existing"
+      && typeof (item as { objectKey?: unknown }).objectKey === "string"
       ? [(item as { objectKey: string }).objectKey]
       : [])
     : [];
@@ -81,6 +136,59 @@ function collectPublicationObjectKeys(payload: unknown): string[] {
     ? [(value.cover as { objectKey: string }).objectKey]
     : [];
   return [...media, ...cover];
+}
+
+type BackendTransaction = Parameters<Parameters<BackendDatabase["transaction"]>[0]>[0];
+
+async function collectAccountObjectInventory(
+  db: BackendDatabase | BackendTransaction,
+  email: string,
+  ownedGiftIds: string[],
+): Promise<{ objectKeys: Set<string>; latestPublicationExpiry: number }> {
+  const objectKeys = new Set<string>();
+  const ownedGiftIdSet = new Set(ownedGiftIds);
+  if (ownedGiftIds.length) {
+    const media = await db.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia)
+      .innerJoin(sharedAlbums, eq(sharedAlbumMedia.sharedAlbumId, sharedAlbums.id))
+      .where(inArray(sharedAlbums.giftId, ownedGiftIds));
+    media.forEach((row) => objectKeys.add(row.objectKey));
+    const covers = await db.select({ objectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums)
+      .where(inArray(sharedAlbums.giftId, ownedGiftIds));
+    covers.forEach((row) => { if (row.objectKey) objectKeys.add(row.objectKey); });
+  }
+
+  const publicationScope = ownedGiftIds.length
+    ? or(eq(giftPublishSessions.ownerEmail, email), inArray(giftPublishSessions.giftId, ownedGiftIds))!
+    : eq(giftPublishSessions.ownerEmail, email);
+  const publications = await db.select({
+    id: giftPublishSessions.id,
+    giftId: giftPublishSessions.giftId,
+    payload: giftPublishSessions.payloadJson,
+    expiresAt: giftPublishSessions.expiresAt,
+  }).from(giftPublishSessions).where(and(publicationScope, isNull(giftPublishSessions.completedAt)))
+    .orderBy(asc(giftPublishSessions.id)).for("update");
+  publications.flatMap((row) => collectPublicationObjectKeys(row.payload)).forEach((key) => objectKeys.add(key));
+
+  const inventoryGiftIds = [...new Set([...ownedGiftIds, ...publications.map((row) => row.giftId)])];
+  if (inventoryGiftIds.length) {
+    const publicationPrefixes = publications.map((row) => `gifts/${row.giftId}/${row.id}/`);
+    const cleanup = await db.select({ giftId: giftMediaCleanupJobs.giftId, objectKey: giftMediaCleanupJobs.objectKey })
+      .from(giftMediaCleanupJobs)
+      .where(inArray(giftMediaCleanupJobs.giftId, inventoryGiftIds));
+    cleanup.forEach((row) => {
+      if (ownedGiftIdSet.has(row.giftId) || publicationPrefixes.some((prefix) => row.objectKey.startsWith(prefix))) {
+        objectKeys.add(row.objectKey);
+      }
+    });
+  }
+
+  return {
+    objectKeys,
+    latestPublicationExpiry: publications.reduce(
+      (latest, row) => Math.max(latest, new Date(row.expiresAt).getTime()),
+      0,
+    ),
+  };
 }
 
 export async function acceptAccountDeletion(
@@ -124,7 +232,7 @@ export async function acceptAccountDeletion(
       eq(giftMembers.role, "owner"),
     ));
     const giftIds = [...new Set(owned.map((row) => row.giftId))];
-    const objectKeys = new Set<string>();
+    let inventory = { objectKeys: new Set<string>(), latestPublicationExpiry: 0 };
     let nextAttemptAt = input.now;
     if (giftIds.length) {
       await tx.select({ id: gifts.id }).from(gifts)
@@ -132,25 +240,12 @@ export async function acceptAccountDeletion(
         .orderBy(asc(gifts.id))
         .for("update");
       await tx.update(gifts).set({ status: "disabled", disabledAt: input.now }).where(inArray(gifts.id, giftIds));
-      const media = await tx.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia)
-        .innerJoin(sharedAlbums, eq(sharedAlbumMedia.sharedAlbumId, sharedAlbums.id))
-        .where(inArray(sharedAlbums.giftId, giftIds));
-      media.forEach((row) => objectKeys.add(row.objectKey));
-      const covers = await tx.select({ objectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums)
-        .where(inArray(sharedAlbums.giftId, giftIds));
-      covers.forEach((row) => { if (row.objectKey) objectKeys.add(row.objectKey); });
-      const publications = await tx.select({ payload: giftPublishSessions.payloadJson, expiresAt: giftPublishSessions.expiresAt }).from(giftPublishSessions)
-        .where(and(inArray(giftPublishSessions.giftId, giftIds), isNull(giftPublishSessions.completedAt)));
-      publications.flatMap((row) => collectPublicationObjectKeys(row.payload)).forEach((key) => objectKeys.add(key));
-      const latestExpiry = publications.reduce((latest, row) => Math.max(latest, new Date(row.expiresAt).getTime()), 0);
-      if (latestExpiry > 0) {
-        const nowMs = new Date(input.now).getTime();
-        const completeByMs = new Date(input.completeBy).getTime();
-        nextAttemptAt = new Date(Math.max(nowMs, Math.min(completeByMs, latestExpiry + 60_000))).toISOString();
-      }
-      const existingCleanup = await tx.select({ objectKey: giftMediaCleanupJobs.objectKey }).from(giftMediaCleanupJobs)
-        .where(inArray(giftMediaCleanupJobs.giftId, giftIds));
-      existingCleanup.forEach((row) => objectKeys.add(row.objectKey));
+    }
+    inventory = await collectAccountObjectInventory(tx, email, giftIds);
+    if (inventory.latestPublicationExpiry > 0) {
+      const nowMs = new Date(input.now).getTime();
+      const completeByMs = new Date(input.completeBy).getTime();
+      nextAttemptAt = new Date(Math.max(nowMs, Math.min(completeByMs, inventory.latestPublicationExpiry + 60_000))).toISOString();
     }
 
     await tx.insert(accountDeletionJobs).values({
@@ -167,8 +262,8 @@ export async function acceptAccountDeletion(
       completedAt: null,
       createdAt: input.now,
     });
-    if (objectKeys.size) {
-      await tx.insert(accountDeletionMediaObjects).values([...objectKeys].sort().map((objectKey) => ({
+    if (inventory.objectKeys.size) {
+      await tx.insert(accountDeletionMediaObjects).values([...inventory.objectKeys].sort().map((objectKey) => ({
         id: crypto.randomUUID(), jobId: input.receiptId, objectKey,
       })));
     }
@@ -261,6 +356,27 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
   });
 }
 
+async function absorbAccountDeletionObjectKeys(db: BackendDatabase, receiptId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [job] = await tx.select({ accountEmail: accountDeletionJobs.accountEmail }).from(accountDeletionJobs).where(and(
+      eq(accountDeletionJobs.id, receiptId),
+      eq(accountDeletionJobs.state, "processing"),
+    )).limit(1).for("update");
+    if (!job?.accountEmail) throw new Error("Account deletion job changed state");
+    const email = normalizeAccountEmail(job.accountEmail);
+    const owned = await tx.select({ giftId: giftMembers.giftId }).from(giftMembers).where(and(
+      eq(giftMembers.email, email),
+      eq(giftMembers.role, "owner"),
+    ));
+    const inventory = await collectAccountObjectInventory(tx, email, [...new Set(owned.map((row) => row.giftId))]);
+    if (inventory.objectKeys.size) {
+      await tx.insert(accountDeletionMediaObjects).values([...inventory.objectKeys].sort().map((objectKey) => ({
+        id: crypto.randomUUID(), jobId: receiptId, objectKey,
+      }))).onConflictDoNothing();
+    }
+  });
+}
+
 async function failAccountDeletionJob(
   db: BackendDatabase,
   input: { receiptId: string; errorCode: DeletionFailureNotice["errorCode"]; nextAttemptAt: string },
@@ -302,6 +418,7 @@ export async function processAccountDeletionJobs(input: {
   for (const job of jobs) {
     let errorCode: DeletionFailureNotice["errorCode"] = "account_media_delete_failed";
     try {
+      await absorbAccountDeletionObjectKeys(input.db, job.id);
       const objects = await input.db.select({ objectKey: accountDeletionMediaObjects.objectKey })
         .from(accountDeletionMediaObjects)
         .where(eq(accountDeletionMediaObjects.jobId, job.id))

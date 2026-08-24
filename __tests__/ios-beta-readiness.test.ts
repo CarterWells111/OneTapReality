@@ -1,5 +1,5 @@
 const { checkIosBetaReadiness, loadProjectConfig, parseProfileArgs } = require("../scripts/check-ios-beta-readiness.cjs") as {
-  checkIosBetaReadiness: (input: { eas: unknown; app: unknown; pkg?: unknown }, options?: { profile?: string }) => {
+  checkIosBetaReadiness: (input: { eas: unknown; app: unknown; pkg?: unknown; productionServiceEnv?: unknown }, options?: { profile?: string }) => {
     platform: string;
     profile: string;
     apiOrigin: string;
@@ -15,6 +15,7 @@ const { checkIosBetaReadiness, loadProjectConfig, parseProfileArgs } = require("
 function validConfig() {
   return {
     pkg: { version: "1.1.2" },
+    productionServiceEnv: { APPLE_REVIEW_ACCESS_ENABLED: "false" },
     eas: {
       cli: { appVersionSource: "remote", requireCommit: true },
       build: {
@@ -198,6 +199,18 @@ describe("iOS Beta readiness preflight", () => {
       `EAS build env must not contain server-only secret ${key}`,
     );
   });
+
+  it.each([undefined, {}, { APPLE_REVIEW_ACCESS_ENABLED: "true" }])(
+    "rejects production service review access unless it is explicitly false (%p)",
+    (productionServiceEnv) => {
+      const input = validConfig();
+      input.productionServiceEnv = productionServiceEnv as typeof input.productionServiceEnv;
+
+      expect(() => checkIosBetaReadiness(input, { profile: "beta-external" })).toThrow(
+        "Production service APPLE_REVIEW_ACCESS_ENABLED must be explicitly false",
+      );
+    },
+  );
 
   it.each([
     ["distribution", (input: ReturnType<typeof validConfig>) => { input.eas.build["beta-external"].distribution = "internal"; }],

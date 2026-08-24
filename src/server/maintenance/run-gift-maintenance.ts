@@ -130,6 +130,16 @@ export async function runGiftMaintenance(input: {
   if (!await acquireMaintenanceLease(input.db, nowText, leaseUntil, leaseToken)) return { ...stats, skipped: true };
 
   try {
+    const deletion = await processAccountDeletionJobs({
+      db: input.db,
+      store: input.store,
+      now,
+      limit: input.mode === "scheduled" ? 10 : 1,
+    });
+    stats.claimedAccountDeletionJobs = deletion.claimed;
+    stats.completedAccountDeletionJobs = deletion.completed;
+    stats.failedAccountDeletionJobs = deletion.failed;
+
     if (hasTimeRemaining()) stats.expiredCards = await expireGiftCardReservations(input.db, nowText, batchSize);
     if (hasTimeRemaining()) stats.expiredPublications = await expireGiftPublishSessions(input.db, nowText, batchSize);
     const jobs = hasTimeRemaining()
@@ -154,18 +164,6 @@ export async function runGiftMaintenance(input: {
           else stats.failedCleanupJobs += 1;
         }
       }));
-    }
-
-    if (hasTimeRemaining()) {
-      const deletion = await processAccountDeletionJobs({
-        db: input.db,
-        store: input.store,
-        now,
-        limit: input.mode === "scheduled" ? 10 : 1,
-      });
-      stats.claimedAccountDeletionJobs = deletion.claimed;
-      stats.completedAccountDeletionJobs = deletion.completed;
-      stats.failedAccountDeletionJobs = deletion.failed;
     }
 
     const auth = hasTimeRemaining()
