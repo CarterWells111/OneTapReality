@@ -26,8 +26,14 @@ export const users = pgTable(
     email: text("email").notNull(),
     createdAt: text("created_at").notNull(),
     lastAuthenticatedAt: text("last_authenticated_at").notNull(),
+    deletionState: text("deletion_state").$type<"active" | "pending">().default("active").notNull(),
+    deletionRequestedAt: text("deletion_requested_at"),
   },
-  (table) => [uniqueIndex("users_email_unique").on(table.email)],
+  (table) => [
+    uniqueIndex("users_email_unique").on(table.email),
+    check("users_deletion_state_check", sql`${table.deletionState} in ('active', 'pending')`),
+    check("users_deletion_requested_at_check", sql`(${table.deletionState} = 'active' and ${table.deletionRequestedAt} is null) or (${table.deletionState} = 'pending' and ${table.deletionRequestedAt} is not null)`),
+  ],
 );
 
 /** Short-lived, one-time email verification codes; plaintext codes are never persisted. */
@@ -81,6 +87,63 @@ export const authRateLimits = pgTable(
     index("auth_rate_limits_expires_idx").on(table.expiresAt, table.scopeHash),
     check("auth_rate_limits_attempts_check", sql`${table.attempts} >= 0`),
   ],
+);
+
+/** Session-bound, short-lived proof required before permanent account deletion. */
+export const accountDeletionChallenges = pgTable(
+  "account_deletion_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => authSessions.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    failedAttempts: integer("failed_attempts").default(0).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("account_deletion_challenges_user_created_idx").on(table.userId, table.createdAt),
+    index("account_deletion_challenges_expires_idx").on(table.expiresAt, table.id),
+    check("account_deletion_challenges_failed_attempts_check", sql`${table.failedAttempts} between 0 and 5`),
+  ],
+);
+
+/** Revocation-first, durable account deletion work. Completed rows retain only an anonymous receipt. */
+export const accountDeletionJobs = pgTable(
+  "account_deletion_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    accountEmail: text("account_email"),
+    state: text("state").$type<"pending" | "processing" | "completed">().default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    nextAttemptAt: text("next_attempt_at").notNull(),
+    leaseUntil: text("lease_until"),
+    completeBy: text("complete_by").notNull(),
+    lastErrorCode: text("last_error_code"),
+    supportNotifiedAt: text("support_notified_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("account_deletion_jobs_user_open_unique").on(table.userId).where(sql`${table.state} in ('pending', 'processing')`),
+    index("account_deletion_jobs_due_idx").on(table.state, table.nextAttemptAt, table.id),
+    check("account_deletion_jobs_state_check", sql`${table.state} in ('pending', 'processing', 'completed')`),
+    check("account_deletion_jobs_attempts_check", sql`${table.attempts} >= 0`),
+    check("account_deletion_jobs_identity_check", sql`(${table.state} = 'completed' and ${table.userId} is null and ${table.accountEmail} is null and ${table.completedAt} is not null) or (${table.state} in ('pending', 'processing') and ${table.userId} is not null and ${table.accountEmail} is not null and ${table.completedAt} is null)`),
+  ],
+);
+
+/** Private object keys awaiting deletion; removed before a receipt is anonymized. */
+export const accountDeletionMediaObjects = pgTable(
+  "account_deletion_media_objects",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id").notNull().references(() => accountDeletionJobs.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull(),
+  },
+  (table) => [uniqueIndex("account_deletion_media_objects_job_object_unique").on(table.jobId, table.objectKey)],
 );
 
 export const memories = pgTable(
@@ -361,6 +424,9 @@ export type UserRow = typeof users.$inferSelect;
 export type AuthEmailCodeRow = typeof authEmailCodes.$inferSelect;
 export type AuthSessionRow = typeof authSessions.$inferSelect;
 export type AuthRateLimitRow = typeof authRateLimits.$inferSelect;
+export type AccountDeletionChallengeRow = typeof accountDeletionChallenges.$inferSelect;
+export type AccountDeletionJobRow = typeof accountDeletionJobs.$inferSelect;
+export type AccountDeletionMediaObjectRow = typeof accountDeletionMediaObjects.$inferSelect;
 export type MemoryRow = typeof memories.$inferSelect;
 export type MemoryPageRow = typeof memoryPages.$inferSelect;
 export type GiftRow = typeof gifts.$inferSelect;

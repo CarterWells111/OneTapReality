@@ -58,6 +58,23 @@ describe("backend client", () => {
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/auth/request", "/api/auth/verify", "/api/auth/me"]);
   });
 
+  it("requests and confirms permanent account deletion with the bearer session", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" }), { status: 202 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.requestAccountDeletionChallenge("session")).resolves.toEqual({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" });
+    await expect(client.deleteAccount("session", { challengeId: "challenge-1", code: "123456", confirmation: "DELETE" }))
+      .resolves.toEqual({ receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" });
+    expect(request).toHaveBeenNthCalledWith(1, "/api/account/deletion-challenge", expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer session" } }));
+    expect(request).toHaveBeenNthCalledWith(2, "/api/account", expect.objectContaining({
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer session" },
+      body: JSON.stringify({ challengeId: "challenge-1", code: "123456", confirmation: "DELETE" }),
+    }));
+  });
+
   it("keeps all admin gift-card contracts and endpoints out of the public client", () => {
     const source = readFileSync(
       join(process.cwd(), "src/services/backend/api-client.ts"),

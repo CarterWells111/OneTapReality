@@ -4,6 +4,7 @@ import type { BackendDatabase } from "../db/client";
 import { authEmailCodes, authRateLimits, authSessions, users } from "../db/schema";
 
 export type AuthenticatedUser = { id: string; email: string; createdAt: string; lastAuthenticatedAt: string };
+export type AuthenticatedUserSession = AuthenticatedUser & { sessionId: string };
 
 export function normalizeAccountEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -15,6 +16,7 @@ export async function createOrGetUserByEmail(db: BackendDatabase, email: string,
     .onConflictDoNothing({ target: users.email });
   const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
   if (!user) throw new Error("User creation did not return a user");
+  if (user.deletionState !== "active") throw new Error("Account deletion is pending");
   await db.update(users).set({ lastAuthenticatedAt: now }).where(eq(users.id, user.id));
   return { ...user, lastAuthenticatedAt: now };
 }
@@ -72,6 +74,7 @@ type VerifyAccountEmailCodeInput = {
 export type VerifyAccountEmailCodeResult =
   | { status: "success"; user: AuthenticatedUser }
   | { status: "invalid" }
+  | { status: "account_deletion_pending" }
   | { status: "rate_limited" };
 
 function constantTimeEqual(left: string, right: string): boolean {
@@ -130,6 +133,7 @@ export async function verifyAccountEmailCode(
       .onConflictDoNothing({ target: users.email });
     const [user] = await tx.select().from(users).where(eq(users.email, email)).limit(1);
     if (!user) throw new Error("User creation did not return a user");
+    if (user.deletionState !== "active") return { status: "account_deletion_pending" as const };
     await tx.update(users).set({ lastAuthenticatedAt: input.now }).where(eq(users.id, user.id));
     await tx.insert(authSessions).values({ ...input.session, userId: user.id, revokedAt: null });
     return { status: "success" as const, user: { ...user, lastAuthenticatedAt: input.now } };
@@ -144,12 +148,25 @@ export async function createAuthSession(
 }
 
 export async function getAuthenticatedUserByTokenHash(db: BackendDatabase, tokenHash: string, now: string): Promise<AuthenticatedUser | null> {
-  const [row] = await db.select({ id: users.id, email: users.email, createdAt: users.createdAt, lastAuthenticatedAt: users.lastAuthenticatedAt })
+  const session = await getAuthenticatedSessionByTokenHash(db, tokenHash, now);
+  if (!session) return null;
+  const { sessionId: _sessionId, ...user } = session;
+  return user;
+}
+
+export async function getAuthenticatedSessionByTokenHash(db: BackendDatabase, tokenHash: string, now: string): Promise<AuthenticatedUserSession | null> {
+  const [row] = await db.select({ sessionId: authSessions.id, id: users.id, email: users.email, createdAt: users.createdAt, lastAuthenticatedAt: users.lastAuthenticatedAt })
     .from(authSessions)
     .innerJoin(users, eq(authSessions.userId, users.id))
-    .where(and(eq(authSessions.tokenHash, tokenHash), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now)))
+    .where(and(eq(authSessions.tokenHash, tokenHash), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now), eq(users.deletionState, "active")))
     .limit(1);
   return row ?? null;
+}
+
+export async function isAccountActiveByEmail(db: BackendDatabase, email: string): Promise<boolean> {
+  const [user] = await db.select({ deletionState: users.deletionState }).from(users)
+    .where(eq(users.email, normalizeAccountEmail(email))).limit(1);
+  return !user || user.deletionState === "active";
 }
 
 export async function revokeAuthSessionByTokenHash(db: BackendDatabase, tokenHash: string, revokedAt: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 
 import { purgeAuthTechnicalData } from "../auth/repository";
+import { processAccountDeletionJobs } from "../auth/account-deletion";
 import type { BackendDatabase } from "../db/client";
 import { appMaintenanceState } from "../db/schema";
 import {
@@ -29,6 +30,9 @@ export type GiftMaintenanceStats = {
   purgedRateLimits: number;
   purgedPublishSessions: number;
   purgedCleanupJobs: number;
+  claimedAccountDeletionJobs: number;
+  completedAccountDeletionJobs: number;
+  failedAccountDeletionJobs: number;
 };
 
 const emptyStats = (): GiftMaintenanceStats => ({
@@ -44,6 +48,9 @@ const emptyStats = (): GiftMaintenanceStats => ({
   purgedRateLimits: 0,
   purgedPublishSessions: 0,
   purgedCleanupJobs: 0,
+  claimedAccountDeletionJobs: 0,
+  completedAccountDeletionJobs: 0,
+  failedAccountDeletionJobs: 0,
 });
 
 async function acquireMaintenanceLease(db: BackendDatabase, now: string, leaseUntil: string, leaseToken: string): Promise<boolean> {
@@ -147,6 +154,18 @@ export async function runGiftMaintenance(input: {
           else stats.failedCleanupJobs += 1;
         }
       }));
+    }
+
+    if (hasTimeRemaining()) {
+      const deletion = await processAccountDeletionJobs({
+        db: input.db,
+        store: input.store,
+        now,
+        limit: input.mode === "scheduled" ? 10 : 1,
+      });
+      stats.claimedAccountDeletionJobs = deletion.claimed;
+      stats.completedAccountDeletionJobs = deletion.completed;
+      stats.failedAccountDeletionJobs = deletion.failed;
     }
 
     const auth = hasTimeRemaining()

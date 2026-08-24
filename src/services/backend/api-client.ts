@@ -9,6 +9,8 @@ import type {
 
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
+export type AccountDeletionChallenge = { challengeId: string; expiresAt: string };
+export type AccountDeletionReceipt = { receiptId: string; completeBy: string };
 export type GiftMemberRole = "owner" | "viewer" | "editor";
 export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
 export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
@@ -112,6 +114,21 @@ export class BackendApiClient {
 
   async logoutAuthSession(accessToken: string): Promise<void> {
     await this.send<null>("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  requestAccountDeletionChallenge(accessToken: string): Promise<AccountDeletionChallenge> {
+    return this.send("/api/account/deletion-challenge", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  deleteAccount(
+    accessToken: string,
+    input: { challengeId: string; code: string; confirmation: "DELETE" },
+  ): Promise<AccountDeletionReceipt> {
+    return this.send("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(input),
+    });
   }
 
   claimGift(token: string, accessToken: string): Promise<{ id: string; status: "bound"; ownerEmail: string }> {

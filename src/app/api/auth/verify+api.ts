@@ -36,6 +36,7 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
     if (result.status === "rate_limited") throw new ApiError(429, "verification_rate_limited", "Please wait before trying another code", undefined, { "Retry-After": "900" });
+    if (result.status === "account_deletion_pending") throw new ApiError(403, "account_deletion_pending", "This account is being permanently deleted");
     if (result.status !== "success") throw new ApiError(401, "invalid_code", "Verification code is invalid or expired");
     const { user } = result;
     return Response.json({ accessToken, user: { id: user.id, email: user.email, isAdmin: isGiftAdminEmail(user.email) } }, { status: 201 });

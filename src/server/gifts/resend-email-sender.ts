@@ -19,3 +19,52 @@ export async function sendGiftVerificationEmail({ apiKey, from, email, code, req
   });
   if (!response.ok) throw new Error("Unable to send verification email");
 }
+
+type SendAccountDeletionFailureEmailInput = {
+  apiKey: string;
+  from: string;
+  to: string;
+  receiptId: string;
+  errorCode: string;
+  attempt: number;
+  request?: typeof fetch;
+};
+
+/** Sends only an opaque receipt and stable diagnostics; account email and object keys are intentionally absent. */
+export async function sendAccountDeletionFailureEmail({
+  apiKey,
+  from,
+  to,
+  receiptId,
+  errorCode,
+  attempt,
+  request = fetch,
+}: SendAccountDeletionFailureEmailInput): Promise<void> {
+  const response = await request("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: "OneTapReality 账号删除任务需要处理",
+      text: `删除回执 ${receiptId} 清理失败。错误码：${errorCode}；尝试次数：${attempt}。账号访问已保持撤销，请检查后台维护任务。`,
+    }),
+  });
+  if (!response.ok) throw new Error("Unable to send account deletion support notice");
+}
+
+export async function sendAccountDeletionFailureEmailFromEnvironment(input: {
+  receiptId: string;
+  errorCode: string;
+  attempt: number;
+}): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.GIFT_EMAIL_FROM;
+  if (!apiKey || !from) throw new Error("Account deletion support email is not configured");
+  await sendAccountDeletionFailureEmail({
+    ...input,
+    apiKey,
+    from,
+    to: process.env.ACCOUNT_DELETION_SUPPORT_EMAIL ?? "support@onetapreality.com",
+  });
+}

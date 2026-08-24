@@ -85,6 +85,13 @@
       "when": 1787443200000,
       "tag": "0011_shared_album_travel_date",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787529600000,
+      "tag": "0012_external_beta_accounts_and_safety",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ jest.mock("../src/server/auth/repository", () => ({
   createAuthEmailCode: jest.fn(async () => undefined),
   deleteAuthEmailCodeById: jest.fn(async () => undefined),
   isAuthEmailCodeRateLimited: jest.fn(async () => false),
+  isAccountActiveByEmail: jest.fn(async () => true),
   verifyAccountEmailCode: jest.fn(async () => ({ status: "success", user: { id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" } })),
   createOrGetUserByEmail: jest.fn(async () => ({ id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
   createAuthSession: jest.fn(async () => undefined),
@@ -66,6 +67,18 @@ describe("unified account authentication APIs", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "beta_invite_required" }) }));
+    const { sendGiftVerificationEmail } = jest.requireMock("../src/server/gifts/resend-email-sender") as { sendGiftVerificationEmail: jest.Mock };
+    expect(sendGiftVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not issue a new login code while permanent deletion is pending", async () => {
+    const { isAccountActiveByEmail } = jest.requireMock("../src/server/auth/repository") as { isAccountActiveByEmail: jest.Mock };
+    isAccountActiveByEmail.mockResolvedValueOnce(false);
+
+    const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "owner@example.com" }) }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "account_deletion_pending" }) }));
     const { sendGiftVerificationEmail } = jest.requireMock("../src/server/gifts/resend-email-sender") as { sendGiftVerificationEmail: jest.Mock };
     expect(sendGiftVerificationEmail).not.toHaveBeenCalled();
   });
