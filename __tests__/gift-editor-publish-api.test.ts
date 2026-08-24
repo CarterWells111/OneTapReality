@@ -269,6 +269,35 @@ describe("editor shared publication contract", () => {
     expect(deleted.at(-1)).toEqual([expect.stringContaining("/final/")]);
   });
 
+  it("aborts and rejects a copy that does not settle within the promotion deadline", async () => {
+    jest.useFakeTimers();
+    try {
+      const payload = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ contentType: "image/jpeg", byteSize: 12 }] }, "gift-1", "session-1").payload;
+      let copySignal: AbortSignal | undefined;
+      const store = {
+        copyObject: jest.fn((_source: string, _destination: string, options?: { abortSignal?: AbortSignal }) => {
+          copySignal = options?.abortSignal;
+          return new Promise<void>(() => undefined);
+        }),
+        getObjectMetadata: jest.fn(async () => ({ contentType: "image/jpeg", byteSize: 12 })),
+        deleteObjects: jest.fn(async () => undefined),
+      };
+
+      const promotion = promoteSharedPublication(store as never, payload);
+      const rejected = expect(promotion).rejects.toThrow("Promotion time budget exceeded");
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await rejected;
+      expect(copySignal?.aborted).toBe(true);
+      expect(store.deleteObjects).toHaveBeenCalledWith(
+        [expect.stringContaining("/final/")],
+        expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("uses server-owned attempt keys and leaves temp objects available for concurrent promotion", async () => {
     const first = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ contentType: "image/jpeg", byteSize: 12 }] }, "gift-1", "session-1").payload;
     const second = structuredClone(first);

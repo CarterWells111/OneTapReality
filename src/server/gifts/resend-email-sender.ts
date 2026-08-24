@@ -97,6 +97,7 @@ type SendAccountDeletionFailureEmailInput = {
   receiptId: string;
   errorCode: string;
   attempt: number;
+  overdue?: boolean;
   request?: typeof fetch;
 };
 
@@ -108,6 +109,7 @@ export async function sendAccountDeletionFailureEmail({
   receiptId,
   errorCode,
   attempt,
+  overdue = false,
   request = fetch,
 }: SendAccountDeletionFailureEmailInput): Promise<void> {
   const response = await request("https://api.resend.com/emails", {
@@ -116,8 +118,8 @@ export async function sendAccountDeletionFailureEmail({
     body: JSON.stringify({
       from,
       to: [to],
-      subject: "OneTapReality 账号删除任务需要处理",
-      text: `删除回执 ${receiptId} 清理失败。错误码：${errorCode}；尝试次数：${attempt}。账号访问已保持撤销，请检查后台维护任务。`,
+      subject: overdue ? "OneTapReality 账号删除任务已逾期" : "OneTapReality 账号删除任务需要处理",
+      text: `删除回执 ${receiptId} 清理失败。错误码：${errorCode}；尝试次数：${attempt}；是否逾期：${overdue ? "是" : "否"}。账号访问已保持撤销，请检查后台维护任务。`,
     }),
   });
   if (!response.ok) throw new Error("Unable to send account deletion support notice");
@@ -127,6 +129,7 @@ export async function sendAccountDeletionFailureEmailFromEnvironment(input: {
   receiptId: string;
   errorCode: string;
   attempt: number;
+  overdue: boolean;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.GIFT_EMAIL_FROM;

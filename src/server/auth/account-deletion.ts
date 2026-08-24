@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import type { BackendDatabase } from "../db/client";
 import {
@@ -30,7 +30,12 @@ export type AcceptAccountDeletionResult =
   | { status: "accepted"; receiptId: string; completeBy: string }
   | { status: "invalid_challenge" | "challenge_used" | "challenge_expired" | "invalid_code" | "confirmation_required" };
 
-type DeletionFailureNotice = { receiptId: string; errorCode: "account_media_delete_failed" | "account_cleanup_failed"; attempt: number };
+type DeletionFailureNotice = {
+  receiptId: string;
+  errorCode: "account_media_delete_failed" | "account_cleanup_failed";
+  attempt: number;
+  overdue: boolean;
+};
 
 const deletionChallengeIssueLocks = new Map<string, Promise<void>>();
 
@@ -140,6 +145,10 @@ function collectPublicationObjectKeys(payload: unknown): string[] {
   return [...media, ...cover];
 }
 
+function collectPublicationTempObjectKeys(payload: unknown): string[] {
+  return collectPublicationObjectKeys(payload).filter((objectKey) => objectKey.includes("/temp/"));
+}
+
 type BackendTransaction = Parameters<Parameters<BackendDatabase["transaction"]>[0]>[0];
 
 async function collectAccountObjectInventory(
@@ -170,6 +179,14 @@ async function collectAccountObjectInventory(
   }).from(giftPublishSessions).where(and(publicationScope, isNull(giftPublishSessions.completedAt)))
     .orderBy(asc(giftPublishSessions.id)).for("update");
   publications.flatMap((row) => collectPublicationObjectKeys(row.payload)).forEach((key) => objectKeys.add(key));
+  const completedPublications = await db.select({
+    id: giftPublishSessions.id,
+    payload: giftPublishSessions.payloadJson,
+  }).from(giftPublishSessions).where(and(publicationScope, isNotNull(giftPublishSessions.completedAt)))
+    .orderBy(asc(giftPublishSessions.id)).for("update");
+  completedPublications
+    .flatMap((row) => collectPublicationTempObjectKeys(row.payload))
+    .forEach((key) => objectKeys.add(key));
 
   const inventoryGiftIds = [...new Set([...ownedGiftIds, ...publications.map((row) => row.giftId)])];
   if (inventoryGiftIds.length) {
@@ -299,9 +316,9 @@ async function claimAccountDeletionJobs(
     const limit = Math.max(1, Math.min(requestedLimit, 20));
     const selected = await tx.execute<{ id: string }>(sql`
       select id from account_deletion_jobs
-      where (state = 'pending' and next_attempt_at <= ${now})
+      where (state = 'pending' and (next_attempt_at <= ${now} or complete_by <= ${now}))
          or (state = 'processing' and lease_until <= ${now})
-      order by next_attempt_at, id
+      order by case when complete_by <= ${now} then 0 else 1 end, complete_by, next_attempt_at, id
       limit ${limit}
       for update skip locked
     `);
@@ -371,12 +388,22 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
 
 async function absorbAccountDeletionObjectKeys(db: BackendDatabase, receiptId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    const [job] = await tx.select({ accountEmail: accountDeletionJobs.accountEmail }).from(accountDeletionJobs).where(and(
+    const [job] = await tx.select({
+      accountEmail: accountDeletionJobs.accountEmail,
+      userId: accountDeletionJobs.userId,
+    }).from(accountDeletionJobs).where(and(
       eq(accountDeletionJobs.id, receiptId),
       eq(accountDeletionJobs.state, "processing"),
     )).limit(1).for("update");
-    if (!job?.accountEmail) throw new Error("Account deletion job changed state");
+    if (!job?.accountEmail || !job.userId) throw new Error("Account deletion job changed state");
     const email = normalizeAccountEmail(job.accountEmail);
+    const [deletingUser] = await tx.select({
+      email: users.email,
+      deletionState: users.deletionState,
+    }).from(users).where(eq(users.id, job.userId)).limit(1).for("update");
+    if (!deletingUser
+      || normalizeAccountEmail(deletingUser.email) !== email
+      || deletingUser.deletionState !== "pending") throw new Error("Account deletion identity changed state");
     const owned = await tx.select({ giftId: giftMembers.giftId }).from(giftMembers).where(and(
       eq(giftMembers.email, email),
       eq(giftMembers.role, "owner"),
@@ -442,13 +469,18 @@ export async function processAccountDeletionJobs(input: {
       stats.completed += 1;
     } catch {
       const delayMinutes = Math.min(6 * 60, 5 * 2 ** Math.max(0, job.attempts - 1));
+      const retryAt = Math.min(
+        now.getTime() + delayMinutes * 60_000,
+        new Date(job.completeBy).getTime(),
+      );
+      const overdue = nowText >= job.completeBy;
       await failAccountDeletionJob(input.db, {
         receiptId: job.id,
         errorCode,
-        nextAttemptAt: new Date(now.getTime() + delayMinutes * 60_000).toISOString(),
+        nextAttemptAt: new Date(retryAt).toISOString(),
       });
       try {
-        await notifyFailure({ receiptId: job.id, errorCode, attempt: job.attempts });
+        await notifyFailure({ receiptId: job.id, errorCode, attempt: job.attempts, overdue });
         await input.db.update(accountDeletionJobs).set({ supportNotifiedAt: nowText }).where(eq(accountDeletionJobs.id, job.id));
       } catch {
         // The deletion job remains pending; a later attempt retries both cleanup and notification.
