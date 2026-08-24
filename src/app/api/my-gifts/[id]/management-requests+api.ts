@@ -1,6 +1,6 @@
 import { decideGiftManagementRequest, listGiftManagementRequestsForOwner } from "../../../../server/gifts/repository";
 import { requireOwnedGift } from "../../../../server/gifts/owner-access";
-import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { ApiError, errorResponse, isErrorWithCode } from "../../../../server/http/errors";
 import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
 export async function GET(request: Request, { id }: { id: string }): Promise<Response> {
@@ -22,5 +22,9 @@ export async function PATCH(request: Request, { id }: { id: string }): Promise<R
     if (result.status === "invalid_target") throw new ApiError(409, "gift_management_target_invalid", "The request target is no longer eligible");
     if (result.status === "approved") scheduleOpportunisticGiftMaintenance();
     return Response.json({ status: result.status });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) {
+    return errorResponse(isErrorWithCode(error, "gift_relationship_blocked")
+      ? new ApiError(409, error.code, "These accounts cannot share gifts")
+      : error);
+  }
 }

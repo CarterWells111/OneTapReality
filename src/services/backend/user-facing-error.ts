@@ -16,6 +16,7 @@ const backendErrorMessages: Readonly<Record<string, string>> = {
   gift_media_unavailable: "照片服务暂时不可用，请稍后重试。",
   gift_publication_unavailable: "暂时无法发布共享相册，请稍后重试。",
   gift_owner_cannot_leave: "礼品拥有者不能直接退出；如需停止共享，请永久停用礼品。",
+  gift_owner_cannot_report: "礼品拥有者不能举报自己发布的内容；如需停止共享，请永久停用礼品。",
   gift_relationship_blocked: "你与该成员之间已停止共享，无法再次邀请或激活。",
   gift_report_forbidden: "你目前无法举报此礼品，请刷新列表后重试。",
   gift_report_no_snapshot: "此礼品尚无可举报的已发布内容。",

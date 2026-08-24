@@ -21,9 +21,13 @@ import {
   addGiftMember,
   claimGiftByTokenHash,
   createGift,
+  createGiftManagementRequest,
   getActivatedGiftAccessByGiftId,
+  getGiftAccessByTokenHash,
   GiftRelationshipBlockedError,
   listInvitedGifts,
+  listGiftManagementTargetsForEditor,
+  removeGiftMember,
   updateGiftMemberRole,
 } from "../src/server/gifts/repository";
 
@@ -109,6 +113,74 @@ describe("gift content safety repository", () => {
       }));
       expect(await listInvitedGifts(db, member.id, member.email)).toEqual([]);
       expect(await getActivatedGiftAccessByGiftId(db, "gift-report", member.id, member.email)).toBeNull();
+    } finally { await close(); }
+  });
+
+  it("rejects an owner report instead of creating a self-report that cannot be hidden", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { owner } = await createSharedFixture(db, {
+        giftId: "gift-owner-report",
+        tokenHash: "token-owner-report",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+
+      await expect(reportGiftContent(db, {
+        giftId: "gift-owner-report",
+        reporterUserId: owner.id,
+        reporterEmail: owner.email,
+        reason: "other",
+        now,
+      })).resolves.toEqual({ status: "owner_forbidden" });
+      await expect(db.select().from(giftContentReports)).resolves.toEqual([]);
+    } finally { await close(); }
+  });
+
+  it("hides a reported gift from NFC token access and prevents token reactivation", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { member } = await createSharedFixture(db, {
+        giftId: "gift-token-report",
+        tokenHash: "token-report-hidden",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+      await reportGiftContent(db, {
+        giftId: "gift-token-report", reporterUserId: member.id, reporterEmail: member.email,
+        reason: "spam", now,
+      });
+
+      await expect(getGiftAccessByTokenHash(db, "token-report-hidden", member.email)).resolves.toBeNull();
+      await expect(activateGiftViewerByTokenHash(db, "token-report-hidden", member, "2026-08-24T12:01:00.000Z")).resolves.toBeNull();
+    } finally { await close(); }
+  });
+
+  it("prevents a reported editor from listing targets or creating management requests", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { member } = await createSharedFixture(db, {
+        giftId: "gift-editor-report",
+        tokenHash: "token-editor-report",
+        ownerEmail: "owner@example.com",
+        memberEmail: "editor@example.com",
+        role: "editor",
+      });
+      await reportGiftContent(db, {
+        giftId: "gift-editor-report", reporterUserId: member.id, reporterEmail: member.email,
+        reason: "harassment", now,
+      });
+
+      await expect(listGiftManagementTargetsForEditor(db, {
+        giftId: "gift-editor-report", userId: member.id, email: member.email,
+      })).resolves.toBeNull();
+      await expect(createGiftManagementRequest(db, {
+        giftId: "gift-editor-report", userId: member.id, email: member.email,
+        action: "delete_album", now: "2026-08-24T12:01:00.000Z",
+      })).resolves.toEqual({ status: "forbidden" });
     } finally { await close(); }
   });
 
@@ -218,6 +290,50 @@ describe("gift content safety repository", () => {
       await createGift(db, { id: "gift-reverse", tokenHash: "token-reverse", createdAt: now });
       await claimGiftByTokenHash(db, "token-reverse", member.email, now);
       await expect(addGiftMember(db, "gift-reverse", owner.email, now)).rejects.toBeInstanceOf(GiftRelationshipBlockedError);
+    } finally { await close(); }
+  });
+
+  it("lets an invited member leave, then block the historical owner relationship", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { owner, member } = await createSharedFixture(db, {
+        giftId: "gift-leave-block",
+        tokenHash: "token-leave-block",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+      await expect(leaveGiftMembership(db, {
+        giftId: "gift-leave-block", userId: member.id, email: member.email,
+      })).resolves.toEqual({ status: "left" });
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-leave-block", actorUserId: member.id, actorEmail: member.email,
+        targetEmail: owner.email, now: "2026-08-24T12:01:00.000Z",
+      })).resolves.toEqual(expect.objectContaining({ status: "created" }));
+      await expect(addGiftMember(db, "gift-leave-block", member.email, "2026-08-24T12:02:00.000Z"))
+        .rejects.toBeInstanceOf(GiftRelationshipBlockedError);
+    } finally { await close(); }
+  });
+
+  it("lets an owner block a previously removed member and prevents reinvitation", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const { owner, member } = await createSharedFixture(db, {
+        giftId: "gift-remove-block",
+        tokenHash: "token-remove-block",
+        ownerEmail: "owner@example.com",
+        memberEmail: "viewer@example.com",
+      });
+      await expect(removeGiftMember(db, "gift-remove-block", member.email)).resolves.toBe(true);
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-remove-block", actorUserId: owner.id, actorEmail: owner.email,
+        targetEmail: member.email, now: "2026-08-24T12:01:00.000Z",
+      })).resolves.toEqual(expect.objectContaining({ status: "created" }));
+      await expect(addGiftMember(db, "gift-remove-block", member.email, "2026-08-24T12:02:00.000Z"))
+        .rejects.toBeInstanceOf(GiftRelationshipBlockedError);
     } finally { await close(); }
   });
 

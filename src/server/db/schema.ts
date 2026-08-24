@@ -276,6 +276,23 @@ export const giftMemberActivations = pgTable(
   (table) => [index("gift_member_activations_user_member_idx").on(table.userId, table.memberId)],
 );
 
+/** Minimal ended-relationship proof so either party can still block after membership removal. */
+export const giftRelationshipTombstones = pgTable(
+  "gift_relationship_tombstones",
+  {
+    id: text("id").primaryKey(),
+    giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gift_relationship_tombstones_gift_email_unique").on(table.giftId, table.email),
+    index("gift_relationship_tombstones_user_gift_idx").on(table.userId, table.giftId),
+    index("gift_relationship_tombstones_email_gift_idx").on(table.email, table.giftId),
+  ],
+);
+
 /** A reporter-specific hide plus the minimum metadata needed for support disposition. */
 export const giftContentReports = pgTable(
   "gift_content_reports",
@@ -486,6 +503,7 @@ export type GiftRow = typeof gifts.$inferSelect;
 export type GiftCardRow = typeof giftCards.$inferSelect;
 export type GiftCardEventRow = typeof giftCardEvents.$inferSelect;
 export type GiftMemberRow = typeof giftMembers.$inferSelect;
+export type GiftRelationshipTombstoneRow = typeof giftRelationshipTombstones.$inferSelect;
 export type GiftContentReportRow = typeof giftContentReports.$inferSelect;
 export type UserBlockRow = typeof userBlocks.$inferSelect;
 export type GiftManagementRequestRow = typeof giftManagementRequests.$inferSelect;

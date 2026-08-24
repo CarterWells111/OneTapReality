@@ -17,6 +17,7 @@ describe("user-facing backend errors", () => {
     ["gift_block_invalid_target", "请选择当前共享关系中的其他成员。"],
     ["gift_leave_forbidden", "你目前无法退出此礼品，请刷新列表后重试。"],
     ["gift_owner_cannot_leave", "礼品拥有者不能直接退出；如需停止共享，请永久停用礼品。"],
+    ["gift_owner_cannot_report", "礼品拥有者不能举报自己发布的内容；如需停止共享，请永久停用礼品。"],
   ])("maps %s to stable Chinese copy", (code, expected) => {
     expect(toUserFacingBackendError({ code, message: "raw internal failure" }, "操作失败，请重试。")).toBe(expected);
   });

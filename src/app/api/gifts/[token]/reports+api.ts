@@ -39,6 +39,7 @@ export async function POST(request: Request, { token: giftId }: { token: string 
       now: new Date().toISOString(),
     });
     if (result.status === "forbidden") throw new ApiError(403, "gift_report_forbidden", "This account cannot report this gift");
+    if (result.status === "owner_forbidden") throw new ApiError(409, "gift_owner_cannot_report", "Gift owners cannot report their own content");
     if (result.status === "no_snapshot") throw new ApiError(409, "gift_report_no_snapshot", "There is no published snapshot to report");
 
     if (!result.report.supportNotifiedAt) {

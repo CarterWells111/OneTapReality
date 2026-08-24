@@ -14,6 +14,7 @@ import {
   giftMediaCleanupJobs,
   giftMembers,
   giftPublishSessions,
+  giftRelationshipTombstones,
   giftSessions,
   gifts,
   sharedAlbumMedia,
@@ -335,6 +336,7 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
     await tx.delete(giftManagementRequests).where(eq(giftManagementRequests.targetEmail, email));
     await tx.delete(giftPublishSessions).where(eq(giftPublishSessions.ownerEmail, email));
     await tx.delete(giftMembers).where(eq(giftMembers.email, email));
+    await tx.delete(giftRelationshipTombstones).where(eq(giftRelationshipTombstones.email, email));
     // Email fallback covers blocks created before the blocked party registered and received a user id.
     await tx.delete(userBlocks).where(or(eq(userBlocks.blockerEmail, email), eq(userBlocks.blockedEmail, email)));
     await tx.delete(giftEmailCodes).where(eq(giftEmailCodes.email, email));

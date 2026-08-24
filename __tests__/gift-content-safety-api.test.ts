@@ -171,6 +171,18 @@ describe("gift content safety APIs", () => {
     expect(await response.json()).toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_report_forbidden" }) }));
   });
 
+  it("returns a stable error when an owner attempts to report their own gift", async () => {
+    mockReportGiftContent.mockResolvedValueOnce({ status: "owner_forbidden" });
+    const response = await reportGift(new Request("http://localhost/api/gifts/gift-1/reports", {
+      method: "POST", body: JSON.stringify({ reason: "other" }),
+    }), { token: "gift-1" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: "gift_owner_cannot_report" }),
+    }));
+  });
+
   it("blocks the gift owner by default and keeps the response free of target identity", async () => {
     const response = await blockGiftUser(new Request("http://localhost/api/gifts/gift-1/blocks", {
       method: "POST",

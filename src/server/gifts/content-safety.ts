@@ -6,6 +6,7 @@ import {
   giftContentReports,
   giftMemberActivations,
   giftMembers,
+  giftRelationshipTombstones,
   gifts,
   sharedAlbums,
   userBlocks,
@@ -23,6 +24,23 @@ export const GIFT_CONTENT_REPORT_REASONS = [
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+type GiftRelationshipTombstoneWriter = Pick<BackendDatabase, "insert">;
+
+export async function recordGiftRelationshipTombstone(
+  db: GiftRelationshipTombstoneWriter,
+  input: { giftId: string; email: string; userId: string | null; createdAt: string },
+): Promise<void> {
+  await db.insert(giftRelationshipTombstones).values({
+    id: crypto.randomUUID(),
+    giftId: input.giftId,
+    email: normalizeEmail(input.email),
+    userId: input.userId,
+    createdAt: input.createdAt,
+  }).onConflictDoNothing({
+    target: [giftRelationshipTombstones.giftId, giftRelationshipTombstones.email],
+  });
 }
 
 export function normalizeBlockedEmailPair(firstEmail: string, secondEmail: string): [string, string] {
@@ -58,6 +76,7 @@ export async function reportGiftContent(
   | { status: "created"; report: GiftContentReportDto }
   | { status: "existing"; report: GiftContentReportDto }
   | { status: "forbidden" }
+  | { status: "owner_forbidden" }
   | { status: "no_snapshot" }
 > {
   const reporterEmail = normalizeEmail(input.reporterEmail);
@@ -68,7 +87,7 @@ export async function reportGiftContent(
       .returning({ id: gifts.id });
     if (!lockedGift.length) return { status: "forbidden" as const };
 
-    const [relationship] = await tx.select({ memberId: giftMembers.id })
+    const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role })
       .from(giftMembers)
       .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
@@ -78,6 +97,7 @@ export async function reportGiftContent(
       ))
       .limit(1);
     if (!relationship) return { status: "forbidden" as const };
+    if (relationship.role === "owner") return { status: "owner_forbidden" as const };
 
     const [snapshot] = await tx.select({ version: sharedAlbums.version })
       .from(sharedAlbums)
@@ -257,13 +277,32 @@ export async function blockGiftUser(
         or(eq(giftMembers.role, "owner"), eq(giftMemberActivations.userId, input.actorUserId)),
       ))
       .limit(1);
-    if (!actorRelationship) return { status: "forbidden" as const };
+    if (!actorRelationship) {
+      const [actorHistory] = await tx.select({ id: giftRelationshipTombstones.id })
+        .from(giftRelationshipTombstones)
+        .where(and(
+          eq(giftRelationshipTombstones.giftId, input.giftId),
+          eq(giftRelationshipTombstones.email, actorEmail),
+          or(eq(giftRelationshipTombstones.userId, input.actorUserId), isNull(giftRelationshipTombstones.userId)),
+        ))
+        .limit(1);
+      if (!actorHistory) return { status: "forbidden" as const };
+    }
 
     const [targetRelationship] = await tx.select({ memberId: giftMembers.id })
       .from(giftMembers)
       .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.email, targetEmail)))
       .limit(1);
-    if (!targetRelationship) return { status: "invalid_target" as const };
+    if (!targetRelationship) {
+      const [targetHistory] = await tx.select({ id: giftRelationshipTombstones.id })
+        .from(giftRelationshipTombstones)
+        .where(and(
+          eq(giftRelationshipTombstones.giftId, input.giftId),
+          eq(giftRelationshipTombstones.email, targetEmail),
+        ))
+        .limit(1);
+      if (!targetHistory) return { status: "invalid_target" as const };
+    }
 
     if (!targetUserId) {
       const [targetUser] = await tx.select({ id: users.id }).from(users).where(eq(users.email, targetEmail)).limit(1);
@@ -310,7 +349,7 @@ export async function leaveGiftMembership(
       .returning({ id: gifts.id });
     if (!lockedGift.length) return { status: "forbidden" as const };
 
-    const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role })
+    const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role, userId: giftMemberActivations.userId })
       .from(giftMembers)
       .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
@@ -321,6 +360,13 @@ export async function leaveGiftMembership(
       .limit(1);
     if (!relationship) return { status: "forbidden" as const };
     if (relationship.role === "owner") return { status: "owner_forbidden" as const };
+
+    await recordGiftRelationshipTombstone(tx, {
+      giftId: input.giftId,
+      email,
+      userId: relationship.userId,
+      createdAt: new Date().toISOString(),
+    });
 
     const removed = await tx.delete(giftMembers)
       .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, relationship.memberId)))

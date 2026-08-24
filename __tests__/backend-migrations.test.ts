@@ -56,7 +56,7 @@ describe("backend PostgreSQL migrations", () => {
         select table_name
         from information_schema.tables
         where table_schema = 'public'
-          and table_name in ('account_deletion_challenges', 'account_deletion_jobs', 'account_deletion_media_objects', 'app_maintenance_state', 'app_schema_meta', 'auth_rate_limits', 'devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'gift_member_activations', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
+          and table_name in ('account_deletion_challenges', 'account_deletion_jobs', 'account_deletion_media_objects', 'app_maintenance_state', 'app_schema_meta', 'auth_rate_limits', 'devices', 'memories', 'memory_pages', 'gifts', 'gift_members', 'gift_member_activations', 'gift_relationship_tombstones', 'shared_albums', 'gift_email_codes', 'gift_sessions', 'shared_album_pages', 'shared_album_media', 'gift_publish_sessions', 'gift_media_cleanup_jobs')
         order by table_name
       `);
 
@@ -73,6 +73,7 @@ describe("backend PostgreSQL migrations", () => {
         "gift_member_activations",
         "gift_members",
         "gift_publish_sessions",
+        "gift_relationship_tombstones",
         "gift_sessions",
         "gifts",
         "memories",
@@ -123,7 +124,7 @@ describe("backend PostgreSQL migrations", () => {
       expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
 
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 12 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 13 }]);
 
       const deletionMigration = readFileSync("drizzle/0012_external_beta_accounts_and_safety.sql", "utf8");
       expect(deletionMigration).toContain("account_deletion_challenges");

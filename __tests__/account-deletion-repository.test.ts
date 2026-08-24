@@ -17,6 +17,7 @@ import {
   giftContentReports,
   giftMediaCleanupJobs,
   giftPublishSessions,
+  giftRelationshipTombstones,
   gifts,
   sharedAlbums,
   userBlocks,
@@ -245,10 +246,15 @@ describe("account deletion repository", () => {
         giftId: "shared-blocked", actorUserId: secondOwner.id, actorEmail: secondOwner.email,
         targetEmail: deletingUser.email, now,
       });
+      await db.insert(giftRelationshipTombstones).values({
+        id: "historical-relationship", giftId: "shared-blocked", email: deletingUser.email,
+        userId: null, createdAt: now,
+      });
       // A block may predate the blocked account, so email cleanup must not depend on a populated FK.
       await db.update(userBlocks).set({ blockedUserId: null }).where(eq(userBlocks.blockedEmail, deletingUser.email));
       expect(await db.select().from(giftContentReports)).toHaveLength(1);
       expect(await db.select().from(userBlocks)).toHaveLength(2);
+      expect(await db.select().from(giftRelationshipTombstones)).toHaveLength(1);
 
       await createAccountDeletionChallenge(db, {
         id: "challenge-safety", userId: deletingUser.id, sessionId: "session-current",
@@ -264,6 +270,7 @@ describe("account deletion repository", () => {
 
       await expect(db.select().from(giftContentReports)).resolves.toEqual([]);
       await expect(db.select().from(userBlocks)).resolves.toEqual([]);
+      await expect(db.select().from(giftRelationshipTombstones)).resolves.toEqual([]);
       await expect(db.select({ id: users.id }).from(users)).resolves.toEqual(expect.arrayContaining([
         { id: firstOwner.id }, { id: secondOwner.id },
       ]));
