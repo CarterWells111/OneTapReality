@@ -16,6 +16,8 @@ export type AuthIdentityScope = Readonly<{
   generation: number;
 }>;
 
+export type AuthCleanupResult = "applied" | "no-op";
+
 type AuthContextValue = {
   isAuthReady: boolean;
   session: AuthenticatedAccountSession | null;
@@ -23,9 +25,9 @@ type AuthContextValue = {
   rememberedEmail: string | null;
   requestCode: (email: string) => Promise<{ email: string }>;
   verifyCode: (email: string, code: string) => Promise<AuthenticatedAccountSession>;
-  signOut: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
-  switchAccount: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
-  forgetRememberedEmail: (expectedIdentity?: AuthIdentityScope) => Promise<void>;
+  signOut: (expectedIdentity?: AuthIdentityScope) => Promise<AuthCleanupResult>;
+  switchAccount: (expectedIdentity?: AuthIdentityScope) => Promise<AuthCleanupResult>;
+  forgetRememberedEmail: (expectedIdentity?: AuthIdentityScope) => Promise<AuthCleanupResult>;
   getSessionGeneration: () => number;
   sessionGeneration: number;
 };
@@ -43,6 +45,10 @@ function sameIdentity(left: AuthIdentityScope | null, right: AuthIdentityScope):
     && left.generation === right.generation;
 }
 
+function identityScopeKey(identity: AuthIdentityScope): string {
+  return `${identity.generation}\u0000${identity.accessToken}\u0000${identity.email.trim().toLowerCase()}`;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const client = React.useMemo(() => new BackendApiClient(), []);
   const [session, setSession] = React.useState<AuthenticatedAccountSession | null>(null);
@@ -53,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sessionRef = React.useRef<AuthenticatedAccountSession | null>(null);
   const rememberedEmailRef = React.useRef<string | null>(null);
   const invalidatedIdentity = React.useRef<InvalidatedIdentity | null>(null);
+  const deletionCleanupTickets = React.useRef(new Map<string, AuthIdentityScope>());
   const storageTransitionTail = React.useRef<Promise<void>>(Promise.resolve());
   const runStorageTransition = React.useCallback((operation: () => Promise<void>): Promise<void> => {
     const pending = storageTransitionTail.current.then(operation);
@@ -124,13 +131,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await runStorageTransition(async () => {
       if (generation !== operationGeneration.current) return;
       await saveAuthSession(verified);
-      savedForCurrentGeneration = generation === operationGeneration.current;
+      if (generation !== operationGeneration.current) return;
+      sessionRef.current = verified;
+      setSession(verified);
+      savedForCurrentGeneration = true;
     });
     if (!savedForCurrentGeneration || generation !== operationGeneration.current) {
       throw new Error("Authentication changed during verification");
     }
-    sessionRef.current = verified;
-    setSession(verified);
     await runStorageTransition(async () => {
       if (generation !== operationGeneration.current) return;
       await saveRememberedEmail(verified.user.email);
@@ -146,17 +154,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let invalidation = invalidatedIdentity.current;
 
     if (expectedIdentity) {
+      deletionCleanupTickets.current.set(identityScopeKey(expectedIdentity), expectedIdentity);
       const currentIdentity = currentSession ? {
         accessToken: currentSession.accessToken,
         email: currentSession.user.email,
         generation: currentGeneration,
       } : null;
       const isCurrentIdentity = sameIdentity(currentIdentity, expectedIdentity);
-      const isOwnedRetry = invalidation !== null
-        && sameIdentity(invalidation.identity, expectedIdentity)
-        && invalidation.invalidatedGeneration === currentGeneration
-        && currentSession === null;
-      if (!isCurrentIdentity && !isOwnedRetry) return;
+      if (currentSession !== null && !isCurrentIdentity) return "no-op";
       if (isCurrentIdentity) {
         invalidation = {
           identity: expectedIdentity,
@@ -186,41 +191,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const ownedInvalidation = invalidation;
-    if (!ownedInvalidation) return;
+    if (!expectedIdentity && !ownedInvalidation) return "no-op";
+    let cleanupResult: AuthCleanupResult = "no-op";
     let storageError: unknown;
     try {
       await runStorageTransition(async () => {
-        if (invalidatedIdentity.current !== ownedInvalidation
-          || operationGeneration.current !== ownedInvalidation.invalidatedGeneration
+        if (expectedIdentity) {
+          // A failed or in-flight verification leaves no committed session. It
+          // is safe to retry A's deletion cleanup there; a committed B session
+          // always wins and must never be erased.
+          if (sessionRef.current !== null) return;
+        } else if (invalidatedIdentity.current !== ownedInvalidation
+          || operationGeneration.current !== ownedInvalidation?.invalidatedGeneration
           || sessionRef.current !== null) return;
         await clearAuthSession();
+        cleanupResult = "applied";
       });
     } catch (error) {
       storageError = error;
     }
-    const token = ownedInvalidation.identity?.accessToken;
+    const token = expectedIdentity?.accessToken ?? ownedInvalidation?.identity?.accessToken;
     if (token) await client.logoutAuthSession(token).catch(() => undefined);
     if (storageError) throw storageError;
+    return cleanupResult;
   }, [client, runStorageTransition]);
   const forgetRememberedEmail = React.useCallback(async (expectedIdentity?: AuthIdentityScope) => {
-    const ownedInvalidation = invalidatedIdentity.current;
-    if (expectedIdentity && (
-      ownedInvalidation === null
-      || !sameIdentity(ownedInvalidation.identity, expectedIdentity)
-      || ownedInvalidation.invalidatedGeneration !== operationGeneration.current
-      || sessionRef.current !== null
-    )) return;
+    if (expectedIdentity && !deletionCleanupTickets.current.has(identityScopeKey(expectedIdentity))) {
+      return "no-op";
+    }
+    let cleanupResult: AuthCleanupResult = "no-op";
     await runStorageTransition(async () => {
-      if (expectedIdentity && (
-        invalidatedIdentity.current !== ownedInvalidation
-        || operationGeneration.current !== ownedInvalidation?.invalidatedGeneration
-        || sessionRef.current !== null
-      )) return;
+      if (expectedIdentity) {
+        const rememberedOwner = rememberedEmailRef.current?.trim().toLowerCase() ?? null;
+        const expectedOwner = expectedIdentity.email.trim().toLowerCase();
+        if (rememberedOwner !== expectedOwner && (rememberedOwner !== null || sessionRef.current !== null)) {
+          return;
+        }
+      }
       await clearRememberedEmail();
-      if (expectedIdentity && invalidatedIdentity.current !== ownedInvalidation) return;
       rememberedEmailRef.current = null;
       setRememberedEmail(null);
+      cleanupResult = "applied";
     });
+    return cleanupResult;
   }, [runStorageTransition]);
 
   return (

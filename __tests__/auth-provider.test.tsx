@@ -167,7 +167,7 @@ describe("AuthProvider remembered account", () => {
     render(<AuthProvider><CaptureAuth /></AuthProvider>);
     await waitFor(() => expect(auth?.session).toEqual(savedSession));
 
-    let pendingSignOut: Promise<void> | undefined;
+    let pendingSignOut: Promise<unknown> | undefined;
     act(() => { pendingSignOut = auth!.signOut(); });
     expect(auth?.session).toBeNull();
 
@@ -268,7 +268,7 @@ describe("AuthProvider remembered account", () => {
     expect(mockClearAuthSession).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let deleted-account cleanup sign out or forget a newer account", async () => {
+  it("returns no-op instead of clearing account B after account A signed out", async () => {
     const sessionA = {
       accessToken: "token-a",
       user: { id: "user-a", email: "a@example.com", isAdmin: false },
@@ -284,22 +284,78 @@ describe("AuthProvider remembered account", () => {
     await waitFor(() => expect(auth?.isAuthReady).toBe(true));
 
     await act(async () => auth?.verifyCode(sessionA.user.email, "111111"));
+    await waitFor(() => expect(auth?.session).toEqual(sessionA));
     const deletedAccount = {
       accessToken: sessionA.accessToken,
       email: sessionA.user.email,
       generation: auth!.sessionGeneration,
     };
+    let initialSignOutResult: unknown;
+    await act(async () => {
+      initialSignOutResult = await auth?.signOut(deletedAccount);
+    });
+    expect(initialSignOutResult).toBe("applied");
     await act(async () => auth?.verifyCode(sessionB.user.email, "222222"));
     const clearsBeforeDeletedCleanup = mockClearAuthSession.mock.calls.length;
     const rememberedClearsBeforeDeletedCleanup = mockClearRememberedEmail.mock.calls.length;
 
-    await act(async () => auth?.signOut(deletedAccount));
-    await act(async () => auth?.forgetRememberedEmail(deletedAccount));
+    let retrySignOutResult: unknown;
+    let forgetResult: unknown;
+    await act(async () => {
+      retrySignOutResult = await auth?.signOut(deletedAccount);
+    });
+    await act(async () => {
+      forgetResult = await auth?.forgetRememberedEmail(deletedAccount);
+    });
 
+    expect(retrySignOutResult).toBe("no-op");
+    expect(forgetResult).toBe("no-op");
     expect(auth?.session).toEqual(sessionB);
     expect(auth?.rememberedEmail).toBe(sessionB.user.email);
     expect(mockClearAuthSession).toHaveBeenCalledTimes(clearsBeforeDeletedCleanup);
     expect(mockClearRememberedEmail).toHaveBeenCalledTimes(rememberedClearsBeforeDeletedCleanup);
+  });
+
+  it("keeps account A cleanup retryable after account B verification fails", async () => {
+    const sessionA = {
+      accessToken: "token-a",
+      user: { id: "user-a", email: "a@example.com", isAdmin: false },
+    };
+    mockVerifyAuthEmailCode
+      .mockResolvedValueOnce(sessionA)
+      .mockRejectedValueOnce(new Error("invalid code"));
+    render(<AuthProvider><CaptureAuth /></AuthProvider>);
+    await waitFor(() => expect(auth?.isAuthReady).toBe(true));
+    await act(async () => auth?.verifyCode(sessionA.user.email, "111111"));
+    await waitFor(() => expect(auth?.session).toEqual(sessionA));
+    const deletedAccount = {
+      accessToken: sessionA.accessToken,
+      email: sessionA.user.email,
+      generation: auth!.sessionGeneration,
+    };
+    mockClearAuthSession.mockRejectedValueOnce(new Error("keychain unavailable"));
+
+    let failedSignOut: Promise<unknown> | undefined;
+    act(() => { failedSignOut = auth!.signOut(deletedAccount); });
+    await expect(failedSignOut).rejects.toThrow("keychain unavailable");
+    let failedVerification: Promise<unknown> | undefined;
+    act(() => { failedVerification = auth!.verifyCode("b@example.com", "222222"); });
+    await expect(failedVerification).rejects.toThrow("invalid code");
+
+    let retrySignOutResult: unknown;
+    let forgetResult: unknown;
+    await act(async () => {
+      retrySignOutResult = await auth?.signOut(deletedAccount);
+    });
+    await act(async () => {
+      forgetResult = await auth?.forgetRememberedEmail(deletedAccount);
+    });
+
+    expect(retrySignOutResult).toBe("applied");
+    expect(forgetResult).toBe("applied");
+    expect(auth?.session).toBeNull();
+    expect(auth?.rememberedEmail).toBeNull();
+    expect(mockClearRememberedEmail).toHaveBeenCalledTimes(1);
   });
 
   it("makes a failed deleted-account sign-out retry a no-op after account B logs in", async () => {
@@ -328,7 +384,7 @@ describe("AuthProvider remembered account", () => {
     }));
 
     const clearsBeforeSignOut = mockClearAuthSession.mock.calls.length;
-    let failedSignOut: Promise<void> | undefined;
+    let failedSignOut: Promise<unknown> | undefined;
     act(() => { failedSignOut = auth!.signOut(deletedAccount); });
     await waitFor(() => expect(mockClearAuthSession).toHaveBeenCalledTimes(clearsBeforeSignOut + 1));
     let verificationB: Promise<unknown> | undefined;

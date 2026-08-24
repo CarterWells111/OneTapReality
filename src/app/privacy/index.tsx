@@ -25,10 +25,29 @@ function deletionErrorMessage(error: unknown): string {
   }
 }
 
+type DeletionUiOperation = {
+  allowSignedOutCompletion: boolean;
+  id: number;
+  identityKey: string;
+  signedOutGeneration: number | null;
+};
+
+function deletionIdentityKey(accessToken: string, email: string, generation: number): string {
+  return `${generation}\u0000${accessToken}\u0000${email.trim().toLowerCase()}`;
+}
+
 export default function PrivacyScreen() {
   const router = useRouter();
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const { forgetRememberedEmail, isAuthReady, session, sessionGeneration, signOut, user } = useAuth();
+  const {
+    forgetRememberedEmail,
+    getSessionGeneration,
+    isAuthReady,
+    session,
+    sessionGeneration,
+    signOut,
+    user,
+  } = useAuth();
   const {
     accountLibraryKey,
     currentLibraryIsGuest,
@@ -43,8 +62,69 @@ export default function PrivacyScreen() {
   const [isDeletingAccount, setDeletingAccount] = React.useState(false);
   const [deletionError, setDeletionError] = React.useState("");
   const [receipt, setReceipt] = React.useState<AccountDeletionReceipt | null>(null);
-  const activeSessionToken = React.useRef(session?.accessToken ?? null);
-  activeSessionToken.current = session?.accessToken ?? null;
+  const sessionIdentity = session
+    ? deletionIdentityKey(session.accessToken, session.user.email, sessionGeneration)
+    : null;
+  const sessionStateIdentity = sessionIdentity ?? `signed-out:${sessionGeneration}`;
+  const sessionIdentityRef = React.useRef<string | null>(sessionIdentity);
+  const previousSessionStateIdentity = React.useRef(sessionStateIdentity);
+  const operationSequence = React.useRef(0);
+  const activeDeletionOperation = React.useRef<DeletionUiOperation | null>(null);
+  const getSessionGenerationRef = React.useRef(getSessionGeneration);
+  sessionIdentityRef.current = sessionIdentity;
+  getSessionGenerationRef.current = getSessionGeneration;
+
+  const beginDeletionOperation = (identityKey: string): DeletionUiOperation => {
+    const operation = {
+      allowSignedOutCompletion: false,
+      id: operationSequence.current + 1,
+      identityKey,
+      signedOutGeneration: null,
+    };
+    operationSequence.current = operation.id;
+    activeDeletionOperation.current = operation;
+    setDeletingAccount(true);
+    return operation;
+  };
+  const ownsDeletionOperation = (operation: DeletionUiOperation): boolean => (
+    activeDeletionOperation.current?.id === operation.id
+  );
+  const canCommitDeletionUi = (operation: DeletionUiOperation): boolean => (
+    ownsDeletionOperation(operation)
+    && (
+      sessionIdentityRef.current === operation.identityKey
+      || (
+        operation.allowSignedOutCompletion
+        && sessionIdentityRef.current === null
+        && getSessionGenerationRef.current() === operation.signedOutGeneration
+      )
+    )
+  );
+  const finishDeletionOperation = (operation: DeletionUiOperation) => {
+    if (!ownsDeletionOperation(operation)) return;
+    activeDeletionOperation.current = null;
+    setDeletingAccount(false);
+  };
+
+  React.useEffect(() => {
+    if (previousSessionStateIdentity.current === sessionStateIdentity) return;
+    previousSessionStateIdentity.current = sessionStateIdentity;
+    setChallenge(null);
+    setCode("");
+    setConfirmation("");
+    setDeletionError("");
+    setReceipt(null);
+
+    const operation = activeDeletionOperation.current;
+    const isOwnedSignedOutCompletion = operation !== null
+      && operation.allowSignedOutCompletion
+      && sessionIdentity === null
+      && operation.signedOutGeneration === sessionGeneration;
+    if (!isOwnedSignedOutCompletion) {
+      activeDeletionOperation.current = null;
+      setDeletingAccount(false);
+    }
+  }, [sessionIdentity, sessionGeneration, sessionStateIdentity]);
 
   const confirmClear = () => {
     const libraryName = currentLibraryIsGuest ? "本机访客旅行册" : "当前账户的本机旅行册";
@@ -65,30 +145,30 @@ export default function PrivacyScreen() {
 
   const requestDeletionChallenge = async () => {
     const accessToken = session?.accessToken;
-    if (!accessToken) {
+    if (!accessToken || !sessionIdentity) {
       router.push("/login?returnTo=/privacy" as never);
       return;
     }
+    const operation = beginDeletionOperation(sessionIdentity);
     setDeletionError("");
-    setDeletingAccount(true);
     try {
       const nextChallenge = await client.requestAccountDeletionChallenge(accessToken);
-      if (activeSessionToken.current === accessToken) {
+      if (canCommitDeletionUi(operation)) {
         setChallenge(nextChallenge);
         setCode("");
         setConfirmation("");
       }
     } catch (error) {
-      if (activeSessionToken.current === accessToken) setDeletionError(deletionErrorMessage(error));
+      if (canCommitDeletionUi(operation)) setDeletionError(deletionErrorMessage(error));
     } finally {
-      if (activeSessionToken.current === accessToken) setDeletingAccount(false);
+      finishDeletionOperation(operation);
     }
   };
 
   const confirmAccountDeletion = async () => {
     const accessToken = session?.accessToken;
     const requestedAccountKey = accountLibraryKey;
-    if (!accessToken || !challenge || !requestedAccountKey) return;
+    if (!accessToken || !challenge || !requestedAccountKey || !sessionIdentity) return;
     const requestedIdentity = {
       accessToken,
       email: session.user.email,
@@ -103,21 +183,32 @@ export default function PrivacyScreen() {
       return;
     }
 
+    const operation = beginDeletionOperation(sessionIdentity);
     setDeletionError("");
-    setDeletingAccount(true);
     try {
       const nextReceipt = await client.deleteAccount(accessToken, {
         challengeId: challenge.challengeId,
         code,
         confirmation: "DELETE",
       });
+      if (
+        ownsDeletionOperation(operation)
+        && sessionIdentityRef.current === operation.identityKey
+        && getSessionGenerationRef.current() === requestedIdentity.generation
+      ) {
+        // From this point, a null identity can be the synchronous local
+        // sign-out performed by this deletion. A different account still
+        // cancels all UI ownership immediately.
+        operation.allowSignedOutCompletion = true;
+        operation.signedOutGeneration = requestedIdentity.generation + 1;
+      }
       let localSessionCleared = false;
       for (let attempt = 0; attempt < 2 && !localSessionCleared; attempt += 1) {
         try {
           // signOut invalidates the auth generation before its first await, so
           // no account-scoped write can start after local deletion begins.
-          await signOut(requestedIdentity);
-          localSessionCleared = true;
+          const result = await signOut(requestedIdentity);
+          localSessionCleared = result === "applied";
         } catch {
           // Retry once because a persisted revoked session must not survive relaunch.
         }
@@ -134,24 +225,26 @@ export default function PrivacyScreen() {
       let rememberedEmailCleared = false;
       for (let attempt = 0; attempt < 2 && !rememberedEmailCleared; attempt += 1) {
         try {
-          await forgetRememberedEmail(requestedIdentity);
-          rememberedEmailCleared = true;
+          const result = await forgetRememberedEmail(requestedIdentity);
+          rememberedEmailCleared = result === "applied";
         } catch {
           // Retry once before reporting that device cleanup needs support.
         }
       }
       localCleanupComplete = localCleanupComplete && localSessionCleared && rememberedEmailCleared;
-      setReceipt(nextReceipt);
-      setChallenge(null);
-      Alert.alert(
-        "账号删除已受理",
-        `受理编号：${nextReceipt.receiptId}\n预计最晚完成：${nextReceipt.completeBy}${localCleanupComplete ? "" : "\n本机账号旅行册清理未完成。独立访客旅行册不会因此删除，请联系 support@onetapreality.com 协助处理设备残留。"}`,
-        [{ text: "知道了" }],
-      );
+      if (canCommitDeletionUi(operation)) {
+        setReceipt(nextReceipt);
+        setChallenge(null);
+        Alert.alert(
+          "账号删除已受理",
+          `受理编号：${nextReceipt.receiptId}\n预计最晚完成：${nextReceipt.completeBy}${localCleanupComplete ? "" : "\n本机账号旅行册清理未完成。独立访客旅行册不会因此删除，请联系 support@onetapreality.com 协助处理设备残留。"}`,
+          [{ text: "知道了" }],
+        );
+      }
     } catch (error) {
-      if (activeSessionToken.current === accessToken) setDeletionError(deletionErrorMessage(error));
+      if (canCommitDeletionUi(operation)) setDeletionError(deletionErrorMessage(error));
     } finally {
-      if (activeSessionToken.current === accessToken) setDeletingAccount(false);
+      finishDeletionOperation(operation);
     }
   };
 

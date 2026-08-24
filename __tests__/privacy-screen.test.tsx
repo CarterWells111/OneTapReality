@@ -32,6 +32,7 @@ describe("PrivacyScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseAuth.mockReturnValue({
+      getSessionGeneration: () => 7,
       isAuthReady: true,
       forgetRememberedEmail: mockForgetRememberedEmail,
       sessionGeneration: 7,
@@ -47,8 +48,8 @@ describe("PrivacyScreen", () => {
     });
     mockClearAllMemories.mockResolvedValue(undefined);
     mockDeleteAccountLibrary.mockResolvedValue(undefined);
-    mockSignOut.mockResolvedValue(undefined);
-    mockForgetRememberedEmail.mockResolvedValue(undefined);
+    mockSignOut.mockResolvedValue("applied");
+    mockForgetRememberedEmail.mockResolvedValue("applied");
     mockRequestDeletionChallenge.mockResolvedValue({
       challengeId: "challenge-1",
       expiresAt: "2026-08-24T10:05:00.000Z",
@@ -116,6 +117,7 @@ describe("PrivacyScreen", () => {
   it("lets a signed-out guest delete only the active local library", async () => {
     mockUseAuth.mockReturnValue({
       forgetRememberedEmail: mockForgetRememberedEmail,
+      getSessionGeneration: () => 0,
       isAuthReady: true,
       session: null,
       signOut: mockSignOut,
@@ -199,5 +201,101 @@ describe("PrivacyScreen", () => {
     expect(message).not.toContain("重试删除本机旅行册");
     expect(mockDeleteAccountLibrary).toHaveBeenCalledTimes(2);
     expect(mockClearAllMemories).not.toHaveBeenCalled();
+  });
+
+  it("does not count scoped auth cleanup no-ops as successful device cleanup", async () => {
+    mockSignOut.mockResolvedValue("no-op");
+    mockForgetRememberedEmail.mockResolvedValue("no-op");
+    const screen = render(<PrivacyScreen />);
+
+    fireEvent.press(screen.getByText("永久删除账号及云端数据"));
+    await screen.findByText(/验证码已发送至 owner@example.com/);
+    fireEvent.changeText(screen.getByLabelText("账号删除验证码"), "123456");
+    fireEvent.changeText(screen.getByLabelText("账号删除确认文字"), "DELETE");
+    fireEvent.press(screen.getByText("确认永久删除"));
+
+    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith(
+      "账号删除已受理",
+      expect.stringContaining("support@onetapreality.com"),
+      expect.any(Array),
+    ));
+  });
+
+  it("releases account-deletion busy state after its own sign-out removes the session", async () => {
+    let finishLibraryCleanup: (() => void) | undefined;
+    mockDeleteAccountLibrary.mockReturnValue(new Promise<void>((resolve) => {
+      finishLibraryCleanup = resolve;
+    }));
+    const screen = render(<PrivacyScreen />);
+
+    fireEvent.press(screen.getByText("永久删除账号及云端数据"));
+    await screen.findByText(/验证码已发送至 owner@example.com/);
+    fireEvent.changeText(screen.getByLabelText("账号删除验证码"), "123456");
+    fireEvent.changeText(screen.getByLabelText("账号删除确认文字"), "DELETE");
+    fireEvent.press(screen.getByText("确认永久删除"));
+    await waitFor(() => expect(mockDeleteAccountLibrary).toHaveBeenCalled());
+
+    mockUseAuth.mockReturnValue({
+      forgetRememberedEmail: mockForgetRememberedEmail,
+      getSessionGeneration: () => 8,
+      isAuthReady: true,
+      sessionGeneration: 8,
+      session: null,
+      signOut: mockSignOut,
+      user: null,
+    });
+    screen.rerender(<PrivacyScreen />);
+    await act(async () => {
+      finishLibraryCleanup?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith(
+      "账号删除已受理",
+      expect.stringContaining("receipt-1"),
+      expect.any(Array),
+    ));
+    expect(screen.getByRole("button", { name: "删除本机旅行册" })).toBeEnabled();
+  });
+
+  it("discards account A deletion UI and completion after switching to account B", async () => {
+    let finishAccountDeletion: ((receipt: { receiptId: string; completeBy: string }) => void) | undefined;
+    mockDeleteAccount.mockReturnValue(new Promise((resolve) => {
+      finishAccountDeletion = resolve;
+    }));
+    const screen = render(<PrivacyScreen />);
+
+    fireEvent.press(screen.getByText("永久删除账号及云端数据"));
+    await screen.findByText(/验证码已发送至 owner@example.com/);
+    fireEvent.changeText(screen.getByLabelText("账号删除验证码"), "123456");
+    fireEvent.changeText(screen.getByLabelText("账号删除确认文字"), "DELETE");
+    fireEvent.press(screen.getByText("确认永久删除"));
+    await waitFor(() => expect(mockDeleteAccount).toHaveBeenCalled());
+
+    mockUseAuth.mockReturnValue({
+      forgetRememberedEmail: mockForgetRememberedEmail,
+      getSessionGeneration: () => 9,
+      isAuthReady: true,
+      sessionGeneration: 9,
+      session: { accessToken: "token-b", user: { id: "user-2", email: "b@example.com", isAdmin: false } },
+      signOut: mockSignOut,
+      user: { id: "user-2", email: "b@example.com", isAdmin: false },
+    });
+    screen.rerender(<PrivacyScreen />);
+    await waitFor(() => expect(screen.queryByLabelText("账号删除验证码")).toBeNull());
+    expect(screen.queryByText(/owner@example.com/)).toBeNull();
+
+    await act(async () => {
+      finishAccountDeletion?.({
+        receiptId: "receipt-a",
+        completeBy: "2026-08-25T10:00:00.000Z",
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mockDeleteAccountLibrary).toHaveBeenCalledWith("account:owner@example.com"));
+
+    expect(screen.queryByText(/receipt-a/)).toBeNull();
+    expect(mockAlert.mock.calls.some(([title]) => title === "账号删除已受理")).toBe(false);
+    expect(screen.getByRole("button", { name: "永久删除账号及云端数据" })).toBeEnabled();
   });
 });
