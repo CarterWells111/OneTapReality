@@ -77,6 +77,35 @@ function createContextKey(
   ]);
 }
 
+function isMissingReservationError(error: unknown): boolean {
+  return error instanceof BackendApiError
+    && (
+      error.status === 404
+      || ["gift_card_not_found", "reservation_not_found"]
+        .includes(error.code)
+    );
+}
+
+function isConfirmedReservationDetail(
+  value: unknown,
+  reservation: PendingGiftCard,
+): value is AdminGiftCardDetail {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AdminGiftCardDetail>;
+  if (!candidate.card || typeof candidate.card !== "object") return false;
+  const card = candidate.card as Partial<AdminGiftCard & { expiresAt: string | null }>;
+  const matchesCard = Array.isArray(candidate.events)
+    && card.id === reservation.cardId
+    && card.code === reservation.cardCode
+    && ["initializing", "active", "retired"].includes(card.state ?? "");
+  if (!matchesCard) return false;
+  return card.state !== "initializing"
+    || (
+      reservation.operationId === reservation.cardId
+      && card.expiresAt === reservation.expiresAt
+    );
+}
+
 export function DeveloperNfcConsole({
   client: injectedClient,
   urlPolicy: injectedUrlPolicy,
@@ -195,6 +224,31 @@ export function DeveloperNfcConsole({
   const recoverPending = React.useCallback(async (
     context: OperationContext,
   ): Promise<boolean> => {
+    const failTransientRecovery = () => {
+      setCards([]);
+      setDetail(null);
+      setPending(null);
+      setRecoveryComplete(false);
+      setAccess("checking");
+      setMessage("Unable to confirm the saved NFC reservation. Check the network and retry.");
+      return false;
+    };
+    const clearRecoveredReservation = async (saved: PendingGiftCard) => {
+      try {
+        const cleared = await clearPendingGiftCard(
+          context.ownerUserId,
+          saved.operationId,
+        );
+        if (!isCurrentContext(context)) return false;
+        if (!cleared) return failTransientRecovery();
+        setPending(null);
+        return true;
+      } catch {
+        if (!isCurrentContext(context)) return false;
+        return failTransientRecovery();
+      }
+    };
+
     if (!isCurrentContext(context)) return false;
     const saved = await loadPendingGiftCard(context.ownerUserId);
     if (!isCurrentContext(context)) return false;
@@ -203,13 +257,7 @@ export function DeveloperNfcConsole({
       context.urlPolicy.validateGiftUrl(saved.giftUrl);
     } catch (error) {
       if (!isCurrentContext(context)) return false;
-      const cleared = await clearPendingGiftCard(context.ownerUserId, saved.operationId);
-      if (!isCurrentContext(context)) return false;
-      if (!cleared) {
-        setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
-        return false;
-      }
-      setPending(null);
+      if (!await clearRecoveredReservation(saved) || !isCurrentContext(context)) return false;
       setMessage(policyErrorMessage(error));
       return true;
     }
@@ -217,23 +265,31 @@ export function DeveloperNfcConsole({
       if (!isCurrentContext(context)) return false;
       const current = await client.getAdminGiftCard(context.accessToken, saved.cardId);
       if (!isCurrentContext(context)) return false;
+      if (!isConfirmedReservationDetail(current, saved)) {
+        return failTransientRecovery();
+      }
       if (current.card.state !== "initializing") {
-        const cleared = await clearPendingGiftCard(context.ownerUserId, saved.operationId);
-        if (!isCurrentContext(context)) return false;
-        if (!cleared) {
-          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
-          return false;
-        }
-        setPending(null);
-        return true;
+        return clearRecoveredReservation(saved);
       }
       setPending(saved);
       return true;
-    } catch {
+    } catch (error) {
       if (!isCurrentContext(context)) return false;
-      // Keep this owner's reservation so a transient network failure cannot create another card.
-      setPending(saved);
-      return true;
+      if (error instanceof BackendApiError && (error.status === 401 || error.status === 403)) {
+        setCards([]);
+        setDetail(null);
+        setPending(null);
+        setRecoveryComplete(false);
+        setAccess("noAccess");
+        setMessage("This email does not have developer NFC access.");
+        return false;
+      }
+      if (isMissingReservationError(error)) {
+        return clearRecoveredReservation(saved);
+      }
+      // Retain the owner-scoped record, but never make it physically actionable
+      // until the same session confirms the initializing server reservation.
+      return failTransientRecovery();
     }
   }, [client, isCurrentContext]);
 

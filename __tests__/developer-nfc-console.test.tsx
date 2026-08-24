@@ -40,7 +40,7 @@ const activeCard = {
 };
 const initializingCard = {
   id: "card-2", code: "CARD-002", state: "initializing" as const, note: "New batch", giftId: "gift-2", giftStatus: "initializing",
-  createdAt: "2026-07-24T00:02:00.000Z", activatedAt: null, retiredAt: null,
+  createdAt: "2026-07-24T00:02:00.000Z", expiresAt: "2026-07-24T00:15:00.000Z", activatedAt: null, retiredAt: null,
 };
 
 const TOKEN = "A".repeat(43);
@@ -254,6 +254,158 @@ describe("developer NFC console", () => {
       "card-2",
     );
     expect(screen.queryByText("Retry NFC write")).toBeNull();
+  });
+
+  it.each([
+    [401, "session_expired"],
+    [403, "forbidden"],
+  ])("revokes recovery actions after a %i authorization failure", async (status, code) => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard.mockRejectedValue(
+      new BackendApiError(status, code, `raw authorization error ${TOKEN}`),
+    );
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    await waitFor(() => expect(client.getAdminGiftCard).toHaveBeenCalledTimes(1));
+    const capturedNfcRetry = screen.queryByText("Retry NFC write");
+    if (capturedNfcRetry) {
+      fireEvent.press(capturedNfcRetry);
+      await act(async () => Promise.resolve());
+    }
+
+    expect(screen.getByText("This email does not have developer NFC access.")).toBeTruthy();
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.reserveGiftCard).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    expect(screen.queryByText(new RegExp(TOKEN, "u"))).toBeNull();
+    expect(screen.queryByText(/raw authorization error/u)).toBeNull();
+  });
+
+  it.each([
+    [404, "not_found"],
+    [400, "reservation_not_found"],
+  ])("conditionally clears a missing recovered reservation (%i/%s)", async (status, code) => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard.mockRejectedValue(
+      new BackendApiError(status, code, `raw missing reservation ${TOKEN}`),
+    );
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    await waitFor(() => expect(clearPendingGiftCard).toHaveBeenCalledWith(
+      "user-1",
+      "card-2",
+    ));
+    const capturedNfcRetry = screen.queryByText("Retry NFC write");
+    if (capturedNfcRetry) {
+      fireEvent.press(capturedNfcRetry);
+      await act(async () => Promise.resolve());
+    }
+
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.reserveGiftCard).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(screen.queryByText(new RegExp(TOKEN, "u"))).toBeNull();
+    expect(screen.queryByText(/raw missing reservation/u)).toBeNull();
+  });
+
+  it.each([
+    ["network", new BackendApiError(0, "network_unavailable", `raw network ${TOKEN}`)],
+    ["server", new BackendApiError(500, "internal_error", `raw server ${TOKEN}`)],
+    ["unknown", new Error(`raw unknown ${TOKEN}`)],
+    ["malformed", null],
+  ])("keeps %s recovery non-actionable until the server confirms it", async (_kind, error) => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    if (error) {
+      client.getAdminGiftCard.mockRejectedValue(error);
+    } else {
+      client.getAdminGiftCard.mockResolvedValue({ card: null, events: [] });
+    }
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    await waitFor(() => expect(client.getAdminGiftCard).toHaveBeenCalledTimes(1));
+    const capturedNfcRetry = screen.queryByText("Retry NFC write");
+    if (capturedNfcRetry) fireEvent.press(capturedNfcRetry);
+    const bootstrapRetry = screen.queryByText("Retry");
+    if (bootstrapRetry) fireEvent.press(bootstrapRetry);
+    await act(async () => Promise.resolve());
+
+    expect(screen.getByText(
+      "Unable to confirm the saved NFC reservation. Check the network and retry.",
+    )).toBeTruthy();
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.reserveGiftCard).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    expect(screen.queryByText(new RegExp(TOKEN, "u"))).toBeNull();
+    expect(screen.queryByText(/raw (network|server|unknown)/u)).toBeNull();
+  });
+
+  it("reruns inventory and server confirmation before enabling a transient recovery", async () => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard
+      .mockRejectedValueOnce(new BackendApiError(0, "network_unavailable", "raw retry secret"))
+      .mockResolvedValueOnce({ card: initializingCard, events: [] });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    const retry = await screen.findByText("Retry");
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    fireEvent.press(retry);
+
+    const nfcRetry = await screen.findByText("Retry NFC write");
+    expect(client.listAdminGiftCards).toHaveBeenCalledTimes(2);
+    expect(client.getAdminGiftCard).toHaveBeenCalledTimes(2);
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    fireEvent.press(nfcRetry);
+
+    await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1));
+    expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/raw retry secret/u)).toBeNull();
+  });
+
+  it("rejects a mismatched initializing confirmation as malformed", async () => {
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: { ...initializingCard, expiresAt: "2026-07-24T00:16:00.000Z" },
+      events: [],
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    expect(await screen.findByText(
+      "Unable to confirm the saved NFC reservation. Check the network and retry.",
+    )).toBeTruthy();
+    expect(screen.queryByText("Retry NFC write")).toBeNull();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
   });
 
   it("makes a captured retry handler inert immediately after sign-out", async () => {
