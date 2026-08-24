@@ -20,14 +20,20 @@ describe("Expo Router production origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
   });
 
-  it("injects only a whitelisted release audience into Expo extra", () => {
+  it("defaults to the safe public audience and accepts only whitelisted audiences", () => {
     expect(withReleaseAudience(baseConfig, "external-beta").extra).toEqual({
       releaseAudience: "external-beta",
     });
-    expect(withReleaseAudience(baseConfig, undefined).extra).toEqual({
+    expect(withReleaseAudience(baseConfig, "internal").extra).toEqual({
       releaseAudience: "internal",
     });
-    expect(() => withReleaseAudience(baseConfig, "public")).toThrow(
+    expect(withReleaseAudience(baseConfig, "public").extra).toEqual({
+      releaseAudience: "public",
+    });
+    expect(withReleaseAudience(baseConfig, undefined).extra).toEqual({
+      releaseAudience: "public",
+    });
+    expect(() => withReleaseAudience(baseConfig, "unexpected")).toThrow(
       "Unsupported release audience",
     );
   });
@@ -115,8 +121,29 @@ describe("Expo Router production origin", () => {
 
     expect(easConfig.build.alpha).toEqual(expect.objectContaining({
       distribution: "internal",
-      env: { EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com" },
+      env: {
+        EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+        EXPO_PUBLIC_RELEASE_AUDIENCE: "internal",
+      },
     }));
+  });
+
+  it("makes every local build profile's release audience explicit and fail-safe", () => {
+    const profiles = require("../eas.json").build;
+
+    expect(Object.fromEntries(
+      Object.entries(profiles).map(([name, profile]: [string, any]) => [
+        name,
+        profile.env?.EXPO_PUBLIC_RELEASE_AUDIENCE,
+      ]),
+    )).toEqual({
+      development: "public",
+      preview: "public",
+      alpha: "internal",
+      "staging-testflight": "internal",
+      "beta-external": "external-beta",
+      production: "public",
+    });
   });
 
   it("keeps the local database and native application identity stable across build profiles", () => {

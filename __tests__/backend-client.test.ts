@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   BackendApiClient,
   BackendApiError,
@@ -55,43 +58,16 @@ describe("backend client", () => {
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/auth/request", "/api/auth/verify", "/api/auth/me"]);
   });
 
-  it("reserves a developer gift card with the gift session bearer token", async () => {
-    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      cardId: "card-1",
-      cardCode: "CARD-001",
-      giftUrl: "https://onetapreality.com/gift/unique-token",
-      expiresAt: "2026-07-24T00:15:00.000Z",
-    }), { status: 201 }));
-
-    await expect(new BackendApiClient(request).reserveGiftCard("gift-session", "July batch")).resolves.toEqual(
-      expect.objectContaining({ cardId: "card-1", cardCode: "CARD-001" }),
+  it("keeps all admin gift-card contracts and endpoints out of the public client", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/services/backend/api-client.ts"),
+      "utf8",
     );
-    expect(request).toHaveBeenCalledWith("/api/admin/gift-cards", expect.objectContaining({
-      method: "POST",
-      headers: expect.objectContaining({ Authorization: "Bearer gift-session" }),
-    }));
-  });
 
-  it("lists, inspects, activates, and retires cards with the developer session", async () => {
-    const request = jest.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "card-1", code: "CARD-001", state: "active" }] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ card: { id: "card-1", code: "CARD-001", state: "active" }, events: [] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ activated: true })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ retired: true })));
-    const client = new BackendApiClient(request);
-
-    await expect(client.listAdminGiftCards("gift-session", { state: "active", code: "CARD" })).resolves.toEqual([
-      expect.objectContaining({ id: "card-1" }),
-    ]);
-    await expect(client.getAdminGiftCard("gift-session", "card-1")).resolves.toEqual(expect.objectContaining({ card: expect.objectContaining({ code: "CARD-001" }) }));
-    await expect(client.activateAdminGiftCard("gift-session", "card-1")).resolves.toEqual({ activated: true });
-    await expect(client.retireAdminGiftCard("gift-session", "card-1")).resolves.toEqual({ retired: true });
-    expect(request.mock.calls.map(([url]) => url)).toEqual([
-      "/api/admin/gift-cards?state=active&code=CARD",
-      "/api/admin/gift-cards/card-1",
-      "/api/admin/gift-cards/card-1/activate",
-      "/api/admin/gift-cards/card-1/retire",
-    ]);
+    expect(source).not.toMatch(/AdminGiftCard|\/api\/admin\/gift-cards/u);
+    expect(source).not.toMatch(
+      /reserveGiftCard|listAdminGiftCards|getAdminGiftCard|activateAdminGiftCard|retireAdminGiftCard/u,
+    );
   });
 
   it("uses internal gift ids for owner management rather than NFC tokens", async () => {

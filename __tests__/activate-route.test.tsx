@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen } from "@testing-library/react-native";
 
 import { ActivateScreen } from "../src/app/activate";
@@ -14,5 +16,28 @@ describe("NFC activation route", () => {
     render(<ActivateScreen platform="web" />);
 
     expect(screen.queryByText(/制卡|写入 NFC|开发者/u)).toBeNull();
+  });
+
+  it("keeps the public route generic while the internal entry owns the developer console", () => {
+    const routeSource = readFileSync(join(process.cwd(), "src/app/activate.tsx"), "utf8");
+    const publicEntryPath = join(
+      process.cwd(),
+      "src/features/gifts/activate-entry.tsx",
+    );
+    const internalEntryPath = join(
+      process.cwd(),
+      "src/features/gifts/activate-entry.internal.tsx",
+    );
+
+    expect(routeSource).toContain("../features/gifts/activate-entry");
+    expect(routeSource).not.toMatch(/DeveloperNfcConsole|developer-nfc-console/u);
+    expect(existsSync(publicEntryPath)).toBe(true);
+    expect(existsSync(internalEntryPath)).toBe(true);
+    expect(readFileSync(publicEntryPath, "utf8")).not.toMatch(
+      /DeveloperNfcConsole|developer-nfc-console/u,
+    );
+    expect(readFileSync(internalEntryPath, "utf8")).toMatch(
+      /DeveloperNfcConsole|developer-nfc-console/u,
+    );
   });
 });

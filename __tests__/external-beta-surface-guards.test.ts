@@ -209,46 +209,115 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.ok).toBe(false);
   });
 
-  it("resolves one imported module using iOS, native, then generic precedence", () => {
+  it("matches Metro's extension-first iOS module resolution and file-before-index order", () => {
     const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
     if (!scanExternalBetaSurface) return;
     const root = createFixture({
       "src/app/index.tsx": [
-        "import '@/safe/ios-choice';",
-        "import '@/safe/ios-forbidden';",
-        "import '@/safe/native-choice';",
-        "import '@/safe/generic-choice';",
-        "import '@/safe/web-choice';",
+        "import '@/safe/extension-order';",
+        "import '@/safe/same-extension';",
+        "import '@/safe/generic-ts';",
+        "import '@/safe/explicit.tsx';",
+        "import '@/safe/file-first';",
+        "import '@/safe/native-fallback';",
+        "import '@/safe/generic-fallback';",
+        "import '@/safe/index-fallback';",
         "export default null;",
       ].join("\n"),
-      "src/safe/ios-choice.ios.tsx": "export const choice = 'ios';",
-      "src/safe/ios-choice.android.tsx": "export const DeveloperNfcConsole = null;",
-      "src/safe/ios-forbidden.ios.tsx": "export const DeveloperNfcConsole = null;",
-      "src/safe/ios-forbidden.tsx": "export const choice = 'generic';",
-      "src/safe/native-choice.native.tsx": "export const choice = 'native';",
-      "src/safe/native-choice.tsx": "export const DeveloperNfcConsole = null;",
-      "src/safe/generic-choice.tsx": "export const choice = 'generic';",
-      "src/safe/web-choice.tsx": "export const choice = 'generic';",
-      "src/safe/web-choice.web.tsx": "export const DeveloperNfcConsole = null;",
+      "src/safe/extension-order.ios.tsx": "export const choice = 'ios-tsx';",
+      "src/safe/extension-order.native.ts": "export const DeveloperNfcConsole = null;",
+      "src/safe/same-extension.ios.ts": "export const choice = 'ios-ts';",
+      "src/safe/same-extension.native.ts": "export const DeveloperNfcConsole = null;",
+      "src/safe/generic-ts.ts": "export const choice = 'generic-ts';",
+      "src/safe/generic-ts.ios.tsx": "export const DeveloperNfcConsole = null;",
+      "src/safe/explicit.tsx": "export const choice = 'explicit';",
+      "src/safe/explicit.ios.ts": "export const DeveloperNfcConsole = null;",
+      "src/safe/file-first.tsx": "export const choice = 'file';",
+      "src/safe/file-first/index.ios.ts": "export const DeveloperNfcConsole = null;",
+      "src/safe/native-fallback.native.ts": "export const choice = 'native';",
+      "src/safe/native-fallback.ts": "export const DeveloperNfcConsole = null;",
+      "src/safe/generic-fallback.ts": "export const choice = 'generic';",
+      "src/safe/index-fallback/index.native.ts": "export const choice = 'native-index';",
+      "src/safe/index-fallback/index.ts": "export const DeveloperNfcConsole = null;",
+    });
+
+    const report = scanExternalBetaSurface(root);
+
+    expect(report.reachableModules).toEqual(expect.arrayContaining([
+      "src/safe/extension-order.native.ts",
+      "src/safe/same-extension.ios.ts",
+      "src/safe/generic-ts.ts",
+      "src/safe/explicit.tsx",
+      "src/safe/file-first.tsx",
+      "src/safe/native-fallback.native.ts",
+      "src/safe/generic-fallback.ts",
+      "src/safe/index-fallback/index.native.ts",
+    ]));
+    for (const rejectedModule of [
+      "src/safe/extension-order.ios.tsx",
+      "src/safe/same-extension.native.ts",
+      "src/safe/generic-ts.ios.tsx",
+      "src/safe/explicit.ios.ts",
+      "src/safe/file-first/index.ios.ts",
+      "src/safe/native-fallback.ts",
+      "src/safe/index-fallback/index.ts",
+    ]) {
+      expect(report.reachableModules).not.toContain(rejectedModule);
+    }
+    expect(report.forbiddenModules).toEqual([
+      {
+        file: "src/safe/extension-order.native.ts",
+        reason: "forbidden external surface token",
+      },
+    ]);
+    expect(report.unresolvedLocalSpecifiers).toEqual([]);
+    expect(report.ok).toBe(false);
+  });
+
+  it("keeps an unreachable admin client out of a normal public backend-client graph", () => {
+    const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
+    if (!scanExternalBetaSurface) return;
+    const root = createFixture({
+      "src/app/index.tsx": "import { BackendApiClient } from '@/services/backend/api-client'; export default BackendApiClient;",
+      "src/services/backend/api-client.ts": "export class BackendApiClient {}",
+      "src/services/backend/admin-gift-card-api-client.ts":
+        "export const adminPath = '/api/admin/gift-cards';",
     });
 
     const report = scanExternalBetaSurface(root);
 
     expect(report.reachableModules).toEqual([
       "src/app/index.tsx",
-      "src/safe/generic-choice.tsx",
-      "src/safe/ios-choice.ios.tsx",
-      "src/safe/ios-forbidden.ios.tsx",
-      "src/safe/native-choice.native.tsx",
-      "src/safe/web-choice.tsx",
+      "src/services/backend/api-client.ts",
     ]);
-    expect(report.forbiddenModules).toEqual([
-      {
-        file: "src/safe/ios-forbidden.ios.tsx",
-        reason: "forbidden external surface token",
-      },
-    ]);
-    expect(report.unresolvedLocalSpecifiers).toEqual([]);
+    expect(report.forbiddenModules).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
+  it("rejects a reachable admin gift-card client or endpoint literal", () => {
+    const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
+    if (!scanExternalBetaSurface) return;
+    const root = createFixture({
+      "src/app/index.tsx":
+        "import '@/services/backend/admin-gift-card-api-client'; import '@/ui/hidden-admin-path'; export default null;",
+      "src/services/backend/admin-gift-card-api-client.ts":
+        "export class AdminGiftCardApiClient {}",
+      "src/ui/hidden-admin-path.ts":
+        "export const hiddenPath = '/api/admin/gift-cards/reserve';",
+    });
+
+    const report = scanExternalBetaSurface(root);
+
+    expect(report.forbiddenModules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        file: "src/services/backend/admin-gift-card-api-client.ts",
+        reason: "admin gift-card client module",
+      }),
+      expect.objectContaining({
+        file: "src/ui/hidden-admin-path.ts",
+        reason: "admin gift-card endpoint",
+      }),
+    ]));
     expect(report.ok).toBe(false);
   });
 

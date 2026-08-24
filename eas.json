@@ -9,19 +9,22 @@
       "autoIncrement": true,
       "developmentClient": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     },
     "alpha": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
       }
     },
     "staging-testflight": {
@@ -29,7 +32,8 @@
       "environment": "preview",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
       }
     },
     "beta-external": {
@@ -44,7 +48,8 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     }
   },

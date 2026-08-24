@@ -12,6 +12,7 @@ const { scanExternalBetaSurface } = require("../scripts/external-beta-surface-gu
     readonly forbiddenRoutes: readonly unknown[];
     readonly ok: boolean;
     readonly parseFailures: readonly unknown[];
+    readonly reachableModules: readonly string[];
     readonly unresolvedLocalSpecifiers: readonly unknown[];
   };
 };
@@ -60,11 +61,13 @@ describe("external Beta release surface", () => {
     );
   });
 
-  it("keeps release audiences closed to the two build-time values", () => {
-    expect(parseReleaseAudience(undefined)).toBe("internal");
+  it("defaults release audiences to public and keeps internal access explicit", () => {
+    expect(parseReleaseAudience(undefined)).toBe("public");
+    expect(parseReleaseAudience("internal")).toBe("internal");
     expect(parseReleaseAudience("external-beta")).toBe("external-beta");
+    expect(parseReleaseAudience("public")).toBe("public");
     expect(isExternalBetaAudience("external-beta")).toBe(true);
-    expect(() => parseReleaseAudience("public")).toThrow("Unsupported release audience");
+    expect(() => parseReleaseAudience("unexpected")).toThrow("Unsupported release audience");
   });
 
   it("runs all local gates and metadata checks before an external EAS build", () => {
@@ -114,6 +117,14 @@ describe("external Beta release surface", () => {
     expect(report.unresolvedLocalSpecifiers).toEqual([]);
     expect(report.parseFailures).toEqual([]);
     expect(report.ok).toBe(true);
+    for (const internalModule of [
+      "src/features/gifts/activate-entry.internal.tsx",
+      "src/features/gifts/developer-nfc-console.tsx",
+      "src/services/backend/admin-gift-card-api-client.ts",
+      "src/services/nfc/nfc-url-writer.ts",
+    ]) {
+      expect(report.reachableModules).not.toContain(internalModule);
+    }
   });
 
   it("keeps named test scripts free of deleted route-specific suites", () => {

@@ -2,7 +2,26 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
 
-const SOURCE_EXTENSIONS = Object.freeze([".ts", ".tsx", ".js", ".jsx"]);
+const METRO_SOURCE_EXTENSIONS = Object.freeze([
+  ".ts",
+  ".tsx",
+  ".mjs",
+  ".js",
+  ".jsx",
+  ".json",
+  ".cjs",
+  ".scss",
+  ".sass",
+  ".css",
+]);
+const SOURCE_EXTENSIONS = Object.freeze([
+  ".ts",
+  ".tsx",
+  ".mjs",
+  ".js",
+  ".jsx",
+  ".cjs",
+]);
 const IOS_PLATFORM_PRECEDENCE = Object.freeze(["ios", "native", "generic"]);
 const PLATFORM_NAMES = new Set(["ios", "native", "android", "web"]);
 const NON_SOURCE_EXTENSIONS = new Set([
@@ -18,6 +37,7 @@ const NON_SOURCE_EXTENSIONS = new Set([
   ".otf",
   ".pdf",
   ".png",
+  ".sass",
   ".scss",
   ".svg",
   ".ttf",
@@ -64,7 +84,7 @@ function routeUrlFromEntryPath(entryPath) {
       ? normalized.slice("src/app/".length)
       : normalized;
 
-  appRelative = appRelative.replace(/\.(?:ts|tsx|js|jsx)$/u, "");
+  appRelative = appRelative.replace(/\.(?:ts|tsx|mjs|js|jsx|cjs)$/u, "");
   appRelative = appRelative.replace(/\.(?:native|ios|android|web)$/u, "");
   const segments = appRelative
     .split("/")
@@ -103,7 +123,7 @@ function walkSourceFiles(rootDirectory) {
 function discoverClientRouteEntries(projectRoot) {
   const appRoot = path.join(projectRoot, "src", "app");
   const routeCandidates = walkSourceFiles(appRoot)
-    .filter((filePath) => !/\+api(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|js|jsx)$/u.test(path.basename(filePath)))
+    .filter((filePath) => !/\+api(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|mjs|js|jsx|cjs)$/u.test(path.basename(filePath)))
     .map((absolutePath) => ({ absolutePath, ...sourceImplementation(absolutePath) }))
     .filter(({ platform }) => platform !== "android" && platform !== "web");
   const groupedCandidates = new Map();
@@ -114,12 +134,12 @@ function discoverClientRouteEntries(projectRoot) {
   }
   return [...groupedCandidates.values()]
     .map((candidates) => candidates.sort((left, right) => {
+      const extensionDifference = METRO_SOURCE_EXTENSIONS.indexOf(left.extension)
+        - METRO_SOURCE_EXTENSIONS.indexOf(right.extension);
+      if (extensionDifference !== 0) return extensionDifference;
       const platformDifference = IOS_PLATFORM_PRECEDENCE.indexOf(left.platform)
         - IOS_PLATFORM_PRECEDENCE.indexOf(right.platform);
       if (platformDifference !== 0) return platformDifference;
-      const extensionDifference = SOURCE_EXTENSIONS.indexOf(left.extension)
-        - SOURCE_EXTENSIONS.indexOf(right.extension);
-      if (extensionDifference !== 0) return extensionDifference;
       return toPosixPath(left.absolutePath).localeCompare(toPosixPath(right.absolutePath), "en");
     })[0])
     .sort((left, right) =>
@@ -137,6 +157,8 @@ function discoverClientRouteEntries(projectRoot) {
 function scriptKindForFile(filePath) {
   switch (path.extname(filePath).toLowerCase()) {
     case ".js":
+    case ".mjs":
+    case ".cjs":
       return ts.ScriptKind.JS;
     case ".jsx":
       return ts.ScriptKind.JSX;
@@ -208,36 +230,40 @@ function isExplicitNonSourceSpecifier(specifier) {
   return NON_SOURCE_EXTENSIONS.has(path.posix.extname(specifier).toLowerCase());
 }
 
-function sourceCandidates(basePath) {
+function existingFile(candidate) {
+  return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+}
+
+function metroSourceCandidates(filePathPrefix) {
+  const candidates = [`${filePathPrefix}.ios`, filePathPrefix];
+  for (const sourceExtension of METRO_SOURCE_EXTENSIONS) {
+    candidates.push(`${filePathPrefix}.ios${sourceExtension}`);
+    candidates.push(`${filePathPrefix}.native${sourceExtension}`);
+    candidates.push(`${filePathPrefix}${sourceExtension}`);
+  }
+  return candidates;
+}
+
+function resolveIosModuleSource(basePath) {
   const implementation = sourceImplementation(basePath);
-  if (SOURCE_EXTENSIONS.includes(implementation.extension)) {
-    if (["android", "web"].includes(implementation.platform)) return [];
-    return [basePath];
+  if (METRO_SOURCE_EXTENSIONS.includes(implementation.extension)) {
+    if (["android", "web"].includes(implementation.platform)) return null;
+    return existingFile(basePath) ? basePath : null;
   }
   const explicitPlatform = path.extname(basePath).slice(1).toLowerCase();
   if (PLATFORM_NAMES.has(explicitPlatform)) {
-    if (["android", "web"].includes(explicitPlatform)) return [];
-    const explicitCandidates = [
-      ...SOURCE_EXTENSIONS.map((sourceExtension) => `${basePath}${sourceExtension}`),
-      ...SOURCE_EXTENSIONS.map((sourceExtension) =>
-        path.join(basePath, `index${sourceExtension}`)),
-    ];
-    const resolved = explicitCandidates.find((candidate) =>
-      fs.existsSync(candidate) && fs.statSync(candidate).isFile());
-    return resolved ? [resolved] : [];
+    if (["android", "web"].includes(explicitPlatform)) return null;
   }
-  for (const platform of IOS_PLATFORM_PRECEDENCE) {
-    const suffix = platform === "generic" ? "" : `.${platform}`;
-    const candidates = [
-      ...SOURCE_EXTENSIONS.map((sourceExtension) => `${basePath}${suffix}${sourceExtension}`),
-      ...SOURCE_EXTENSIONS.map((sourceExtension) =>
-        path.join(basePath, `index${suffix}${sourceExtension}`)),
-    ];
-    const resolved = candidates.find((candidate) =>
-      fs.existsSync(candidate) && fs.statSync(candidate).isFile());
-    if (resolved) return [resolved];
+
+  const fileResolution = metroSourceCandidates(basePath).find(existingFile);
+  if (fileResolution) return fileResolution;
+
+  if (fs.existsSync(basePath) && fs.statSync(basePath).isDirectory()) {
+    const indexResolution = metroSourceCandidates(path.join(basePath, "index"))
+      .find(existingFile);
+    if (indexResolution) return indexResolution;
   }
-  return [];
+  return null;
 }
 
 function resolveLocalSourceSpecifiers(projectRoot, importerPath, specifier) {
@@ -250,12 +276,16 @@ function resolveLocalSourceSpecifiers(projectRoot, importerPath, specifier) {
   } else {
     basePath = path.resolve(path.dirname(importerPath), specifier);
   }
-  return sourceCandidates(basePath);
+  const resolved = resolveIosModuleSource(basePath);
+  return resolved ? [resolved] : [];
 }
 
 function forbiddenModuleReasons(file, source) {
   const reasons = [];
   if (/(?:^|\/)src\/features\/commerce\//u.test(file)) reasons.push("commerce module");
+  if (/(?:^|\/)src\/services\/backend\/admin-gift-card-api-client(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|mjs|js|jsx|cjs)$/u.test(file)) {
+    reasons.push("admin gift-card client module");
+  }
   if (/(?:^|\/)src\/features\/gifts\/developer-nfc-console(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|js|jsx)$/u.test(file)) {
     reasons.push("developer NFC console module");
   }
@@ -264,6 +294,12 @@ function forbiddenModuleReasons(file, source) {
   }
   if (/DeveloperNfcConsole|developer-nfc-console|nfc-url-writer/u.test(source)) {
     reasons.push("forbidden external surface token");
+  }
+  if (/AdminGiftCardApiClient|admin-gift-card-api-client/u.test(source)) {
+    reasons.push("admin gift-card client content");
+  }
+  if (/\/api\/admin\/gift-cards/u.test(source)) {
+    reasons.push("admin gift-card endpoint");
   }
   return [...new Set(reasons)];
 }
@@ -314,7 +350,7 @@ function scanExternalBetaSurface(projectRoot) {
       if (resolved.length === 0) {
         unresolvedLocalSpecifiers.push({ importer: file, specifier });
       } else {
-        queue.push(...resolved);
+        queue.push(...resolved.filter(isSourceFile));
       }
     }
   }
@@ -351,6 +387,8 @@ function scanExternalBetaSurface(projectRoot) {
 module.exports = {
   discoverClientRouteEntries,
   extractModuleSpecifiers,
+  METRO_SOURCE_EXTENSIONS,
+  resolveIosModuleSource,
   routeUrlFromEntryPath,
   scanExternalBetaSurface,
 };

@@ -1,6 +1,10 @@
 // @ts-nocheck
 // EAS CLI loads this .ts file as CommonJS during project initialization.
 // Keep it valid JavaScript so both EAS and Expo CLI can evaluate it.
+const {
+  normalizeReleaseAudience,
+} = require("./scripts/metro-activate-entry-resolver.cjs");
+
 function normalizeOrigin(origin) {
   return origin.replace(/\/+$/u, "");
 }
@@ -19,16 +23,6 @@ function withRouterOrigin(config, origin) {
       return plugin;
     }),
   };
-}
-
-const RELEASE_AUDIENCES = new Set(["internal", "external-beta"]);
-
-function normalizeReleaseAudience(audience) {
-  const normalizedAudience = audience?.trim() || "internal";
-  if (!RELEASE_AUDIENCES.has(normalizedAudience)) {
-    throw new Error(`Unsupported release audience: ${normalizedAudience}`);
-  }
-  return normalizedAudience;
 }
 
 function withReleaseAudience(config, audience) {

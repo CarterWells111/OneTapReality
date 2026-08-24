@@ -1,9 +1,9 @@
-export const RELEASE_AUDIENCES = ["internal", "external-beta"] as const;
+export const RELEASE_AUDIENCES = ["internal", "external-beta", "public"] as const;
 
 export type ReleaseAudience = (typeof RELEASE_AUDIENCES)[number];
 
 export function parseReleaseAudience(value: unknown): ReleaseAudience {
-  const normalized = typeof value === "string" && value.trim() ? value.trim() : "internal";
+  const normalized = typeof value === "string" && value.trim() ? value.trim() : "public";
   if ((RELEASE_AUDIENCES as readonly string[]).includes(normalized)) {
     return normalized as ReleaseAudience;
   }

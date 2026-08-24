@@ -3,13 +3,18 @@ import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, ScreenTitle, Tag } from "../../components/ui";
-import { BackendApiClient, BackendApiError, type AdminGiftCard, type AdminGiftCardDetail } from "../../services/backend/api-client";
+import {
+  AdminGiftCardApiClient,
+  type AdminGiftCard,
+  type AdminGiftCardDetail,
+} from "../../services/backend/admin-gift-card-api-client";
+import { BackendApiError } from "../../services/backend/api-client";
 import { clearPendingGiftCard, loadPendingGiftCard, savePendingGiftCard, type PendingGiftCard } from "../../services/gifts/gift-card-pending";
 import { createNfcUrlWriter, type NfcUrlWriter } from "../../services/nfc/nfc-url-writer";
 import { useAuth } from "../auth/auth-provider";
 
 const activationUrl = "https://onetapreality.com/activate";
-type ConsoleClient = Pick<BackendApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
+type ConsoleClient = Pick<AdminGiftCardApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
 type AccountSession = { accessToken: string };
 type AccessState = "checking" | "signedOut" | "noAccess" | "ready";
 
@@ -33,7 +38,10 @@ function errorMessage(error: unknown, fallback: string) {
 export function DeveloperNfcConsole({ client: injectedClient, writer: injectedWriter }: { client?: ConsoleClient; writer?: NfcUrlWriter }) {
   const router = useRouter();
   const { isAuthReady, session } = useAuth();
-  const client = React.useMemo(() => injectedClient ?? new BackendApiClient(), [injectedClient]);
+  const client = React.useMemo(
+    () => injectedClient ?? new AdminGiftCardApiClient(),
+    [injectedClient],
+  );
   const writer = React.useMemo(() => injectedWriter ?? createNfcUrlWriter(), [injectedWriter]);
   const [access, setAccess] = React.useState<AccessState>("checking");
   const [cards, setCards] = React.useState<AdminGiftCard[]>([]);
