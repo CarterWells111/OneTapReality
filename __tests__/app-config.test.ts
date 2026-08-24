@@ -1,4 +1,4 @@
-const { withRouterOrigin } = require("../app.config");
+const { withReleaseAudience, withRouterOrigin } = require("../app.config");
 
 describe("Expo Router production origin", () => {
   const baseConfig = {
@@ -18,6 +18,18 @@ describe("Expo Router production origin", () => {
 
   it("leaves the development config unchanged without an origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
+  });
+
+  it("injects only a whitelisted release audience into Expo extra", () => {
+    expect(withReleaseAudience(baseConfig, "external-beta").extra).toEqual({
+      releaseAudience: "external-beta",
+    });
+    expect(withReleaseAudience(baseConfig, undefined).extra).toEqual({
+      releaseAudience: "internal",
+    });
+    expect(() => withReleaseAudience(baseConfig, "public")).toThrow(
+      "Unsupported release audience",
+    );
   });
 
   it("uses the local OneTapReality images in both Expo icon asset entry points", () => {
@@ -73,8 +85,11 @@ describe("Expo Router production origin", () => {
 
   it("uses OneTapReality as the package identifier", () => {
     const packageConfig = require("../package.json");
+    const expoConfig = require("../app.json").expo;
 
     expect(packageConfig.name).toBe("onetapreality");
+    expect(packageConfig.version).toBe("1.1.2");
+    expect(expoConfig.version).toBe("1.1.2");
   });
 
   it("keeps native export packages compatible with Expo SDK 54", () => {

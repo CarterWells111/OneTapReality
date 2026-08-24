@@ -51,7 +51,7 @@ describe("OneTapReality brand copy", () => {
     const expo = require("../app.json").expo;
 
     expect(expo.name).toBe("OneTapReality");
-    expect(expo.version).toBe("1.1.1");
+    expect(expo.version).toBe("1.1.2");
     expect(expo.slug).toBe("onetapreality");
     expect(expo.scheme).toBe("onetapreality");
     expect(expo.android).toBeUndefined();

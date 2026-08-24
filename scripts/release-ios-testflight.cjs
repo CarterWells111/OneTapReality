@@ -7,15 +7,15 @@
 //   node scripts/release-ios-testflight.cjs                  full run
 //   node scripts/release-ios-testflight.cjs --no-submit      build only
 //   node scripts/release-ios-testflight.cjs --build-id=<id>  submit an existing build
-//   node scripts/release-ios-testflight.cjs --skip-checks    skip lint/typecheck/tests
-//   node scripts/release-ios-testflight.cjs --allow-dirty    build with uncommitted changes
+// beta-external always uses a clean commit, all checks, and separate build and
+// submission approvals. It never assigns an external group through EAS.
 
 const { spawnSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const {
-  assertApprovalSequence,
   assertBuildMatchesSubmission,
+  assertReleaseOptions,
   formatBuildVersion,
   formatResumeCommand,
   getSubmissionFollowUp,
@@ -24,6 +24,8 @@ const {
 const EAS_CLI = process.env.EAS_CLI ?? "eas-cli@latest";
 const POLL_INTERVAL_MS = 30_000;
 const POLL_TIMEOUT_MS = 90 * 60 * 1000;
+const EXTERNAL_BETA_PROFILE = "beta-external";
+const EXTERNAL_BETA_VERSION = "1.1.2";
 
 function parseArgs(argv) {
   const options = {
@@ -32,13 +34,16 @@ function parseArgs(argv) {
     checks: true,
     allowDirty: false,
     buildId: null,
+    profileExplicit: false,
   };
   for (const arg of argv) {
     if (arg === "--no-submit") options.submit = false;
     else if (arg === "--skip-checks") options.checks = false;
     else if (arg === "--allow-dirty") options.allowDirty = true;
-    else if (arg.startsWith("--profile=")) options.profile = arg.slice("--profile=".length);
-    else if (arg.startsWith("--build-id=")) options.buildId = arg.slice("--build-id=".length);
+    else if (arg.startsWith("--profile=")) {
+      options.profile = arg.slice("--profile=".length);
+      options.profileExplicit = true;
+    } else if (arg.startsWith("--build-id=")) options.buildId = arg.slice("--build-id=".length);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return options;
@@ -121,6 +126,18 @@ function readProfileOrigin(cwd, profile) {
   return origin;
 }
 
+function readReleaseContract(cwd, profile) {
+  const easJson = JSON.parse(readFileSync(join(cwd, "eas.json"), "utf8"));
+  const appJson = JSON.parse(readFileSync(join(cwd, "app.json"), "utf8")).expo;
+  const buildProfile = easJson.build?.[profile];
+  if (!buildProfile) throw new Error(`eas.json build.${profile} is not configured`);
+  return {
+    origin: readProfileOrigin(cwd, profile),
+    audience: buildProfile.env?.EXPO_PUBLIC_RELEASE_AUDIENCE ?? "internal",
+    version: appJson?.version,
+  };
+}
+
 function readProjectId(cwd) {
   const appJson = JSON.parse(readFileSync(join(cwd, "app.json"), "utf8")).expo;
   const projectId = appJson?.extra?.eas?.projectId;
@@ -130,10 +147,14 @@ function readProjectId(cwd) {
 
 // The router origin is injected at config-evaluation time by app.config.ts, so
 // it is only correct when EXPO_PUBLIC_API_ORIGIN matches the build profile.
-function verifyExpoConfig(cwd, origin) {
+function verifyExpoConfig(cwd, { origin, audience, version }) {
   const result = spawnPortable("npx", ["expo", "config", "--json"], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, EXPO_PUBLIC_API_ORIGIN: origin },
+    env: {
+      ...process.env,
+      EXPO_PUBLIC_API_ORIGIN: origin,
+      EXPO_PUBLIC_RELEASE_AUDIENCE: audience,
+    },
   });
   if (result.status !== 0) throw new Error(`\`expo config\` failed:\n${result.stderr}`);
 
@@ -148,6 +169,7 @@ function verifyExpoConfig(cwd, origin) {
     bundleIdentifier: config.ios?.bundleIdentifier,
     projectId: config.extra?.eas?.projectId,
     routerOrigin: resolvedOrigin,
+    releaseAudience: config.extra?.releaseAudience,
     nonExemptEncryption: config.ios?.infoPlist?.ITSAppUsesNonExemptEncryption,
   };
   for (const [key, value] of Object.entries(facts)) console.log(`  ${key.padEnd(20)} ${value}`);
@@ -164,10 +186,45 @@ function verifyExpoConfig(cwd, origin) {
   if (facts.routerOrigin !== origin) {
     problems.push(`expo-router origin ${facts.routerOrigin} != profile origin ${origin}`);
   }
+  if (facts.releaseAudience !== audience) {
+    problems.push(`releaseAudience ${facts.releaseAudience} != profile audience ${audience}`);
+  }
+  if (facts.version !== version) {
+    problems.push(`version ${facts.version} != app.json ${version}`);
+  }
   if (facts.nonExemptEncryption !== false) {
     problems.push(`ITSAppUsesNonExemptEncryption is ${facts.nonExemptEncryption}; expected false`);
   }
   if (problems.length > 0) throw new Error(`Expo config mismatch:\n  - ${problems.join("\n  - ")}`);
+}
+
+function readGitCommitHash() {
+  const { stdout } = run("git", ["rev-parse", "HEAD"], { capture: true });
+  const commitHash = stdout.trim();
+  if (!/^[0-9a-f]{40}$/u.test(commitHash)) {
+    throw new Error(`Could not read the current Git commit hash: ${commitHash || "empty"}`);
+  }
+  return commitHash;
+}
+
+function generateFingerprint(profile) {
+  const { stdout } = npx(
+    [
+      "fingerprint:generate",
+      "--platform",
+      "ios",
+      "--build-profile",
+      profile,
+      "--json",
+      "--non-interactive",
+    ],
+    { capture: true },
+  );
+  const fingerprint = parseJsonFrom(stdout);
+  if (typeof fingerprint?.hash !== "string" || !fingerprint.hash.trim()) {
+    throw new Error(`Could not read a fingerprint hash from eas-cli output:\n${stdout.slice(0, 500)}`);
+  }
+  return fingerprint.hash;
 }
 
 function startBuild(profile) {
@@ -217,16 +274,20 @@ async function waitForBuild(buildId) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  assertApprovalSequence(options);
+  assertReleaseOptions(options);
   const cwd = process.cwd();
   const projectId = readProjectId(cwd);
   let buildId = options.buildId;
   let finishedBuild;
+  let gitCommitHash;
+  let fingerprintHash;
+  const validateLocalRelease = !buildId || options.profile === EXTERNAL_BETA_PROFILE;
 
-  if (!buildId) {
+  if (validateLocalRelease) {
     step("1. Repository state");
     assertCleanTree(options.allowDirty);
     run("git", ["log", "-1", "--oneline"]);
+    gitCommitHash = readGitCommitHash();
 
     step("2. Clean dependency install");
     run("npm", ["ci"]);
@@ -236,21 +297,40 @@ async function main() {
     step("3. Lockfile completeness (cross-platform)");
     run("node", [join("scripts", "check-release-lockfile.cjs")]);
 
+    if (options.profile === EXTERNAL_BETA_PROFILE) {
+      step("4. External Beta profile preflight");
+      run("npm", ["run", "beta:preflight:ios", "--", "--profile", options.profile]);
+    }
+
     if (options.checks) {
-      step("4. Lint, typecheck, tests, server build");
+      step("5. Lint, typecheck, tests, server build");
       run("npm", ["run", "lint"]);
       run("npm", ["run", "typecheck"]);
       run("npm", ["run", "test:ci"]);
       run("npm", ["run", "build:server"]);
     } else {
-      step("4. Lint, typecheck, tests, server build — SKIPPED (--skip-checks)");
+      step("5. Lint, typecheck, tests, server build — SKIPPED (--skip-checks)");
     }
 
-    const origin = readProfileOrigin(cwd, options.profile);
-    step(`5. Expo config resolution (origin ${origin})`);
-    verifyExpoConfig(cwd, origin);
+    const releaseContract = readReleaseContract(cwd, options.profile);
+    step(`6. Expo config resolution (origin ${releaseContract.origin})`);
+    verifyExpoConfig(cwd, releaseContract);
 
-    step("6. EAS account and credentials");
+    if (options.profile === EXTERNAL_BETA_PROFILE) {
+      if (releaseContract.version !== EXTERNAL_BETA_VERSION) {
+        throw new Error(
+          `External Beta app version ${releaseContract.version ?? "missing"} != ${EXTERNAL_BETA_VERSION}`,
+        );
+      }
+      step("7. External Beta fingerprint");
+      fingerprintHash = generateFingerprint(options.profile);
+      console.log(`  git commit: ${gitCommitHash}`);
+      console.log(`  fingerprint: ${fingerprintHash}`);
+    }
+  }
+
+  if (!buildId) {
+    step("8. EAS account and credentials");
     npx(["whoami"]);
     const version = npx(["build:version:get", "--platform", "ios", "--profile", options.profile], {
       capture: true,
@@ -259,13 +339,13 @@ async function main() {
     const currentBuildNumber = version.stdout.match(/buildNumber\s*[-:]?\s*(\d+)/i)?.[1];
     if (currentBuildNumber) console.log(`  current remote buildNumber: ${currentBuildNumber} (next: ${Number(currentBuildNumber) + 1})`);
 
-    step(`7. EAS build (${options.profile})`);
+    step(`9. EAS build (${options.profile})`);
     const build = startBuild(options.profile);
     buildId = build.id;
     console.log(`  build id: ${buildId}`);
     console.log(`  logs:     https://expo.dev/accounts/onereality/projects/onetapreality/builds/${buildId}`);
 
-    step("8. Waiting for the build to finish");
+    step("10. Waiting for the build to finish");
     finishedBuild = await waitForBuild(buildId);
     console.log(`  ${formatBuildVersion(finishedBuild)}`);
   } else {
@@ -277,6 +357,10 @@ async function main() {
     buildId,
     profile: options.profile,
     projectId,
+    appVersion: options.profile === EXTERNAL_BETA_PROFILE ? EXTERNAL_BETA_VERSION : undefined,
+    gitCommitHash: options.profile === EXTERNAL_BETA_PROFILE ? gitCommitHash : undefined,
+    fingerprintHash: options.profile === EXTERNAL_BETA_PROFILE ? fingerprintHash : undefined,
+    requireArtifactMetadata: options.profile === EXTERNAL_BETA_PROFILE,
   });
 
   if (!options.submit) {
@@ -286,7 +370,7 @@ async function main() {
     return;
   }
 
-  step("9. Submit to App Store Connect");
+  step("11. Submit to App Store Connect");
   npx(["submit", "--platform", "ios", "--profile", options.profile, "--id", buildId, "--non-interactive"]);
 
   step("Done");
@@ -294,7 +378,11 @@ async function main() {
   for (const line of getSubmissionFollowUp(options.profile)) console.log(line);
 }
 
-main().catch((error) => {
-  console.error(`\nRELEASE FAILED\n${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`\nRELEASE FAILED\n${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { main, parseArgs, verifyExpoConfig };

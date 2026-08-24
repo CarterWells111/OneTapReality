@@ -1,7 +1,8 @@
 {
   "cli": {
     "version": ">=16.0.1",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "requireCommit": true
   },
   "build": {
     "development": {
@@ -31,6 +32,15 @@
         "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
       }
     },
+    "beta-external": {
+      "distribution": "store",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "external-beta"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "env": {
@@ -50,6 +60,11 @@
         "groups": [
           "OneTapReality开发员测试"
         ]
+      }
+    },
+    "beta-external": {
+      "ios": {
+        "ascAppId": "6794186067"
       }
     },
     "production": {

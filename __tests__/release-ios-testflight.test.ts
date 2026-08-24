@@ -98,6 +98,80 @@ describe("iOS TestFlight release guards", () => {
         buildId: "approved-build",
       }),
     ).not.toThrow();
+
+    expect(() =>
+      assertApprovalSequence({
+        profile: "beta-external",
+        submit: true,
+        buildId: null,
+      }),
+    ).toThrow("two approvals");
+  });
+
+  it("forbids every external Beta release bypass and requires an explicit profile", () => {
+    const { assertReleaseOptions } = require(modulePath) as {
+      assertReleaseOptions: (options: Record<string, unknown>) => void;
+    };
+    const valid = {
+      profile: "beta-external",
+      profileExplicit: true,
+      submit: false,
+      buildId: null,
+      checks: true,
+      allowDirty: false,
+    };
+
+    expect(() => assertReleaseOptions(valid)).not.toThrow();
+    expect(() => assertReleaseOptions({ ...valid, profileExplicit: false })).toThrow(
+      "explicit --profile=beta-external",
+    );
+    expect(() => assertReleaseOptions({ ...valid, checks: false })).toThrow(
+      "--skip-checks",
+    );
+    expect(() => assertReleaseOptions({ ...valid, allowDirty: true })).toThrow(
+      "--allow-dirty",
+    );
+  });
+
+  it("enforces the external version, commit and EAS fingerprint metadata", () => {
+    const { assertBuildMatchesSubmission } = require(modulePath) as {
+      assertBuildMatchesSubmission: (
+        build: Record<string, unknown>,
+        expected: Record<string, unknown>,
+      ) => void;
+    };
+    const expected = {
+      buildId: "build-112",
+      profile: "beta-external",
+      projectId: "project-123",
+      appVersion: "1.1.2",
+      gitCommitHash: "abc123",
+      fingerprintHash: "fingerprint-123",
+      requireArtifactMetadata: true,
+    };
+    const validBuild = {
+      id: "build-112",
+      status: "FINISHED",
+      platform: "IOS",
+      distribution: "STORE",
+      buildProfile: "beta-external",
+      appVersion: "1.1.2",
+      gitCommitHash: "abc123",
+      fingerprint: { hash: "fingerprint-123" },
+      app: { id: "project-123" },
+    };
+
+    expect(() => assertBuildMatchesSubmission(validBuild, expected)).not.toThrow();
+    for (const changed of [
+      { appVersion: "1.1.1" },
+      { gitCommitHash: "different" },
+      { fingerprint: { hash: "different" } },
+      { fingerprint: null },
+    ]) {
+      expect(() =>
+        assertBuildMatchesSubmission({ ...validBuild, ...changed }, expected),
+      ).toThrow();
+    }
   });
 
   it("uses the EAS build fragment version field and fixed staging follow-up", () => {
@@ -115,5 +189,10 @@ describe("iOS TestFlight release guards", () => {
       "automatic distribution is disabled for every other internal group",
     );
     expect(followUp).not.toContain("add the build to a TestFlight group");
+
+    const externalFollowUp = getSubmissionFollowUp("beta-external").join("\n");
+    expect(externalFollowUp).toContain("manually add");
+    expect(externalFollowUp).toContain("Beta App Review");
+    expect(externalFollowUp).not.toContain("automatically targets");
   });
 });

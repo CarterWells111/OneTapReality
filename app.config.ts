@@ -21,5 +21,30 @@ function withRouterOrigin(config, origin) {
   };
 }
 
-module.exports = ({ config }) => withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN);
+const RELEASE_AUDIENCES = new Set(["internal", "external-beta"]);
+
+function normalizeReleaseAudience(audience) {
+  const normalizedAudience = audience?.trim() || "internal";
+  if (!RELEASE_AUDIENCES.has(normalizedAudience)) {
+    throw new Error(`Unsupported release audience: ${normalizedAudience}`);
+  }
+  return normalizedAudience;
+}
+
+function withReleaseAudience(config, audience) {
+  return {
+    ...config,
+    extra: {
+      ...(config.extra ?? {}),
+      releaseAudience: normalizeReleaseAudience(audience),
+    },
+  };
+}
+
+module.exports = ({ config }) =>
+  withReleaseAudience(
+    withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN),
+    process.env.EXPO_PUBLIC_RELEASE_AUDIENCE,
+  );
 module.exports.withRouterOrigin = withRouterOrigin;
+module.exports.withReleaseAudience = withReleaseAudience;

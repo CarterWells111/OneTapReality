@@ -7,12 +7,19 @@ describe("EAS production configuration", () => {
   ) as {
     cli: {
       appVersionSource: string;
+      requireCommit: boolean;
     };
     build: {
       preview: {
         env: Record<string, string>;
       };
       "staging-testflight": {
+        distribution: string;
+        environment: string;
+        autoIncrement: boolean;
+        env: Record<string, string>;
+      };
+      "beta-external": {
         distribution: string;
         environment: string;
         autoIncrement: boolean;
@@ -28,6 +35,12 @@ describe("EAS production configuration", () => {
         ios: {
           ascAppId: string;
           groups: string[];
+        };
+      };
+      "beta-external": {
+        ios: {
+          ascAppId: string;
+          groups?: string[];
         };
       };
     };
@@ -49,7 +62,26 @@ describe("EAS production configuration", () => {
 
   it("uses remote app versions and increments TestFlight build numbers", () => {
     expect(config.cli.appVersionSource).toBe("remote");
+    expect(config.cli.requireCommit).toBe(true);
     expect(config.build.production.autoIncrement).toBe(true);
+  });
+
+  it("provides a clean-commit external Beta profile isolated to staging", () => {
+    const profile = config.build["beta-external"];
+
+    expect(profile).toEqual({
+      distribution: "store",
+      environment: "preview",
+      autoIncrement: true,
+      env: {
+        EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+        EXPO_PUBLIC_RELEASE_AUDIENCE: "external-beta",
+      },
+    });
+    expect(config.submit["beta-external"].ios).toEqual({
+      ascAppId: "6794186067",
+    });
+    expect(config.submit["beta-external"].ios).not.toHaveProperty("groups");
   });
 
   it("provides a store-signed TestFlight profile isolated to staging", () => {
