@@ -20,6 +20,20 @@ export async function sendGiftVerificationEmail({ apiKey, from, email, code, req
   if (!response.ok) throw new Error("Unable to send verification email");
 }
 
+export async function sendAccountDeletionVerificationEmail({ apiKey, from, email, code, request = fetch }: SendGiftVerificationEmailInput): Promise<void> {
+  const response = await request("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: "确认永久删除账号",
+      text: `你正在申请永久删除 OneTapReality 账号及云端数据。验证码是 ${code}，5 分钟内有效，请不要转发。如果不是你本人操作，请忽略此邮件，你的账号不会被删除。`,
+    }),
+  });
+  if (!response.ok) throw new Error("Unable to send account deletion verification email");
+}
+
 type SendAccountDeletionFailureEmailInput = {
   apiKey: string;
   from: string;

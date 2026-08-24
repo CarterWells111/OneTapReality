@@ -125,7 +125,13 @@ export async function acceptAccountDeletion(
     ));
     const giftIds = [...new Set(owned.map((row) => row.giftId))];
     const objectKeys = new Set<string>();
+    let nextAttemptAt = input.now;
     if (giftIds.length) {
+      await tx.select({ id: gifts.id }).from(gifts)
+        .where(inArray(gifts.id, giftIds))
+        .orderBy(asc(gifts.id))
+        .for("update");
+      await tx.update(gifts).set({ status: "disabled", disabledAt: input.now }).where(inArray(gifts.id, giftIds));
       const media = await tx.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia)
         .innerJoin(sharedAlbums, eq(sharedAlbumMedia.sharedAlbumId, sharedAlbums.id))
         .where(inArray(sharedAlbums.giftId, giftIds));
@@ -133,9 +139,15 @@ export async function acceptAccountDeletion(
       const covers = await tx.select({ objectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums)
         .where(inArray(sharedAlbums.giftId, giftIds));
       covers.forEach((row) => { if (row.objectKey) objectKeys.add(row.objectKey); });
-      const publications = await tx.select({ payload: giftPublishSessions.payloadJson }).from(giftPublishSessions)
-        .where(inArray(giftPublishSessions.giftId, giftIds));
+      const publications = await tx.select({ payload: giftPublishSessions.payloadJson, expiresAt: giftPublishSessions.expiresAt }).from(giftPublishSessions)
+        .where(and(inArray(giftPublishSessions.giftId, giftIds), isNull(giftPublishSessions.completedAt)));
       publications.flatMap((row) => collectPublicationObjectKeys(row.payload)).forEach((key) => objectKeys.add(key));
+      const latestExpiry = publications.reduce((latest, row) => Math.max(latest, new Date(row.expiresAt).getTime()), 0);
+      if (latestExpiry > 0) {
+        const nowMs = new Date(input.now).getTime();
+        const completeByMs = new Date(input.completeBy).getTime();
+        nextAttemptAt = new Date(Math.max(nowMs, Math.min(completeByMs, latestExpiry + 60_000))).toISOString();
+      }
       const existingCleanup = await tx.select({ objectKey: giftMediaCleanupJobs.objectKey }).from(giftMediaCleanupJobs)
         .where(inArray(giftMediaCleanupJobs.giftId, giftIds));
       existingCleanup.forEach((row) => objectKeys.add(row.objectKey));
@@ -147,7 +159,7 @@ export async function acceptAccountDeletion(
       accountEmail: email,
       state: "pending",
       attempts: 0,
-      nextAttemptAt: input.now,
+      nextAttemptAt,
       leaseUntil: null,
       completeBy: input.completeBy,
       lastErrorCode: null,
@@ -176,9 +188,6 @@ export async function acceptAccountDeletion(
       eq(giftSessions.email, email),
       isNull(giftSessions.revokedAt),
     ));
-    if (giftIds.length) {
-      await tx.update(gifts).set({ status: "disabled", disabledAt: input.now }).where(inArray(gifts.id, giftIds));
-    }
     return { status: "accepted" as const, receiptId: input.receiptId, completeBy: input.completeBy };
   });
 }

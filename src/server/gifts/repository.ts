@@ -20,6 +20,11 @@ export class GiftAlbumVersionConflictError extends Error {
   constructor() { super("The shared album changed after this edit began"); }
 }
 
+export class GiftPublicationUnavailableError extends Error {
+  readonly code = "gift_publication_unavailable";
+  constructor() { super("This gift is no longer available for publishing"); }
+}
+
 export async function resolveExistingGiftMedia(db: BackendDatabase, giftId: string, baseVersion: number, refs: { position: number; mediaId: string }[]) {
   if (!refs.length) return [];
   const [album] = await db.select({ id: sharedAlbums.id, version: sharedAlbums.version }).from(sharedAlbums).where(eq(sharedAlbums.giftId, giftId)).limit(1);
@@ -392,17 +397,25 @@ export async function createGiftPublishSession(
   input: { id: string; giftId: string; ownerEmail: string; memberId?: string | null; actorUserId?: string | null; baseVersion: number; payload: GiftPublicationPayload; expiresAt: string; createdAt: string },
 ) {
   if (!Number.isInteger(input.baseVersion) || input.baseVersion! < 0) throw new GiftAlbumVersionConflictError();
-  await db.insert(giftPublishSessions).values({
-    id: input.id,
-    giftId: input.giftId,
-    ownerEmail: normalizeEmail(input.ownerEmail),
-    memberId: input.memberId ?? null,
-    actorUserId: input.actorUserId ?? null,
-    baseVersion: input.baseVersion!,
-    payloadJson: input.payload,
-    expiresAt: input.expiresAt,
-    completedAt: null,
-    createdAt: input.createdAt,
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from gifts where id = ${input.giftId} for update`);
+    const [gift] = await tx.select({ id: gifts.id }).from(gifts).where(and(
+      eq(gifts.id, input.giftId),
+      eq(gifts.status, "bound"),
+    )).limit(1);
+    if (!gift) throw new GiftPublicationUnavailableError();
+    await tx.insert(giftPublishSessions).values({
+      id: input.id,
+      giftId: input.giftId,
+      ownerEmail: normalizeEmail(input.ownerEmail),
+      memberId: input.memberId ?? null,
+      actorUserId: input.actorUserId ?? null,
+      baseVersion: input.baseVersion!,
+      payloadJson: input.payload,
+      expiresAt: input.expiresAt,
+      completedAt: null,
+      createdAt: input.createdAt,
+    });
   });
 }
 

@@ -11,7 +11,7 @@ const mockHash = jest.fn(async (value: string, ..._args: unknown[]) => `hash:${v
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: () => mockGetServerDatabase() }));
 jest.mock("../src/server/auth/session-auth", () => ({ requireAuthenticatedAccountSession: (...args: unknown[]) => mockRequireSession(...args) }));
 jest.mock("../src/server/gifts/email-auth", () => ({ createGiftEmailCode: (...args: unknown[]) => mockCreateCode(...args) }));
-jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificationEmail: (...args: unknown[]) => mockSendEmail(...args) }));
+jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendAccountDeletionVerificationEmail: (...args: unknown[]) => mockSendEmail(...args) }));
 jest.mock("../src/server/auth/device-auth", () => ({ hashAccessToken: (value: string, ...args: unknown[]) => mockHash(value, ...args) }));
 jest.mock("../src/server/auth/account-deletion", () => ({
   createAccountDeletionChallenge: (...args: unknown[]) => mockCreateChallenge(...args),

@@ -3,7 +3,7 @@ import { getServerDatabase } from "../../../../../server/db/client";
 import { requireGiftSharingEnabled } from "../../../../../server/gifts/alpha-safety";
 import { getActivatedGiftMemberAccess } from "../../../../../server/gifts/member-access";
 import { getR2MediaStoreFromEnvironment } from "../../../../../server/gifts/r2-media";
-import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, resolveExistingGiftMedia } from "../../../../../server/gifts/repository";
+import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, GiftPublicationUnavailableError, resolveExistingGiftMedia } from "../../../../../server/gifts/repository";
 import { prepareSharedPublication, promoteSharedPublicationDurably, verifySharedPublication, type SharedPublishBody } from "../../../../../server/gifts/shared-publication";
 import { ApiError, errorResponse } from "../../../../../server/http/errors";
 
@@ -29,7 +29,7 @@ export async function POST(request: Request, { id }: { id: string }) {
     await createGiftPublishSession(db, { id: publicationId, giftId: id, ownerEmail: account.email, memberId: (access as { memberId?: string }).memberId, actorUserId: account.id, baseVersion, payload, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 15 * 60_000).toISOString() });
     const uploads = await Promise.all(newMedia.map(async media => ({ position: media.position, objectKey: media.objectKey, uploadUrl: await store.createUploadUrl(media) })));
     return Response.json({ publicationId, uploads, coverUpload: payload.cover ? { uploadUrl: await store.createUploadUrl(payload.cover) } : null, expiresAt: new Date(now.getTime() + 15 * 60_000).toISOString() }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }
 
 export async function PUT(request: Request, { id }: { id: string }) {
@@ -44,5 +44,5 @@ export async function PUT(request: Request, { id }: { id: string }) {
     const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: account.email, now, payload });
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "Editor access was revoked or the publication expired"); }
     return Response.json({ albumId: result.albumId }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }

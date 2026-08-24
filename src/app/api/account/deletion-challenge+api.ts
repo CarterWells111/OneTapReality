@@ -6,7 +6,7 @@ import {
 import { requireAuthenticatedAccountSession } from "../../../server/auth/session-auth";
 import { getServerDatabase } from "../../../server/db/client";
 import { createGiftEmailCode } from "../../../server/gifts/email-auth";
-import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
+import { sendAccountDeletionVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
 
 export async function POST(request: Request): Promise<Response> {
@@ -33,7 +33,7 @@ export async function POST(request: Request): Promise<Response> {
       expiresAt: code.expiresAt,
     });
     try {
-      await sendGiftVerificationEmail({ apiKey, from, email: account.email, code: code.code });
+      await sendAccountDeletionVerificationEmail({ apiKey, from, email: account.email, code: code.code });
     } catch (error) {
       await deleteAccountDeletionChallenge(db, challengeId);
       throw error;

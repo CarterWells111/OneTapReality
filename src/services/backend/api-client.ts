@@ -65,6 +65,10 @@ export class BackendApiError extends Error {
     this.name = "BackendApiError";
   }
 }
+
+export function isBackendSessionInvalidError(error: unknown): boolean {
+  return error instanceof BackendApiError && error.status === 401 && error.code === "unauthorized";
+}
 export function resolveBackendRequestUrl(
   path: string,
   origin = process.env.EXPO_PUBLIC_API_ORIGIN,

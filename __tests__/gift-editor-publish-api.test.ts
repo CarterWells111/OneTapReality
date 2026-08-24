@@ -20,8 +20,10 @@ jest.mock("../src/server/gifts/member-access", () => ({ getActivatedGiftMemberAc
 jest.mock("../src/server/gifts/r2-media", () => ({ getR2MediaStoreFromEnvironment: jest.fn(() => ({ createUploadUrl: jest.fn(async () => "https://upload.test"), getObjectMetadata: (...args: unknown[]) => mockMetadata(...args), copyObject: (...args: unknown[]) => mockCopyObject(...args), deleteObjects: (...args: unknown[]) => mockDeleteObjects(...args) })) }));
 jest.mock("../src/server/gifts/repository", () => {
   class Conflict extends Error { code = "gift_album_version_conflict"; }
+  class Unavailable extends Error { code = "gift_publication_unavailable"; }
   return {
     GiftAlbumVersionConflictError: Conflict,
+    GiftPublicationUnavailableError: Unavailable,
     createGiftPublishSession: (...args: unknown[]) => mockCreateSession(...args),
     getGiftPublishPayload: (...args: unknown[]) => mockGetPayload(...args),
     completeGiftPublishSession: (...args: unknown[]) => mockCompleteSession(...args),
@@ -35,7 +37,7 @@ jest.mock("../src/server/gifts/repository", () => {
   };
 });
 
-import { GiftAlbumVersionConflictError } from "../src/server/gifts/repository";
+import { GiftAlbumVersionConflictError, GiftPublicationUnavailableError } from "../src/server/gifts/repository";
 import { POST, PUT } from "../src/app/api/gifts/invited/[id]/publish+api";
 import { POST as ownedPOST } from "../src/app/api/my-gifts/[id]/publish+api";
 import { POST as tokenPOST } from "../src/app/api/gifts/[token]/publish+api";
@@ -79,6 +81,19 @@ describe("editor shared publication contract", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_album_version_conflict" }) }));
     expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invited", (req: Request) => POST(req, { id: "gift-1" })],
+    ["owned", (req: Request) => ownedPOST(req, { id: "gift-1" })],
+    ["token", (req: Request) => tokenPOST(req, { token: "token" })],
+  ] as const)("maps a deletion-race publication rejection to 409 at the %s entry", async (_name, invoke) => {
+    mockCreateSession.mockRejectedValueOnce(new GiftPublicationUnavailableError());
+
+    const response = await invoke(request("POST", { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [] }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_publication_unavailable" }) }));
   });
 
   it("rechecks editor access on PUT before reading metadata", async () => {

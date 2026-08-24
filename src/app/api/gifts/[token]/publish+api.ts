@@ -1,5 +1,5 @@
 import { getServerDatabase } from "../../../../server/db/client";
-import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftAccessByTokenHash, getGiftPublishPayload, GiftAlbumVersionConflictError } from "../../../../server/gifts/repository";
+import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftAccessByTokenHash, getGiftPublishPayload, GiftAlbumVersionConflictError, GiftPublicationUnavailableError } from "../../../../server/gifts/repository";
 import { getR2MediaStoreFromEnvironment } from "../../../../server/gifts/r2-media";
 import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts/session-auth";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
@@ -30,7 +30,7 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     const coverUpload = payload.cover ? { uploadUrl: await store.createUploadUrl(payload.cover) } : null;
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ publicationId: sessionId, uploads, coverUpload, expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString() }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }
 
 export async function PUT(request: Request, { token }: { token: string }): Promise<Response> {
@@ -62,5 +62,5 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted"); }
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ albumId: result.albumId }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }

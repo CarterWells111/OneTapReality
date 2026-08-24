@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   BackendApiClient,
   BackendApiError,
+  isBackendSessionInvalidError,
   resolveBackendRequestUrl,
 } from "../src/services/backend/api-client";
 
@@ -56,6 +57,11 @@ describe("backend client", () => {
     await expect(client.verifyAuthEmailCode("owner@example.com", "123456")).resolves.toEqual(expect.objectContaining({ accessToken: "account-token" }));
     await expect(client.getCurrentAuthUser("account-token")).resolves.toEqual({ id: "user-1", email: "owner@example.com", isAdmin: false });
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/auth/request", "/api/auth/verify", "/api/auth/me"]);
+  });
+
+  it("does not classify a wrong deletion code as an expired account session", () => {
+    expect(isBackendSessionInvalidError(new BackendApiError(401, "invalid_deletion_code", "Wrong code"))).toBe(false);
+    expect(isBackendSessionInvalidError(new BackendApiError(401, "unauthorized", "Expired"))).toBe(true);
   });
 
   it("requests and confirms permanent account deletion with the bearer session", async () => {
