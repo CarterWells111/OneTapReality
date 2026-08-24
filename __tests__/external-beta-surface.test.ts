@@ -61,5 +61,9 @@ describe("external Beta release surface", () => {
     expect(releaseScript.indexOf("getExpectedExternalBuildNumber(versionOutput)")).toBeLessThan(
       releaseScript.indexOf("startBuild(options.profile)"),
     );
+    expect(
+      releaseScript.indexOf("auditExternalBetaRemoteEnvironmentVariables();"),
+    ).toBeLessThan(releaseScript.indexOf("fingerprintHash = generateFingerprint"));
+    expect(releaseScript).toContain("suppressCapturedOutputOnFailure: true");
   });
 });

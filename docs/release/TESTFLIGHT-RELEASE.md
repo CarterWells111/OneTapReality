@@ -62,6 +62,8 @@ node scripts/release-ios-testflight.cjs --profile=staging-testflight --build-id=
 node scripts/release-ios-testflight.cjs --profile=beta-external --no-submit
 ```
 
+外测 profile 在 fingerprint 与 build 之前强制执行一次只读、失败即停止的远端变量名审计：分别运行 EAS `preview` environment 的 project 与 account 两个 scope，并使用 `--format short`。因为 staging API 与发布受众已经固定写在 `eas.json`，外测远端允许列表为空；任何远端变量名都会中止，包含额外的 `EXPO_PUBLIC_*`、masked sensitive 或 secret 变量。审计不使用 `--include-sensitive` 或 `--include-file-content`，脚本不读取或打印变量值，也不打印原始命令输出；鉴权、网络、命令或解析失败都会直接阻止 fingerprint、build 和提交。
+
 脚本会强制执行 `npm ci`、lockfile 检查、`npm run beta:preflight:ios -- --profile beta-external`、lint、typecheck、完整测试和 server build，并记录本地 commit 与 EAS fingerprint。构建完成后会核对 build ID、1.1.2 版本、iOS/store/profile/project、commit 和 `fingerprint.hash`；任何一项缺失或不匹配都停止。
 
 核对构建详情与归档证据并取得单独上传批准后，使用已批准的真实 build ID：
@@ -80,12 +82,13 @@ node scripts/release-ios-testflight.cjs --profile=beta-external --build-id=<appr
 4. **外测 profile 预检** — `beta-external` 额外核对 1.1.2、staging origin、`external-beta` audience、无 server Secret、无 submit groups、Bundle ID、Associated Domains、TAG-only NFC 与加密声明。
 5. **lint / typecheck / test:ci / build:server** — 四道质量闸；外测不能跳过。
 6. **Expo 配置解析核对** — 用该 profile 的 `EXPO_PUBLIC_API_ORIGIN` 与 `EXPO_PUBLIC_RELEASE_AUDIENCE` 跑 `expo config`，核对版本、bundle ID、EAS projectId、expo-router origin、构建受众与出口合规字段是否一致。
-7. **commit 与 fingerprint** — 外测记录干净提交 SHA，并用相同 profile 生成 EAS fingerprint。
-8. **EAS 账号与构建号** — `whoami` 确认登录，`build:version:get` 读取远端构建号（`appVersionSource: remote` + `autoIncrement`，构建号由 EAS 自增，不要手改）。
-9. **发起构建** — `eas build --platform ios --profile <已批准的 profile> --non-interactive --no-wait`；staging 与外测都必须显式使用对应 profile。
-10. **轮询直到完成** — 每 30 秒查一次，最长 90 分钟。
-11. **提交前身份校验** — 对 build ID 重新读取 EAS 元数据；外测还要求 1.1.2、commit 与 `fingerprint.hash` 精确匹配。
-12. **提交** — `eas submit --id <build-id>` 使用 EAS 服务器上的 App Store Connect API Key。内部 staging profile 绑定固定内部群组；外部 profile 不绑定群组。
+7. **远端变量名审计** — 外测以 short format 只读检查 `preview` 的 project/account scopes；两处都必须明确返回无变量，命令或格式异常同样中止。
+8. **commit 与 fingerprint** — 外测记录干净提交 SHA，并用相同 profile 生成 EAS fingerprint。
+9. **EAS 账号与构建号** — `whoami` 确认登录，`build:version:get` 读取远端构建号（`appVersionSource: remote` + `autoIncrement`，构建号由 EAS 自增，不要手改）。
+10. **发起构建** — `eas build --platform ios --profile <已批准的 profile> --non-interactive --no-wait`；staging 与外测都必须显式使用对应 profile。
+11. **轮询直到完成** — 每 30 秒查一次，最长 90 分钟。
+12. **提交前身份校验** — 对 build ID 重新读取 EAS 元数据；外测还要求 1.1.2、commit 与 `fingerprint.hash` 精确匹配。
+13. **提交** — `eas submit --id <build-id>` 使用 EAS 服务器上的 App Store Connect API Key。内部 staging profile 绑定固定内部群组；外部 profile 不绑定群组。
 
 ### 为什么 lockfile 检查排在质量闸之前
 

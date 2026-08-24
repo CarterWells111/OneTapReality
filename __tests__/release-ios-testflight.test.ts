@@ -246,6 +246,106 @@ describe("iOS TestFlight release guards", () => {
     );
   });
 
+  it("parses only a valid preview short-format environment listing", () => {
+    const { parseExternalBetaEnvironmentVariableNames } = require(modulePath) as {
+      parseExternalBetaEnvironmentVariableNames: (output: string) => string[];
+    };
+
+    expect(
+      parseExternalBetaEnvironmentVariableNames(
+        "\u001B[1mEnvironment: preview\u001B[0m\nNo variables found for this environment.\n",
+      ),
+    ).toEqual([]);
+    expect(
+      parseExternalBetaEnvironmentVariableNames(
+        "Environment: preview\nPUBLIC_NAME=value\nMASKED_SECRET=*****\n",
+      ),
+    ).toEqual(["PUBLIC_NAME", "MASKED_SECRET"]);
+    expect(() => parseExternalBetaEnvironmentVariableNames("")).toThrow("unparseable");
+    expect(() =>
+      parseExternalBetaEnvironmentVariableNames(
+        "Environment: preview\nthis output cannot be audited\n",
+      ),
+    ).toThrow("unparseable");
+    expect(() =>
+      parseExternalBetaEnvironmentVariableNames(
+        "Environment: production\nNo variables found for this environment.\n",
+      ),
+    ).toThrow("preview");
+  });
+
+  it.each([
+    ["project", "DATABASE_URL"],
+    ["account", "REVIEW_OTP_CODE"],
+    ["project", "EXPO_PUBLIC_UNPLANNED_ORIGIN"],
+  ])("rejects every remote preview variable in %s scope, including %s", (scope, name) => {
+    const { auditExternalBetaEnvironmentOutput } = require(modulePath) as {
+      auditExternalBetaEnvironmentOutput: (output: string, options: { scope: string }) => void;
+    };
+
+    expect(() =>
+      auditExternalBetaEnvironmentOutput(
+        `\u001B[1mEnvironment: preview\u001B[0m\n\u001B[32m${name}\u001B[0m=masked\n`,
+        { scope },
+      ),
+    ).toThrow("must be empty");
+  });
+
+  it("audits project and account scopes fail-closed without exposing command output", () => {
+    const {
+      auditExternalBetaRemoteEnvironments,
+      getExternalBetaEnvironmentAuditArgs,
+    } = require(modulePath) as {
+      auditExternalBetaRemoteEnvironments: (readScope: (scope: string) => string) => void;
+      getExternalBetaEnvironmentAuditArgs: (scope: string) => string[];
+    };
+    const scopes: string[] = [];
+    auditExternalBetaRemoteEnvironments((scope) => {
+      scopes.push(scope);
+      return "Environment: preview\nNo variables found for this environment.\n";
+    });
+    expect(scopes).toEqual(["project", "account"]);
+
+    const populatedScopes: string[] = [];
+    expect(() =>
+      auditExternalBetaRemoteEnvironments((scope) => {
+        populatedScopes.push(scope);
+        return scope === "project"
+          ? "Environment: preview\nDATABASE_URL=masked\n"
+          : "Environment: preview\nNo variables found for this environment.\n";
+      }),
+    ).toThrow("must be empty");
+    expect(populatedScopes).toEqual(["project", "account"]);
+
+    expect(getExternalBetaEnvironmentAuditArgs("project")).toEqual([
+      "env:list",
+      "--environment",
+      "preview",
+      "--scope",
+      "project",
+      "--format",
+      "short",
+    ]);
+    expect(getExternalBetaEnvironmentAuditArgs("account")).toContain("account");
+    expect(getExternalBetaEnvironmentAuditArgs("account").join(" ")).not.toMatch(
+      /include-sensitive|include-file-content/,
+    );
+
+    let thrown: Error | undefined;
+    try {
+      auditExternalBetaRemoteEnvironments((scope) => {
+        if (scope === "account") throw new Error("REVIEW_OTP_CODE=do-not-log");
+        return "Environment: preview\nNo variables found for this environment.\n";
+      });
+    } catch (error) {
+      thrown = error as Error;
+    }
+    expect(thrown?.message).toContain("account");
+    expect(thrown?.message).toContain("failed");
+    expect(thrown?.message).not.toContain("REVIEW_OTP_CODE");
+    expect(thrown?.message).not.toContain("do-not-log");
+  });
+
   it("uses the EAS build fragment version field and fixed staging follow-up", () => {
     const { formatBuildVersion, getSubmissionFollowUp } = require(modulePath) as {
       formatBuildVersion: (build: Record<string, unknown>) => string;

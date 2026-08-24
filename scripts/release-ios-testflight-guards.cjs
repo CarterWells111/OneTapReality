@@ -11,6 +11,15 @@ function assertApprovalSequence({ profile, submit, buildId }) {
 }
 
 const MINIMUM_EXTERNAL_BUILD_NUMBER = 23;
+const EXTERNAL_BETA_ENVIRONMENT = "preview";
+const EXTERNAL_BETA_ENVIRONMENT_SCOPES = Object.freeze(["project", "account"]);
+// beta-external pins both public client values inline in eas.json. Any remote
+// preview variable would create an override or secret-merging ambiguity.
+const EXTERNAL_BETA_REMOTE_ENV_ALLOWLIST = Object.freeze([]);
+
+function stripAnsi(value) {
+  return String(value ?? "").replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+}
 
 function parseRemoteBuildNumberValue(value) {
   if (typeof value === "number") {
@@ -22,7 +31,7 @@ function parseRemoteBuildNumberValue(value) {
 }
 
 function parseRemoteBuildNumber(output) {
-  const normalized = String(output ?? "").replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+  const normalized = stripAnsi(output);
   const jsonStart = normalized.indexOf("{");
   const jsonEnd = normalized.lastIndexOf("}");
   if (jsonStart !== -1 && jsonEnd > jsonStart) {
@@ -39,6 +48,94 @@ function parseRemoteBuildNumber(output) {
     normalized.match(/\bbuildnumber\s*(?:[-:=]\s*)?(\d+)\b/iu);
   if (!match) return null;
   return parseRemoteBuildNumberValue(match[1]);
+}
+
+function parseExternalBetaEnvironmentVariableNames(output) {
+  const lines = stripAnsi(output)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    throw new Error("External Beta remote environment output is unparseable");
+  }
+
+  const environmentHeader = lines.shift();
+  const headerMatch = environmentHeader.match(/^Environment:\s*([a-z0-9_-]+)$/iu);
+  if (!headerMatch || headerMatch[1].toLowerCase() !== EXTERNAL_BETA_ENVIRONMENT) {
+    throw new Error("External Beta environment audit expected Environment: preview");
+  }
+
+  if (
+    lines.length === 1 &&
+    lines[0].toLowerCase() === "no variables found for this environment."
+  ) {
+    return [];
+  }
+  if (
+    lines.length === 0 ||
+    lines.some(
+      (line) => line.toLowerCase() === "no variables found for this environment.",
+    )
+  ) {
+    throw new Error("External Beta remote environment output is unparseable");
+  }
+
+  return lines.map((line) => {
+    const separator = line.indexOf("=");
+    const name = separator > 0 ? line.slice(0, separator) : "";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)) {
+      throw new Error("External Beta remote environment output is unparseable");
+    }
+    return name;
+  });
+}
+
+function getExternalBetaEnvironmentAuditArgs(scope) {
+  if (!EXTERNAL_BETA_ENVIRONMENT_SCOPES.includes(scope)) {
+    throw new Error(`Unsupported external Beta environment scope: ${scope}`);
+  }
+  return [
+    "env:list",
+    "--environment",
+    EXTERNAL_BETA_ENVIRONMENT,
+    "--scope",
+    scope,
+    "--format",
+    "short",
+  ];
+}
+
+function auditExternalBetaEnvironmentOutput(output, { scope }) {
+  if (!EXTERNAL_BETA_ENVIRONMENT_SCOPES.includes(scope)) {
+    throw new Error(`Unsupported external Beta environment scope: ${scope}`);
+  }
+  const variableNames = parseExternalBetaEnvironmentVariableNames(output);
+  const unexpectedCount = variableNames.filter(
+    (name) => !EXTERNAL_BETA_REMOTE_ENV_ALLOWLIST.includes(name),
+  ).length;
+  if (unexpectedCount > 0) {
+    throw new Error(
+      `External Beta remote preview ${scope} scope must be empty; ` +
+        `found ${unexpectedCount} variable name(s). Remove or move every remote preview ` +
+        "variable before release.",
+    );
+  }
+}
+
+function auditExternalBetaRemoteEnvironments(readScope) {
+  const outputs = [];
+  for (const scope of EXTERNAL_BETA_ENVIRONMENT_SCOPES) {
+    try {
+      outputs.push({ scope, output: readScope(scope) });
+    } catch {
+      throw new Error(
+        `External Beta remote preview ${scope} variable-name audit failed; release aborted`,
+      );
+    }
+  }
+  for (const { scope, output } of outputs) {
+    auditExternalBetaEnvironmentOutput(output, { scope });
+  }
 }
 
 function getExpectedExternalBuildNumber(output) {
@@ -197,5 +294,9 @@ module.exports = {
   formatResumeCommand,
   getSubmissionFollowUp,
   getExpectedExternalBuildNumber,
+  auditExternalBetaEnvironmentOutput,
+  auditExternalBetaRemoteEnvironments,
+  getExternalBetaEnvironmentAuditArgs,
+  parseExternalBetaEnvironmentVariableNames,
   parseRemoteBuildNumber,
 };

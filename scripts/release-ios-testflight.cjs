@@ -14,11 +14,13 @@ const { spawnSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const {
+  auditExternalBetaRemoteEnvironments,
   assertBuildMatchesSubmission,
   assertReleaseOptions,
   formatBuildVersion,
   formatResumeCommand,
   getExpectedExternalBuildNumber,
+  getExternalBetaEnvironmentAuditArgs,
   getSubmissionFollowUp,
   parseRemoteBuildNumber,
 } = require("./release-ios-testflight-guards.cjs");
@@ -74,7 +76,15 @@ function spawnPortable(command, args, extraOptions = {}) {
   return spawnSync(line, { ...options, shell: true });
 }
 
-function run(command, args, { capture = false, allowFailure = false } = {}) {
+function run(
+  command,
+  args,
+  {
+    capture = false,
+    allowFailure = false,
+    suppressCapturedOutputOnFailure = false,
+  } = {},
+) {
   const label = `${command} ${args.join(" ")}`;
   if (!capture) console.log(`$ ${label}`);
   const result = spawnPortable(command, args, {
@@ -82,7 +92,7 @@ function run(command, args, { capture = false, allowFailure = false } = {}) {
   });
   if (result.error) throw new Error(`Failed to launch \`${label}\`: ${result.error.message}`);
   if (result.status !== 0 && !allowFailure) {
-    if (capture) {
+    if (capture && !suppressCapturedOutputOnFailure) {
       process.stderr.write(result.stdout ?? "");
       process.stderr.write(result.stderr ?? "");
     }
@@ -92,6 +102,16 @@ function run(command, args, { capture = false, allowFailure = false } = {}) {
 }
 
 const npx = (args, options) => run("npx", ["--yes", EAS_CLI, ...args], options);
+
+function auditExternalBetaRemoteEnvironmentVariables() {
+  auditExternalBetaRemoteEnvironments((scope) => {
+    const { stdout } = npx(getExternalBetaEnvironmentAuditArgs(scope), {
+      capture: true,
+      suppressCapturedOutputOnFailure: true,
+    });
+    return stdout;
+  });
+}
 
 // eas-cli prints progress lines alongside --json output, so pull out the JSON.
 function parseJsonFrom(output) {
@@ -325,7 +345,10 @@ async function main() {
           `External Beta app version ${releaseContract.version ?? "missing"} != ${EXTERNAL_BETA_VERSION}`,
         );
       }
-      step("7. External Beta fingerprint");
+      step("7. External Beta remote preview variable-name audit");
+      auditExternalBetaRemoteEnvironmentVariables();
+
+      step("8. External Beta fingerprint");
       fingerprintHash = generateFingerprint(options.profile);
       console.log(`  git commit: ${gitCommitHash}`);
       console.log(`  fingerprint: ${fingerprintHash}`);
@@ -333,7 +356,7 @@ async function main() {
   }
 
   if (!buildId) {
-    step("8. EAS account and credentials");
+    step("9. EAS account and credentials");
     npx(["whoami"]);
     const version = npx(["build:version:get", "--platform", "ios", "--profile", options.profile, "--json", "--non-interactive"], {
       capture: true,
@@ -355,13 +378,13 @@ async function main() {
       }
     }
 
-    step(`9. EAS build (${options.profile})`);
+    step(`10. EAS build (${options.profile})`);
     const build = startBuild(options.profile);
     buildId = build.id;
     console.log(`  build id: ${buildId}`);
     console.log(`  logs:     https://expo.dev/accounts/onereality/projects/onetapreality/builds/${buildId}`);
 
-    step("10. Waiting for the build to finish");
+    step("11. Waiting for the build to finish");
     finishedBuild = await waitForBuild(buildId);
     console.log(`  ${formatBuildVersion(finishedBuild)}`);
   } else {
@@ -388,7 +411,7 @@ async function main() {
     return;
   }
 
-  step("11. Submit to App Store Connect");
+  step("12. Submit to App Store Connect");
   npx(["submit", "--platform", "ios", "--profile", options.profile, "--id", buildId, "--non-interactive"]);
 
   step("Done");
