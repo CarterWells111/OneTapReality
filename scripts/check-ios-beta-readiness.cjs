@@ -8,6 +8,7 @@ const IOS_BUNDLE_IDENTIFIER = "com.onereality.onetapreality";
 const EXTERNAL_BETA_PROFILE = "beta-external";
 const EXTERNAL_BETA_VERSION = "1.1.2";
 const EXTERNAL_BETA_AUDIENCE = "external-beta";
+const IOS_MINIMUM_VERSION = "15.1";
 const EXTERNAL_BETA_PUBLIC_ENV = new Set([
   "EXPO_PUBLIC_API_ORIGIN",
   "EXPO_PUBLIC_GIFT_ORIGIN",
@@ -122,6 +123,12 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
   if (profile === EXTERNAL_BETA_PROFILE && ios?.infoPlist?.ITSAppUsesNonExemptEncryption !== false) {
     errors.push("iOS ITSAppUsesNonExemptEncryption must be false for beta-external");
   }
+  if (ios?.infoPlist?.MinimumOSVersion !== IOS_MINIMUM_VERSION) {
+    errors.push(`iOS MinimumOSVersion must remain ${IOS_MINIMUM_VERSION}`);
+  }
+  if (expo?.locales?.en !== "./locales/en.json" || expo?.locales?.["zh-Hans"] !== "./locales/zh-Hans.json") {
+    errors.push("iOS permission descriptions must provide English and zh-Hans localizations");
+  }
   if (!Array.isArray(ios?.associatedDomains) || !ios.associatedDomains.includes(STAGING_ASSOCIATED_DOMAIN)) {
     errors.push(`iOS associatedDomains must include ${STAGING_ASSOCIATED_DOMAIN}`);
   }
@@ -133,6 +140,8 @@ function checkIosBetaReadiness({ eas, app, pkg }, { profile = "alpha" } = {}) {
     }
     if (typeof nfcPlugin.options.nfcPermission !== "string" || !nfcPlugin.options.nfcPermission.trim()) {
       errors.push("NFC permission text must be configured");
+    } else if (/\bwrite\b|写入|写卡/iu.test(nfcPlugin.options.nfcPermission)) {
+      errors.push("NFC permission text must describe read-only scanning");
     }
   }
 

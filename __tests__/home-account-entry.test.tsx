@@ -34,6 +34,7 @@ describe("home account entry", () => {
     expect(mockPush).toHaveBeenCalledWith("/login?returnTo=/" as never);
     expect(screen.getByText("创建纪念册")).toBeTruthy();
     expect(screen.getByText("从第一段旅程开始")).toBeTruthy();
+    expect(screen.getByText("扫描礼品")).toBeTruthy();
   });
 
   it("requires a clear guest/account choice after login without silently moving albums", async () => {

@@ -1,0 +1,5 @@
+{
+  "NSPhotoLibraryUsageDescription": "选择指定照片，用于创建或编辑旅行册。",
+  "NSPhotoLibraryAddUsageDescription": "在你选择保存时，将导出的旅行册写入照片图库。",
+  "NFCReaderUsageDescription": "扫描 OneTapReality 礼品卡，打开其中的邀请链接。"
+}

@@ -75,6 +75,7 @@ describe("Expo Router production origin", () => {
       },
     ]);
     expect(expoConfig.newArchEnabled).not.toBe(false);
+    expect(expoConfig.ios.infoPlist.MinimumOSVersion).toBe("15.1");
   });
 
   it("declares clear iOS permissions for saving exports to the photo library", () => {
@@ -84,9 +85,21 @@ describe("Expo Router production origin", () => {
       "expo-media-library",
       {
         photosPermission: expect.stringContaining("photos"),
-        savePhotosPermission: expect.stringContaining("save"),
+        savePhotosPermission: expect.stringMatching(/save/iu),
       },
     ]);
+    expect(expoConfig.plugins).toContainEqual([
+      "expo-image-picker",
+      {
+        cameraPermission: false,
+        microphonePermission: false,
+        photosPermission: expect.any(String),
+      },
+    ]);
+    expect(expoConfig.locales).toEqual({
+      en: "./locales/en.json",
+      "zh-Hans": "./locales/zh-Hans.json",
+    });
   });
 
   it("uses OneTapReality as the package identifier", () => {

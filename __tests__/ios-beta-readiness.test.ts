@@ -40,6 +40,10 @@ function validConfig() {
     },
     app: {
       expo: {
+        locales: {
+          en: "./locales/en.json",
+          "zh-Hans": "./locales/zh-Hans.json",
+        },
         scheme: "onetapreality",
         version: "1.1.2",
         ios: {
@@ -48,13 +52,13 @@ function validConfig() {
             "applinks:onetapreality.com",
             "applinks:staging.onetapreality.com",
           ],
-          infoPlist: { ITSAppUsesNonExemptEncryption: false },
+          infoPlist: { ITSAppUsesNonExemptEncryption: false, MinimumOSVersion: "15.1" },
         },
         plugins: [
           [
             "react-native-nfc-manager",
             {
-              nfcPermission: "Allow OneTapReality to read and write NFC gift cards.",
+              nfcPermission: "Scan a OneTapReality gift card to open its invitation link.",
               includeNdefEntitlement: false,
             },
           ],
@@ -143,6 +147,15 @@ describe("iOS Beta readiness preflight", () => {
       associatedDomain: "applinks:staging.onetapreality.com",
       nfcEntitlement: "TAG-only",
     });
+  });
+
+  it("rejects a writable NFC purpose string or an iOS target other than 15.1", () => {
+    const input = validConfig();
+    input.app.expo.ios.infoPlist.MinimumOSVersion = "16.0";
+    (input.app.expo.plugins[0][1] as { nfcPermission: string }).nfcPermission = "Read and write NFC cards";
+
+    expect(() => checkIosBetaReadiness(input, { profile: "beta-external" })).toThrow(/15\.1/u);
+    expect(() => checkIosBetaReadiness(input, { profile: "beta-external" })).toThrow(/read-only/u);
   });
 
   it.each([

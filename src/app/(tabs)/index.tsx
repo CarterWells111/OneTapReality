@@ -9,6 +9,7 @@ import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
+import { GiftNfcScanner } from "../../features/gifts/gift-nfc-scanner";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
@@ -111,6 +112,7 @@ export default function MemoriesHomeScreen() {
               }
             }}
           />
+          <GiftNfcScanner />
         </View>
         <Pressable
           accessibilityRole="button"
@@ -255,7 +257,7 @@ const styles = StyleSheet.create({
   rule: { backgroundColor: colors.warmAccent, borderRadius: 2, height: 3, width: 36 },
   heroHeadline: { color: colors.warmAccent, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
   subtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 15, lineHeight: 23 },
-  heroActions: { marginTop: 4 },
+  heroActions: { gap: 10, marginTop: 4 },
   accountCard: { alignItems: "stretch", gap: 12 },
   accountCopy: { gap: 4 },
   accountTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, fontWeight: "800" },

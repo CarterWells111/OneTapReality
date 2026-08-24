@@ -90,12 +90,6 @@ export default function NewMemoryScreen() {
 
   const selectPhotos = async () => {
     setError("");
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("未获得照片权限。你可以在系统设置中允许访问后再选择照片。");
-      return;
-    }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ["images"],
@@ -108,8 +102,6 @@ export default function NewMemoryScreen() {
   };
 
   const pickCoverImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],

@@ -39,12 +39,6 @@ export default function SettingsScreen() {
     setError("");
 
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError("未获得照片权限。你可以在系统设置中允许访问后再选择头像。");
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [1, 1],

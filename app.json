@@ -6,6 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/images/onetapreality-icon.png",
     "scheme": "onetapreality",
+    "locales": {
+      "en": "./locales/en.json",
+      "zh-Hans": "./locales/zh-Hans.json"
+    },
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
@@ -15,7 +19,8 @@
         "applinks:staging.onetapreality.com"
       ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "MinimumOSVersion": "15.1"
       }
     },
     "web": {
@@ -27,14 +32,16 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow OneTapReality to access your selected photos to create albums."
+          "cameraPermission": false,
+          "microphonePermission": false,
+          "photosPermission": "Choose specific photos to create or edit a travel album."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow OneTapReality to access your photos when selecting album images.",
-          "savePhotosPermission": "Allow OneTapReality to save exported album images to your photo library."
+          "photosPermission": "Choose specific photos to create or edit a travel album.",
+          "savePhotosPermission": "Save an exported travel album to your photo library when you choose to do so."
         }
       ],
       "expo-sqlite",
@@ -50,7 +57,7 @@
       [
         "react-native-nfc-manager",
         {
-          "nfcPermission": "Allow OneTapReality to read and write NFC gift cards.",
+          "nfcPermission": "Scan a OneTapReality gift card to open its invitation link.",
           "includeNdefEntitlement": false
         }
       ]

@@ -1,7 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
-const mockRequestPermission = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockProfile = jest.fn();
@@ -12,7 +11,6 @@ const mockUseLocalLibrary = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
 jest.mock("expo-image-picker", () => ({
-  requestMediaLibraryPermissionsAsync: (...args: unknown[]) => mockRequestPermission(...args),
   launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
@@ -38,7 +36,6 @@ describe("SettingsScreen", () => {
     mockProfile.mockReturnValue({ nickname: "一触如初用户", avatarUri: null });
     mockIsProfileReady.mockReturnValue(true);
     mockUpdateProfile.mockResolvedValue(undefined);
-    mockRequestPermission.mockResolvedValue({ granted: true });
     mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: null });
     mockForgetRememberedEmail.mockResolvedValue(undefined);
     mockUseAuth.mockReturnValue({
@@ -49,10 +46,8 @@ describe("SettingsScreen", () => {
     mockUseLocalLibrary.mockReturnValue({ owner: "guest", needsMigrationChoice: false });
   });
 
-  it("requests photo permission when tapping the avatar", async () => {
+  it("opens the system photo picker without requesting full-library permission", async () => {
     const screen = await render(<SettingsScreen />);
-
-    expect(mockRequestPermission).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.press(screen.getByLabelText("点击更换头像"));
@@ -60,7 +55,6 @@ describe("SettingsScreen", () => {
     });
 
     await waitFor(() => {
-      expect(mockRequestPermission).toHaveBeenCalledTimes(1);
       expect(mockLaunchImageLibrary).toHaveBeenCalledWith({
         allowsEditing: true,
         aspect: [1, 1],
@@ -88,8 +82,8 @@ describe("SettingsScreen", () => {
     expect(screen.getByLabelText("已保存昵称的头像").props.source).toEqual({ uri: "file://saved-avatar.jpg" });
   });
 
-  it("shows the exact permission guidance when photo access is denied", async () => {
-    mockRequestPermission.mockResolvedValue({ granted: false });
+  it("shows a stable message when the system picker cannot open", async () => {
+    mockLaunchImageLibrary.mockRejectedValue(new Error("picker unavailable"));
     const screen = await render(<SettingsScreen />);
 
     await act(async () => {
@@ -98,9 +92,8 @@ describe("SettingsScreen", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("未获得照片权限。你可以在系统设置中允许访问后再选择头像。")).toBeTruthy(),
+      expect(screen.getByText("无法选择头像，请重试。")).toBeTruthy(),
     );
-    expect(mockLaunchImageLibrary).not.toHaveBeenCalled();
   });
 
   it("saves a normalized nickname then returns to the profile page", async () => {
