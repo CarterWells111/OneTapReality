@@ -11,6 +11,7 @@ export type GiftNdefRecord = {
 export type GiftNdefReadAdapter = {
   cancelTechnologyRequest(): Promise<void>;
   decodeUriPayload(payload: number[]): string;
+  isCancellation(error: unknown): boolean;
   isSupported(): Promise<boolean>;
   isUriRecord(record: GiftNdefRecord): boolean;
   readNdefRecords(): Promise<GiftNdefRecord[] | null>;
@@ -51,13 +52,6 @@ type ActiveScan = {
   sessionRequested: boolean;
 };
 
-function isNativeCancellation(error: unknown): boolean {
-  const name = error && typeof error === "object" && "name" in error
-    ? String(error.name)
-    : "";
-  return name === "UserCancel" || name === "SessionInvalidated";
-}
-
 async function loadNativeReadAdapter(): Promise<GiftNdefReadAdapter> {
   // Loaded only when an iOS scan begins so web rendering never initializes Core NFC.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -75,6 +69,10 @@ async function loadNativeReadAdapter(): Promise<GiftNdefReadAdapter> {
       isType(record: GiftNdefRecord, tnf: number, type: string): boolean;
       uri: { decodePayload(payload: Uint8Array): string };
     };
+    NfcError: {
+      SessionInvalidated: new (...args: never[]) => Error;
+      UserCancel: new (...args: never[]) => Error;
+    };
     NfcTech: { Ndef: string };
   };
   const manager = imported.default;
@@ -82,6 +80,10 @@ async function loadNativeReadAdapter(): Promise<GiftNdefReadAdapter> {
   return {
     cancelTechnologyRequest: () => manager.cancelTechnologyRequest({ throwOnError: false }),
     decodeUriPayload: (payload) => imported.Ndef.uri.decodePayload(Uint8Array.from(payload)),
+    isCancellation: (error) => (
+      error instanceof imported.NfcError.UserCancel
+      || error instanceof imported.NfcError.SessionInvalidated
+    ),
     isSupported: () => manager.isSupported(),
     isUriRecord: (record) => imported.Ndef.isType(
       record,
@@ -159,7 +161,7 @@ export function createGiftLinkScanner(options: ScannerOptions = {}): GiftLinkSca
         ensureActive(operation);
         return result;
       } catch (error) {
-        if (operation.cancelled || isNativeCancellation(error)) {
+        if (operation.cancelled || operation.adapter?.isCancellation(error)) {
           throw new GiftLinkScannerError("NFC_SCAN_CANCELLED");
         }
         if (error instanceof GiftLinkScannerError) throw error;

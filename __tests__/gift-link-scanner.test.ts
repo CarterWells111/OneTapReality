@@ -13,6 +13,7 @@ function makeAdapter(url = `${ORIGIN}/gift/${TOKEN}`): GiftNdefReadAdapter {
   return {
     cancelTechnologyRequest: jest.fn(async () => undefined),
     decodeUriPayload: jest.fn(() => url),
+    isCancellation: jest.fn(() => false),
     isSupported: jest.fn(async () => true),
     isUriRecord: jest.fn(() => true),
     readNdefRecords: jest.fn(async () => [{ tnf: 1, type: [0x55], payload: [0x04] }]),
@@ -76,6 +77,42 @@ describe("read-only gift NFC scanner", () => {
     expect(adapter.cancelTechnologyRequest).toHaveBeenCalled();
   });
 
+  it.each([
+    class UserCancel extends Error {},
+    class SessionInvalidated extends Error {},
+  ])("maps a native %s subclass with Error.name to cancellation", async (NativeCancellation) => {
+    const nativeError = new NativeCancellation();
+    expect(nativeError.name).toBe("Error");
+    expect(nativeError.constructor.name).toBe(NativeCancellation.name);
+    const isCancellation = jest.fn((error: unknown) => error instanceof NativeCancellation);
+    const adapter = Object.assign(makeAdapter(), { isCancellation });
+    jest.mocked(adapter.requestNdefTechnology).mockRejectedValue(nativeError);
+    const scanner = createGiftLinkScanner({
+      expectedOrigin: ORIGIN,
+      loadAdapter: async () => adapter,
+      platform: "ios",
+    });
+
+    await expect(scanner.scan()).rejects.toMatchObject({ code: "NFC_SCAN_CANCELLED" });
+    expect(isCancellation).toHaveBeenCalledWith(nativeError);
+  });
+
+  it("does not swallow a non-cancellation native error", async () => {
+    class Timeout extends Error {}
+    const nativeError = new Timeout();
+    const isCancellation = jest.fn(() => false);
+    const adapter = Object.assign(makeAdapter(), { isCancellation });
+    jest.mocked(adapter.requestNdefTechnology).mockRejectedValue(nativeError);
+    const scanner = createGiftLinkScanner({
+      expectedOrigin: ORIGIN,
+      loadAdapter: async () => adapter,
+      platform: "ios",
+    });
+
+    await expect(scanner.scan()).rejects.toMatchObject({ code: "NFC_UNAVAILABLE" });
+    expect(isCancellation).toHaveBeenCalledWith(nativeError);
+  });
+
   it("fails closed off iOS and never loads the native module", async () => {
     const loadAdapter = jest.fn(async () => makeAdapter());
     const scanner = createGiftLinkScanner({ expectedOrigin: ORIGIN, loadAdapter, platform: "web" });
@@ -93,5 +130,6 @@ describe("read-only gift NFC scanner", () => {
     expect(source).not.toMatch(/writeNdef|uriRecord|makeReadOnly|\.id\b|AsyncStorage|SecureStore/u);
     expect(source).not.toMatch(/console\.(?:log|info|warn|error|debug)/u);
     expect(source).not.toMatch(/developer-nfc-console|nfc-url-writer|admin-gift/u);
+    expect(source).toMatch(/instanceof imported\.NfcError\.(?:UserCancel|SessionInvalidated)/u);
   });
 });
