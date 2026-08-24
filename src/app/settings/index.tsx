@@ -146,10 +146,12 @@ export default function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="后端状态">
-        <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
-        <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
-      </Section>
+      {__DEV__ ? (
+        <Section title="后端状态">
+          <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
+          <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
+        </Section>
+      ) : null}
 
       {session ? (
         <Section title="账户">

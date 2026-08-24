@@ -22,6 +22,9 @@ export default function BackendExperimentScreen() {
     }
   };
 
+  // This is a developer experiment screen; keep the code but do not expose it in production builds.
+  if (!__DEV__) return null;
+
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ gap: 20, padding: 20 }}>
       <Text selectable style={{ color: colors.muted, lineHeight: 22 }}>
