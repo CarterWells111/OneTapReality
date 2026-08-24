@@ -44,15 +44,29 @@ type OperationContext = {
 /** Leaves enough time for one physical NFC write plus server activation. */
 export const NFC_RESERVATION_SAFETY_WINDOW_MS = 2 * 60 * 1000;
 
-function hasActionableReservationExpiry(expiresAt: string, nowMs: number): boolean {
+function parseValidReservationExpiry(expiresAt: string): number | null {
   const expiresAtMs = Date.parse(expiresAt);
-  if (!Number.isFinite(nowMs) || !Number.isFinite(expiresAtMs)) return false;
+  if (!Number.isFinite(expiresAtMs)) return null;
   try {
-    if (new Date(expiresAtMs).toISOString() !== expiresAt) return false;
+    if (new Date(expiresAtMs).toISOString() !== expiresAt) return null;
   } catch {
-    return false;
+    return null;
   }
-  return expiresAtMs > nowMs + NFC_RESERVATION_SAFETY_WINDOW_MS;
+  return expiresAtMs;
+}
+
+function safeToStartWrite(expiresAt: string, nowMs: number): boolean {
+  const expiresAtMs = parseValidReservationExpiry(expiresAt);
+  return Number.isFinite(nowMs)
+    && expiresAtMs !== null
+    && expiresAtMs > nowMs + NFC_RESERVATION_SAFETY_WINDOW_MS;
+}
+
+function safeToActivateWrittenCard(expiresAt: string, nowMs: number): boolean {
+  const expiresAtMs = parseValidReservationExpiry(expiresAt);
+  return Number.isFinite(nowMs)
+    && expiresAtMs !== null
+    && expiresAtMs > nowMs;
 }
 
 function canRetire(card: AdminGiftCard) {
@@ -270,6 +284,12 @@ export function DeveloperNfcConsole({
       setMessage("The saved NFC reservation is too close to expiry. Start a new reservation.");
       return true;
     };
+    const preserveExpiredWrittenReservation = (saved: PendingGiftCard) => {
+      setPending(saved);
+      setRecoveryComplete(false);
+      setMessage("This NFC card was written, but its reservation expired before activation. Do not rewrite it; contact support.");
+      return false;
+    };
 
     if (!isCurrentContext(context)) return false;
     const saved = await loadPendingGiftCard(context.ownerUserId);
@@ -283,7 +303,11 @@ export function DeveloperNfcConsole({
       setMessage(policyErrorMessage(error));
       return true;
     }
-    if (!hasActionableReservationExpiry(saved.expiresAt, now())) {
+    if (saved.writeVerified) {
+      if (!safeToActivateWrittenCard(saved.expiresAt, now())) {
+        return preserveExpiredWrittenReservation(saved);
+      }
+    } else if (!safeToStartWrite(saved.expiresAt, now())) {
       return clearUnsafeRecoveredReservation(saved);
     }
     try {
@@ -296,7 +320,11 @@ export function DeveloperNfcConsole({
       if (current.card.state !== "initializing") {
         return clearRecoveredReservation(saved);
       }
-      if (!hasActionableReservationExpiry(saved.expiresAt, now())) {
+      if (saved.writeVerified) {
+        if (!safeToActivateWrittenCard(saved.expiresAt, now())) {
+          return preserveExpiredWrittenReservation(saved);
+        }
+      } else if (!safeToStartWrite(saved.expiresAt, now())) {
         return clearUnsafeRecoveredReservation(saved);
       }
       setPending(saved);
@@ -397,20 +425,10 @@ export function DeveloperNfcConsole({
     ) return;
     try {
       if (manageBusy) setBusy(true);
-      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
-        const cleared = await clearPendingGiftCard(
-          context.ownerUserId,
-          reservation.operationId,
-        );
-        if (!isCurrentContext(context)) return;
-        if (!cleared) {
-          setPending(null);
-          setRecoveryComplete(false);
-          setMessage("The saved NFC reservation changed. Restart the app before handling another card.");
-          return;
-        }
-        setPending(null);
-        setMessage("The saved NFC reservation is too close to expiry. Start a new reservation.");
+      if (!safeToActivateWrittenCard(reservation.expiresAt, now())) {
+        setPending(reservation);
+        setRecoveryComplete(false);
+        setMessage("This NFC card was written, but its reservation expired before activation. Do not rewrite it; contact support.");
         return;
       }
       if (!isCurrentContext(context)) return;
@@ -451,7 +469,7 @@ export function DeveloperNfcConsole({
     ) return;
     try {
       if (manageBusy) setBusy(true);
-      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
+      if (!safeToStartWrite(reservation.expiresAt, now())) {
         const cleared = await clearPendingGiftCard(
           context.ownerUserId,
           reservation.operationId,
@@ -551,7 +569,7 @@ export function DeveloperNfcConsole({
       const reservation = await client.reserveGiftCard(context.accessToken, note);
       if (!isCurrentContext(context)) return;
       const giftUrl = context.urlPolicy.validateGiftUrl(reservation.giftUrl);
-      if (!hasActionableReservationExpiry(reservation.expiresAt, now())) {
+      if (!safeToStartWrite(reservation.expiresAt, now())) {
         setMessage("The new NFC reservation does not leave enough time. Request another reservation.");
         return;
       }
@@ -685,8 +703,8 @@ export function DeveloperNfcConsole({
       <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Prepare blank card" onPress={() => void prepareBlankCard()} />
       <TextInput accessibilityLabel="Card note" onChangeText={setNote} placeholder="Optional batch, order, or note" style={styles.input} value={note} />
       <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Initialize current blank card" tone="warm" onPress={() => void initializeCard()} />
-      {pending && !pending.writeVerified ? <AppButton disabled={busy} label="Retry NFC write" tone="warm" onPress={() => void writePending()} /> : null}
-      {pending?.writeVerified ? <AppButton disabled={busy} label="Retry activation" tone="warm" onPress={() => void activatePending()} /> : null}
+      {pending && !pending.writeVerified ? <AppButton disabled={busy || !recoveryComplete} label="Retry NFC write" tone="warm" onPress={() => void writePending()} /> : null}
+      {pending?.writeVerified ? <AppButton disabled={busy || !recoveryComplete} label="Retry activation" tone="warm" onPress={() => void activatePending()} /> : null}
     </PaperCard>
     <PaperCard style={styles.card}>
       <Text style={styles.heading}>Card inventory</Text>

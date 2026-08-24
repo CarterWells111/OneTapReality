@@ -520,6 +520,157 @@ describe("developer NFC console", () => {
     expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1);
   });
 
+  it("activates once when a successful write crosses the safety margin but not expiry", async () => {
+    const expiresAt = "2026-07-24T00:12:00.001Z";
+    let mutableNow = TEST_NOW_MS;
+    const client = createClient();
+    client.reserveGiftCard.mockResolvedValue({
+      cardId: "card-2",
+      cardCode: "CARD-002",
+      giftUrl: STAGING_GIFT_URL,
+      expiresAt,
+    });
+    markPendingGiftCardWriteVerified.mockResolvedValue({
+      ...pendingReservation("user-1", expiresAt),
+      revision: 2,
+      writeVerified: true,
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockImplementation(async () => {
+        mutableNow = Date.parse("2026-07-24T00:12:00.000Z");
+      }),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer, stagingPolicy, () => mutableNow);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+
+    await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1));
+    expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1);
+    expect(markPendingGiftCardWriteVerified).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a verified pending record when the physical write crosses actual expiry", async () => {
+    const expiresAt = "2026-07-24T00:12:00.001Z";
+    let mutableNow = TEST_NOW_MS;
+    const verified = {
+      ...pendingReservation("user-1", expiresAt),
+      revision: 2,
+      writeVerified: true,
+    };
+    const client = createClient();
+    client.reserveGiftCard.mockResolvedValue({
+      cardId: "card-2",
+      cardCode: "CARD-002",
+      giftUrl: STAGING_GIFT_URL,
+      expiresAt,
+    });
+    markPendingGiftCardWriteVerified.mockResolvedValue(verified);
+    const writer = {
+      replaceHttpsUrl: jest.fn().mockImplementation(async () => {
+        mutableNow = Date.parse("2026-07-24T00:12:00.002Z");
+      }),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer, stagingPolicy, () => mutableNow);
+
+    await screen.findByText("CARD-001");
+    fireEvent.press(screen.getByText("Initialize current blank card"));
+
+    expect(await screen.findByText(
+      "This NFC card was written, but its reservation expired before activation. Do not rewrite it; contact support.",
+    )).toBeTruthy();
+    expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1);
+    expect(markPendingGiftCardWriteVerified).toHaveBeenCalledTimes(1);
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    const retryActivation = screen.getByText("Retry activation");
+    expect(closestPressable(retryActivation).props.disabled).toBe(true);
+    expect(screen.queryByText(expiresAt)).toBeNull();
+  });
+
+  it("allows activation of a recovered verified reservation below the write margin", async () => {
+    const expiresAt = "2026-07-24T00:12:00.000Z";
+    loadPendingGiftCard.mockResolvedValue({
+      ...pendingReservation("user-1", expiresAt),
+      revision: 2,
+      writeVerified: true,
+    });
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: { ...initializingCard, expiresAt },
+      events: [],
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn(),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(
+      client,
+      writer,
+      stagingPolicy,
+      () => Date.parse("2026-07-24T00:11:30.000Z"),
+    );
+
+    fireEvent.press(await screen.findByText("Retry activation"));
+
+    await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1));
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+  });
+
+  it("never writes a recovered unverified reservation below the write margin", async () => {
+    const expiresAt = "2026-07-24T00:12:00.000Z";
+    loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1", expiresAt));
+    const client = createClient();
+    client.getAdminGiftCard.mockResolvedValue({
+      card: { ...initializingCard, expiresAt },
+      events: [],
+    });
+    const writer = {
+      replaceHttpsUrl: jest.fn(),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(
+      client,
+      writer,
+      stagingPolicy,
+      () => Date.parse("2026-07-24T00:11:30.000Z"),
+    );
+
+    expect(await screen.findByText(
+      "The saved NFC reservation is too close to expiry. Start a new reservation.",
+    )).toBeTruthy();
+    expect(clearPendingGiftCard).toHaveBeenCalledWith("user-1", "card-2");
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+  });
+
+  it("preserves a recovered verified reservation after actual expiry", async () => {
+    const expiresAt = "2026-07-24T00:09:59.000Z";
+    loadPendingGiftCard.mockResolvedValue({
+      ...pendingReservation("user-1", expiresAt),
+      revision: 2,
+      writeVerified: true,
+    });
+    const client = createClient();
+    const writer = {
+      replaceHttpsUrl: jest.fn(),
+      cancel: jest.fn().mockResolvedValue(undefined),
+    } as unknown as NfcUrlWriter;
+    renderConsole(client, writer);
+
+    expect(await screen.findByText(
+      "This NFC card was written, but its reservation expired before activation. Do not rewrite it; contact support.",
+    )).toBeTruthy();
+    expect(clearPendingGiftCard).not.toHaveBeenCalled();
+    expect(writer.replaceHttpsUrl).not.toHaveBeenCalled();
+    expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
+    expect(closestPressable(
+      screen.getByText("Retry activation"),
+    ).props.disabled).toBe(true);
+  });
+
   it("makes a captured retry handler inert immediately after sign-out", async () => {
     loadPendingGiftCard.mockResolvedValue(pendingReservation("user-1"));
     const client = createClient();
