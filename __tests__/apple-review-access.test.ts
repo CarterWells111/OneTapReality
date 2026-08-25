@@ -9,11 +9,12 @@ import { hashAccessToken } from "../src/server/auth/device-auth";
 
 const reviewEmail = "reviewer@example.test";
 const claimToken = "A".repeat(43);
+const fixtureSecret = "B".repeat(43);
 const environment = {
   APPLE_REVIEW_ACCESS_ENABLED: "true",
   APPLE_REVIEW_EMAIL: reviewEmail,
   APPLE_REVIEW_CODE: "654321",
-  APPLE_REVIEW_FIXTURE_SECRET: "fixture-secret-at-least-thirty-two-bytes-long",
+  APPLE_REVIEW_FIXTURE_SECRET: fixtureSecret,
   APPLE_REVIEW_CLAIM_TOKEN: claimToken,
   GIFT_TOKEN_PEPPER: "gift-token-pepper",
   GIFT_URL_ORIGIN: "https://staging.onetapreality.com",
@@ -33,6 +34,8 @@ describe("Apple review access", () => {
       { APPLE_REVIEW_EMAIL: "other@example.test" },
       { APPLE_REVIEW_CODE: "not-six-digits" },
       { APPLE_REVIEW_FIXTURE_SECRET: "short" },
+      { APPLE_REVIEW_FIXTURE_SECRET: `${"B".repeat(42)}?` },
+      { APPLE_REVIEW_FIXTURE_SECRET: "B".repeat(44) },
       { APPLE_REVIEW_CLAIM_TOKEN: "short" },
       { GIFT_URL_ORIGIN: "https://onetapreality.com" },
       { RELEASE_AUDIENCE: "public" },

@@ -26,6 +26,30 @@ npm run beta:preflight:ios -- --profile beta-external
 
 最终 archive 还必须人工核对：TAG-only NFC entitlement、Associated Domains、中英文照片读取/照片保存/NFC 用途说明、隐私清单，以及 `ITSAppUsesNonExemptEncryption=false`。
 
+## staging 审核能力门禁
+
+本节只描述变量名和允许公开的固定值。真实审核邮箱、固定验证码、fixture secret 与 claim token 必须由发布负责人直接填写到 Railway staging 的受保护变量界面，不得进入终端参数、聊天、Git、Issue、截图或日志。
+
+在取得单独的 staging 配置批准后，API Service 必须具备：
+
+```env
+GIFT_URL_ORIGIN=https://staging.onetapreality.com
+RELEASE_AUDIENCE=external-beta
+APPLE_REVIEW_ACCESS_ENABLED=true
+APPLE_REVIEW_EMAIL=<受保护变量>
+APPLE_REVIEW_CODE=<受保护变量>
+APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
+APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
+```
+
+production 的 `APPLE_REVIEW_ACCESS_ENABLED` 必须保持未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并且不得配置其余 `APPLE_REVIEW_*` 凭据。变量变更后先验收 `/api/health` 为 200、`database=ok`、`schemaVersion>=13`，再由发布负责人在受保护会话中完成：
+
+1. **审核登录 smoke**：精确审核邮箱使用固定验证码登录，确认 owner、viewer、editor 和可认领 fixture 已重置；错误邮箱不能使用固定验证码。
+2. **账号删除挑战 smoke**：审核账号请求删除挑战应成功且不发送邮件，响应和日志不得包含固定验证码；不要在发布前提交最终 `DELETE`。完整删除使用获准的 disposable staging 账号另测。
+3. smoke 过程不得打印或复制邮箱、固定验证码、礼品链接或 Secret；只记录通过/失败、时间和脱敏错误码。
+
+以上任一项未完成时，不得发起 `beta-external` EAS 构建。仓库静态 preflight 不读取 Railway，人工门禁不能被本地全绿结果替代。
+
 ## App Store Connect 与审核
 
 1. 使用 [APP-STORE-CONNECT-1.1.2.md](./APP-STORE-CONNECT-1.1.2.md) 的已审阅文案。

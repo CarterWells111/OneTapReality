@@ -8,9 +8,11 @@ const mockRateLimited = jest.fn(async (..._args: unknown[]) => false);
 const mockAcceptDeletion = jest.fn(async (..._args: unknown[]): Promise<{ status: string; receiptId?: string; completeBy?: string }> => ({ status: "accepted", receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" }));
 const mockSendEmail = jest.fn(async (..._args: unknown[]) => undefined);
 const mockHash = jest.fn(async (value: string, ..._args: unknown[]) => `hash:${value}`);
+const mockGetReviewAccess = jest.fn((..._args: unknown[]) => null as null | { fixedCode: string });
 
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: () => mockGetServerDatabase() }));
 jest.mock("../src/server/auth/session-auth", () => ({ requireAuthenticatedAccountSession: (...args: unknown[]) => mockRequireSession(...args) }));
+jest.mock("../src/server/auth/apple-review-access", () => ({ getAppleReviewAccess: (...args: unknown[]) => mockGetReviewAccess(...args) }));
 jest.mock("../src/server/gifts/email-auth", () => ({ createGiftEmailCode: (...args: unknown[]) => mockCreateCode(...args) }));
 jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendAccountDeletionVerificationEmail: (...args: unknown[]) => mockSendEmail(...args) }));
 jest.mock("../src/server/auth/device-auth", () => ({ hashAccessToken: (value: string, ...args: unknown[]) => mockHash(value, ...args) }));
@@ -28,6 +30,8 @@ import { POST as requestChallenge } from "../src/app/api/account/deletion-challe
 describe("account deletion APIs", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRequireSession.mockResolvedValue({ id: "user-1", email: "owner@example.com", sessionId: "session-1", isAdmin: false });
+    mockGetReviewAccess.mockReturnValue(null);
     mockCreateChallengeIfAllowed.mockResolvedValue("created");
     process.env.GIFT_AUTH_PEPPER = "pepper";
     process.env.RESEND_API_KEY = "resend";
@@ -54,6 +58,41 @@ describe("account deletion APIs", () => {
     }));
     expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ email: "owner@example.com", code: "123456" }));
     expect(JSON.stringify(log.mock.calls)).not.toContain("123456");
+  });
+
+  it("uses the fixed review code for the complete deletion flow without requiring email delivery", async () => {
+    mockRequireSession.mockResolvedValue({ id: "review-user", email: "reviewer@example.test", sessionId: "review-session", isAdmin: false });
+    mockGetReviewAccess.mockReturnValue({ fixedCode: "654321" });
+    delete process.env.RESEND_API_KEY;
+    delete process.env.GIFT_EMAIL_FROM;
+
+    const challengeResponse = await requestChallenge(new Request("http://localhost/api/account/deletion-challenge", {
+      method: "POST", headers: { Authorization: "Bearer review-session" },
+    }));
+    const challengeBody = await challengeResponse.json() as { challengeId: string; expiresAt: string };
+
+    expect(challengeResponse.status).toBe(200);
+    expect(mockGetReviewAccess).toHaveBeenCalledWith("reviewer@example.test");
+    expect(mockCreateCode).not.toHaveBeenCalled();
+    expect(mockCreateChallengeIfAllowed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      userId: "review-user", sessionId: "review-session", codeHash: "hash:654321",
+    }));
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(JSON.stringify(challengeBody)).not.toContain("654321");
+
+    const deletionResponse = await deleteAccount(new Request("http://localhost/api/account", {
+      method: "DELETE", headers: { Authorization: "Bearer review-session", "Content-Type": "application/json" },
+      body: JSON.stringify({ challengeId: challengeBody.challengeId, code: "654321", confirmation: "DELETE" }),
+    }));
+
+    expect(deletionResponse.status).toBe(202);
+    expect(mockAcceptDeletion).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      challengeId: challengeBody.challengeId,
+      userId: "review-user",
+      sessionId: "review-session",
+      codeHash: "hash:654321",
+      confirmation: "DELETE",
+    }));
   });
 
   it("removes the persisted challenge if delivery fails and rate limits repeated requests", async () => {

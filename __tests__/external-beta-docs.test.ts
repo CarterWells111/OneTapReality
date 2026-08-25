@@ -47,6 +47,26 @@ describe("1.1.2 external Beta release artifacts", () => {
     expect(guide).toContain("实体卡只承载同一 HTTPS Universal Link");
     expect(guide).toContain("真实凭据只填写在 App Store Connect Review Notes");
     expect(guide).toContain("不得提交到 Git");
+    expect(guide).toContain("删除验证码同样使用 `<APP_REVIEW_FIXED_CODE>`");
+  });
+
+  it("requires protected staging review configuration and login/deletion smoke before building", () => {
+    const external = read(externalGuide);
+    const railway = read("docs/backend/RAILWAY.md");
+
+    for (const guide of [external, railway]) {
+      expect(guide).toContain("RELEASE_AUDIENCE=external-beta");
+      expect(guide).toContain("APPLE_REVIEW_ACCESS_ENABLED=true");
+      expect(guide).toContain("APPLE_REVIEW_EMAIL");
+      expect(guide).toContain("APPLE_REVIEW_CODE");
+      expect(guide).toContain("APPLE_REVIEW_FIXTURE_SECRET");
+      expect(guide).toContain("APPLE_REVIEW_CLAIM_TOKEN");
+    }
+    expect(external).toContain("production");
+    expect(external).toContain("APPLE_REVIEW_ACCESS_ENABLED=false");
+    expect(external).toContain("审核登录 smoke");
+    expect(external).toContain("账号删除挑战 smoke");
+    expect(external).toContain("不得打印或复制邮箱、固定验证码、礼品链接或 Secret");
   });
 
   it("declares privacy, rating, category and release choices accurately", () => {

@@ -42,7 +42,7 @@ describe("Alpha gift safety controls", () => {
       APPLE_REVIEW_ACCESS_ENABLED: "true",
       APPLE_REVIEW_EMAIL: "reviewer@example.test",
       APPLE_REVIEW_CODE: "654321",
-      APPLE_REVIEW_FIXTURE_SECRET: "fixture-secret-at-least-thirty-two-bytes-long",
+      APPLE_REVIEW_FIXTURE_SECRET: "B".repeat(43),
       APPLE_REVIEW_CLAIM_TOKEN: "A".repeat(43),
       GIFT_TOKEN_PEPPER: "gift-token-pepper",
       GIFT_URL_ORIGIN: "https://staging.onetapreality.com",

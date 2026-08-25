@@ -1,7 +1,7 @@
 const reviewAccess = {
   email: "reviewer@example.test",
   fixedCode: "654321",
-  fixtureSecret: "fixture-secret-at-least-thirty-two-bytes-long",
+  fixtureSecret: "B".repeat(43),
   claimToken: "A".repeat(43),
   giftTokenPepper: "gift-token-pepper",
   giftUrlOrigin: "https://staging.onetapreality.com",

@@ -54,7 +54,7 @@ export function getAppleReviewAccess(
   const giftTokenPepper = environment.GIFT_TOKEN_PEPPER ?? "";
   if (!configuredEmail || email !== configuredEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(configuredEmail)) return null;
   if (!/^\d{6}$/u.test(fixedCode)) return null;
-  if (fixtureSecret.length < 32 || !/^[A-Za-z0-9_-]{43}$/u.test(claimToken) || !giftTokenPepper) return null;
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(fixtureSecret) || !/^[A-Za-z0-9_-]{43}$/u.test(claimToken) || !giftTokenPepper) return null;
 
   return { email, fixedCode, fixtureSecret, claimToken, giftTokenPepper, giftUrlOrigin: stagingGiftOrigin };
 }
