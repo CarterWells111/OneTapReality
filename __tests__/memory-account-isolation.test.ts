@@ -1,7 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import {
-  claimUnownedMemories,
   clearMemories,
   deleteMemory,
   getMemory,
@@ -57,21 +56,21 @@ function databaseWithRows(rows: Array<Record<string, unknown>>) {
 describe("local memory account isolation", () => {
   it("lists and reads only rows owned by the current account", async () => {
     const { db } = databaseWithRows([
-      { ...memory, ownerAccountKey: "owner@example.com", status: "saved" },
-      { ...memory, id: "memory-b", ownerAccountKey: "other@example.com", status: "saved" },
+      { ...memory, ownerAccountKey: "account:owner@example.com", status: "saved" },
+      { ...memory, id: "memory-b", ownerAccountKey: "account:other@example.com", status: "saved" },
     ]);
 
-    await expect(listMemories(db, "owner@example.com")).resolves.toEqual([
+    await expect(listMemories(db, "account:owner@example.com")).resolves.toEqual([
       expect.objectContaining({ id: "memory-a" }),
     ]);
-    await expect(getMemory(db, "memory-b", "owner@example.com")).resolves.toBeNull();
+    await expect(getMemory(db, "memory-b", "account:owner@example.com")).resolves.toBeNull();
   });
 
   it("writes the owner key and scopes destructive operations in SQL", async () => {
     const { db, runCalls } = databaseWithRows([]);
-    await saveMemory(db, memory, "owner@example.com");
-    await deleteMemory(db, "memory-a", "owner@example.com");
-    await clearMemories(db, "owner@example.com");
+    await saveMemory(db, memory, "guest");
+    await deleteMemory(db, "memory-a", "guest");
+    await clearMemories(db, "guest");
 
     const statements = runCalls.map((call) => `${call.sql} :: ${call.params.join("|")}`).join("\n");
     expect(statements).toContain("ownerAccountKey");
@@ -79,12 +78,13 @@ describe("local memory account isolation", () => {
     expect(statements).toContain("WHERE ownerAccountKey = ?");
   });
 
-  it("lets only the first authenticated account claim legacy rows", async () => {
-    const rows = [{ ...memory, ownerAccountKey: null, status: "saved" }];
-    const { db } = databaseWithRows(rows);
+  it("keeps guest and account libraries isolated", async () => {
+    const { db } = databaseWithRows([
+      { ...memory, ownerAccountKey: "guest", status: "saved" },
+      { ...memory, id: "memory-b", ownerAccountKey: "account:owner@example.com", status: "saved" },
+    ]);
 
-    await expect(claimUnownedMemories(db, "first@example.com")).resolves.toBe(1);
-    await expect(claimUnownedMemories(db, "second@example.com")).resolves.toBe(0);
-    expect(rows[0].ownerAccountKey).toBe("first@example.com");
+    await expect(listMemories(db, "guest")).resolves.toEqual([expect.objectContaining({ id: "memory-a" })]);
+    await expect(listMemories(db, "account:owner@example.com")).resolves.toEqual([expect.objectContaining({ id: "memory-b" })]);
   });
 });

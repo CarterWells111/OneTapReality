@@ -16,6 +16,12 @@ declare namespace NodeJS {
     ALPHA_ALLOWED_EMAILS?: string;
     GIFT_SHARING_ENABLED?: string;
     GIFT_URL_ORIGIN?: string;
+    RELEASE_AUDIENCE?: string;
+    APPLE_REVIEW_ACCESS_ENABLED?: string;
+    APPLE_REVIEW_EMAIL?: string;
+    APPLE_REVIEW_CODE?: string;
+    APPLE_REVIEW_FIXTURE_SECRET?: string;
+    APPLE_REVIEW_CLAIM_TOKEN?: string;
     PORT?: string;
   }
 }

@@ -1,5 +1,7 @@
 import { getServerDatabase } from "../../../server/db/client";
-import { createAuthEmailCode, deleteAuthEmailCodeById, isAuthEmailCodeRateLimited } from "../../../server/auth/repository";
+import { getAppleReviewAccess } from "../../../server/auth/apple-review-access";
+import { hashAccessToken } from "../../../server/auth/device-auth";
+import { createAuthEmailCodeIfAllowed, deleteAuthEmailCodeById, isAccountActiveByEmail } from "../../../server/auth/repository";
 import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
@@ -12,27 +14,49 @@ export async function POST(request: Request): Promise<Response> {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.GIFT_EMAIL_FROM;
     if (typeof email !== "string") throw new ApiError(400, "validation_failed", "Email is required");
-    if (!pepper || !apiKey || !from) throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
+    if (!pepper) throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
     requireGiftSharingEnabled();
-    const normalizedEmail = normalizeGiftEmail(email);
-    requireAlphaEmailAllowed(normalizedEmail);
-    const nowDate = new Date();
-    const now = nowDate.toISOString();
-    let code: Awaited<ReturnType<typeof createGiftEmailCode>>;
+    let normalizedEmail: string;
     try {
-      code = await createGiftEmailCode(normalizedEmail, pepper, undefined, now);
+      normalizedEmail = normalizeGiftEmail(email);
     } catch {
       throw new ApiError(400, "validation_failed", "A valid email address is required");
     }
+    const reviewAccess = getAppleReviewAccess(normalizedEmail);
+    if (!reviewAccess) requireAlphaEmailAllowed(normalizedEmail);
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const code = reviewAccess
+      ? {
+          email: normalizedEmail,
+          code: reviewAccess.fixedCode,
+          codeHash: await hashAccessToken(reviewAccess.fixedCode, pepper),
+          expiresAt: new Date(nowDate.getTime() + 5 * 60_000).toISOString(),
+        }
+      : await createGiftEmailCode(normalizedEmail, pepper, undefined, now);
     const db = getServerDatabase();
-    if (await isAuthEmailCodeRateLimited(db, code.email, new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString())) throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
+    if (!await isAccountActiveByEmail(db, code.email)) throw new ApiError(403, "account_deletion_pending", "This account is being permanently deleted");
     const codeId = crypto.randomUUID();
-    await createAuthEmailCode(db, { id: codeId, email: code.email, codeHash: code.codeHash, createdAt: now, expiresAt: code.expiresAt });
-    try {
-      await sendGiftVerificationEmail({ apiKey, from, email: code.email, code: code.code });
-    } catch (error) {
-      await deleteAuthEmailCodeById(db, codeId);
-      throw error;
+    const issueStatus = await createAuthEmailCodeIfAllowed(db, {
+      id: codeId,
+      email: code.email,
+      codeHash: code.codeHash,
+      createdAt: now,
+      expiresAt: code.expiresAt,
+      rateLimitSince: new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString(),
+    });
+    if (issueStatus === "rate_limited") throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
+    if (!reviewAccess) {
+      if (!apiKey || !from) {
+        await deleteAuthEmailCodeById(db, codeId);
+        throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
+      }
+      try {
+        await sendGiftVerificationEmail({ apiKey, from, email: code.email, code: code.code });
+      } catch (error) {
+        await deleteAuthEmailCodeById(db, codeId);
+        throw error;
+      }
     }
     return Response.json({ email: code.email }, { status: 202 });
   } catch (error) { return errorResponse(error); }

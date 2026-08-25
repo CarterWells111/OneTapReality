@@ -1,18 +1,20 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
 import { eq } from "drizzle-orm";
 import { sharedAlbums, users } from "../src/server/db/schema";
+import { blockGiftUser } from "../src/server/gifts/content-safety";
 import {
   activateGiftViewerByTokenHash, addGiftMember, claimGiftByTokenHash,
   completeGiftPublishSession, createGift, createGiftManagementRequest,
   createGiftPublishSession, decideGiftManagementRequest, disableGift, getSharedAlbumSnapshot,
   listGiftManagementRequestsForOwner, listGiftMediaCleanupJobs, listGiftMembers,
-  listGiftManagementTargetsForEditor, removeGiftMember, updateGiftMemberRole,
+  GiftRelationshipBlockedError, listGiftManagementTargetsForEditor, removeGiftMember, updateGiftMemberRole,
 } from "../src/server/gifts/repository";
 
 async function fixture() {
   const testDb = createBackendTestDatabase();
   await migrateBackendDatabase(testDb.db);
   await testDb.db.insert(users).values([
+    { id: "owner-user", email: "owner@example.com", createdAt: "2026-08-16T00:00:00.000Z", lastAuthenticatedAt: "2026-08-16T00:00:00.000Z" },
     { id: "editor-user", email: "editor@example.com", createdAt: "2026-08-16T00:00:00.000Z", lastAuthenticatedAt: "2026-08-16T00:00:00.000Z" },
     { id: "viewer-user", email: "viewer@example.com", createdAt: "2026-08-16T00:00:00.000Z", lastAuthenticatedAt: "2026-08-16T00:00:00.000Z" },
   ]);
@@ -134,6 +136,61 @@ describe("gift management requests", () => {
     } finally { await close(); }
   });
 
+  it("rejects role-change approval when the owner and target are globally blocked", async () => {
+    const { db, close } = await fixture();
+    try {
+      const created = await createGiftManagementRequest(db, {
+        giftId: "gift-1", userId: "editor-user", email: "editor@example.com",
+        action: "change_member_role", targetEmail: "viewer@example.com", targetRole: "editor",
+        now: "2026-08-16T00:04:00.000Z",
+      });
+      if (created.status !== "created") throw new Error("request not created");
+      const [owner] = await db.select().from(users).where(eq(users.email, "owner@example.com"));
+      await createGift(db, { id: "gift-block-source", tokenHash: "block-source", createdAt: "2026-08-16T00:04:10.000Z" });
+      await claimGiftByTokenHash(db, "block-source", owner.email, "2026-08-16T00:04:20.000Z");
+      await addGiftMember(db, "gift-block-source", "viewer@example.com", "2026-08-16T00:04:30.000Z");
+      await blockGiftUser(db, {
+        giftId: "gift-block-source", actorUserId: owner.id, actorEmail: owner.email,
+        targetEmail: "viewer@example.com", now: "2026-08-16T00:04:40.000Z",
+      });
+
+      await expect(decideGiftManagementRequest(db, {
+        giftId: "gift-1", requestId: created.request.id, ownerEmail: owner.email,
+        decision: "approved", now: "2026-08-16T00:05:00.000Z",
+      })).rejects.toBeInstanceOf(GiftRelationshipBlockedError);
+      await expect(listGiftMembers(db, "gift-1")).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ email: "viewer@example.com", role: "viewer" }),
+      ]));
+      await expect(listGiftManagementRequestsForOwner(db, "gift-1", owner.email)).resolves.toEqual([
+        expect.objectContaining({ id: created.request.id, status: "pending" }),
+      ]);
+    } finally { await close(); }
+  });
+
+  it("preserves a removal relationship so the owner can block before any reinvite", async () => {
+    const { db, close } = await fixture();
+    try {
+      const created = await createGiftManagementRequest(db, {
+        giftId: "gift-1", userId: "editor-user", email: "editor@example.com",
+        action: "remove_member", targetEmail: "viewer@example.com",
+        now: "2026-08-16T00:04:00.000Z",
+      });
+      if (created.status !== "created") throw new Error("request not created");
+      await expect(decideGiftManagementRequest(db, {
+        giftId: "gift-1", requestId: created.request.id, ownerEmail: "owner@example.com",
+        decision: "approved", now: "2026-08-16T00:05:00.000Z",
+      })).resolves.toEqual({ status: "approved" });
+      const [owner] = await db.select().from(users).where(eq(users.email, "owner@example.com"));
+
+      await expect(blockGiftUser(db, {
+        giftId: "gift-1", actorUserId: owner.id, actorEmail: owner.email,
+        targetEmail: "viewer@example.com", now: "2026-08-16T00:06:00.000Z",
+      })).resolves.toEqual(expect.objectContaining({ status: "created" }));
+      await expect(addGiftMember(db, "gift-1", "viewer@example.com", "2026-08-16T00:07:00.000Z"))
+        .rejects.toBeInstanceOf(GiftRelationshipBlockedError);
+    } finally { await close(); }
+  });
+
   it("revalidates requester eligibility and safely deletes only the cloud snapshot", async () => {
     const { db, close } = await fixture();
     try {
@@ -215,5 +272,28 @@ describe("gift management request routes", () => {
     const request = new Request("http://localhost");
     expect((await route.GET(request, { id: "gift-1" })).status).toBe(403);
     expect((await route.PATCH(new Request("http://localhost", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: "request-1", decision: "approved" }) }), { id: "gift-1" })).status).toBe(403);
+  });
+
+  it("maps a blocked role-change approval to gift_relationship_blocked", async () => {
+    const ownerAccess = require("../src/server/gifts/owner-access") as typeof import("../src/server/gifts/owner-access");
+    const repository = require("../src/server/gifts/repository") as typeof import("../src/server/gifts/repository");
+    jest.spyOn(ownerAccess, "requireOwnedGift").mockResolvedValue({
+      db: {} as never,
+      email: "owner@example.com",
+      gift: { id: "gift-1", status: "bound", claimedAt: null, disabledAt: null },
+    });
+    jest.spyOn(repository, "decideGiftManagementRequest").mockRejectedValue(Object.assign(
+      new Error("private block detail"), { code: "gift_relationship_blocked" },
+    ));
+    const route = require("../src/app/api/my-gifts/[id]/management-requests+api") as typeof import("../src/app/api/my-gifts/[id]/management-requests+api");
+    const response = await route.PATCH(new Request("http://localhost", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "request-1", decision: "approved" }),
+    }), { id: "gift-1" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gift_relationship_blocked", message: "These accounts cannot share gifts" },
+    });
   });
 });

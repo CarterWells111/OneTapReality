@@ -4,6 +4,7 @@ import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server
 import { giftMediaCleanupJobs, giftPublishSessions } from "../src/server/db/schema";
 import {
   claimGiftMediaCleanupJobs,
+  claimGiftByTokenHash,
   createGift,
   createGiftPublishSession,
   expireGiftPublishSessions,
@@ -87,6 +88,7 @@ describe("gift maintenance repository", () => {
     try {
       await migrateBackendDatabase(db);
       await createGift(db, { id: "gift-1", tokenHash: "token", createdAt: "2026-07-25T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "token", "owner@example.com", "2026-07-25T00:00:01.000Z");
       await createGiftPublishSession(db, {
         id: "publish-1",
         giftId: "gift-1",

@@ -7,12 +7,25 @@ describe("EAS production configuration", () => {
   ) as {
     cli: {
       appVersionSource: string;
+      requireCommit: boolean;
     };
     build: {
+      development: {
+        env: Record<string, string>;
+      };
       preview: {
         env: Record<string, string>;
       };
+      alpha: {
+        env: Record<string, string>;
+      };
       "staging-testflight": {
+        distribution: string;
+        environment: string;
+        autoIncrement: boolean;
+        env: Record<string, string>;
+      };
+      "beta-external": {
         distribution: string;
         environment: string;
         autoIncrement: boolean;
@@ -30,16 +43,46 @@ describe("EAS production configuration", () => {
           groups: string[];
         };
       };
+      "beta-external": {
+        ios: {
+          ascAppId: string;
+          groups?: string[];
+        };
+      };
     };
   };
 
-  it("points preview and production builds at the OneTapReality API", () => {
+  it("points preview and production builds at the OneTapReality API and gift site", () => {
     expect(config.build.preview.env.EXPO_PUBLIC_API_ORIGIN).toBe(
       "https://api.onetapreality.com",
+    );
+    expect(config.build.preview.env.EXPO_PUBLIC_GIFT_ORIGIN).toBe(
+      "https://onetapreality.com",
     );
     expect(config.build.production.env.EXPO_PUBLIC_API_ORIGIN).toBe(
       "https://api.onetapreality.com",
     );
+    expect(config.build.production.env.EXPO_PUBLIC_GIFT_ORIGIN).toBe(
+      "https://onetapreality.com",
+    );
+  });
+
+  it("pins every build profile to the matching gift environment", () => {
+    expect(
+      Object.fromEntries(
+        Object.entries(config.build).map(([name, profile]) => [
+          name,
+          profile.env.EXPO_PUBLIC_GIFT_ORIGIN,
+        ]),
+      ),
+    ).toEqual({
+      development: "https://onetapreality.com",
+      preview: "https://onetapreality.com",
+      alpha: "https://staging.onetapreality.com",
+      "staging-testflight": "https://staging.onetapreality.com",
+      "beta-external": "https://staging.onetapreality.com",
+      production: "https://onetapreality.com",
+    });
   });
 
   it("does not expose server credentials", () => {
@@ -49,7 +92,27 @@ describe("EAS production configuration", () => {
 
   it("uses remote app versions and increments TestFlight build numbers", () => {
     expect(config.cli.appVersionSource).toBe("remote");
+    expect(config.cli.requireCommit).toBe(true);
     expect(config.build.production.autoIncrement).toBe(true);
+  });
+
+  it("provides a clean-commit external Beta profile isolated to staging", () => {
+    const profile = config.build["beta-external"];
+
+    expect(profile).toEqual({
+      distribution: "store",
+      environment: "preview",
+      autoIncrement: true,
+      env: {
+        EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+        EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
+        EXPO_PUBLIC_RELEASE_AUDIENCE: "external-beta",
+      },
+    });
+    expect(config.submit["beta-external"].ios).toEqual({
+      ascAppId: "6794186067",
+    });
+    expect(config.submit["beta-external"].ios).not.toHaveProperty("groups");
   });
 
   it("provides a store-signed TestFlight profile isolated to staging", () => {
@@ -61,6 +124,8 @@ describe("EAS production configuration", () => {
       autoIncrement: true,
       env: {
         EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
+        EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
+        EXPO_PUBLIC_RELEASE_AUDIENCE: "internal",
       },
     });
     expect(config.submit["staging-testflight"].ios.ascAppId).toBe("6794186067");

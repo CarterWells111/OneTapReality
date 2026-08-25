@@ -1,4 +1,4 @@
-import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, resolveExistingGiftMedia } from "../../../../server/gifts/repository";
+import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, GiftPublicationUnavailableError, resolveExistingGiftMedia } from "../../../../server/gifts/repository";
 import { getR2MediaStoreFromEnvironment } from "../../../../server/gifts/r2-media";
 import { requireOwnedGift } from "../../../../server/gifts/owner-access";
 import { ApiError, errorResponse } from "../../../../server/http/errors";
@@ -24,7 +24,7 @@ export async function POST(request: Request, { id }: { id: string }): Promise<Re
     const coverUpload = payload.cover ? { uploadUrl: await store.createUploadUrl(payload.cover) } : null;
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ publicationId, uploads, coverUpload, expiresAt }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }
 
 export async function PUT(request: Request, { id }: { id: string }): Promise<Response> {
@@ -48,10 +48,10 @@ export async function PUT(request: Request, { id }: { id: string }): Promise<Res
         })()
       : Promise.resolve(true);
     if (!verified.every(Boolean) || !(await coverVerified)) throw new ApiError(409, "gift_upload_incomplete", "All photos must finish uploading before publishing");
-    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, payload, now });
+    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, sessionId: publicationId, ownerEmail: email, payload, now });
     const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: email, now, payload });
     if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted"); }
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ albumId: result.albumId }, { status: 201 });
-  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError ? new ApiError(409, error.code, error.message) : error); }
+  } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }

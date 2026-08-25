@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   list: { gap: 12 },
   moreCitiesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   moreCitiesChevron: { color: colors.accent, fontSize: 22, opacity: 0.7 },
-  moreCitiesCard: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderRadius: 18, borderStyle: "dashed", borderWidth: 1, gap: 8, minHeight: 84, padding: 18 },
+  moreCitiesCard: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderRadius: 18, borderWidth: 1, gap: 8, minHeight: 84, padding: 18 },
   moreCitiesTitle: { color: colors.accent, fontFamily: serifFont, fontSize: 19, fontWeight: "800" },
   moreCitiesSubtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 20 },
   pressed: { opacity: 0.85 },

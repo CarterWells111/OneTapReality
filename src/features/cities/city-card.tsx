@@ -13,9 +13,9 @@ type CityCardProps = {
   readonly variant: "visited" | "unvisited";
 };
 
-function CityLinePlaceholder({ city }: { readonly city: City }) {
+function GenericCityIllustration({ city }: { readonly city: City }) {
   return (
-    <View style={styles.placeholder} testID={`city-card-placeholder-${city}`}>
+    <View style={styles.genericIllustration} testID={`city-card-generic-${city}`}>
       <Svg height="100%" viewBox="0 0 118 92" width="100%">
         <Circle cx="88" cy="24" fill="none" r="10" stroke={colors.accent} strokeWidth="1.5" />
         <Path d="M10 69C25 54 36 58 48 47C60 36 68 53 80 45C92 37 100 43 109 31" fill="none" stroke={colors.accent} strokeLinecap="round" strokeWidth="1.8" />
@@ -55,7 +55,7 @@ export function CityCard({ city, visitCount = 0, onPress, variant }: CityCardPro
         {visual.kind === "illustration" ? (
           <Image accessibilityLabel={`${content.name}插画`} resizeMode="cover" source={visual.source} style={styles.illustration} testID={`city-card-illustration-${city}`} />
         ) : (
-          <CityLinePlaceholder city={city} />
+          <GenericCityIllustration city={city} />
         )}
       </View>
     </Pressable>
@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
   detail: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   visual: { flexShrink: 0, height: 100, justifyContent: "center", width: 112 },
   illustration: { borderColor: "rgba(85, 70, 54, 0.12)", borderRadius: 12, borderWidth: 1, height: 100, width: "100%" },
-  placeholder: { alignItems: "center", borderColor: colors.paperEdge, borderRadius: 12, borderStyle: "dashed", borderWidth: 1, height: 100, justifyContent: "center", overflow: "hidden", width: "100%" },
+  genericIllustration: { alignItems: "center", backgroundColor: colors.paper, borderColor: colors.paperEdge, borderRadius: 12, borderWidth: 1, height: 100, justifyContent: "center", overflow: "hidden", width: "100%" },
   pressed: { opacity: 0.85 },
 });

@@ -1,6 +1,6 @@
 import type { PrivateMediaStore } from "./r2-media";
 import type { GiftPublicationPayload } from "./repository";
-import { enqueueGiftMediaCleanupJobs } from "./repository";
+import { reserveGiftPublicationPromotion } from "./repository";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
 
@@ -65,25 +65,72 @@ function planSharedPublicationPromotion(payload: GiftPublicationPayload): Shared
   return { media, cover, finalObjectKeys: [...media.map(item => item.final), ...(cover ? [cover.final] : [])] };
 }
 
-async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan: SharedPublicationPromotionPlan): Promise<string[]> {
+const promotionTimeBudgetMs = 15_000;
+const promotionCleanupTimeBudgetMs = 5_000;
+
+function promotionAbortError(): Error {
+  return new Error("Promotion time budget exceeded");
+}
+
+function throwIfPromotionAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw promotionAbortError();
+}
+
+async function bestEffortDeletePromotionObjects(store: PrivateMediaStore, objectKeys: string[]): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), promotionCleanupTimeBudgetMs);
+  (timeout as unknown as { unref?: () => void }).unref?.();
+  const aborted = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener("abort", () => reject(new Error("Promotion cleanup time budget exceeded")), { once: true });
+  });
   try {
+    await Promise.race([
+      store.deleteObjects(objectKeys, { abortSignal: controller.signal }),
+      aborted,
+    ]);
+  } catch {
+    // The pre-registered durable cleanup rows remain the source of truth.
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan: SharedPublicationPromotionPlan): Promise<string[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), promotionTimeBudgetMs);
+  (timeout as unknown as { unref?: () => void }).unref?.();
+  const aborted = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener("abort", () => reject(promotionAbortError()), { once: true });
+  });
+  const execute = async (): Promise<string[]> => {
     for (const media of plan.media) {
-      await store.copyObject(media.source, media.final);
+      throwIfPromotionAborted(controller.signal);
+      await store.copyObject(media.source, media.final, { abortSignal: controller.signal });
+      throwIfPromotionAborted(controller.signal);
       const metadata = await store.getObjectMetadata(media.final);
+      throwIfPromotionAborted(controller.signal);
       if (metadata?.contentType !== media.item.contentType || metadata.byteSize !== media.item.byteSize) throw new ApiError(409, "gift_upload_incomplete", "Promoted photo metadata changed before publication");
     }
     if (plan.cover) {
-      await store.copyObject(plan.cover.source, plan.cover.final);
+      throwIfPromotionAborted(controller.signal);
+      await store.copyObject(plan.cover.source, plan.cover.final, { abortSignal: controller.signal });
+      throwIfPromotionAborted(controller.signal);
       const metadata = await store.getObjectMetadata(plan.cover.final);
+      throwIfPromotionAborted(controller.signal);
       if (metadata?.contentType !== plan.cover.item.contentType || metadata.byteSize !== plan.cover.item.byteSize) throw new ApiError(409, "gift_upload_incomplete", "Promoted cover metadata changed before publication");
     }
     for (const media of plan.media) media.item.objectKey = media.final;
     if (plan.cover) plan.cover.item.objectKey = plan.cover.final;
     return plan.finalObjectKeys;
+  };
+  try {
+    return await Promise.race([execute(), aborted]);
   } catch (error) {
-    try { await store.deleteObjects(plan.finalObjectKeys); } catch { /* durable maintenance can retry planned objects */ }
+    await bestEffortDeletePromotionObjects(store, plan.finalObjectKeys);
     if (typeof error === "object" && error !== null) Object.assign(error, { attemptedFinalObjectKeys: [...plan.finalObjectKeys] });
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -97,8 +144,22 @@ export function getAttemptedFinalObjectKeys(error: unknown): string[] {
   return Array.isArray(keys) && keys.every(key => typeof key === "string") ? keys : [];
 }
 
-export async function promoteSharedPublicationDurably(input: { store: PrivateMediaStore; db: BackendDatabase; giftId: string; payload: GiftPublicationPayload; now: string }): Promise<string[]> {
+export async function promoteSharedPublicationDurably(input: {
+  store: PrivateMediaStore;
+  db: BackendDatabase;
+  giftId: string;
+  sessionId: string;
+  ownerEmail: string;
+  payload: GiftPublicationPayload;
+  now: string;
+}): Promise<string[]> {
   const plan = planSharedPublicationPromotion(input.payload);
-  await enqueueGiftMediaCleanupJobs(input.db, input.giftId, plan.finalObjectKeys, input.now);
+  await reserveGiftPublicationPromotion(input.db, {
+    giftId: input.giftId,
+    sessionId: input.sessionId,
+    ownerEmail: input.ownerEmail,
+    objectKeys: plan.finalObjectKeys,
+    now: input.now,
+  });
   return executeSharedPublicationPromotion(input.store, plan);
 }

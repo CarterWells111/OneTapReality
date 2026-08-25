@@ -1,6 +1,7 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 
 import { purgeAuthTechnicalData } from "../auth/repository";
+import { processAccountDeletionJobs } from "../auth/account-deletion";
 import type { BackendDatabase } from "../db/client";
 import { appMaintenanceState } from "../db/schema";
 import {
@@ -12,7 +13,9 @@ import {
   isGiftMediaObjectReferenced,
   purgeGiftMaintenanceData,
 } from "../gifts/repository";
+import { processPendingGiftContentReportNotifications, type GiftContentReportSupportNotice } from "../gifts/content-safety";
 import type { PrivateMediaStore } from "../gifts/r2-media";
+import { sendGiftContentReportSupportEmailFromEnvironment } from "../gifts/resend-email-sender";
 
 export type GiftMaintenanceMode = "scheduled" | "opportunistic";
 
@@ -29,6 +32,12 @@ export type GiftMaintenanceStats = {
   purgedRateLimits: number;
   purgedPublishSessions: number;
   purgedCleanupJobs: number;
+  claimedAccountDeletionJobs: number;
+  completedAccountDeletionJobs: number;
+  failedAccountDeletionJobs: number;
+  attemptedContentReportNotices: number;
+  notifiedContentReports: number;
+  failedContentReportNotices: number;
 };
 
 const emptyStats = (): GiftMaintenanceStats => ({
@@ -44,6 +53,12 @@ const emptyStats = (): GiftMaintenanceStats => ({
   purgedRateLimits: 0,
   purgedPublishSessions: 0,
   purgedCleanupJobs: 0,
+  claimedAccountDeletionJobs: 0,
+  completedAccountDeletionJobs: 0,
+  failedAccountDeletionJobs: 0,
+  attemptedContentReportNotices: 0,
+  notifiedContentReports: 0,
+  failedContentReportNotices: 0,
 });
 
 async function acquireMaintenanceLease(db: BackendDatabase, now: string, leaseUntil: string, leaseToken: string): Promise<boolean> {
@@ -107,6 +122,7 @@ export async function runGiftMaintenance(input: {
   store: PrivateMediaStore;
   mode: GiftMaintenanceMode;
   now?: Date;
+  sendContentReportNotice?: (notice: GiftContentReportSupportNotice) => Promise<void>;
 }): Promise<GiftMaintenanceStats> {
   const now = input.now ?? new Date();
   const nowText = now.toISOString();
@@ -123,6 +139,16 @@ export async function runGiftMaintenance(input: {
   if (!await acquireMaintenanceLease(input.db, nowText, leaseUntil, leaseToken)) return { ...stats, skipped: true };
 
   try {
+    const deletion = await processAccountDeletionJobs({
+      db: input.db,
+      store: input.store,
+      now,
+      limit: input.mode === "scheduled" ? 10 : 1,
+    });
+    stats.claimedAccountDeletionJobs = deletion.claimed;
+    stats.completedAccountDeletionJobs = deletion.completed;
+    stats.failedAccountDeletionJobs = deletion.failed;
+
     if (hasTimeRemaining()) stats.expiredCards = await expireGiftCardReservations(input.db, nowText, batchSize);
     if (hasTimeRemaining()) stats.expiredPublications = await expireGiftPublishSessions(input.db, nowText, batchSize);
     const jobs = hasTimeRemaining()
@@ -149,6 +175,16 @@ export async function runGiftMaintenance(input: {
       }));
     }
 
+    if (hasTimeRemaining()) {
+      const reports = await processPendingGiftContentReportNotifications(input.db, {
+        now: nowText,
+        limit: input.mode === "scheduled" ? 10 : 1,
+        sendNotice: input.sendContentReportNotice ?? sendGiftContentReportSupportEmailFromEnvironment,
+      });
+      stats.attemptedContentReportNotices = reports.attempted;
+      stats.notifiedContentReports = reports.notified;
+      stats.failedContentReportNotices = reports.failed;
+    }
     const auth = hasTimeRemaining()
       ? await purgeAuthTechnicalData(input.db, {
         codeCutoff: subtract(now, 6 * 60 * 60_000),

@@ -3,7 +3,7 @@ import { getServerDatabase } from "../../../../server/db/client";
 import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
 import { activateGiftViewerByTokenHash } from "../../../../server/gifts/repository";
 import { hashGiftToken } from "../../../../server/gifts/session-auth";
-import { ApiError, errorResponse } from "../../../../server/http/errors";
+import { ApiError, errorResponse, isErrorWithCode } from "../../../../server/http/errors";
 
 export async function POST(request: Request, { token }: { token: string }): Promise<Response> {
   try {
@@ -15,6 +15,8 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     if (!activation) throw new ApiError(403, "gift_activation_denied", "This account is not eligible to activate this gift");
     return Response.json(activation);
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(isErrorWithCode(error, "gift_relationship_blocked")
+      ? new ApiError(409, error.code, "These accounts cannot share gifts")
+      : error);
   }
 }

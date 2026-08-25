@@ -32,7 +32,7 @@ import { createDevice, getDeviceByInstallationId, listMemories } from "../src/se
 describe("backend API routes", () => {
   beforeEach(() => {
     mockDatabaseExecute.mockReset();
-    mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 11 }] });
+    mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 13 }] });
   });
 
   it("returns health and capabilities without authentication", async () => {
@@ -44,13 +44,13 @@ describe("backend API routes", () => {
       service: "onetapreality-api",
       contractVersion: 1,
       database: "ok",
-      schemaVersion: 11,
+      schemaVersion: 13,
     });
     expect((await capabilities.json()).features.automaticSync).toBe(false);
   });
 
-  it("rejects health when the database schema is version 10", async () => {
-    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 10 }] });
+  it("rejects health when the database schema is version 12", async () => {
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 12 }] });
 
     const response = await getHealth(new Request("http://localhost/api/health"));
 

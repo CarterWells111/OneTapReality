@@ -3,8 +3,7 @@ import * as React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppButton, colors } from "../../../components/ui";
-import { useAuth } from "../../../features/auth/auth-provider";
-import { normalizeLocalAccountKey } from "../../../features/auth/local-account";
+import { useLocalLibrary } from "../../../features/auth/local-library-provider";
 import {
   BookCanvasEditor,
   type BookCanvasEditorHandle,
@@ -53,8 +52,7 @@ export default function EditMemoryScreen() {
     pageId?: string | string[];
     pageIndex?: string | string[];
   }>();
-  const { user } = useAuth();
-  const accountKey = user ? normalizeLocalAccountKey(user.email) : "signed-out";
+  const { owner: accountKey } = useLocalLibrary();
   const {
     clearMemoryEditDraft,
     getDraftById,

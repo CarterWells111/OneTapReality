@@ -52,4 +52,19 @@ describe("private R2 media store", () => {
     await store.copyObject("gifts/gift/temp/photo", "gifts/gift/final/photo");
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ CopySource: "gift-private/gifts/gift/temp/photo", Key: "gifts/gift/final/photo" }));
   });
+
+  it("passes the caller abort signal to the R2 copy request", async () => {
+    const { S3Client } = jest.requireMock("@aws-sdk/client-s3") as { S3Client: jest.Mock };
+    const send = jest.fn(async () => ({}));
+    S3Client.mockImplementation(() => ({ send }));
+    const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+    const controller = new AbortController();
+
+    await store.copyObject("gifts/gift/temp/photo", "gifts/gift/final/photo", { abortSignal: controller.signal });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ Key: "gifts/gift/final/photo" }),
+      { abortSignal: controller.signal },
+    );
+  });
 });

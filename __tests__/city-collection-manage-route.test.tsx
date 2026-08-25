@@ -7,6 +7,7 @@ const mockDatabase = { name: "local" };
 const mockResolveCityCollection = jest.fn();
 const mockSaveCityCollection = jest.fn();
 const mockUseAuth = jest.fn();
+const mockRunWrite = jest.fn();
 let mockCity = "shanghai";
 
 jest.mock("expo-router", () => ({
@@ -16,6 +17,16 @@ jest.mock("expo-router", () => ({
 }));
 jest.mock("expo-sqlite", () => ({ useSQLiteContext: () => mockDatabase }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => {
+    const auth = mockUseAuth();
+    return {
+      isReady: auth.isAuthReady,
+      owner: auth.user ? `account:${auth.user.email.toLowerCase()}` : "guest",
+      runWrite: mockRunWrite,
+    };
+  },
+}));
 jest.mock("../src/storage/city-collection-repository", () => ({
   resolveCityCollection: (...args: unknown[]) => mockResolveCityCollection(...args),
   saveCityCollection: (...args: unknown[]) => mockSaveCityCollection(...args),
@@ -34,26 +45,30 @@ describe("city collection management route", () => {
     mockReplace.mockReset();
     mockCity = "shanghai";
     mockUseAuth.mockReturnValue({ isAuthReady: true, user: { email: "Owner@Example.com" } });
+    mockRunWrite.mockReset().mockImplementation(async (operation) => (
+      operation("account:owner@example.com", () => undefined)
+    ));
     mockSaveCityCollection.mockReset().mockResolvedValue(undefined);
     mockResolveCityCollection.mockReset().mockResolvedValue({ city: "shanghai", featuredMemory: memories[0], memories });
   });
 
   it("atomically persists the selected representative with the full order and returns", async () => {
     const screen = render(<ManageCityCollectionScreen />);
-    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", "owner@example.com"));
+    await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", "account:owner@example.com"));
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Set Two as representative")); });
-    await act(async () => { fireEvent.press(screen.getByLabelText("Save collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("将Two设为精选旅行册")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
 
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
-    expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "owner@example.com");
+    expect(mockSaveCityCollection).toHaveBeenCalledWith(mockDatabase, "shanghai", ["one", "two"], "two", expect.any(String), "account:owner@example.com");
+    expect(mockRunWrite).toHaveBeenCalledTimes(1);
   });
 
   it("cancels without writing any database changes", async () => {
     const screen = render(<ManageCityCollectionScreen />);
     await waitFor(() => expect(mockResolveCityCollection).toHaveBeenCalled());
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Cancel collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消城市旅行册更改")); });
 
     expect(mockBack).toHaveBeenCalledTimes(1);
     expect(mockSaveCityCollection).not.toHaveBeenCalled();
@@ -68,7 +83,7 @@ describe("city collection management route", () => {
     screen.rerender(<ManageCityCollectionScreen />);
 
     expect(screen.queryByText("One")).toBeNull();
-    expect(screen.queryByLabelText("Save collection changes")).toBeNull();
+    expect(screen.queryByLabelText("保存城市旅行册更改")).toBeNull();
   });
 
   it("removes the previous city collection and save controls during a route change", async () => {
@@ -80,6 +95,25 @@ describe("city collection management route", () => {
     screen.rerender(<ManageCityCollectionScreen />);
 
     expect(screen.queryByText("One")).toBeNull();
-    expect(screen.queryByLabelText("Save collection changes")).toBeNull();
+    expect(screen.queryByLabelText("保存城市旅行册更改")).toBeNull();
+  });
+
+  it("maps storage failures to a stable Chinese action without raw exception text", async () => {
+    mockResolveCityCollection.mockRejectedValueOnce(new Error("SQLite disk image malformed"));
+    const screen = render(<ManageCityCollectionScreen />);
+
+    await waitFor(() => expect(screen.getByText("暂时无法读取这座城市的旅行册，请稍后重试。")).toBeTruthy());
+    expect(screen.queryByText(/SQLite|malformed/u)).toBeNull();
+  });
+
+  it("does not render a raw save exception", async () => {
+    mockSaveCityCollection.mockRejectedValueOnce(new Error("raw write failure"));
+    const screen = render(<ManageCityCollectionScreen />);
+    await waitFor(() => expect(screen.getByText("One")).toBeTruthy());
+
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
+
+    await waitFor(() => expect(screen.getByText("暂时无法保存城市旅行册，请检查本机空间后重试。")).toBeTruthy());
+    expect(screen.queryByText(/raw write failure/u)).toBeNull();
   });
 });

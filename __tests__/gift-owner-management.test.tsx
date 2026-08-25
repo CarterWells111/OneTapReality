@@ -8,6 +8,7 @@ const mockListOwnedGiftManagementRequests = jest.fn();
 const mockDecideOwnedGiftManagementRequest = jest.fn();
 const mockStartOwnedGiftPublish = jest.fn();
 const mockFinishOwnedGiftPublish = jest.fn();
+const mockBlockGiftUser = jest.fn();
 const mockUseAuth = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 const mockMemories = jest.fn();
@@ -31,6 +32,7 @@ jest.mock("../src/services/backend/api-client", () => ({
     decideOwnedGiftManagementRequest: mockDecideOwnedGiftManagementRequest,
     startOwnedGiftPublish: mockStartOwnedGiftPublish,
     finishOwnedGiftPublish: mockFinishOwnedGiftPublish,
+    blockGiftUser: mockBlockGiftUser,
     updateOwnedGiftMemberRole: mockUpdateOwnedGiftMemberRole,
   })),
 }));
@@ -65,6 +67,7 @@ describe("gift owner member management", () => {
     mockDecideOwnedGiftManagementRequest.mockResolvedValue({ status: "approved" });
     mockStartOwnedGiftPublish.mockResolvedValue({ publicationId: "publication-1", uploads: [], coverUpload: null, expiresAt: "2026-08-16T01:00:00.000Z" });
     mockFinishOwnedGiftPublish.mockResolvedValue({ albumId: "album-1" });
+    mockBlockGiftUser.mockResolvedValue({ status: "created", block: { id: "block-1" } });
   });
 
   it("publishes an existing local album only for the first shared version", async () => {
@@ -252,7 +255,8 @@ describe("gift owner member management", () => {
     await screen.findByText(viewer.email);
 
     fireEvent.press(screen.getByLabelText(`更改 ${viewer.email} 的权限`));
-    await screen.findByText("权限更新失败");
+    await screen.findByText("无法更新成员权限，请刷新后重试。");
+    expect(screen.queryByText("权限更新失败")).toBeNull();
   });
 
   it("does not render owner controls while authorization is loading", () => {
@@ -301,6 +305,18 @@ describe("gift owner member management", () => {
     expect(mockRemoveOwnedGiftMember).toHaveBeenCalledTimes(1);
 
     await act(async () => { resolveRemove({ members: [owner] }); });
+  });
+
+  it("lets the owner block and remove a current member in one server operation", async () => {
+    mockGetOwnedGiftManagement.mockResolvedValue(management([owner, viewer]));
+    render(<GiftManagementScreen />);
+    await screen.findByText(viewer.email);
+
+    fireEvent.press(screen.getByLabelText(`屏蔽并移除 ${viewer.email}`));
+
+    await waitFor(() => expect(mockBlockGiftUser).toHaveBeenCalledWith("gift-1", "account-token", { targetEmail: viewer.email }));
+    expect(screen.queryByText(viewer.email)).toBeNull();
+    expect(screen.getByText("已屏蔽并移除该成员；双方将无法再次互相邀请。")).toBeTruthy();
   });
 
   it("does not let an old member operation update the new gift context", async () => {

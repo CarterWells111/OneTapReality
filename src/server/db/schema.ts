@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import type { CloudCanvasLayout } from "../../services/backend/contracts";
 
 export type GiftMemberRole = "owner" | "viewer" | "editor";
+export type GiftContentReportReason = "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
 
 export const devices = pgTable(
   "devices",
@@ -26,8 +27,14 @@ export const users = pgTable(
     email: text("email").notNull(),
     createdAt: text("created_at").notNull(),
     lastAuthenticatedAt: text("last_authenticated_at").notNull(),
+    deletionState: text("deletion_state").$type<"active" | "pending">().default("active").notNull(),
+    deletionRequestedAt: text("deletion_requested_at"),
   },
-  (table) => [uniqueIndex("users_email_unique").on(table.email)],
+  (table) => [
+    uniqueIndex("users_email_unique").on(table.email),
+    check("users_deletion_state_check", sql`${table.deletionState} in ('active', 'pending')`),
+    check("users_deletion_requested_at_check", sql`(${table.deletionState} = 'active' and ${table.deletionRequestedAt} is null) or (${table.deletionState} = 'pending' and ${table.deletionRequestedAt} is not null)`),
+  ],
 );
 
 /** Short-lived, one-time email verification codes; plaintext codes are never persisted. */
@@ -81,6 +88,63 @@ export const authRateLimits = pgTable(
     index("auth_rate_limits_expires_idx").on(table.expiresAt, table.scopeHash),
     check("auth_rate_limits_attempts_check", sql`${table.attempts} >= 0`),
   ],
+);
+
+/** Session-bound, short-lived proof required before permanent account deletion. */
+export const accountDeletionChallenges = pgTable(
+  "account_deletion_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => authSessions.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    consumedAt: text("consumed_at"),
+    failedAttempts: integer("failed_attempts").default(0).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("account_deletion_challenges_user_created_idx").on(table.userId, table.createdAt),
+    index("account_deletion_challenges_expires_idx").on(table.expiresAt, table.id),
+    check("account_deletion_challenges_failed_attempts_check", sql`${table.failedAttempts} between 0 and 5`),
+  ],
+);
+
+/** Revocation-first, durable account deletion work. Completed rows retain only an anonymous receipt. */
+export const accountDeletionJobs = pgTable(
+  "account_deletion_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    accountEmail: text("account_email"),
+    state: text("state").$type<"pending" | "processing" | "completed">().default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    nextAttemptAt: text("next_attempt_at").notNull(),
+    leaseUntil: text("lease_until"),
+    completeBy: text("complete_by").notNull(),
+    lastErrorCode: text("last_error_code"),
+    supportNotifiedAt: text("support_notified_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("account_deletion_jobs_user_open_unique").on(table.userId).where(sql`${table.state} in ('pending', 'processing')`),
+    index("account_deletion_jobs_due_idx").on(table.state, table.nextAttemptAt, table.id),
+    check("account_deletion_jobs_state_check", sql`${table.state} in ('pending', 'processing', 'completed')`),
+    check("account_deletion_jobs_attempts_check", sql`${table.attempts} >= 0`),
+    check("account_deletion_jobs_identity_check", sql`(${table.state} = 'completed' and ${table.userId} is null and ${table.accountEmail} is null and ${table.completedAt} is not null) or (${table.state} in ('pending', 'processing') and ${table.userId} is not null and ${table.accountEmail} is not null and ${table.completedAt} is null)`),
+  ],
+);
+
+/** Private object keys awaiting deletion; removed before a receipt is anonymized. */
+export const accountDeletionMediaObjects = pgTable(
+  "account_deletion_media_objects",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id").notNull().references(() => accountDeletionJobs.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull(),
+  },
+  (table) => [uniqueIndex("account_deletion_media_objects_job_object_unique").on(table.jobId, table.objectKey)],
 );
 
 export const memories = pgTable(
@@ -210,6 +274,75 @@ export const giftMemberActivations = pgTable(
     activatedAt: text("activated_at").notNull(),
   },
   (table) => [index("gift_member_activations_user_member_idx").on(table.userId, table.memberId)],
+);
+
+/** Minimal ended-relationship proof so either party can still block after membership removal. */
+export const giftRelationshipTombstones = pgTable(
+  "gift_relationship_tombstones",
+  {
+    id: text("id").primaryKey(),
+    giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gift_relationship_tombstones_gift_email_unique").on(table.giftId, table.email),
+    index("gift_relationship_tombstones_user_gift_idx").on(table.userId, table.giftId),
+    index("gift_relationship_tombstones_email_gift_idx").on(table.email, table.giftId),
+  ],
+);
+
+/** A reporter-specific hide plus the minimum metadata needed for support disposition. */
+export const giftContentReports = pgTable(
+  "gift_content_reports",
+  {
+    id: text("id").primaryKey(),
+    giftId: text("gift_id").notNull().references(() => gifts.id, { onDelete: "cascade" }),
+    reporterUserId: text("reporter_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason").$type<GiftContentReportReason>().notNull(),
+    details: text("details"),
+    snapshotVersion: integer("snapshot_version").notNull(),
+    state: text("state").$type<"open" | "resolved" | "dismissed">().default("open").notNull(),
+    disposition: text("disposition").$type<"content_disabled" | "member_removed" | "no_violation">(),
+    dispositionNote: text("disposition_note"),
+    disposedAt: text("disposed_at"),
+    supportNotifiedAt: text("support_notified_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("gift_content_reports_reporter_snapshot_unique").on(table.giftId, table.reporterUserId, table.snapshotVersion),
+    index("gift_content_reports_open_created_idx").on(table.state, table.createdAt, table.id),
+    index("gift_content_reports_reporter_gift_idx").on(table.reporterUserId, table.giftId),
+    check("gift_content_reports_reason_check", sql`${table.reason} in ('sexual', 'harassment', 'hate', 'violence', 'spam', 'other')`),
+    check("gift_content_reports_snapshot_version_check", sql`${table.snapshotVersion} >= 1`),
+    check("gift_content_reports_details_length_check", sql`${table.details} is null or char_length(${table.details}) <= 500`),
+    check("gift_content_reports_disposition_note_length_check", sql`${table.dispositionNote} is null or char_length(${table.dispositionNote}) <= 500`),
+    check("gift_content_reports_state_check", sql`${table.state} in ('open', 'resolved', 'dismissed')`),
+    check("gift_content_reports_disposition_check", sql`(${table.state} = 'open' and ${table.disposition} is null and ${table.disposedAt} is null) or (${table.state} in ('resolved', 'dismissed') and ${table.disposition} in ('content_disabled', 'member_removed', 'no_violation') and ${table.disposedAt} is not null)`),
+  ],
+);
+
+/** Direction is retained for support, while the canonical email pair enforces bidirectional blocking. */
+export const userBlocks = pgTable(
+  "user_blocks",
+  {
+    id: text("id").primaryKey(),
+    blockerUserId: text("blocker_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    blockerEmail: text("blocker_email").notNull(),
+    blockedUserId: text("blocked_user_id").references(() => users.id, { onDelete: "cascade" }),
+    blockedEmail: text("blocked_email").notNull(),
+    emailLow: text("email_low").notNull(),
+    emailHigh: text("email_high").notNull(),
+    sourceGiftId: text("source_gift_id").references(() => gifts.id, { onDelete: "set null" }),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("user_blocks_email_pair_unique").on(table.emailLow, table.emailHigh),
+    index("user_blocks_blocker_created_idx").on(table.blockerUserId, table.createdAt, table.id),
+    index("user_blocks_blocked_email_idx").on(table.blockedEmail, table.createdAt, table.id),
+    check("user_blocks_distinct_email_check", sql`${table.blockerEmail} <> ${table.blockedEmail} and ${table.emailLow} <> ${table.emailHigh}`),
+  ],
 );
 
 export const giftEmailCodes = pgTable(
@@ -361,12 +494,18 @@ export type UserRow = typeof users.$inferSelect;
 export type AuthEmailCodeRow = typeof authEmailCodes.$inferSelect;
 export type AuthSessionRow = typeof authSessions.$inferSelect;
 export type AuthRateLimitRow = typeof authRateLimits.$inferSelect;
+export type AccountDeletionChallengeRow = typeof accountDeletionChallenges.$inferSelect;
+export type AccountDeletionJobRow = typeof accountDeletionJobs.$inferSelect;
+export type AccountDeletionMediaObjectRow = typeof accountDeletionMediaObjects.$inferSelect;
 export type MemoryRow = typeof memories.$inferSelect;
 export type MemoryPageRow = typeof memoryPages.$inferSelect;
 export type GiftRow = typeof gifts.$inferSelect;
 export type GiftCardRow = typeof giftCards.$inferSelect;
 export type GiftCardEventRow = typeof giftCardEvents.$inferSelect;
 export type GiftMemberRow = typeof giftMembers.$inferSelect;
+export type GiftRelationshipTombstoneRow = typeof giftRelationshipTombstones.$inferSelect;
+export type GiftContentReportRow = typeof giftContentReports.$inferSelect;
+export type UserBlockRow = typeof userBlocks.$inferSelect;
 export type GiftManagementRequestRow = typeof giftManagementRequests.$inferSelect;
 export type SharedAlbumRow = typeof sharedAlbums.$inferSelect;
 export type GiftEmailCodeRow = typeof giftEmailCodes.$inferSelect;

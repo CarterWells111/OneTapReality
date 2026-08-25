@@ -35,6 +35,10 @@ jest.mock("../src/features/auth/auth-provider", () => {
   const { View } = require("react-native");
   return { AuthProvider: ({ children }: { children: React.ReactNode }) => <View testID="auth-provider">{children}</View> };
 });
+jest.mock("../src/features/auth/local-library-provider", () => {
+  const { View } = require("react-native");
+  return { LocalLibraryProvider: ({ children }: { children: React.ReactNode }) => <View testID="local-library-provider">{children}</View> };
+});
 jest.mock("../src/storage/memory-repository", () => ({ migrateDbIfNeeded: jest.fn() }));
 
 import RootLayout from "../src/app/_layout";
@@ -61,6 +65,7 @@ describe("RootLayout", () => {
 
     expect(screen.getByTestId("safe-area-provider")).toBeTruthy();
     expect(screen.getByTestId("auth-provider")).toBeTruthy();
+    expect(screen.getByTestId("local-library-provider")).toBeTruthy();
     expect(
       within(screen.getByTestId("profile-provider")).getByTestId(
         "memories-provider",
@@ -77,7 +82,17 @@ describe("RootLayout", () => {
   it("registers the city collection management route", async () => {
     const screen = await render(<RootLayout />);
 
-    expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("Manage city collection");
+    expect(screen.getByTestId("screen-city/[city]/manage").props.title).toBe("管理城市旅行册");
+  });
+
+  it("does not register commerce, backend, or NFC writer screens", async () => {
+    const screen = await render(<RootLayout />);
+
+    expect(screen.queryByTestId("screen-shop/[skuId]")).toBeNull();
+    expect(screen.queryByTestId("screen-shop/orders")).toBeNull();
+    expect(screen.queryByTestId("screen-shop/favorites")).toBeNull();
+    expect(screen.queryByTestId("screen-backend/index")).toBeNull();
+    expect(screen.queryByTestId("screen-nfc-demo/[city]")).toBeNull();
   });
 
   it("registers the unvisited cities browser with its Chinese title", async () => {

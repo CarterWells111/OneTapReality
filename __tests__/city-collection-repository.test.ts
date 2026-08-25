@@ -17,7 +17,7 @@ type MemoryRow = {
   createdAt: string;
   updatedAt: string;
 };
-const accountKey = "owner@example.com";
+const accountKey = "account:owner@example.com";
 
 type ArrangementRow = {
   memory_id: string;

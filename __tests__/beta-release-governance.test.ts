@@ -74,6 +74,22 @@ describe("Beta release governance", () => {
     expect(cardGuide).toContain("https://api-staging.onetapreality.com");
   });
 
+  it("documents the external Beta as a two-approval manual Beta Review flow", () => {
+    const testflightRunbook = read("docs/release/TESTFLIGHT-RELEASE.md");
+
+    expect(testflightRunbook).toContain("--profile=beta-external --no-submit");
+    expect(testflightRunbook).toContain("--profile=beta-external --build-id=");
+    expect(testflightRunbook).toContain("不接受 `--allow-dirty`");
+    expect(testflightRunbook).toContain("不接受 `--skip-checks`");
+    expect(testflightRunbook).toContain("手动加入现有外部测试群组");
+    expect(testflightRunbook).toContain("Beta App Review");
+    expect(testflightRunbook).toContain("不得配置 `submit.ios.groups`");
+    expect(testflightRunbook).toContain("不得开放公共链接");
+    expect(testflightRunbook).toContain("project 与 account 两个 scope");
+    expect(testflightRunbook).toContain("任何远端变量名都会中止");
+    expect(testflightRunbook).toContain("不读取或打印变量值");
+  });
+
   it("keeps a sanitized three-card iOS staging rehearsal guide", () => {
     const guide = read("docs/operations/IOS-NFC-CARD-TEST.md");
     const batchLog = read("docs/operations/NFC-CARD-BATCH-LOG.md");

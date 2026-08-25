@@ -1,6 +1,7 @@
 import {
   consumeAuthEmailCode,
   createAuthEmailCode,
+  createAuthEmailCodeIfAllowed,
   createAuthSession,
   createOrGetUserByEmail,
   getAuthenticatedUserByTokenHash,
@@ -49,6 +50,43 @@ describe("account authentication repository", () => {
         expect.objectContaining({ id: "code-2", consumedAt: null, failedAttempts: 0 }),
       ]));
       expect(queries.join("\n")).toMatch(/pg_advisory_xact_lock/iu);
+    } finally { await close(); }
+  });
+
+  it("serializes concurrent login-code requests at the five-code window boundary", async () => {
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
+    try {
+      await migrateBackendDatabase(db);
+      for (let index = 0; index < 4; index += 1) {
+        await createAuthEmailCode(db, {
+          id: `existing-${index}`,
+          email: "owner@example.com",
+          codeHash: `existing-hash-${index}`,
+          createdAt: `2026-08-24T10:0${index}:00.000Z`,
+          expiresAt: "2026-08-24T10:30:00.000Z",
+        });
+      }
+      queries.length = 0;
+
+      const results = await Promise.all([
+        createAuthEmailCodeIfAllowed(db, {
+          id: "concurrent-a", email: " Owner@Example.com ", codeHash: "hash-a",
+          createdAt: "2026-08-24T10:04:00.000Z", expiresAt: "2026-08-24T10:09:00.000Z",
+          rateLimitSince: "2026-08-24T09:49:00.000Z",
+        }),
+        createAuthEmailCodeIfAllowed(db, {
+          id: "concurrent-b", email: "owner@example.com", codeHash: "hash-b",
+          createdAt: "2026-08-24T10:04:00.000Z", expiresAt: "2026-08-24T10:09:00.000Z",
+          rateLimitSince: "2026-08-24T09:49:00.000Z",
+        }),
+      ]);
+
+      expect(results.sort()).toEqual(["created", "rate_limited"]);
+      expect(await db.select().from(authEmailCodes)).toHaveLength(5);
+      const statements = queries.join("\n");
+      expect(statements).toMatch(/pg_advisory_xact_lock/iu);
+      expect(statements.indexOf("pg_advisory_xact_lock")).toBeLessThan(statements.indexOf('from "auth_email_codes"'));
     } finally { await close(); }
   });
 

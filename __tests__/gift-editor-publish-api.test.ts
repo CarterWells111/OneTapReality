@@ -20,8 +20,10 @@ jest.mock("../src/server/gifts/member-access", () => ({ getActivatedGiftMemberAc
 jest.mock("../src/server/gifts/r2-media", () => ({ getR2MediaStoreFromEnvironment: jest.fn(() => ({ createUploadUrl: jest.fn(async () => "https://upload.test"), getObjectMetadata: (...args: unknown[]) => mockMetadata(...args), copyObject: (...args: unknown[]) => mockCopyObject(...args), deleteObjects: (...args: unknown[]) => mockDeleteObjects(...args) })) }));
 jest.mock("../src/server/gifts/repository", () => {
   class Conflict extends Error { code = "gift_album_version_conflict"; }
+  class Unavailable extends Error { code = "gift_publication_unavailable"; }
   return {
     GiftAlbumVersionConflictError: Conflict,
+    GiftPublicationUnavailableError: Unavailable,
     createGiftPublishSession: (...args: unknown[]) => mockCreateSession(...args),
     getGiftPublishPayload: (...args: unknown[]) => mockGetPayload(...args),
     completeGiftPublishSession: (...args: unknown[]) => mockCompleteSession(...args),
@@ -29,13 +31,13 @@ jest.mock("../src/server/gifts/repository", () => {
       try { const result = await mockCompleteSession(...args); return result ? { status: "success", ...result } : { status: "access_denied" }; }
       catch (error) { if (error instanceof Conflict) return { status: "conflict" }; throw error; }
     },
-    enqueueGiftMediaCleanupJobs: (...args: unknown[]) => mockEnqueueCleanup(...args),
+    reserveGiftPublicationPromotion: (...args: unknown[]) => mockEnqueueCleanup(...args),
     resolveExistingGiftMedia: (...args: unknown[]) => mockResolveExisting(...args),
     getGiftAccessByTokenHash: jest.fn(async () => ({ id: "gift-1", status: "bound", role: "owner" })),
   };
 });
 
-import { GiftAlbumVersionConflictError } from "../src/server/gifts/repository";
+import { GiftAlbumVersionConflictError, GiftPublicationUnavailableError } from "../src/server/gifts/repository";
 import { POST, PUT } from "../src/app/api/gifts/invited/[id]/publish+api";
 import { POST as ownedPOST } from "../src/app/api/my-gifts/[id]/publish+api";
 import { POST as tokenPOST } from "../src/app/api/gifts/[token]/publish+api";
@@ -81,6 +83,19 @@ describe("editor shared publication contract", () => {
     expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["invited", (req: Request) => POST(req, { id: "gift-1" })],
+    ["owned", (req: Request) => ownedPOST(req, { id: "gift-1" })],
+    ["token", (req: Request) => tokenPOST(req, { token: "token" })],
+  ] as const)("maps a deletion-race publication rejection to 409 at the %s entry", async (_name, invoke) => {
+    mockCreateSession.mockRejectedValueOnce(new GiftPublicationUnavailableError());
+
+    const response = await invoke(request("POST", { baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [] }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_publication_unavailable" }) }));
+  });
+
   it("rechecks editor access on PUT before reading metadata", async () => {
     mockGetAccess.mockResolvedValueOnce(null as never);
     const response = await PUT(request("PUT", { publicationId: "session-1" }), { id: "gift-1" });
@@ -117,7 +132,10 @@ describe("editor shared publication contract", () => {
     const response = await PUT(request("PUT", { publicationId: "session-1" }), { id: "gift-1" });
     expect(response.status).toBe(500);
     expect(mockDeleteObjects).not.toHaveBeenCalledWith([expect.stringContaining("/final/")]);
-    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), "gift-1", [expect.stringContaining("/final/")], expect.any(String));
+    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      giftId: "gift-1", sessionId: "session-1", ownerEmail: "editor@example.com",
+      objectKeys: [expect.stringContaining("/final/")], now: expect.any(String),
+    }));
   });
 
   it("durably records attempted final keys when promotion cleanup cannot establish completion", async () => {
@@ -128,7 +146,10 @@ describe("editor shared publication contract", () => {
 
     expect(response.status).toBe(500);
     expect(mockCompleteSession).not.toHaveBeenCalled();
-    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), "gift-1", [expect.stringContaining("/final/")], expect.any(String));
+    expect(mockEnqueueCleanup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      giftId: "gift-1", sessionId: "session-1", ownerEmail: "editor@example.com",
+      objectKeys: [expect.stringContaining("/final/")], now: expect.any(String),
+    }));
     expect(mockEnqueueCleanup.mock.invocationCallOrder[0]).toBeLessThan(mockCopyObject.mock.invocationCallOrder[0]);
   });
 
@@ -246,6 +267,35 @@ describe("editor shared publication contract", () => {
     };
     await expect(promoteSharedPublication(store as never, payload)).rejects.toThrow();
     expect(deleted.at(-1)).toEqual([expect.stringContaining("/final/")]);
+  });
+
+  it("aborts and rejects a copy that does not settle within the promotion deadline", async () => {
+    jest.useFakeTimers();
+    try {
+      const payload = prepareSharedPublication({ baseVersion: 0, sourceMemoryId: "memory", title: "Trip", pages: [], media: [{ contentType: "image/jpeg", byteSize: 12 }] }, "gift-1", "session-1").payload;
+      let copySignal: AbortSignal | undefined;
+      const store = {
+        copyObject: jest.fn((_source: string, _destination: string, options?: { abortSignal?: AbortSignal }) => {
+          copySignal = options?.abortSignal;
+          return new Promise<void>(() => undefined);
+        }),
+        getObjectMetadata: jest.fn(async () => ({ contentType: "image/jpeg", byteSize: 12 })),
+        deleteObjects: jest.fn(async () => undefined),
+      };
+
+      const promotion = promoteSharedPublication(store as never, payload);
+      const rejected = expect(promotion).rejects.toThrow("Promotion time budget exceeded");
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await rejected;
+      expect(copySignal?.aborted).toBe(true);
+      expect(store.deleteObjects).toHaveBeenCalledWith(
+        [expect.stringContaining("/final/")],
+        expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("uses server-owned attempt keys and leaves temp objects available for concurrent promotion", async () => {

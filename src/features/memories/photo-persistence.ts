@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 
 import { localAccountDirectorySegment } from "../auth/local-account";
+import type { LocalLibraryOwner } from "../auth/local-library-owner";
 import type { CanvasLayout, Memory } from "../../types/memory";
 import {
   createMissingPhotoToken,
@@ -39,13 +40,13 @@ export type PhotoHydrationResult = {
   }[];
 };
 
-async function getPhotosDirectory(accountKey: string, memoryId: string): Promise<string> {
+async function getPhotosDirectory(accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
   const directory = `${FileSystem.documentDirectory}photos/accounts/${localAccountDirectorySegment(accountKey)}/${encodeURIComponent(memoryId)}/`;
   await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
   return directory;
 }
 
-function getAccountPhotosDirectory(accountKey: string): string {
+function getAccountPhotosDirectory(accountKey: LocalLibraryOwner): string {
   return `${FileSystem.documentDirectory}photos/accounts/${localAccountDirectorySegment(accountKey)}/`;
 }
 
@@ -58,7 +59,7 @@ function isAccountScopedPhotoUri(uri: string): boolean {
   return uri.startsWith("file://") && uri.includes("/photos/accounts/");
 }
 
-export async function deleteMemoryPhotoDirectory(accountKey: string, memoryId: string): Promise<void> {
+export async function deleteMemoryPhotoDirectory(accountKey: LocalLibraryOwner, memoryId: string): Promise<void> {
   try {
     await FileSystem.deleteAsync(`${getAccountPhotosDirectory(accountKey)}${encodeURIComponent(memoryId)}/`, { idempotent: true });
   } catch (error) {
@@ -66,12 +67,17 @@ export async function deleteMemoryPhotoDirectory(accountKey: string, memoryId: s
   }
 }
 
-export async function deleteAccountPhotoDirectory(accountKey: string): Promise<void> {
+export async function deleteAccountPhotoDirectory(accountKey: LocalLibraryOwner): Promise<void> {
   try {
-    await FileSystem.deleteAsync(getAccountPhotosDirectory(accountKey), { idempotent: true });
+    await deleteAccountPhotoDirectoryStrict(accountKey);
   } catch (error) {
     console.warn("[photo-persistence] 无法清理账号照片目录：", error);
   }
+}
+
+/** Account deletion must fail closed so the UI can retry or direct the user to support. */
+export async function deleteAccountPhotoDirectoryStrict(accountKey: LocalLibraryOwner): Promise<void> {
+  await FileSystem.deleteAsync(getAccountPhotosDirectory(accountKey), { idempotent: true });
 }
 
 function getExtension(uri: string): string {
@@ -94,7 +100,7 @@ function isPersisted(uri: string, directory: string): boolean {
  * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
  * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
  */
-export async function persistPhotoUriStrict(uri: string, accountKey: string, memoryId: string): Promise<string> {
+export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
   const directory = await getPhotosDirectory(accountKey, memoryId);
   if (isPersisted(uri, directory)) return uri;
   let sourceUri = uri;
@@ -121,12 +127,12 @@ export async function persistPhotoUriStrict(uri: string, accountKey: string, mem
   }
 }
 
-export async function persistPhotoUri(uri: string, accountKey: string, memoryId: string): Promise<string> {
+export async function persistPhotoUri(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
   return persistPhotoUriStrict(uri, accountKey, memoryId);
 }
 
 /** 并发 3 地持久化一组 URI（规范 §10：禁止裸 Promise.all 并发）。 */
-export async function persistPhotoUris(uris: readonly string[], accountKey: string, memoryId: string): Promise<string[]> {
+export async function persistPhotoUris(uris: readonly string[], accountKey: LocalLibraryOwner, memoryId: string): Promise<string[]> {
   const results = new Array<string>(uris.length);
   let cursor = 0;
   const worker = async () => {
@@ -155,7 +161,7 @@ type HydratedUri = {
   token?: `missing-local-photo://${string}`;
 };
 
-async function hydratePhotoUri(uri: string, accountKey: string, memoryId: string): Promise<HydratedUri> {
+async function hydratePhotoUri(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<HydratedUri> {
   const missing = (): HydratedUri => {
     const token = createMissingPhotoToken();
     return { runtime: token, storage: uri, token };
@@ -202,7 +208,7 @@ async function hydratePhotoUri(uri: string, accountKey: string, memoryId: string
 
 async function hydrateUniqueUris(
   uris: readonly string[],
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
   memoryId: string,
 ): Promise<Map<string, HydratedUri>> {
   const values = [...new Set(uris)];
@@ -223,7 +229,7 @@ async function hydrateUniqueUris(
 /** Converts stored photo references into current runtime URIs without exposing storage references to UI. */
 export async function hydrateMemoryPhotoReferences(
   memory: Memory,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ): Promise<PhotoHydrationResult> {
   const allUris = collectMemoryPhotoUris(memory);
   const hydrated = await hydrateUniqueUris(allUris, accountKey, memory.id);
@@ -342,7 +348,7 @@ export async function cleanupMigratedLegacyPhotoUris(
  */
 export async function ensureMemoryPhotosPersisted(
   memory: Memory,
-  accountKey: string,
+  accountKey: LocalLibraryOwner,
 ): Promise<{ memory: Memory; changed: boolean }> {
   const allUris = collectMemoryPhotoUris(memory);
   const uniqueUris = [...new Set(allUris)];

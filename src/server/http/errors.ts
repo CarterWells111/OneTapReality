@@ -13,6 +13,10 @@ export class ApiError extends Error {
   }
 }
 
+export function isErrorWithCode(error: unknown, code: string): error is Error & { code: string } {
+  return error instanceof Error && "code" in error && (error as Error & { code?: unknown }).code === code;
+}
+
 export function errorResponse(error: unknown): Response {
   if (error instanceof ApiError) {
     return Response.json({

@@ -2,7 +2,8 @@ import { and, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "dr
 
 import type { BackendDatabase } from "../db/client";
 import type { GiftMemberRole } from "../db/schema";
-import { giftCardEvents, giftCards, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums } from "../db/schema";
+import { giftCardEvents, giftCards, giftContentReports, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, userBlocks, users } from "../db/schema";
+import { blockedEmailPairCondition, recordGiftRelationshipTombstone } from "./content-safety";
 
 export type GiftPublicationPayload = {
   sourceMemoryId: string;
@@ -18,6 +19,16 @@ export type GiftPublicationPayload = {
 export class GiftAlbumVersionConflictError extends Error {
   readonly code = "gift_album_version_conflict";
   constructor() { super("The shared album changed after this edit began"); }
+}
+
+export class GiftPublicationUnavailableError extends Error {
+  readonly code = "gift_publication_unavailable";
+  constructor() { super("This gift is no longer available for publishing"); }
+}
+
+export class GiftRelationshipBlockedError extends Error {
+  readonly code = "gift_relationship_blocked";
+  constructor() { super("These accounts cannot share gifts"); }
 }
 
 export async function resolveExistingGiftMedia(db: BackendDatabase, giftId: string, baseVersion: number, refs: { position: number; mediaId: string }[]) {
@@ -72,6 +83,17 @@ export async function claimGiftByTokenHash(
 ): Promise<{ id: string; status: "bound"; ownerEmail: string } | null> {
   const ownerEmail = normalizeEmail(email);
   return db.transaction(async (tx) => {
+    const priorMembers = await tx.select({ email: giftMembers.email })
+      .from(gifts)
+      .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
+      .where(eq(gifts.tokenHash, tokenHash));
+    for (const member of priorMembers) {
+      const [blocked] = await tx.select({ id: userBlocks.id })
+        .from(userBlocks)
+        .where(blockedEmailPairCondition(ownerEmail, member.email))
+        .limit(1);
+      if (blocked) throw new GiftRelationshipBlockedError();
+    }
     // This conditional update is the ownership lock: only one concurrent claimant can win.
     const updated = await tx.update(gifts)
       .set({ status: "bound", claimedAt })
@@ -129,8 +151,9 @@ export async function listInvitedGifts(db: BackendDatabase, userId: string, emai
     .from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
     .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, userId)))
     .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-    .where(and(eq(giftMembers.email, viewerEmail), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), eq(gifts.status, "bound")));
+    .where(and(eq(giftMembers.email, viewerEmail), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), eq(gifts.status, "bound"), isNull(giftContentReports.id)));
 }
 
 export async function activateGiftViewerByTokenHash(
@@ -140,13 +163,30 @@ export async function activateGiftViewerByTokenHash(
   activatedAt: string,
 ): Promise<{ giftId: string; role: "viewer" | "editor"; albumPublished: boolean } | null> {
   return db.transaction(async (tx) => {
+    const lockedGift = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` })
+      .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "bound")))
+      .returning({ id: gifts.id });
+    if (!lockedGift.length) return null;
     const [eligible] = await tx.select({ memberId: giftMembers.id, giftId: gifts.id, role: giftMembers.role, albumId: sharedAlbums.id })
       .from(gifts)
       .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
       .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-      .where(and(eq(gifts.tokenHash, tokenHash), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(account.email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor"))))
+      .where(and(eq(gifts.id, lockedGift[0].id), eq(giftMembers.email, normalizeEmail(account.email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor"))))
       .limit(1);
     if (!eligible) return null;
+    const [reported] = await tx.select({ id: giftContentReports.id }).from(giftContentReports)
+      .where(and(eq(giftContentReports.giftId, eligible.giftId), eq(giftContentReports.reporterUserId, account.id)))
+      .limit(1);
+    if (reported) return null;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, eligible.giftId), eq(giftMembers.role, "owner")))
+      .limit(1);
+    if (!ownerMember) return null;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(account.email, ownerMember.email))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     await tx.insert(giftMemberActivations)
       .values({ memberId: eligible.memberId, userId: account.id, activatedAt })
       .onConflictDoUpdate({ target: giftMemberActivations.memberId, set: { userId: account.id, activatedAt } });
@@ -175,6 +215,14 @@ export async function addGiftMember(db: BackendDatabase, giftId: string, email: 
     if (!locked.length) return false;
     const members = await tx.select({ email: giftMembers.email }).from(giftMembers).where(eq(giftMembers.giftId, giftId));
     if (members.length >= 3 || members.some((member) => member.email === normalized)) return false;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, giftId), eq(giftMembers.role, "owner"))).limit(1);
+    if (!ownerMember) return false;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(ownerMember.email, normalized))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     await tx.insert(giftMembers).values({ id: crypto.randomUUID(), giftId, email: normalized, role, createdAt });
     return true;
   });
@@ -188,6 +236,7 @@ export async function listGiftMembers(db: BackendDatabase, giftId: string) {
 
 /** A member lookup intentionally returns no gift data for an unlisted email. */
 export async function getGiftAccessByTokenHash(db: BackendDatabase, tokenHash: string, email: string) {
+  const normalizedEmail = normalizeEmail(email);
   const [access] = await db.select({
     id: gifts.id,
     status: gifts.status,
@@ -200,19 +249,34 @@ export async function getGiftAccessByTokenHash(db: BackendDatabase, tokenHash: s
   })
     .from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
+    .leftJoin(users, eq(users.email, normalizedEmail))
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, users.id)))
     .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-    .where(and(eq(gifts.tokenHash, tokenHash), eq(giftMembers.email, normalizeEmail(email))))
+    .where(and(
+      eq(gifts.tokenHash, tokenHash),
+      eq(giftMembers.email, normalizedEmail),
+      or(eq(giftMembers.role, "owner"), isNull(giftContentReports.id)),
+    ))
     .limit(1);
   return access ?? null;
 }
 
 export async function updateGiftMemberRole(db: BackendDatabase, giftId: string, email: string, role: "viewer" | "editor"): Promise<boolean> {
   if (role !== "viewer" && role !== "editor") return false;
+  const normalized = normalizeEmail(email);
   return db.transaction(async (tx) => {
     const locked = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` }).where(eq(gifts.id, giftId)).returning({ id: gifts.id });
     if (!locked.length) return false;
+    const [ownerMember] = await tx.select({ email: giftMembers.email }).from(giftMembers)
+      .where(and(eq(giftMembers.giftId, giftId), eq(giftMembers.role, "owner"))).limit(1);
+    if (!ownerMember) return false;
+    const [blocked] = await tx.select({ id: userBlocks.id })
+      .from(userBlocks)
+      .where(blockedEmailPairCondition(ownerMember.email, normalized))
+      .limit(1);
+    if (blocked) throw new GiftRelationshipBlockedError();
     const rows = await tx.update(giftMembers).set({ role }).where(and(
-      eq(giftMembers.giftId, giftId), eq(giftMembers.email, normalizeEmail(email)),
+      eq(giftMembers.giftId, giftId), eq(giftMembers.email, normalized),
       or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")),
     )).returning({ id: giftMembers.id });
     return rows.length === 1;
@@ -231,7 +295,8 @@ export async function listGiftManagementTargetsForEditor(db: BackendDatabase, in
   const [requester] = await db.select({ id: giftMembers.id }).from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
     .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
-    .where(and(eq(gifts.id, input.giftId), eq(gifts.status, "bound"), eq(giftMembers.email, requesterEmail), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, input.userId))).limit(1);
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, input.userId)))
+    .where(and(eq(gifts.id, input.giftId), eq(gifts.status, "bound"), eq(giftMembers.email, requesterEmail), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, input.userId), isNull(giftContentReports.id))).limit(1);
   if (!requester) return null;
   const members = await db.select({ email: giftMembers.email, role: giftMembers.role }).from(giftMembers)
     .where(and(eq(giftMembers.giftId, input.giftId), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor"))));
@@ -254,7 +319,8 @@ export async function createGiftManagementRequest(db: BackendDatabase, input: {
     const [requester] = await tx.select({ memberId: giftMembers.id, email: giftMembers.email })
       .from(gifts).innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
       .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
-      .where(and(eq(gifts.id, input.giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(input.email)), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, input.userId))).limit(1);
+      .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, input.userId)))
+      .where(and(eq(gifts.id, input.giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(input.email)), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, input.userId), isNull(giftContentReports.id))).limit(1);
     if (!requester) return { status: "forbidden" as const };
     if (input.action === "delete_album") {
       const [album] = await tx.select({ id: sharedAlbums.id }).from(sharedAlbums).where(eq(sharedAlbums.giftId, input.giftId)).limit(1);
@@ -296,24 +362,47 @@ export async function decideGiftManagementRequest(db: BackendDatabase, input: { 
     const [requester] = await tx.select({ id: giftMembers.id }).from(giftMembers).innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, request.requesterMemberId), eq(giftMembers.role, "editor"))).limit(1);
     if (!requester) return { status: "requester_ineligible" as const };
+    let applyApprovedAction: () => Promise<void>;
     if (request.action === "remove_member") {
-      const [target] = await tx.select({ id: giftMembers.id, role: giftMembers.role }).from(giftMembers).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.email, request.targetEmail!))).limit(1);
+      const [target] = await tx.select({ id: giftMembers.id, role: giftMembers.role, userId: giftMemberActivations.userId })
+        .from(giftMembers)
+        .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+        .where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.email, request.targetEmail!))).limit(1);
       if (!target || target.role === "owner" || target.id === requester.id) return { status: "invalid_target" as const };
-      await tx.delete(giftMembers).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, target.id)));
+      applyApprovedAction = async () => {
+        await recordGiftRelationshipTombstone(tx, {
+          giftId: input.giftId,
+          email: request.targetEmail!,
+          userId: target.userId,
+          createdAt: input.now,
+        });
+        await tx.delete(giftMembers).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, target.id)));
+      };
     } else if (request.action === "change_member_role") {
+      const targetRole = request.targetRole;
       const [target] = await tx.select({ id: giftMembers.id, role: giftMembers.role }).from(giftMembers).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.email, request.targetEmail!))).limit(1);
-      if (!target || target.role === "owner" || target.id === requester.id || (request.targetRole !== "viewer" && request.targetRole !== "editor")) return { status: "invalid_target" as const };
-      await tx.update(giftMembers).set({ role: request.targetRole }).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, target.id)));
+      if (!target || target.role === "owner" || target.id === requester.id || (targetRole !== "viewer" && targetRole !== "editor")) return { status: "invalid_target" as const };
+      const [blocked] = await tx.select({ id: userBlocks.id }).from(userBlocks)
+        .where(blockedEmailPairCondition(input.ownerEmail, request.targetEmail!))
+        .limit(1);
+      if (blocked) throw new GiftRelationshipBlockedError();
+      applyApprovedAction = async () => {
+        await tx.update(giftMembers).set({ role: targetRole }).where(and(eq(giftMembers.giftId, input.giftId), eq(giftMembers.id, target.id)));
+      };
     } else if (request.action === "delete_album") {
       const [album] = await tx.select({ id: sharedAlbums.id, coverObjectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums).where(eq(sharedAlbums.giftId, input.giftId)).limit(1);
       if (!album) return { status: "invalid_target" as const };
       const media = await tx.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia).where(eq(sharedAlbumMedia.sharedAlbumId, album.id));
       const keys = [...new Set([...media.map(row => row.objectKey), ...(album.coverObjectKey ? [album.coverObjectKey] : [])])];
-      if (keys.length) await tx.insert(giftMediaCleanupJobs).values(keys.map(objectKey => ({ id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending", attempts: 0, nextAttemptAt: input.now, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now }))).onConflictDoNothing();
-      await tx.delete(sharedAlbums).where(eq(sharedAlbums.id, album.id));
+      applyApprovedAction = async () => {
+        if (keys.length) await tx.insert(giftMediaCleanupJobs).values(keys.map(objectKey => ({ id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending", attempts: 0, nextAttemptAt: input.now, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now }))).onConflictDoNothing();
+        await tx.delete(sharedAlbums).where(eq(sharedAlbums.id, album.id));
+      };
     } else return { status: "invalid_target" as const };
     const decided = await tx.update(giftManagementRequests).set({ status: "approved", decidedAt: input.now }).where(and(eq(giftManagementRequests.id, request.id), eq(giftManagementRequests.status, "pending"))).returning({ id: giftManagementRequests.id });
-    return { status: decided.length ? "approved" as const : "not_pending" as const };
+    if (!decided.length) return { status: "not_pending" as const };
+    await applyApprovedAction();
+    return { status: "approved" as const };
   });
 }
 
@@ -336,21 +425,35 @@ export async function getActivatedGiftAccessByGiftId(db: BackendDatabase, giftId
     .from(gifts)
     .innerJoin(giftMembers, eq(giftMembers.giftId, gifts.id))
     .innerJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+    .leftJoin(giftContentReports, and(eq(giftContentReports.giftId, gifts.id), eq(giftContentReports.reporterUserId, userId)))
     .leftJoin(sharedAlbums, eq(sharedAlbums.giftId, gifts.id))
-    .where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId)))
+    .where(and(eq(gifts.id, giftId), eq(gifts.status, "bound"), eq(giftMembers.email, normalizeEmail(email)), or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")), eq(giftMemberActivations.userId, userId), isNull(giftContentReports.id)))
     .limit(1);
   return access ?? null;
 }
 
 /** Owners cannot be removed and ownership is deliberately not transferable. */
-export async function removeGiftMember(db: BackendDatabase, giftId: string, email: string): Promise<boolean> {
+export async function removeGiftMember(db: BackendDatabase, giftId: string, email: string, removedAt = new Date().toISOString()): Promise<boolean> {
   return db.transaction(async (tx) => {
     const locked = await tx.update(gifts).set({ createdAt: sql`${gifts.createdAt}` }).where(eq(gifts.id, giftId)).returning({ id: gifts.id });
     if (!locked.length) return false;
-    const result = await tx.delete(giftMembers).where(and(
+    const [member] = await tx.select({ id: giftMembers.id, email: giftMembers.email, userId: giftMemberActivations.userId })
+      .from(giftMembers)
+      .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
+      .where(and(
       eq(giftMembers.giftId, giftId), eq(giftMembers.email, normalizeEmail(email)),
       or(eq(giftMembers.role, "viewer"), eq(giftMembers.role, "editor")),
-    )).returning({ id: giftMembers.id });
+    )).limit(1);
+    if (!member) return false;
+    await recordGiftRelationshipTombstone(tx, {
+      giftId,
+      email: member.email,
+      userId: member.userId,
+      createdAt: removedAt,
+    });
+    const result = await tx.delete(giftMembers)
+      .where(and(eq(giftMembers.giftId, giftId), eq(giftMembers.id, member.id)))
+      .returning({ id: giftMembers.id });
     return result.length === 1;
   });
 }
@@ -392,17 +495,29 @@ export async function createGiftPublishSession(
   input: { id: string; giftId: string; ownerEmail: string; memberId?: string | null; actorUserId?: string | null; baseVersion: number; payload: GiftPublicationPayload; expiresAt: string; createdAt: string },
 ) {
   if (!Number.isInteger(input.baseVersion) || input.baseVersion! < 0) throw new GiftAlbumVersionConflictError();
-  await db.insert(giftPublishSessions).values({
-    id: input.id,
-    giftId: input.giftId,
-    ownerEmail: normalizeEmail(input.ownerEmail),
-    memberId: input.memberId ?? null,
-    actorUserId: input.actorUserId ?? null,
-    baseVersion: input.baseVersion!,
-    payloadJson: input.payload,
-    expiresAt: input.expiresAt,
-    completedAt: null,
-    createdAt: input.createdAt,
+  await db.transaction(async (tx) => {
+    const email = normalizeEmail(input.ownerEmail);
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") throw new GiftPublicationUnavailableError();
+    await tx.execute(sql`select id from gifts where id = ${input.giftId} for update`);
+    const [gift] = await tx.select({ id: gifts.id }).from(gifts).where(and(
+      eq(gifts.id, input.giftId),
+      eq(gifts.status, "bound"),
+    )).limit(1);
+    if (!gift) throw new GiftPublicationUnavailableError();
+    await tx.insert(giftPublishSessions).values({
+      id: input.id,
+      giftId: input.giftId,
+      ownerEmail: email,
+      memberId: input.memberId ?? null,
+      actorUserId: input.actorUserId ?? null,
+      baseVersion: input.baseVersion!,
+      payloadJson: input.payload,
+      expiresAt: input.expiresAt,
+      completedAt: null,
+      createdAt: input.createdAt,
+    });
   });
 }
 
@@ -429,11 +544,15 @@ export async function completeGiftPublishSession(
   if (!candidate) return null;
 
   return withPublicationLock(candidate.giftId, () => db.transaction(async (tx) => {
+    const email = normalizeEmail(input.ownerEmail);
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") return null;
     await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
     await tx.execute(sql`select id from gifts where id = ${candidate.giftId} for update`);
     const [session] = await tx.select().from(giftPublishSessions).where(and(
       eq(giftPublishSessions.id, input.sessionId),
-      eq(giftPublishSessions.ownerEmail, normalizeEmail(input.ownerEmail)),
+      eq(giftPublishSessions.ownerEmail, email),
       isNull(giftPublishSessions.completedAt),
       gt(giftPublishSessions.expiresAt, input.now),
     )).limit(1);
@@ -445,7 +564,7 @@ export async function completeGiftPublishSession(
       .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
       eq(giftMembers.giftId, session.giftId),
-      eq(giftMembers.email, normalizeEmail(input.ownerEmail)),
+      eq(giftMembers.email, email),
       session.memberId
         ? and(eq(giftMembers.id, session.memberId), eq(giftMembers.role, "editor"), eq(giftMemberActivations.userId, session.actorUserId!))
         : eq(giftMembers.role, "owner"),
@@ -570,6 +689,47 @@ export async function enqueueGiftMediaCleanupJobs(db: BackendDatabase, giftId: s
     id: crypto.randomUUID(), giftId, objectKey, state: "pending" as const, attempts: 0,
     nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: now,
   }))).onConflictDoNothing();
+}
+
+export async function reserveGiftPublicationPromotion(
+  db: BackendDatabase,
+  input: {
+    giftId: string;
+    sessionId: string;
+    ownerEmail: string;
+    objectKeys: string[];
+    now: string;
+  },
+): Promise<void> {
+  const email = normalizeEmail(input.ownerEmail);
+  const uniqueKeys = [...new Set(input.objectKeys)];
+  await db.transaction(async (tx) => {
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") throw new GiftPublicationUnavailableError();
+    await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
+    const [session] = await tx.select({ id: giftPublishSessions.id }).from(giftPublishSessions).where(and(
+      eq(giftPublishSessions.id, input.sessionId),
+      eq(giftPublishSessions.giftId, input.giftId),
+      eq(giftPublishSessions.ownerEmail, email),
+      isNull(giftPublishSessions.completedAt),
+      gt(giftPublishSessions.expiresAt, input.now),
+    )).limit(1);
+    if (!session) throw new GiftPublicationUnavailableError();
+    await tx.execute(sql`select id from gifts where id = ${input.giftId} for update`);
+    const [gift] = await tx.select({ id: gifts.id }).from(gifts).where(and(
+      eq(gifts.id, input.giftId),
+      eq(gifts.status, "bound"),
+    )).limit(1);
+    if (!gift) throw new GiftPublicationUnavailableError();
+    if (uniqueKeys.length) {
+      const nextAttemptAt = new Date(new Date(input.now).getTime() + 15 * 60_000).toISOString();
+      await tx.insert(giftMediaCleanupJobs).values(uniqueKeys.map((objectKey) => ({
+        id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending" as const, attempts: 0,
+        nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now,
+      }))).onConflictDoNothing();
+    }
+  });
 }
 
 export async function isGiftMediaObjectReferenced(db: BackendDatabase, objectKey: string): Promise<boolean> {

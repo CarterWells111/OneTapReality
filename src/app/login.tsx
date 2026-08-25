@@ -15,6 +15,7 @@ import {
 
 import { AppButton, bodyFont, colors, serifFont } from "../components/ui";
 import { useAuth } from "../features/auth/auth-provider";
+import { toUserFacingBackendError } from "../services/backend/user-facing-error";
 
 function safeReturnTo(value: string | string[] | undefined): string {
   const path = Array.isArray(value) ? value[0] : value;
@@ -57,14 +58,14 @@ export default function LoginScreen() {
     if (!isAuthReady) return;
     if (!email.trim()) { setMessage("请输入邮箱地址。"); return; }
     try { setBusy(true); setMessage(""); const result = await requestCode(email); setEmail(result.email); setSent(true); setMessage("验证码已发送，请查收邮箱。"); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "暂时无法发送验证码，请稍后重试。"); }
+    catch (error) { setMessage(toUserFacingBackendError(error, "暂时无法发送验证码，请稍后重试。")); }
     finally { setBusy(false); }
   };
   const verify = async () => {
     if (!isAuthReady) return;
     if (!code.trim() || code.trim().length !== 6) { setMessage("请输入 6 位验证码。"); return; }
     try { setBusy(true); setMessage(""); await verifyCode(email, code); router.replace(safeReturnTo(returnTo) as never); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "验证码无效或已过期。"); }
+    catch (error) { setMessage(toUserFacingBackendError(error, "验证码无效或已过期，请重新获取。")); }
     finally { setBusy(false); }
   };
 

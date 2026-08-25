@@ -14,7 +14,7 @@ export type PrivateMediaStore = {
   getObjectMetadata: (objectKey: string) => Promise<{ contentType: string; byteSize: number } | null>;
   objectExists: (objectKey: string) => Promise<boolean>;
   deleteObjects: (objectKeys: string[], options?: { abortSignal?: AbortSignal }) => Promise<void>;
-  copyObject: (sourceKey: string, destinationKey: string) => Promise<void>;
+  copyObject: (sourceKey: string, destinationKey: string, options?: { abortSignal?: AbortSignal }) => Promise<void>;
 };
 
 const signedUrlLifetimeSeconds = 10 * 60;
@@ -66,8 +66,10 @@ export function createR2MediaStore(config: R2MediaConfig): PrivateMediaStore {
         throw new Error(`R2 deletion failed for ${result.Errors.length} object${result.Errors.length === 1 ? "" : "s"}`);
       }
     },
-    async copyObject(sourceKey, destinationKey) {
-      await client.send(new CopyObjectCommand({ Bucket: config.bucket, CopySource: `${config.bucket}/${encodeURIComponent(sourceKey).replace(/%2F/gu, "/")}`, Key: destinationKey }));
+    async copyObject(sourceKey, destinationKey, options) {
+      const command = new CopyObjectCommand({ Bucket: config.bucket, CopySource: `${config.bucket}/${encodeURIComponent(sourceKey).replace(/%2F/gu, "/")}`, Key: destinationKey });
+      if (options?.abortSignal) await client.send(command, { abortSignal: options.abortSignal });
+      else await client.send(command);
     },
   };
 }

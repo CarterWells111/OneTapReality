@@ -8,7 +8,8 @@ import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont
 import { PageReader } from "../../../features/canvas/page-reader";
 import { useAuth } from "../../../features/auth/auth-provider";
 import { mapSharedAlbumToStoryPages } from "../../../features/gifts/shared-album-mapper";
-import { BackendApiClient, type InvitedGiftAlbum } from "../../../services/backend/api-client";
+import { BackendApiClient, type GiftContentReportReason, type InvitedGiftAlbum } from "../../../services/backend/api-client";
+import { toUserFacingBackendError } from "../../../services/backend/user-facing-error";
 
 export default function SharedGiftDetailScreen() {
   const router = useRouter();
@@ -27,9 +28,13 @@ export default function SharedGiftDetailScreen() {
   const [targets, setTargets] = React.useState<{ email: string; role: "viewer" | "editor" }[]>([]);
   const [requestBusy, setRequestBusy] = React.useState(false);
   const [requestMessage, setRequestMessage] = React.useState("");
+  const [reportOpen, setReportOpen] = React.useState(false);
+  const [safetyBusy, setSafetyBusy] = React.useState(false);
+  const [safetyMessage, setSafetyMessage] = React.useState("");
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [loadedContextKey, setLoadedContextKey] = React.useState<string | null>(null);
   const requestInFlight = React.useRef(false);
+  const safetyInFlight = React.useRef(false);
   const requestGeneration = React.useRef(0);
   const contextKey = session && id ? `${id}\u0000${access === "owner" ? "owner" : "invited"}\u0000${session.user.id}\u0000${session.accessToken}` : null;
   const contextKeyRef = React.useRef(contextKey);
@@ -45,9 +50,13 @@ export default function SharedGiftDetailScreen() {
     setReaderCursor(null);
     setTargets([]);
     setRequestMessage("");
+    setReportOpen(false);
+    setSafetyMessage("");
     setLoadedContextKey(null);
     requestInFlight.current = false;
     setRequestBusy(false);
+    safetyInFlight.current = false;
+    setSafetyBusy(false);
     setStatus("正在读取分享相册…");
     setLoadFailed(false);
     if (!session || !id) {
@@ -112,8 +121,37 @@ export default function SharedGiftDetailScreen() {
     setRequestBusy(true); setRequestMessage("");
     const current = () => generation === requestGeneration.current && operationContextKey === contextKeyRef.current;
     try { await client.createInvitedGiftManagementRequest(id, session.accessToken, input); if (current()) setRequestMessage("申请已提交，等待拥有者处理。"); }
-    catch (error) { if (current()) setRequestMessage(error instanceof Error ? error.message : "申请提交失败，请重试。"); }
+    catch (error) { if (current()) setRequestMessage(toUserFacingBackendError(error, "申请提交失败，请刷新后重试。")); }
     finally { if (current()) { requestInFlight.current = false; setRequestBusy(false); } }
+  };
+  const runSafetyAction = async (action: "leave" | "block" | GiftContentReportReason) => {
+    if (!session || !id || !contextKey || loadedContextKey !== contextKey || safetyInFlight.current) return;
+    const generation = requestGeneration.current;
+    const operationContextKey = contextKey;
+    safetyInFlight.current = true;
+    setSafetyBusy(true);
+    setSafetyMessage("");
+    const current = () => generation === requestGeneration.current && operationContextKey === contextKeyRef.current;
+    try {
+      if (action === "leave") await client.leaveGiftMembership(id, session.accessToken);
+      else if (action === "block") await client.blockGiftUser(id, session.accessToken);
+      else await client.reportGiftContent(id, session.accessToken, action);
+      if (current()) router.replace("/gifts");
+    } catch (error) {
+      if (current()) {
+        const fallback = action === "leave"
+          ? "无法退出此共享礼品，请检查网络后重试。"
+          : action === "block"
+            ? "无法屏蔽此成员，请检查网络后重试。"
+            : "无法提交举报，请检查网络后重试。";
+        setSafetyMessage(toUserFacingBackendError(error, fallback));
+      }
+    } finally {
+      if (current()) {
+        safetyInFlight.current = false;
+        setSafetyBusy(false);
+      }
+    }
   };
 
   return (
@@ -125,13 +163,29 @@ export default function SharedGiftDetailScreen() {
 
       {status ? <Text selectable style={styles.message}>{status}</Text> : null}
       {loadFailed && session && id ? <AppButton label="重试" tone="secondary" onPress={() => void load()} /> : null}
-      {loadedContextKey === contextKey && album?.role === "editor" ? <Section title="管理申请" caption="OWNER APPROVAL REQUIRED"><PaperCard tone="surface" style={{ gap: 10 }}>
+      {loadedContextKey === contextKey && album?.role === "editor" ? <Section title="管理申请" caption="需要礼品拥有者批准"><PaperCard tone="surface" style={{ gap: 10 }}>
         <Text style={styles.message}>这些操作需要拥有者批准后才会生效。</Text>{requestMessage ? <Text selectable style={styles.message}>{requestMessage}</Text> : null}
         <AppButton disabled={requestBusy} label="申请删除整册" tone="danger" onPress={() => void requestManagement({ action: "delete_album" })} />
         {targets.map((target) => <View key={target.email} style={styles.targetRow}><Text style={styles.targetEmail}>{target.email}</Text><Text style={styles.message}>{target.role === "editor" ? "读写成员" : "只读成员"}</Text>
           <Pressable accessibilityLabel={`申请将 ${target.email} 改为${target.role === "viewer" ? "读写" : "只读"}`} accessibilityRole="button" disabled={requestBusy} onPress={() => void requestManagement({ action: "change_member_role", targetEmail: target.email, targetRole: target.role === "viewer" ? "editor" : "viewer" })} style={styles.managementButton}><Text style={styles.managementButtonText}>{target.role === "viewer" ? "申请改为读写" : "申请改为只读"}</Text></Pressable>
           <Pressable accessibilityLabel={`申请移除成员 ${target.email}`} accessibilityRole="button" disabled={requestBusy} onPress={() => void requestManagement({ action: "remove_member", targetEmail: target.email })} style={styles.managementButton}><Text style={styles.managementButtonText}>申请移除</Text></Pressable>
         </View>)}
+      </PaperCard></Section> : null}
+
+      {visibleAlbum && visibleAlbum.role !== "owner" ? <Section title="内容与访问" caption="你可以随时停止共享关系"><PaperCard tone="surface" style={{ gap: 10 }}>
+        <Text style={styles.message}>举报后，此礼品会立即从你的列表中隐藏。屏蔽会同时移除共享关系，并阻止双方再次邀请。</Text>
+        {safetyMessage ? <Text selectable style={styles.message}>{safetyMessage}</Text> : null}
+        <AppButton disabled={safetyBusy} label="举报此共享内容" tone="secondary" onPress={() => setReportOpen((value) => !value)} />
+        {reportOpen ? <View style={styles.reportReasons}>{REPORT_REASON_OPTIONS.map((option) => <Pressable
+          accessibilityLabel={`举报原因：${option.label}`}
+          accessibilityRole="button"
+          disabled={safetyBusy}
+          key={option.reason}
+          onPress={() => void runSafetyAction(option.reason)}
+          style={styles.managementButton}
+        ><Text style={styles.managementButtonText}>{option.label}</Text></Pressable>)}</View> : null}
+        <AppButton disabled={safetyBusy} label="屏蔽赠送者并退出" tone="danger" onPress={() => void runSafetyAction("block")} />
+        <AppButton disabled={safetyBusy} label="退出此共享礼品" tone="secondary" onPress={() => void runSafetyAction("leave")} />
       </PaperCard></Section> : null}
 
 
@@ -174,6 +228,15 @@ export default function SharedGiftDetailScreen() {
   );
 }
 
+const REPORT_REASON_OPTIONS: readonly { reason: GiftContentReportReason; label: string }[] = [
+  { reason: "sexual", label: "色情内容" },
+  { reason: "harassment", label: "骚扰" },
+  { reason: "hate", label: "仇恨内容" },
+  { reason: "violence", label: "暴力内容" },
+  { reason: "spam", label: "垃圾信息" },
+  { reason: "other", label: "其他" },
+];
+
 function parsePageIndex(value?: string) {
   if (!value) return 0;
   const parsed = Number.parseInt(value, 10);
@@ -202,4 +265,5 @@ const styles = StyleSheet.create({
   targetEmail: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   managementButton: { alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 16, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
   managementButtonText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
+  reportReasons: { gap: 8 },
 });

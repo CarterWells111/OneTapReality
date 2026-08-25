@@ -14,7 +14,7 @@ import {
 } from "../src/features/memories/photo-references";
 
 describe("canonical local photo references", () => {
-  const accountKey = "Owner@Example.com";
+  const accountKey = "account:owner@example.com";
   const memoryId = "memory-1";
   const canonical = "documents://photos/accounts/owner%40example.com/memory-1/a.jpg";
 

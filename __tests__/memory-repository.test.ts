@@ -55,7 +55,7 @@ const draftMemory = {
   createdAt: "2026-07-22T10:00:00.000Z",
   updatedAt: "2026-07-22T10:00:00.000Z",
 };
-const accountKey = "owner@example.com";
+const accountKey = "account:owner@example.com";
 
 const mediaSnapshotMemory: Memory = {
   ...draftMemory,
@@ -325,7 +325,10 @@ describe("memory draft lifecycle repository", () => {
     expect(execStatements.join(" ")).toContain(
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
-    expect(runCalls).toEqual([]);
+    expect(runCalls).toContainEqual({
+      statement: "UPDATE memories SET ownerAccountKey = ? WHERE id = ?",
+      parameters: ["guest", "legacy-memory"],
+    });
   });
 
   it("creates the local city collection arrangements table with cascading memory cleanup", async () => {

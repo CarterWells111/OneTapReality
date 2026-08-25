@@ -40,7 +40,7 @@ describe("CityCollectionManager drag interaction", () => {
       mockPans[0].update?.({ translationY: 100 });
       mockPans[0].finalize?.({ translationY: 100 });
     });
-    await act(async () => { fireEvent.press(screen.getByLabelText("Save collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
 
     expect(onSave).toHaveBeenCalledWith(["two", "one"], "one");
   });

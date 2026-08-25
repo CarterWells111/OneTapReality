@@ -5,14 +5,24 @@ import * as React from "react";
 import { MemoryBookCover } from "../../components/memory-book-cover";
 import { AppButton, bodyFont, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
+import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
+import { GiftNfcScanner } from "../../features/gifts/gift-nfc-scanner";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
   const { memories, isReady, discardMemory } = useMemories();
   const { isAuthReady, user } = useAuth();
+  const {
+    continueWithGuest,
+    isReady: isLocalLibraryReady,
+    isMigrating,
+    migrateToAccount,
+    needsMigrationChoice,
+    owner: localLibraryOwner,
+  } = useLocalLibrary();
   const [multiSelect, setMultiSelect] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
@@ -41,10 +51,9 @@ export default function MemoriesHomeScreen() {
   };
 
   const shareSelected = () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length !== 1) return;
     const selected = memories.filter((m) => selectedIds.includes(m.id));
-    if (selected.length === 0) return;
-    // 取第一个选中的记忆做导出
+    if (selected.length !== 1) return;
     const memory = selected[0];
     showShareActionSheet({
       coverImage: memory.coverImage,
@@ -90,9 +99,10 @@ export default function MemoriesHomeScreen() {
         <Text selectable style={styles.subtitle}>
           选择照片，开启一册专属你们的旅行记忆。
         </Text>
-        <Text selectable style={styles.subtitle}>选择照片，一触如初会用本地演示草稿帮你开启第一版旅行册。所有内容只留在这台设备。</Text>
+        <Text selectable style={styles.subtitle}>本地规则生成的可编辑初稿，不分析照片内容</Text>
+        <Text selectable style={styles.subtitle}>本地草稿默认保存在此设备；只有你主动发布礼品时，所选内容才会上传给受邀成员。</Text>
         <View style={styles.heroActions}>
-          {user ? <AppButton label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} /> : null}
+          <AppButton disabled={!isLocalLibraryReady || isMigrating} label="创建纪念册" tone="warm" onPress={() => router.push("/memory/new")} />
           <AppButton
             disabled={!isAuthReady}
             label="我的纪念品"
@@ -103,14 +113,15 @@ export default function MemoriesHomeScreen() {
               }
             }}
           />
+          <GiftNfcScanner />
         </View>
-        {user ? <Pressable
+        <Pressable
           accessibilityRole="button"
           onPress={() => router.push({ pathname: "/memory/[id]", params: { id: sampleMemory.id } })}
           style={({ pressed }) => [styles.heroLink, pressed && styles.pressed]}
         >
           <Text selectable style={styles.heroLinkText}>先翻一册杭州示例 ›</Text>
-        </Pressable> : null}
+        </Pressable>
       </PaperCard>
 
       {isAuthReady ? (
@@ -129,7 +140,27 @@ export default function MemoriesHomeScreen() {
         </PaperCard>
       ) : null}
 
-      {user ? <Section
+      {needsMigrationChoice ? (
+        <PaperCard style={styles.accountCard}>
+          <Text selectable style={styles.accountTitle}>选择本机旅行册</Text>
+          <Text selectable style={styles.accountEmail}>
+            此设备上已有访客旅行册。你可以继续使用访客库，或将它完整迁移到 {user?.email}。我们不会自动移动任何内容。
+          </Text>
+          <AppButton
+            disabled={isMigrating}
+            label="继续使用访客旅行册"
+            tone="secondary"
+            onPress={() => void Promise.resolve().then(continueWithGuest).catch(() => Alert.alert("无法保存选择", "请稍后重试。"))}
+          />
+          <AppButton
+            disabled={isMigrating}
+            label={isMigrating ? "正在迁移…" : "迁移到当前账户"}
+            onPress={() => void Promise.resolve().then(migrateToAccount).catch(() => Alert.alert("迁移未完成", "访客旅行册仍保留在本机，请稍后重试。"))}
+          />
+        </PaperCard>
+      ) : null}
+
+      <Section
         title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}
         caption="MY TRAVEL ALBUMS"
       >
@@ -154,11 +185,11 @@ export default function MemoriesHomeScreen() {
                 <Pressable
                   accessibilityLabel="分享所选"
                   accessibilityRole="button"
-                  disabled={selectedIds.length === 0}
+                  disabled={selectedIds.length !== 1}
                   onPress={shareSelected}
-                  style={[styles.selectionAction, selectedIds.length === 0 && styles.disabledAction]}
+                  style={[styles.selectionAction, selectedIds.length !== 1 && styles.disabledAction]}
                 >
-                  <Text style={[styles.selectionShareText, selectedIds.length === 0 && styles.disabledText]}>分享</Text>
+                  <Text style={[styles.selectionShareText, selectedIds.length !== 1 && styles.disabledText]}>分享</Text>
                 </Pressable>
                 <Pressable
                   accessibilityLabel="删除所选"
@@ -178,6 +209,9 @@ export default function MemoriesHomeScreen() {
                   <Text style={styles.selectionCancelText}>取消</Text>
                 </Pressable>
               </View>
+            ) : null}
+            {multiSelect && selectedIds.length > 1 ? (
+              <Text selectable style={styles.selectionHelp}>一次只能分享一本，请只保留一本旅行册。</Text>
             ) : null}
             <View style={styles.bookGrid}>
               {memories.map((memory) => (
@@ -204,27 +238,14 @@ export default function MemoriesHomeScreen() {
             <Text selectable style={styles.mutedText}>
               从一组照片开始，留住你们下一段一起出发的日子。
             </Text>
-            <AppButton label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
+            <AppButton disabled={!isLocalLibraryReady} label="从第一段旅程开始" onPress={() => router.push("/memory/new")} />
           </PaperCard>
         )}
-      </Section> : null}
+      </Section>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push("/shop")}
-        style={({ pressed }) => [styles.shopCard, pressed && styles.pressed]}
-      >
-        <View style={styles.shopCopy}>
-          <Text selectable style={styles.shopEyebrow}>纪念品商店</Text>
-          <Text selectable style={styles.shopTitle}>把回忆做成实物</Text>
-          <Text selectable style={styles.shopMeta}>
-            城市系列纪念钥匙、打印旅行册，可选样式、可刻字。
-          </Text>
-        </View>
-        <Text selectable style={styles.shopArrow}>→</Text>
-      </Pressable>
-
-      <Text selectable style={styles.footer}>每一册旅行记忆，都是独一无二的故事。</Text>
+      <Text selectable style={styles.footer}>
+        {localLibraryOwner === "guest" ? "当前使用本机访客旅行册。" : "每一册旅行记忆，都是独一无二的故事。"}
+      </Text>
     </ScrollView>
   );
 }
@@ -237,7 +258,7 @@ const styles = StyleSheet.create({
   rule: { backgroundColor: colors.warmAccent, borderRadius: 2, height: 3, width: 36 },
   heroHeadline: { color: colors.warmAccent, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
   subtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 15, lineHeight: 23 },
-  heroActions: { marginTop: 4 },
+  heroActions: { gap: 10, marginTop: 4 },
   accountCard: { alignItems: "stretch", gap: 12 },
   accountCopy: { gap: 4 },
   accountTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 15, fontWeight: "800" },
@@ -265,26 +286,10 @@ const styles = StyleSheet.create({
   selectionCancelText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   disabledAction: { opacity: 0.4 },
   disabledText: { opacity: 0.4 },
+  selectionHelp: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 20 },
   emptyCard: { gap: 12 },
   emptyTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "700" },
   mutedText: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  shopCard: {
-    alignItems: "center",
-    backgroundColor: colors.paper,
-    borderColor: colors.warmAccent,
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    minHeight: 96,
-    padding: 18,
-  },
-  shopCopy: { flex: 1, gap: 4 },
-  shopEyebrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 12.5, fontWeight: "800", letterSpacing: 0.5 },
-  shopTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "800" },
-  shopMeta: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  shopArrow: { color: colors.warmAccent, fontFamily: bodyFont, fontSize: 24, fontWeight: "800" },
   footer: { color: colors.muted, fontFamily: bodyFont, fontSize: 12.5, textAlign: "center" },
   pressed: { opacity: 0.85 },
 });

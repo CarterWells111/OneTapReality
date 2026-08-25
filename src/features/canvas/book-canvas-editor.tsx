@@ -647,10 +647,6 @@ export function BookCanvasEditor({
   };
 
   const addPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      return;
-    }
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
@@ -1075,10 +1071,6 @@ export function BookCanvasEditor({
                 accessibilityLabel="上传封面背景图"
                 accessibilityRole="button"
                 onPress={async () => {
-                  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (!permission.granted) {
-                    return;
-                  }
                   const result = await ImagePicker.launchImageLibraryAsync({
                     allowsMultipleSelection: false,
                     mediaTypes: ["images"],

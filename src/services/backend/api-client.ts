@@ -7,25 +7,12 @@ import type {
   HealthResponse,
 } from "./contracts";
 
-export type AdminGiftCardState = "initializing" | "active" | "retired";
-export type AdminGiftCard = {
-  id: string;
-  code: string;
-  state: AdminGiftCardState;
-  note: string | null;
-  giftId: string | null;
-  giftStatus: string | null;
-  createdAt: string;
-  activatedAt: string | null;
-  retiredAt: string | null;
-};
-export type AdminGiftCardDetail = {
-  card: AdminGiftCard & { expiresAt: string | null };
-  events: { id: string; kind: string; actorEmail: string; metadata: unknown; createdAt: string }[];
-};
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
+export type AccountDeletionChallenge = { challengeId: string; expiresAt: string };
+export type AccountDeletionReceipt = { receiptId: string; completeBy: string };
 export type GiftMemberRole = "owner" | "viewer" | "editor";
+export type GiftContentReportReason = "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
 export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
 export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
 
@@ -79,6 +66,10 @@ export class BackendApiError extends Error {
     this.name = "BackendApiError";
   }
 }
+
+export function isBackendSessionInvalidError(error: unknown): boolean {
+  return error instanceof BackendApiError && error.status === 401 && error.code === "unauthorized";
+}
 export function resolveBackendRequestUrl(
   path: string,
   origin = process.env.EXPO_PUBLIC_API_ORIGIN,
@@ -90,7 +81,7 @@ export function resolveBackendRequestUrl(
 export class BackendApiClient {
   constructor(private readonly request: typeof fetch = fetch) {}
 
-  private async send<T>(path: string, options?: RequestInit): Promise<T> {
+  protected async send<T>(path: string, options?: RequestInit): Promise<T> {
     let response: Response;
     try {
       response = await this.request(resolveBackendRequestUrl(path), options);
@@ -128,6 +119,21 @@ export class BackendApiClient {
 
   async logoutAuthSession(accessToken: string): Promise<void> {
     await this.send<null>("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  requestAccountDeletionChallenge(accessToken: string): Promise<AccountDeletionChallenge> {
+    return this.send("/api/account/deletion-challenge", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  deleteAccount(
+    accessToken: string,
+    input: { challengeId: string; code: string; confirmation: "DELETE" },
+  ): Promise<AccountDeletionReceipt> {
+    return this.send("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(input),
+    });
   }
 
   claimGift(token: string, accessToken: string): Promise<{ id: string; status: "bound"; ownerEmail: string }> {
@@ -228,6 +234,29 @@ export class BackendApiClient {
     return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
+  reportGiftContent(id: string, accessToken: string, reason: GiftContentReportReason, details?: string): Promise<{ status: "created" | "existing"; report: { id: string; snapshotVersion: number } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ reason, ...(details ? { details } : {}) }),
+    });
+  }
+
+  blockGiftUser(id: string, accessToken: string, target: { targetUserId?: string; targetEmail?: string } = {}): Promise<{ status: "created" | "existing"; block: { id: string } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(target),
+    });
+  }
+
+  async leaveGiftMembership(id: string, accessToken: string): Promise<void> {
+    await this.send<null>(`/api/gifts/${encodeURIComponent(id)}/membership`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+
   startInvitedGiftPublish(id: string, accessToken: string, payload: SharedAlbumPublishPayload) {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
@@ -250,36 +279,6 @@ export class BackendApiClient {
 
   decideOwnedGiftManagementRequest(accessToken: string, id: string, requestId: string, decision: "approved" | "rejected"): Promise<{ status: "approved" | "rejected" }> {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/management-requests`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ requestId, decision }) });
-  }
-
-  reserveGiftCard(accessToken: string, note?: string): Promise<{ cardId: string; cardCode: string; giftUrl: string; expiresAt: string }> {
-    return this.send("/api/admin/gift-cards", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
-    });
-  }
-
-  listAdminGiftCards(accessToken: string, filters: Partial<Pick<AdminGiftCard, "state" | "code" | "note">> = {}): Promise<AdminGiftCard[]> {
-    const query = new URLSearchParams();
-    if (filters.state) query.set("state", filters.state);
-    if (filters.code) query.set("code", filters.code);
-    if (filters.note) query.set("note", filters.note);
-    const queryString = query.toString();
-    const suffix = queryString ? `?${queryString}` : "";
-    return this.send<{ items: AdminGiftCard[] }>(`/api/admin/gift-cards${suffix}`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
-  }
-
-  getAdminGiftCard(accessToken: string, cardId: string): Promise<AdminGiftCardDetail> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  }
-
-  activateAdminGiftCard(accessToken: string, cardId: string): Promise<{ activated: true }> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}/activate`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
-  }
-
-  retireAdminGiftCard(accessToken: string, cardId: string): Promise<{ retired: true }> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}/retire`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
   registerDevice(installationId: string): Promise<DeviceRegistrationResponse> {

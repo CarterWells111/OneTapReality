@@ -6,6 +6,9 @@ const mockReplace = jest.fn();
 const mockGetInvitedGiftAlbum = jest.fn();
 const mockGetOwnedGiftAlbum = jest.fn();
 const mockListTargets = jest.fn();
+const mockReportGiftContent = jest.fn();
+const mockBlockGiftUser = jest.fn();
+const mockLeaveGiftMembership = jest.fn();
 const mockUseAuth = jest.fn();
 const mockPageReader = jest.fn();
 const mockUseFocusEffect = jest.fn();
@@ -30,6 +33,9 @@ jest.mock("../src/services/backend/api-client", () => ({
     getInvitedGiftAlbum: mockGetInvitedGiftAlbum,
     getOwnedGiftAlbum: mockGetOwnedGiftAlbum,
     listInvitedGiftManagementTargets: mockListTargets,
+    reportGiftContent: mockReportGiftContent,
+    blockGiftUser: mockBlockGiftUser,
+    leaveGiftMembership: mockLeaveGiftMembership,
   })),
 }));
 jest.mock("../src/features/canvas/page-reader", () => {
@@ -67,6 +73,9 @@ describe("shared gift album viewer", () => {
     mockGetInvitedGiftAlbum.mockResolvedValue(album);
     mockGetOwnedGiftAlbum.mockResolvedValue({ ...album, role: "owner" });
     mockListTargets.mockResolvedValue([]);
+    mockReportGiftContent.mockResolvedValue({ status: "created", report: { id: "report-1", snapshotVersion: 1 } });
+    mockBlockGiftUser.mockResolvedValue({ status: "created", block: { id: "block-1" } });
+    mockLeaveGiftMembership.mockResolvedValue(undefined);
     mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "user-1", email: "viewer@example.com", isAdmin: false } }, signOut: jest.fn() });
   });
 
@@ -84,6 +93,46 @@ describe("shared gift album viewer", () => {
     render(<SharedGiftDetailScreen />);
     await waitFor(() => expect(screen.getByText(album.title)).toBeTruthy());
     expect(screen.queryByLabelText("编辑共享相册")).toBeNull();
+  });
+
+  it("reports one of the six Chinese reasons and immediately leaves the hidden gift", async () => {
+    render(<SharedGiftDetailScreen />);
+    await screen.findByText(album.title);
+
+    fireEvent.press(screen.getByText("举报此共享内容"));
+    expect(screen.getByText("色情内容")).toBeTruthy();
+    expect(screen.getByText("骚扰")).toBeTruthy();
+    expect(screen.getByText("仇恨内容")).toBeTruthy();
+    expect(screen.getByText("暴力内容")).toBeTruthy();
+    expect(screen.getByText("垃圾信息")).toBeTruthy();
+    expect(screen.getByText("其他")).toBeTruthy();
+    fireEvent.press(screen.getByText("骚扰"));
+
+    await waitFor(() => expect(mockReportGiftContent).toHaveBeenCalledWith("gift-1", "account-token", "harassment"));
+    expect(mockReplace).toHaveBeenCalledWith("/gifts");
+  });
+
+  it("offers a direct leave and a bidirectional block without exposing internal errors", async () => {
+    mockBlockGiftUser.mockRejectedValueOnce(new Error("database secret"));
+    render(<SharedGiftDetailScreen />);
+    await screen.findByText(album.title);
+
+    fireEvent.press(screen.getByText("屏蔽赠送者并退出"));
+    await screen.findByText("无法屏蔽此成员，请检查网络后重试。");
+    expect(screen.queryByText("database secret")).toBeNull();
+    fireEvent.press(screen.getByText("退出此共享礼品"));
+
+    await waitFor(() => expect(mockLeaveGiftMembership).toHaveBeenCalledWith("gift-1", "account-token"));
+    expect(mockReplace).toHaveBeenCalledWith("/gifts");
+  });
+
+  it("does not show leave, report or block controls for the gift owner", async () => {
+    mockParams = { id: "gift-1", access: "owner" };
+    render(<SharedGiftDetailScreen />);
+    await screen.findByText(album.title);
+    expect(screen.queryByText("举报此共享内容")).toBeNull();
+    expect(screen.queryByText("屏蔽赠送者并退出")).toBeNull();
+    expect(screen.queryByText("退出此共享礼品")).toBeNull();
   });
 
   it("uses the published title and legacy date fallback for a viewer", async () => {

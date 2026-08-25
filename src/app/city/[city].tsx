@@ -4,8 +4,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { ScrollView } from "react-native";
 
 import { CityWorkspaceContent } from "../../features/cities/city-workspace-content";
-import { useAuth } from "../../features/auth/auth-provider";
-import { normalizeLocalAccountKey } from "../../features/auth/local-account";
+import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { resolveCityCollection, type ResolvedCityCollection } from "../../storage/city-collection-repository";
 import type { City } from "../../types/memory";
@@ -17,26 +16,21 @@ function emptyCollection(city: City): ResolvedCityCollection {
 export default function CityScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const { isAuthReady, user } = useAuth();
+  const { isReady: isLibraryReady, owner: accountKey } = useLocalLibrary();
   const { city: rawCity } = useLocalSearchParams<{ city: string }>();
   const city = resolveCityRouteParam(rawCity);
-  const accountKey = user ? normalizeLocalAccountKey(user.email) : null;
   const [loaded, setLoaded] = React.useState<{ accountKey: string; collection: ResolvedCityCollection } | null>(null);
 
   useFocusEffect(React.useCallback(() => {
     let active = true;
-    if (!isAuthReady) return () => { active = false; };
-    if (!accountKey) {
-      router.replace(`/login?returnTo=${encodeURIComponent(`/city/${city}`)}` as never);
-      return () => { active = false; };
-    }
+    if (!isLibraryReady) return () => { active = false; };
     const requestedAccountKey = accountKey;
     void resolveCityCollection(db, city, requestedAccountKey).then((nextCollection) => {
       // 仅当回调仍有效且城市未切换时应用，避免快速切换城市时旧结果覆盖新集合
       if (active && nextCollection.city === city) setLoaded({ accountKey: requestedAccountKey, collection: nextCollection });
     });
     return () => { active = false; };
-  }, [accountKey, city, db, isAuthReady, router]));
+  }, [accountKey, city, db, isLibraryReady]));
 
   const collection = loaded?.accountKey === accountKey && loaded.collection.city === city
     ? loaded.collection

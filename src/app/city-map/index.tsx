@@ -13,7 +13,7 @@ import { cityRegistry, type City } from "../../types/city";
 
 
 
-/** 城市搜索列表（中文名 + ID 索引） */
+/** 城市搜索索引；搜索结果仅呈现正式中文城市名。 */
 const citySearchEntries = cityRegistry
   .map((entry) => ({
     id: entry.id as City,
@@ -138,7 +138,6 @@ export default function FullscreenCityMapScreen() {
                 style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
               >
                 <Text selectable style={styles.dropdownName}>{entry.name}</Text>
-                <Text selectable style={styles.dropdownId}>{entry.id}</Text>
               </Pressable>
             ))}
           </View>
@@ -263,11 +262,6 @@ const styles = StyleSheet.create({
     fontFamily: serifFont,
     fontSize: 16,
     fontWeight: "800",
-  },
-  dropdownId: {
-    color: colors.muted,
-    fontFamily: bodyFont,
-    fontSize: 12,
   },
   viewport: {
     flex: 1,

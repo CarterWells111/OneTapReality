@@ -4,12 +4,11 @@ import { Image, StyleSheet, type ImageSourcePropType } from "react-native";
 import { colors } from "../../components/ui";
 import { headingFontFamily } from "../../features/typography/fonts";
 
-type TabName = "memory" | "city" | "shop" | "profile";
+type TabName = "memory" | "city" | "profile";
 
 const tabIcons: Record<TabName, ImageSourcePropType> = {
   memory: require("../../../assets/tab-icons/tab-memory.png"),
   city: require("../../../assets/tab-icons/tab-city.png"),
-  shop: require("../../../assets/tab-icons/tab-shop.png"),
   profile: require("../../../assets/tab-icons/tab-profile.png"),
 };
 
@@ -60,13 +59,6 @@ export default function TabLayout() {
         options={{
           title: "城市",
           tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="city" />,
-        }}
-      />
-      <Tabs.Screen
-        name="shop"
-        options={{
-          title: "商店",
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} name="shop" />,
         }}
       />
       <Tabs.Screen

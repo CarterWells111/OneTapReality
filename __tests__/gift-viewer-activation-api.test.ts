@@ -23,4 +23,13 @@ describe("viewer gift activation API", () => {
     const response = await POST(new Request("http://localhost/api/gifts/token/activate-viewer", { method: "POST" }), { token: "gift-token" });
     expect(response.status).toBe(503);
   });
+
+  it("returns a stable conflict when a bidirectional block prevents activation", async () => {
+    (activateGiftViewerByTokenHash as jest.Mock).mockRejectedValueOnce(Object.assign(new Error("internal relationship detail"), { code: "gift_relationship_blocked" }));
+    const response = await POST(new Request("http://localhost/api/gifts/token/activate-viewer", { method: "POST" }), { token: "gift-token" });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gift_relationship_blocked", message: "These accounts cannot share gifts" },
+    });
+  });
 });
