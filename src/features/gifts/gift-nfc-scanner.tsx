@@ -15,6 +15,16 @@ function errorCode(error: unknown): GiftLinkScannerErrorCode | undefined {
     : undefined;
 }
 
+function scanErrorMessage(code: GiftLinkScannerErrorCode | undefined): string {
+  if (code === "NFC_NATIVE_BUILD_REQUIRED") {
+    return "Expo Go 不支持 NFC 扫描，请使用 TestFlight 版，或直接打开礼品链接。";
+  }
+  if (code === "NFC_UNAVAILABLE") {
+    return "此 iPhone 暂时无法使用 NFC 扫描，请改用礼品链接。";
+  }
+  return "未识别到有效的 OneTapReality 礼品卡，请重试。";
+}
+
 export function GiftNfcScanner({ scanner: injectedScanner }: { scanner?: GiftLinkScanner }) {
   const router = useRouter();
   const scanner = React.useMemo(
@@ -41,9 +51,7 @@ export function GiftNfcScanner({ scanner: injectedScanner }: { scanner?: GiftLin
       if (mounted.current) router.push(result.pathname as never);
     } catch (error) {
       if (!mounted.current || errorCode(error) === "NFC_SCAN_CANCELLED") return;
-      setMessage(errorCode(error) === "NFC_UNAVAILABLE"
-        ? "此 iPhone 暂时无法使用 NFC 扫描，请改用礼品链接。"
-        : "未识别到有效的 OneTapReality 礼品卡，请重试。");
+      setMessage(scanErrorMessage(errorCode(error)));
     } finally {
       if (mounted.current) setIsScanning(false);
     }

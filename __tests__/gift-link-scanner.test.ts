@@ -121,6 +121,19 @@ describe("read-only gift NFC scanner", () => {
     expect(loadAdapter).not.toHaveBeenCalled();
   });
 
+  it("fails before importing the unsupported NFC native module in Expo Go", async () => {
+    const loadAdapter = jest.fn(async () => makeAdapter());
+    const scanner = createGiftLinkScanner({
+      expectedOrigin: ORIGIN,
+      isExpoGo: true,
+      loadAdapter,
+      platform: "ios",
+    });
+
+    await expect(scanner.scan()).rejects.toMatchObject({ code: "NFC_NATIVE_BUILD_REQUIRED" });
+    expect(loadAdapter).not.toHaveBeenCalled();
+  });
+
   it("contains no NFC write, UID access, persistence, or token logging surface", () => {
     const source = readFileSync(
       join(process.cwd(), "src/services/nfc/gift-link-scanner.ts"),

@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 import { GiftLinkError, parseGiftLink, type ParsedGiftLink } from "./gift-link-parser";
@@ -22,6 +23,7 @@ export type GiftNdefReadAdapter = {
 export type GiftLinkScannerErrorCode =
   | "NFC_BUSY"
   | "NFC_GIFT_LINK_INVALID"
+  | "NFC_NATIVE_BUILD_REQUIRED"
   | "NFC_SCAN_CANCELLED"
   | "NFC_UNAVAILABLE";
 
@@ -41,6 +43,7 @@ type ScannerPlatform = "android" | "ios" | "web";
 
 type ScannerOptions = {
   expectedOrigin?: string;
+  isExpoGo?: boolean;
   loadAdapter?: () => Promise<GiftNdefReadAdapter>;
   platform?: ScannerPlatform;
 };
@@ -105,6 +108,7 @@ async function loadNativeReadAdapter(): Promise<GiftNdefReadAdapter> {
 
 export function createGiftLinkScanner(options: ScannerOptions = {}): GiftLinkScanner {
   const expectedOrigin = options.expectedOrigin ?? process.env.EXPO_PUBLIC_GIFT_ORIGIN ?? "";
+  const isExpoGo = options.isExpoGo ?? (Platform.OS !== "web" && Constants.appOwnership === "expo");
   const loadAdapter = options.loadAdapter ?? loadNativeReadAdapter;
   const platform = options.platform ?? (Platform.OS as ScannerPlatform);
   let active: ActiveScan | null = null;
@@ -129,6 +133,7 @@ export function createGiftLinkScanner(options: ScannerOptions = {}): GiftLinkSca
     async scan() {
       if (active) throw new GiftLinkScannerError("NFC_BUSY");
       if (platform !== "ios") throw new GiftLinkScannerError("NFC_UNAVAILABLE");
+      if (isExpoGo) throw new GiftLinkScannerError("NFC_NATIVE_BUILD_REQUIRED");
 
       const operation: ActiveScan = {
         cancelled: false,

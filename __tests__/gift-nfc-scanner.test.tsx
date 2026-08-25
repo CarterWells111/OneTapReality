@@ -46,4 +46,15 @@ describe("GiftNfcScanner", () => {
     await waitFor(() => expect(screen.getByText("未识别到有效的 OneTapReality 礼品卡，请重试。")).toBeTruthy());
     expect(screen.queryByText("secret raw URL")).toBeNull();
   });
+
+  it("explains that Expo Go cannot load the NFC native module", async () => {
+    const scanner = makeScanner();
+    jest.mocked(scanner.scan).mockRejectedValue(Object.assign(new Error("native module missing"), { code: "NFC_NATIVE_BUILD_REQUIRED" }));
+    const screen = render(<GiftNfcScanner scanner={scanner} />);
+
+    await act(async () => fireEvent.press(screen.getByText("扫描礼品")));
+
+    await waitFor(() => expect(screen.getByText("Expo Go 不支持 NFC 扫描，请使用 TestFlight 版，或直接打开礼品链接。")).toBeTruthy());
+    expect(screen.queryByText("native module missing")).toBeNull();
+  });
 });
