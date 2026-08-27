@@ -9,13 +9,12 @@ export const MAX_NORMALIZED_ELEMENT_SIZE = 1;
 
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
+  const { photoTemplateId, elements, ...metadata } = layout;
   return {
+    ...metadata,
     aspectRatio: 3 / 4,
-    ...(resolvePhotoTemplate(layout.photoTemplateId) ? { photoTemplateId: layout.photoTemplateId } : {}),
-    ...(layout.backgroundId ? { backgroundId: layout.backgroundId } : {}),
-    ...(layout.coverColor ? { coverColor: layout.coverColor } : {}),
-    ...(layout.coverImage ? { coverImage: layout.coverImage } : {}),
-    elements: layout.elements.map((element) => {
+    ...(resolvePhotoTemplate(photoTemplateId) ? { photoTemplateId } : {}),
+    elements: elements.map((element) => {
       const occurrence = (ids.get(element.id) ?? 0) + 1;
       ids.set(element.id, occurrence);
       const normalized = {

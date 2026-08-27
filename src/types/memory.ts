@@ -88,6 +88,7 @@ export type CanvasElement =
 export type CanvasLayout = {
   /** 画布宽高比，3:4 竖版（宽度:高度） */
   aspectRatio: number;
+  schemaVersion?: number;
   photoTemplateId?: PhotoTemplateId;
   backgroundId?: CanvasBackgroundId;
   /** 封面专用：纯色背景（十六进制） */

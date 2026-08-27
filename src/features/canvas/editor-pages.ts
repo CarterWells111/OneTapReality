@@ -1,7 +1,8 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout, normalizeLayout } from "./canvas-layout";
+import { resolvePhotoTemplate } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
-import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasStickerId, StoryPage } from "../../types/memory";
+import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasImageElement, CanvasLayout, CanvasStickerId, PhotoTemplateId, StoryPage } from "../../types/memory";
 
 export type CanvasElementPatch = {
   color?: string;
@@ -10,6 +11,7 @@ export type CanvasElementPatch = {
   height?: number;
   rotation?: number;
   text?: string;
+  uri?: string;
   width?: number;
   x?: number;
   y?: number;
@@ -31,13 +33,20 @@ function maxLayer(elements: CanvasElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex));
 }
 
-/** 保留当前 layout 的背景、封面色、封面图等 meta 字段，仅替换 elements。 */
-function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
-  const prev = page.layout;
+export type LayoutMetaMode = "preserve" | "clear" | PhotoTemplateId;
+
+/** Preserve all persisted layout metadata with explicit template intent. */
+export function preserveLayoutMeta(previous: CanvasLayout, elements: CanvasElement[], templateMode: LayoutMetaMode): CanvasLayout {
+  const { photoTemplateId: _previousTemplate, elements: _previousElements, ...metadata } = previous;
+  const templateId = templateMode === "preserve"
+    ? resolvePhotoTemplate(previous.photoTemplateId)?.id
+    : templateMode === "clear"
+      ? undefined
+      : resolvePhotoTemplate(templateMode)?.id;
   return {
-    aspectRatio: 0.75 as const,    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
-    ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
-    ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
+    ...metadata,
+    aspectRatio: 0.75 as const,
+    ...(templateId ? { photoTemplateId: templateId } : {}),
     elements,
   };
 }
@@ -124,9 +133,11 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
 }
 
 export function addImageToPage(pages: StoryPage[], pageId: string, id: string, uri: string) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, [
+  return updatePage(pages, pageId, (page) => {
+    if (page.layout!.elements.filter((element) => element.type === "image").length >= MAX_PHOTOS_PER_CANVAS_PAGE) return page;
+    return {
+      ...page,
+      layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -139,14 +150,15 @@ export function addImageToPage(pages: StoryPage[], pageId: string, id: string, u
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
-  }));
+      ], "clear"),
+    };
+  });
 }
 
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -162,14 +174,14 @@ export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
 }
 
 export function addStickerToPage(pages: StoryPage[], pageId: string, id: string, stickerId: CanvasStickerId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -182,14 +194,14 @@ export function addStickerToPage(pages: StoryPage[], pageId: string, id: string,
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
 }
 
 export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, frameId: CanvasFrameId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -202,7 +214,7 @@ export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, f
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
 }
 
@@ -213,13 +225,7 @@ export function setCanvasBackground(
 ) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 0.75,
-      ...(backgroundId ? { backgroundId } : {}),
-      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
-      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    layout: preserveLayoutMeta({ ...page.layout!, backgroundId }, page.layout!.elements, "preserve"),
   }));
 }
 
@@ -231,13 +237,7 @@ export function setCanvasCoverColor(
   return updatePage(pages, pageId, (page) => ({
     ...page,
     coverColor,
-    layout: {
-      aspectRatio: 0.75,
-      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      ...(coverColor ? { coverColor } : {}),
-      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    layout: preserveLayoutMeta({ ...page.layout!, coverColor }, page.layout!.elements, "preserve"),
   }));
 }
 
@@ -249,13 +249,7 @@ export function setCanvasCoverImage(
   return updatePage(pages, pageId, (page) => ({
     ...page,
     coverImage,
-    layout: {
-      aspectRatio: 0.75,
-      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
-      ...(coverImage ? { coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    layout: preserveLayoutMeta({ ...page.layout!, coverImage }, page.layout!.elements, "preserve"),
   }));
 }
 
@@ -265,13 +259,25 @@ export function updateCanvasElement(
   elementId: string,
   patch: CanvasElementPatch,
 ) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, page.layout!.elements.map((element) =>
-        element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
-      ),
-    ),
-  }));
+  return updatePage(pages, pageId, (page) => {
+    const current = page.layout!.elements.find((element) => element.id === elementId);
+    const nextElements = page.layout!.elements.map((element) =>
+      element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
+    );
+    const next = nextElements.find((element) => element.id === elementId);
+    const imageChanged = current?.type === "image" && next?.type === "image" && (
+      current.uri !== next.uri ||
+      current.x !== next.x ||
+      current.y !== next.y ||
+      current.width !== next.width ||
+      current.height !== next.height ||
+      current.rotation !== next.rotation
+    );
+    return {
+      ...page,
+      layout: preserveLayoutMeta(page.layout!, nextElements, imageChanged ? "clear" : "preserve"),
+    };
+  });
 }
 
 export function duplicateCanvasElement(pages: StoryPage[], pageId: string, elementId: string, copyId: string) {
@@ -280,9 +286,12 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
     if (!source) {
       return page;
     }
+    if (source.type === "image" && page.layout!.elements.filter((element) => element.type === "image").length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+      return page;
+    }
     return {
       ...page,
-      layout: preserveLayoutMeta(page, [
+      layout: preserveLayoutMeta(page.layout!, [
           ...page.layout!.elements,
           {
             ...source,
@@ -291,7 +300,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
             y: Math.min(source.y + 0.05, 1 - source.height),
             zIndex: maxLayer(page.layout!.elements) + 1,
           },
-        ]),
+        ], source.type === "image" ? "clear" : "preserve"),
     };
   });
 }
@@ -312,13 +321,93 @@ export function changeCanvasElementLayer(
     const currentLayer = elements[index].zIndex;
     elements[index] = { ...elements[index], zIndex: elements[target].zIndex };
     elements[target] = { ...elements[target], zIndex: currentLayer };
-    return { ...page, layout: preserveLayoutMeta(page, elements) };
+    return { ...page, layout: preserveLayoutMeta(page.layout!, elements, "preserve") };
   });
 }
 
 export function deleteCanvasElement(pages: StoryPage[], pageId: string, elementId: string) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, page.layout!.elements.filter((element) => element.id !== elementId)),
+  return updatePage(pages, pageId, (page) => {
+    const deleted = page.layout!.elements.find((element) => element.id === elementId);
+    return {
+      ...page,
+      layout: preserveLayoutMeta(
+        page.layout!,
+        page.layout!.elements.filter((element) => element.id !== elementId),
+        deleted?.type === "image" ? "clear" : "preserve",
+      ),
+    };
+  });
+}
+
+function orderedImages(elements: CanvasElement[]) {
+  const images: { element: CanvasImageElement; index: number }[] = [];
+  elements.forEach((element, index) => {
+    if (element.type === "image") images.push({ element, index });
+  });
+  return images.sort((left, right) => left.element.zIndex - right.element.zIndex || left.index - right.index);
+}
+
+export function applyPhotoTemplateToPage(pages: StoryPage[], pageId: string, templateId: string) {
+  const page = pages.find((candidate) => candidate.id === pageId);
+  const template = resolvePhotoTemplate(templateId);
+  if (!page || !template) return pages;
+  const currentPage = withLayout(page);
+  const images = orderedImages(currentPage.layout!.elements);
+  if (images.length !== template.photoCount) return pages;
+
+  const slotById = new Map(images.map(({ element }, index) => [element.id, template.slots[index]]));
+  return updatePage(pages, pageId, (nextPage) => ({
+    ...nextPage,
+    layout: preserveLayoutMeta(
+      nextPage.layout!,
+      nextPage.layout!.elements.map((element) => {
+        const slot = element.type === "image" ? slotById.get(element.id) : undefined;
+        return slot ? { ...element, ...slot } : element;
+      }),
+      template.id,
+    ),
   }));
+}
+
+export function replacePagePhotos(
+  pages: StoryPage[],
+  pageId: string,
+  photos: { id: string; uri: string }[],
+  templateId?: string,
+) {
+  if (!pages.some((page) => page.id === pageId)) return pages;
+  return updatePage(pages, pageId, (page) => {
+    const limitedPhotos = photos.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+    const template = resolvePhotoTemplate(templateId);
+    const useTemplate = template !== undefined && template.photoCount === limitedPhotos.length;
+    const generated: CanvasImageElement[] = [];
+    if (useTemplate && template) {
+      limitedPhotos.forEach((photo, index) => generated.push({
+        id: photo.id,
+        type: "image",
+        uri: photo.uri,
+        ...template.slots[index],
+        zIndex: index + 1,
+      }));
+    } else {
+      createPhotoLayout(limitedPhotos.map((photo) => photo.uri)).elements.forEach((element, index) => {
+        if (element.type === "image") generated.push({ ...element, id: limitedPhotos[index].id });
+      });
+    }
+
+    let imageIndex = 0;
+    const elements = page.layout!.elements
+      .map((element) => {
+        if (element.type !== "image") return element;
+        const replacement = generated[imageIndex];
+        imageIndex += 1;
+        return replacement;
+      })
+      .filter((element): element is CanvasElement => element !== undefined);
+    elements.push(...generated.slice(imageIndex));
+    return {
+      ...page,
+      layout: preserveLayoutMeta(page.layout!, elements, useTemplate ? template.id : "clear"),
+    };
+  });
 }
