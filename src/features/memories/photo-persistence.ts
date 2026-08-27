@@ -127,7 +127,6 @@ export type StagedPhotoFile = {
 
 export type PhotoStagingSession = {
   cleanup: () => Promise<void>;
-  reconcile: (referencedUris: readonly string[]) => Promise<void>;
   stagePhoto: (uri: string) => Promise<StagedPhotoFile>;
 };
 
@@ -202,14 +201,12 @@ async function stagePhotoUriInDirectoryStrict(uri: string, directory: string): P
 /**
  * Owns temporary photos for one mounted editor session. A staged handle remains
  * individually rollback-safe until commit transfers it into the session. The
- * session then deletes committed files when pages stop referencing them, or
+ * session retains committed files so undo/redo snapshots stay readable, then
  * removes its unique directory at a terminal lifecycle boundary.
  */
 export function createPhotoStagingSession(sessionId: string): PhotoStagingSession {
   let closed = false;
   let cleanupPromise: Promise<void> | null = null;
-  let reconcileQueue = Promise.resolve();
-  let currentReferences = new Set<string>();
   const ownedUris = new Set<string>();
   const activeStages = new Set<Promise<StagedPhotoFile>>();
   const directoryPromise = getPhotoStagingDirectory(sessionId);
@@ -241,25 +238,11 @@ export function createPhotoStagingSession(sessionId: string): PhotoStagingSessio
     };
   };
 
-  const reconcile = (referencedUris: readonly string[]) => {
-    currentReferences = new Set(referencedUris);
-    reconcileQueue = reconcileQueue.catch(() => undefined).then(async () => {
-      for (const uri of [...ownedUris]) {
-        if (closed || currentReferences.has(uri)) continue;
-        await FileSystem.deleteAsync(uri, { idempotent: true });
-        ownedUris.delete(uri);
-      }
-    });
-    return reconcileQueue;
-  };
-
   const cleanup = () => {
     closed = true;
-    currentReferences.clear();
     if (!cleanupPromise) {
       cleanupPromise = (async () => {
         await Promise.allSettled([...activeStages]);
-        await reconcileQueue.catch(() => undefined);
         const directory = await directoryPromise;
         await FileSystem.deleteAsync(directory, { idempotent: true });
         ownedUris.clear();
@@ -271,7 +254,7 @@ export function createPhotoStagingSession(sessionId: string): PhotoStagingSessio
     return cleanupPromise;
   };
 
-  return { cleanup, reconcile, stagePhoto };
+  return { cleanup, stagePhoto };
 }
 
 /**

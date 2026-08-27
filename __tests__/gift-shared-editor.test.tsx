@@ -165,23 +165,33 @@ describe("SharedAlbumEditor", () => {
     expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(false);
   });
 
-  it("garbage-collects committed session photos after replacement or deletion and isolates mounts", async () => {
+  it("retains committed replacements for undo and redo until exact terminal session cleanup", async () => {
     const firstView = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     const first = await stageSharedPhoto("file:///first.jpg");
-    acceptSharedPages([{ ...mockBookCanvasProps.pages[0], photoUri: first.uri }]);
+    const firstPages = [{ ...mockBookCanvasProps.pages[0], photoUri: first.uri }];
+    acceptSharedPages(firstPages);
     first.commit();
 
     const second = await stageSharedPhoto("file:///second.jpg");
-    acceptSharedPages([{ ...mockBookCanvasProps.pages[0], photoUri: second.uri }]);
+    const secondPages = [{ ...mockBookCanvasProps.pages[0], photoUri: second.uri }];
+    acceptSharedPages(secondPages);
     second.commit();
-    await waitFor(() => expect(FileSystem.deleteAsync).toHaveBeenCalledWith(first.uri, { idempotent: true }));
-    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith("https://signed.test/old.jpg", expect.anything());
+    await act(async () => undefined);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
 
-    acceptSharedPages([{ ...mockBookCanvasProps.pages[0], photoUri: undefined }]);
-    await waitFor(() => expect(FileSystem.deleteAsync).toHaveBeenCalledWith(second.uri, { idempotent: true }));
+    acceptSharedPages(firstPages);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain(first.uri);
+    acceptSharedPages(secondPages);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain(second.uri);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+
     const firstDirectory = sessionDirectory(first.uri);
     firstView.unmount();
     await waitFor(() => expect(FileSystem.deleteAsync).toHaveBeenCalledWith(firstDirectory, { idempotent: true }));
+    expect((FileSystem.deleteAsync as jest.Mock).mock.calls.filter(([uri]) => uri === firstDirectory)).toHaveLength(1);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(first.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(second.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith("https://signed.test/old.jpg", expect.anything());
 
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     const nextMount = await stageSharedPhoto("file:///third.jpg");

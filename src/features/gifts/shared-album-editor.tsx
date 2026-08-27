@@ -146,11 +146,8 @@ export function SharedAlbumEditor({
     pagesRef.current = nextPages;
     setPages(nextPages);
     changeDirty(hasEffectiveChanges(nextPages, metadataRef.current, publishedBaseline.current));
-    void photoStagingSession.reconcile(nextPages.flatMap(pageImageUris)).catch((error) => {
-      console.warn("[shared-album-editor] 无法清理未引用的暂存照片：", error);
-    });
     return true;
-  }, [changeDirty, photoStagingSession, stale]);
+  }, [changeDirty, stale]);
   const handleMetadataChange = React.useCallback((change: Partial<AlbumMetadataValue>) => {
     const nextMetadata = { ...metadataRef.current, ...change };
     metadataRef.current = nextMetadata;
