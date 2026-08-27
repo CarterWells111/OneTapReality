@@ -56,16 +56,17 @@ describe("PhotoTemplatePicker", () => {
 
   it("uses a 3:4 preview and registry-derived percentage geometry with rotation", () => {
     const screen = render(<PhotoTemplatePicker photoCount={2} onSelect={() => undefined} />);
-    const previewStyle = StyleSheet.flatten(screen.getByTestId("photo-template-preview-magazine-2").props.style);
-    const slotStyle = StyleSheet.flatten(screen.getByTestId("photo-template-slot-magazine-2-2").props.style);
+    const previewStyle = StyleSheet.flatten(screen.getByTestId("photo-template-preview-collage-2").props.style);
+    const slotStyle = StyleSheet.flatten(screen.getByTestId("photo-template-slot-collage-2-1").props.style);
 
     expect(previewStyle).toMatchObject({ aspectRatio: 0.75 });
     expect(slotStyle).toMatchObject({
-      left: "64%",
-      top: "18%",
-      width: "28%",
-      height: "57%",
-      transform: [{ rotate: "0deg" }],
+      left: "8%",
+      top: "11%",
+      width: "56%",
+      height: "48%",
+      transform: [{ rotate: "-3deg" }],
+      borderColor: colors.accent,
     });
   });
 

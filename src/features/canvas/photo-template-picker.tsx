@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   },
   slot: {
     backgroundColor: colors.accentSoft,
-    borderColor: colors.paperEdge,
+    borderColor: colors.accent,
     borderRadius: 3,
     borderWidth: 1,
     position: "absolute",
