@@ -1,4 +1,5 @@
 import { createLegacyLayout, normalizeLayout } from "../src/features/canvas/canvas-layout";
+import type { CanvasLayout } from "../src/types/memory";
 
 describe("canvas layout", () => {
   it("creates a square legacy layout with image and text elements", () => {
@@ -37,5 +38,10 @@ describe("canvas layout", () => {
     });
 
     expect(layout.elements[0]).toMatchObject({ width: 1, height: 1 });
+  });
+
+  it("preserves known template IDs and drops unknown serialized IDs", () => {
+    expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-1", elements: [] })).toMatchObject({ photoTemplateId: "classic-1" });
+    expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "forged-template" as unknown as CanvasLayout["photoTemplateId"], elements: [] })).not.toHaveProperty("photoTemplateId");
   });
 });

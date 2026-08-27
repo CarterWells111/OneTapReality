@@ -6,11 +6,21 @@ export const memoryStatuses = ["draft", "saved", "discarded"] as const;
 
 export type MemoryStatus = (typeof memoryStatuses)[number];
 
+export const photoTemplateFamilyIds = ["classic", "magazine", "story", "collage", "columns"] as const;
+export type PhotoTemplateFamilyId = (typeof photoTemplateFamilyIds)[number];
+export type PhotoTemplateId = `${PhotoTemplateFamilyId}-${1 | 2 | 3}`;
+
+export type MemoryDraftPagePlan = {
+  photoUris: string[];
+  photoTemplateId?: PhotoTemplateId;
+};
+
 export type MemoryDraftInput = {
   title: string;
   city: City;
   travelDate: string;
   photoUris: string[];
+  pagePlans?: MemoryDraftPagePlan[];
   /** 封面颜色（十六进制）。为空时回退到城市默认色。 */
   coverColor?: string;
   /** 封面自定义背景图 URI。为空时显示纯色封面。 */
@@ -78,6 +88,7 @@ export type CanvasElement =
 export type CanvasLayout = {
   /** 画布宽高比，3:4 竖版（宽度:高度） */
   aspectRatio: number;
+  photoTemplateId?: PhotoTemplateId;
   backgroundId?: CanvasBackgroundId;
   /** 封面专用：纯色背景（十六进制） */
   coverColor?: string;
@@ -86,7 +97,7 @@ export type CanvasLayout = {
   elements: CanvasElement[];
 };
 
-export type Memory = MemoryDraftInput & {
+export type Memory = Omit<MemoryDraftInput, "pagePlans"> & {
   id: string;
   status?: MemoryStatus;
   pages: StoryPage[];

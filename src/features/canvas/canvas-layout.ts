@@ -1,4 +1,5 @@
 import type { CanvasElement, CanvasLayout, StoryPage } from "../../types/memory";
+import { resolvePhotoTemplate } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -10,6 +11,7 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
   return {
     aspectRatio: 3 / 4,
+    ...(resolvePhotoTemplate(layout.photoTemplateId) ? { photoTemplateId: layout.photoTemplateId } : {}),
     ...(layout.backgroundId ? { backgroundId: layout.backgroundId } : {}),
     ...(layout.coverColor ? { coverColor: layout.coverColor } : {}),
     ...(layout.coverImage ? { coverImage: layout.coverImage } : {}),
