@@ -172,7 +172,7 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
               const selected = activePageIndex === index;
               return (
                 <Pressable
-                  accessibilityLabel={`编辑第 ${index + 1} 页`}
+                  accessibilityLabel={`编辑第 ${index + 1} 页，${plan.photoUris.length} 张照片`}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                   key={`page-${index + 1}`}

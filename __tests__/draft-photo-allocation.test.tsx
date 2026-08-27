@@ -88,7 +88,9 @@ describe("DraftPhotoAllocation", () => {
     );
 
     fireEvent.press(screen.getByText("逐页配置", { exact: true }));
-    expect(screen.getByLabelText("第 1 页，2 张照片")).toBeTruthy();
+    const firstPage = screen.getByLabelText("编辑第 1 页，2 张照片");
+    expect(firstPage.props.accessibilityRole).toBe("button");
+    expect(firstPage.props.accessibilityState).toMatchObject({ selected: true });
     fireEvent.press(screen.getByLabelText("把照片 1 分配到第 2 页"));
     expect(onChange).toHaveBeenCalledWith([
       { photoUris: [photos[1]], photoTemplateId: undefined },
@@ -96,7 +98,7 @@ describe("DraftPhotoAllocation", () => {
     ]);
 
     onChange.mockClear();
-    fireEvent.press(screen.getByLabelText("编辑第 2 页"));
+    fireEvent.press(screen.getByLabelText("编辑第 2 页，2 张照片"));
     fireEvent.press(screen.getByLabelText("杂志侧栏双图模板"));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0][0].photoTemplateId).toBe("classic-2");
