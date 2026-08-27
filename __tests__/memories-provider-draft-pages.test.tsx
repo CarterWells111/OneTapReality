@@ -105,6 +105,7 @@ const draft: Memory = {
 describe("MemoriesProvider draft page persistence", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockStagePhotoUriStrict.mockReset();
     capturedMemories = undefined;
     mockListMemories.mockResolvedValue([]);
     mockHydrateMemoryPhotoReferences.mockImplementation(async (memory) => ({
@@ -379,6 +380,111 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(first.commit).not.toHaveBeenCalled();
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("rolls back staged photos and never inserts when cover staging fails", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict
+      .mockResolvedValueOnce(photo)
+      .mockRejectedValueOnce(new Error("cover unavailable"));
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.createDraft({
+      title: "封面失败草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+      coverImage: "file:///temporary-cover.jpg",
+    })).rejects.toThrow("cover unavailable");
+
+    expect(mockStagePhotoUriStrict).toHaveBeenNthCalledWith(
+      2,
+      "file:///temporary-cover.jpg",
+      "owner@example.com",
+      expect.any(String),
+    );
+    expect(photo.rollback).toHaveBeenCalledTimes(1);
+    expect(photo.commit).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("maps and commits a staged draft cover after repository insertion", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    const cover = { uri: "file:///owned/cover.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo).mockResolvedValueOnce(cover);
+    mockGenerate.mockResolvedValueOnce([{ id: "cover", position: 0, kind: "cover", headline: "草稿", body: "" }]);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    const created = await capturedMemories!.createDraft({
+      title: "映射封面草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+      coverImage: "file:///temporary-cover.jpg",
+    });
+
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+      photoUris: [photo.uri],
+      coverImage: cover.uri,
+    }));
+    expect(mockCreateDraft).toHaveBeenCalledWith(
+      mockDatabase,
+      expect.objectContaining({ photoUris: [photo.uri], coverImage: cover.uri }),
+      "owner@example.com",
+    );
+    expect(created.coverImage).toBe(cover.uri);
+    expect(photo.commit).toHaveBeenCalledTimes(1);
+    expect(cover.commit).toHaveBeenCalledTimes(1);
+    expect(photo.rollback).not.toHaveBeenCalled();
+    expect(cover.rollback).not.toHaveBeenCalled();
+  });
+
+  it("stages a draft cover only once when it is also a selected photo", async () => {
+    const shared = { uri: "file:///owned/shared.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(shared);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    const created = await capturedMemories!.createDraft({
+      title: "复用封面草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-shared.jpg"],
+      coverImage: "file:///temporary-shared.jpg",
+    });
+
+    expect(mockStagePhotoUriStrict).toHaveBeenCalledTimes(1);
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+      photoUris: [shared.uri],
+      coverImage: shared.uri,
+    }));
+    expect(created).toEqual(expect.objectContaining({ photoUris: [shared.uri], coverImage: shared.uri }));
+    expect(shared.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back a staged draft cover when repository insertion fails", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    const cover = { uri: "file:///owned/cover.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo).mockResolvedValueOnce(cover);
+    mockCreateDraft.mockRejectedValueOnce(new Error("repository failed"));
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.createDraft({
+      title: "仓库失败草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+      coverImage: "file:///temporary-cover.jpg",
+    })).rejects.toThrow("repository failed");
+
+    expect(photo.rollback).toHaveBeenCalledTimes(1);
+    expect(cover.rollback).toHaveBeenCalledTimes(1);
+    expect(photo.commit).not.toHaveBeenCalled();
+    expect(cover.commit).not.toHaveBeenCalled();
   });
 
   it.each(["generation", "repository"])("rolls back all staged draft photos when %s fails", async (failure) => {

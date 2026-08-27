@@ -231,7 +231,10 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       const stagedPhotos: StagedPhotoFile[] = [];
       try {
         const uriMap = new Map<string, string>();
-        for (const uri of new Set(input.photoUris)) {
+        const inputUris = input.coverImage
+          ? [...input.photoUris, input.coverImage]
+          : input.photoUris;
+        for (const uri of new Set(inputUris)) {
           const staged = await stagePhotoUriStrict(uri, owner, id);
           stagedPhotos.push(staged);
           uriMap.set(uri, staged.uri);
@@ -239,6 +242,9 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         const stagedInput: MemoryDraftInput = {
           ...input,
           photoUris: input.photoUris.map((uri) => uriMap.get(uri) ?? uri),
+          ...(input.coverImage
+            ? { coverImage: uriMap.get(input.coverImage) ?? input.coverImage }
+            : {}),
           ...(input.pagePlans
             ? {
                 pagePlans: input.pagePlans.map((plan) => ({

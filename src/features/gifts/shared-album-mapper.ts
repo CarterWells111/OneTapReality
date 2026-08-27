@@ -48,8 +48,12 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
 
 function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elements: (CanvasElement | SnapshotImageElement)[] }) | undefined {
   if (!isRecord(value) || !isFiniteNumber(value.aspectRatio) || value.aspectRatio <= 0 || !Array.isArray(value.elements)) return undefined;
-  const photoTemplateId = typeof value.photoTemplateId === "string"
-    ? resolvePhotoTemplate(value.photoTemplateId)?.id
+  const elements = value.elements.map(parseElement).filter((element): element is CanvasElement | SnapshotImageElement => element !== null);
+  const template = typeof value.photoTemplateId === "string"
+    ? resolvePhotoTemplate(value.photoTemplateId)
+    : undefined;
+  const photoTemplateId = template?.photoCount === elements.filter((element) => element.type === "image").length
+    ? template.id
     : undefined;
   return {
     aspectRatio: value.aspectRatio,
@@ -57,7 +61,7 @@ function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elemen
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" ? { coverImage: value.coverImage } : {}),
-    elements: value.elements.map(parseElement).filter((element): element is CanvasElement | SnapshotImageElement => element !== null),
+    elements,
   };
 }
 

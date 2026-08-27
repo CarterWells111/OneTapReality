@@ -82,6 +82,31 @@ describe("shared album snapshot mapper", () => {
     })[0].layout).not.toHaveProperty("photoTemplateId");
   });
 
+  it("drops a known template with the wrong image count while preserving freeform geometry", () => {
+    const elements = [
+      { id: "first", type: "image", uri: "", mediaPosition: 0, x: 0.11, y: 0.12, width: 0.31, height: 0.32, rotation: -4, zIndex: 5 },
+      { id: "second", type: "image", uri: "", mediaPosition: 1, x: 0.51, y: 0.52, width: 0.33, height: 0.34, rotation: 6, zIndex: 7 },
+    ];
+    const pages = mapSharedAlbumToStoryPages({
+      role: "viewer",
+      title: "Mismatched template",
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "classic-3", elements } } }],
+      media: [
+        { id: "first-media", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/first.jpg" },
+        { id: "second-media", position: 1, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/second.jpg" },
+      ],
+      publishedAt: "2026-08-16T00:00:00Z",
+      version: 1,
+      cover: null,
+    });
+
+    expect(pages[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(pages[0].layout?.elements).toEqual([
+      expect.objectContaining({ id: "first", uri: "https://cdn.test/first.jpg", x: 0.11, y: 0.12, width: 0.31, height: 0.32, rotation: -4, zIndex: 5 }),
+      expect.objectContaining({ id: "second", uri: "https://cdn.test/second.jpg", x: 0.51, y: 0.52, width: 0.33, height: 0.34, rotation: 6, zIndex: 7 }),
+    ]);
+  });
+
   it("drops planned-photo markers from shared layout JSON", () => {
     const base = {
       role: "viewer" as const,
