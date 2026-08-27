@@ -34,6 +34,12 @@ function skippedMessage(pageNumbers: readonly number[]): string {
 }
 
 const percentage = (value: number): DimensionValue => `${Number((value * 100).toFixed(4))}%`;
+const PHOTO_ITEM_WIDTH = 80;
+const PHOTO_ITEM_GAP = 8;
+const PHOTO_ITEM_STRIDE = PHOTO_ITEM_WIDTH + PHOTO_ITEM_GAP;
+const PAGE_PREVIEW_WIDTH = 112;
+const PAGE_PREVIEW_GAP = 10;
+const PAGE_PREVIEW_STRIDE = PAGE_PREVIEW_WIDTH + PAGE_PREVIEW_GAP;
 
 function DraftPagePreview({ plan, pageIndex }: { plan: MemoryDraftPagePlan; pageIndex: number }) {
   const template = resolvePhotoTemplate(plan.photoTemplateId);
@@ -212,7 +218,7 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
           <FlatList
             contentContainerStyle={styles.previewRow}
             data={value}
-            getItemLayout={(_, index) => ({ length: 122, offset: 122 * index, index })}
+            getItemLayout={(_, index) => ({ length: PAGE_PREVIEW_STRIDE, offset: PAGE_PREVIEW_STRIDE * index, index })}
             horizontal
             initialNumToRender={6}
             keyExtractor={(_, index) => `preview-${index}`}
@@ -255,7 +261,7 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
             contentContainerStyle={styles.photoMoveList}
             data={photoUris}
             extraData={{ activePageIndex, value }}
-            getItemLayout={(_, index) => ({ length: 96, offset: 96 * index, index })}
+            getItemLayout={(_, index) => ({ length: PHOTO_ITEM_STRIDE, offset: PHOTO_ITEM_STRIDE * index, index })}
             horizontal
             initialNumToRender={12}
             keyExtractor={(_, index) => `photo-${index}`}
@@ -372,16 +378,16 @@ const styles = StyleSheet.create({
   pageSelectorSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderWidth: 2 },
   pageSelectorTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   pageSelectorSummary: { color: colors.muted, fontFamily: bodyFont, fontSize: 12 },
-  photoMoveList: { gap: 8, paddingVertical: 2 },
-  photoItem: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, gap: 4, minHeight: 108, padding: 6, width: 80 },
+  photoMoveList: { gap: PHOTO_ITEM_GAP, paddingVertical: 2 },
+  photoItem: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, gap: 4, minHeight: 108, padding: 6, width: PHOTO_ITEM_WIDTH },
   photoItemSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderWidth: 2 },
   moveButtonDisabled: { opacity: 0.4 },
   photoItemNumber: { color: colors.ink, fontFamily: bodyFont, fontSize: 11, fontWeight: "700" },
   photoItemPage: { color: colors.muted, fontFamily: bodyFont, fontSize: 10 },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   suggestion: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
-  previewRow: { gap: 10, paddingVertical: 2 },
-  pagePreview: { alignItems: "center", gap: 4, width: 112 },
+  previewRow: { gap: PAGE_PREVIEW_GAP, paddingVertical: 2 },
+  pagePreview: { alignItems: "center", gap: 4, width: PAGE_PREVIEW_WIDTH },
   previewCanvas: { aspectRatio: 3 / 4, backgroundColor: colors.surface, borderColor: colors.paperEdge, borderRadius: 8, borderWidth: 1, overflow: "hidden", position: "relative", width: 108 },
   previewPageLabel: { color: colors.ink, fontFamily: bodyFont, fontSize: 12, fontWeight: "700" },
   previewCount: { color: colors.muted, fontFamily: bodyFont, fontSize: 11, textAlign: "center" },

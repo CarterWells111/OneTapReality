@@ -185,6 +185,8 @@ describe("DraftPhotoAllocation", () => {
 
     expect(screen.getByText("共 6 张照片")).toBeTruthy();
     expect(screen.getByText("建议均衡分配：第 1 页 2 张，第 2 页 4 张")).toBeTruthy();
+    const previewList = screen.UNSAFE_getByType(FlatList);
+    expect(previewList.props.getItemLayout(undefined, 10)).toEqual({ length: 122, offset: 1220, index: 10 });
     expect(screen.getByLabelText("第 1 页预览，2 张照片，经典留白模板")).toBeTruthy();
     expect(screen.getByLabelText("第 2 页预览，4 张照片，自由排版")).toBeTruthy();
     expect(screen.getByTestId("draft-photo-preview-1-image-1").type).toBe("Image");
@@ -237,6 +239,7 @@ describe("DraftPhotoAllocation", () => {
     const photoList = screen.UNSAFE_getByType(FlatList);
     expect(photoList.props.data).toHaveLength(120);
     expect(photoList.props.initialNumToRender).toBe(12);
+    expect(photoList.props.getItemLayout(undefined, 10)).toEqual({ length: 88, offset: 880, index: 10 });
     const firstItem = photoList.props.renderItem({ item: manyPhotos[0], index: 0 });
     expect(firstItem.props.accessibilityLabel).toBe("照片 1，当前第 1 页");
 
