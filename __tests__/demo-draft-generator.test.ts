@@ -58,11 +58,12 @@ describe("DemoDraftGenerator", () => {
     expect(pages[1]).toMatchObject({
       photoUri: "file://one.jpg",
       headline: "把这一刻留住",
-      body: "我们选了 3 张照片，记录这段只属于我们的旅程。",
+      body: "这一页收录了 2 张照片。",
       layout: { photoTemplateId: "classic-2" },
     });
     expect(pages[2]).toMatchObject({
       photoUri: "file://three.jpg",
+      body: "这一页收录了 1 张照片。",
       layout: { photoTemplateId: "story-1" },
     });
 
@@ -72,7 +73,7 @@ describe("DemoDraftGenerator", () => {
     ]);
     expect(pages[1].layout?.elements.filter((element) => element.type === "text").map((element) => element.text)).toEqual([
       "把这一刻留住",
-      "我们选了 3 张照片，记录这段只属于我们的旅程。",
+      "这一页收录了 2 张照片。",
     ]);
     expect(pages[1].layout?.elements.map((element) => element.zIndex)).toEqual([1, 2, 3, 4]);
   });

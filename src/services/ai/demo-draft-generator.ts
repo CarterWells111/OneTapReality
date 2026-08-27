@@ -52,9 +52,7 @@ export class DemoDraftGenerator implements DraftGenerator {
           position: pages.length,
           kind: "photo",
           headline: "把这一刻留住",
-          body: photoCount === 1
-            ? "我们选了 1 张照片，记录这段只属于我们的旅程。"
-            : `我们选了 ${photoCount} 张照片，记录这段只属于我们的旅程。`,
+          body: `这一页收录了 ${plan.photoUris.length} 张照片。`,
           photoUri: plan.photoUris[0],
         };
         const imageLayout = (plan.photoTemplateId
