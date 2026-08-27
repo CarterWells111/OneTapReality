@@ -80,6 +80,26 @@ describe("shared album snapshot mapper", () => {
     })[0].layout).not.toHaveProperty("photoTemplateId");
   });
 
+  it("preserves only a valid planned-photo marker from shared layout JSON", () => {
+    const base = {
+      role: "viewer" as const,
+      title: "Marker",
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, elements: [] } } }],
+      media: [],
+      publishedAt: "2026-08-16T00:00:00Z",
+      version: 1,
+      cover: null,
+    };
+    expect(mapSharedAlbumToStoryPages({
+      ...base,
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoPlanVersion: 1, elements: [] } } }],
+    })[0].layout).toHaveProperty("photoPlanVersion", 1);
+    expect(mapSharedAlbumToStoryPages({
+      ...base,
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoPlanVersion: 2, elements: [] } } }],
+    })[0].layout).not.toHaveProperty("photoPlanVersion");
+  });
+
   it("falls back to media position order for legacy snapshots", () => {
     const pages = mapSharedAlbumToStoryPages({
       role: "viewer",

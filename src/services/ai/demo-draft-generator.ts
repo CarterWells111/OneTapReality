@@ -69,6 +69,7 @@ export class DemoDraftGenerator implements DraftGenerator {
           ...photoPage,
           layout: {
             ...imageLayout,
+            photoPlanVersion: 1,
             elements: [...imageLayout.elements, ...legacyTextElements],
           },
         });

@@ -9,10 +9,11 @@ export const MAX_NORMALIZED_ELEMENT_SIZE = 1;
 
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
-  const { photoTemplateId, elements, ...metadata } = layout;
+  const { photoPlanVersion, photoTemplateId, elements, ...metadata } = layout;
   return {
     ...metadata,
     aspectRatio: 3 / 4,
+    ...(photoPlanVersion === 1 ? { photoPlanVersion: 1 } : {}),
     ...(resolvePhotoTemplate(photoTemplateId) ? { photoTemplateId } : {}),
     elements: elements.map((element) => {
       const occurrence = (ids.get(element.id) ?? 0) + 1;

@@ -44,4 +44,9 @@ describe("canvas layout", () => {
     expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-1", elements: [] })).toMatchObject({ photoTemplateId: "classic-1" });
     expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "forged-template" as unknown as CanvasLayout["photoTemplateId"], elements: [] })).not.toHaveProperty("photoTemplateId");
   });
+
+  it("preserves only the valid planned-photo marker", () => {
+    expect(normalizeLayout({ aspectRatio: 0.75, photoPlanVersion: 1, elements: [] })).toHaveProperty("photoPlanVersion", 1);
+    expect(normalizeLayout({ aspectRatio: 0.75, photoPlanVersion: 2 as unknown as 1, elements: [] })).not.toHaveProperty("photoPlanVersion");
+  });
 });

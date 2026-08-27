@@ -41,7 +41,7 @@ export type LayoutMetaMode = "preserve" | "clear" | PhotoTemplateId;
 
 /** Preserve all persisted layout metadata with explicit template intent. */
 export function preserveLayoutMeta(previous: CanvasLayout, elements: CanvasElement[], templateMode: LayoutMetaMode): CanvasLayout {
-  const { photoTemplateId: _previousTemplate, elements: _previousElements, ...metadata } = previous;
+  const { photoPlanVersion, photoTemplateId: _previousTemplate, elements: _previousElements, ...metadata } = previous;
   const templateId = templateMode === "preserve"
     ? resolvePhotoTemplate(previous.photoTemplateId)?.id
     : templateMode === "clear"
@@ -50,6 +50,7 @@ export function preserveLayoutMeta(previous: CanvasLayout, elements: CanvasEleme
   return {
     ...metadata,
     aspectRatio: previous.aspectRatio,
+    ...(photoPlanVersion === 1 ? { photoPlanVersion: 1 } : {}),
     ...(templateId ? { photoTemplateId: templateId } : {}),
     elements,
   };

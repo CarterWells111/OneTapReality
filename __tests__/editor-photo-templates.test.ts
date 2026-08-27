@@ -51,7 +51,7 @@ const pageWithPhotos = (count: number, templateId?: string): StoryPage => ({
 
 describe("editor photo templates", () => {
   it("preserves arbitrary layout metadata only with an explicit preserve mode", () => {
-    const previous = pageWithPhotos(1).layout!;
+    const previous = { ...pageWithPhotos(1).layout!, photoPlanVersion: 1 as const };
     const nextItems = previous.elements.filter((element) => element.type !== "image");
 
     expect(preserveLayoutMeta(previous, nextItems, "preserve")).toMatchObject({
@@ -61,6 +61,7 @@ describe("editor photo templates", () => {
       coverColor: "#123456",
       coverImage: "file:///cover.jpg",
     });
+    expect(preserveLayoutMeta(previous, nextItems, "preserve")).toHaveProperty("photoPlanVersion", 1);
     expect(preserveLayoutMeta(previous, nextItems, "clear")).not.toHaveProperty("photoTemplateId");
     expect(preserveLayoutMeta(previous, nextItems, "classic-1")).toMatchObject({ photoTemplateId: "classic-1" });
   });

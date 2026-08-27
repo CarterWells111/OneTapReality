@@ -101,7 +101,9 @@ export function reconstructDraftPagePlans(memory: Memory): MemoryDraftPagePlan[]
   const hasPlannedLayout = photoPages.some((page) => {
     const imageCount = page.layout?.elements.filter((element) => element.type === "image").length ?? 0;
     const template = resolvePhotoTemplate(page.layout?.photoTemplateId);
-    return imageCount > 1 || (template !== undefined && template.photoCount === imageCount);
+    return page.layout?.photoPlanVersion === 1
+      || imageCount > 1
+      || (template !== undefined && template.photoCount === imageCount);
   });
   if (!hasPlannedLayout) return undefined;
 

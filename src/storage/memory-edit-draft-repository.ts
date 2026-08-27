@@ -124,9 +124,11 @@ function parseCanvasLayout(value: unknown): CanvasLayout | null {
   const photoTemplateId = typeof value.photoTemplateId === "string"
     ? resolvePhotoTemplate(value.photoTemplateId)?.id
     : undefined;
+  const photoPlanVersion = value.photoPlanVersion === 1 ? 1 as const : undefined;
 
   return normalizeLayout({
     aspectRatio: value.aspectRatio,
+    ...(photoPlanVersion ? { photoPlanVersion } : {}),
     ...(photoTemplateId ? { photoTemplateId } : {}),
     ...(typeof value.backgroundId === "string" && value.backgroundId ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" && value.coverColor ? { coverColor: value.coverColor } : {}),

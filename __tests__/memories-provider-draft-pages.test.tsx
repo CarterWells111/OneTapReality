@@ -181,6 +181,46 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(reconstructDraftPagePlans({ ...draft, pages: [{ ...pages[0], kind: "photo", photoUri: "file://legacy.jpg" }] })).toBeUndefined();
   });
 
+  it("reconstructs a marked single-image freeform page during retry", async () => {
+    const persistedDraft: Memory = {
+      ...draft,
+      photoUris: ["file://single.jpg"],
+      pages: [
+        { ...pages[0], id: "draft-1:cover", position: 0 },
+        {
+          id: "draft-1:photo-1",
+          position: 1,
+          kind: "photo",
+          headline: "照片",
+          body: "一张",
+          photoUri: "file://single.jpg",
+          layout: {
+            aspectRatio: 0.75,
+            photoPlanVersion: 1,
+            elements: [{ id: "image-1", type: "image", uri: "file://single.jpg", x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 }],
+          },
+        },
+        { id: "draft-1:closing", position: 2, kind: "closing", headline: "结束", body: "再见" },
+      ],
+    };
+    mockGetDraft.mockResolvedValue(persistedDraft);
+
+    render(
+      <MemoriesProvider>
+        <CaptureMemories />
+      </MemoriesProvider>,
+    );
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await act(async () => {
+      await capturedMemories!.retryDraft("draft-1");
+    });
+
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+      pagePlans: [{ photoUris: ["file://single.jpg"] }],
+    }));
+  });
+
   it("updates draft pages without refreshing the saved-memory list", async () => {
     render(
       <MemoriesProvider>

@@ -89,6 +89,8 @@ export type CanvasLayout = {
   /** 画布宽高比，3:4 竖版（宽度:高度） */
   aspectRatio: number;
   schemaVersion?: number;
+  /** 由页面计划生成的本地布局标记；不进入远程契约。 */
+  photoPlanVersion?: 1;
   photoTemplateId?: PhotoTemplateId;
   backgroundId?: CanvasBackgroundId;
   /** 封面专用：纯色背景（十六进制） */

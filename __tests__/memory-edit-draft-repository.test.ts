@@ -297,6 +297,25 @@ describe("memory edit draft repository", () => {
     expect(restored?.[0].layout).not.toHaveProperty("photoTemplateId");
   });
 
+  it("round trips the valid planned-photo marker and omits forged marker values", async () => {
+    const { database } = createDraftDatabase();
+    const validPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoPlanVersion: 1 },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+      .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoPlanVersion: 1 }) })]);
+
+    const invalidPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoPlanVersion: 2 as unknown as 1 },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    expect(restored?.[0].layout).not.toHaveProperty("photoPlanVersion");
+  });
+
   it("isolates recovery drafts across distinct albums owned by different accounts", async () => {
     const ownerAMemory = { ...baseMemory, id: "memory-a" };
     const ownerBMemory = { ...baseMemory, id: "memory-b" };

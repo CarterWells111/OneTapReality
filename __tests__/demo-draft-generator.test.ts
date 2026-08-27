@@ -133,4 +133,16 @@ describe("DemoDraftGenerator", () => {
 
     expect(input).toEqual(before);
   });
+
+  it("marks planned freeform photo pages so single-photo pages can be retried", async () => {
+    const pages = await new DemoDraftGenerator().generate({
+      title: "单图自由排版",
+      city: "hangzhou",
+      travelDate: "2026-07-28",
+      photoUris: ["file://one.jpg"],
+      pagePlans: [{ photoUris: ["file://one.jpg"] }],
+    });
+
+    expect(pages[1].layout).toMatchObject({ photoPlanVersion: 1 });
+  });
 });
