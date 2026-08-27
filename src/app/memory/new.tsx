@@ -9,6 +9,8 @@ import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../com
 import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
+import { createBalancedPhotoPagePlans } from "../../features/memories/photo-page-planner";
+import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
 import { useMemories } from "../../features/memories/memories-provider";
 import {
   MIN_TRAVEL_DATE,
@@ -16,6 +18,7 @@ import {
   toIsoTravelDate,
 } from "../../features/memories/travel-date";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
+import type { MemoryDraftPagePlan } from "../../types/memory";
 
 const cityGroupLabels: Record<CityKind, string> = {
   "autonomous-region-capital": "自治区首府",
@@ -57,6 +60,7 @@ export default function NewMemoryScreen() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const [pagePlans, setPagePlans] = React.useState<MemoryDraftPagePlan[]>([]);
 
   React.useEffect(() => {
     setCity(presetCity);
@@ -96,7 +100,14 @@ export default function NewMemoryScreen() {
       quality: 0.8,
     });
     if (!result.canceled) {
-      setPhotoUris(result.assets.map((asset) => asset.uri));
+      const nextPhotoUris = result.assets.map((asset) => asset.uri);
+      setPhotoUris(nextPhotoUris);
+      try {
+        setPagePlans(createBalancedPhotoPagePlans(nextPhotoUris));
+      } catch (caughtError) {
+        setPagePlans([]);
+        setError(caughtError instanceof Error ? caughtError.message : "无法安排照片，请重试。");
+      }
       void Haptics.selectionAsync();
     }
   };
@@ -114,10 +125,11 @@ export default function NewMemoryScreen() {
   };
 
   const generate = async () => {
+    if (!canGenerate) return;
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createDraft({ title, city, travelDate, photoUris, coverColor, coverImage });
+      const memory = await createDraft({ title, city, travelDate, photoUris, pagePlans, coverColor, coverImage });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
     } catch {
@@ -126,6 +138,15 @@ export default function NewMemoryScreen() {
       setIsSaving(false);
     }
   };
+
+  const canGenerate = photoUris.length > 0
+    && pagePlans.length > 0
+    && pagePlans.every((plan) => plan.photoUris.length > 0)
+    && pagePlans.reduce((counts, plan) => {
+      for (const uri of plan.photoUris) counts.set(uri, (counts.get(uri) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>()).size === photoUris.length
+    && photoUris.every((uri) => pagePlans.reduce((count, plan) => count + plan.photoUris.filter((candidate) => candidate === uri).length, 0) === 1);
 
   return (
     <View style={styles.root}>
@@ -239,11 +260,14 @@ export default function NewMemoryScreen() {
             ))}
           </ScrollView>
         ) : null}
+        {photoUris.length > 0 ? (
+          <DraftPhotoAllocation onChange={setPagePlans} photoUris={photoUris} value={pagePlans} />
+        ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
       {photoUris.length > 0 ? (
-        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving} onPress={() => void generate()} />
+        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving || !canGenerate} onPress={() => void generate()} />
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}
