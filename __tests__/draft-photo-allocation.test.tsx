@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { FlatList } from "react-native";
 
 import { DraftPhotoAllocation } from "../src/features/memories/draft-photo-allocation";
 import { createBalancedPhotoPagePlans } from "../src/features/memories/photo-page-planner";
@@ -92,6 +93,7 @@ describe("DraftPhotoAllocation", () => {
     const firstPage = screen.getByLabelText("编辑第 1 页，2 张照片");
     expect(firstPage.props.accessibilityRole).toBe("button");
     expect(firstPage.props.accessibilityState).toMatchObject({ selected: true });
+    fireEvent.press(screen.getByLabelText("编辑第 2 页，2 张照片"));
     fireEvent.press(screen.getByLabelText("把照片 1 分配到第 2 页"));
     expect(onChange).toHaveBeenCalledWith([
       { photoUris: [photos[1]], photoTemplateId: undefined },
@@ -116,6 +118,7 @@ describe("DraftPhotoAllocation", () => {
       />,
     );
     fireEvent.press(screen.getByText("逐页配置", { exact: true }));
+    fireEvent.press(screen.getByLabelText("编辑第 2 页，1 张照片"));
     expect(screen.getByLabelText("把照片 1 分配到第 2 页").props.accessibilityState).toMatchObject({ disabled: true });
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -148,19 +151,21 @@ describe("DraftPhotoAllocation", () => {
 
   it("disables moving a photo into a page that already has twelve photos", () => {
     const onChange = jest.fn();
+    const fourteenPhotos = thirteenPhotos.concat("file://photo-14.jpg");
     const screen = render(
       <DraftPhotoAllocation
         onChange={onChange}
-        photoUris={thirteenPhotos}
-        value={[{ photoUris: thirteenPhotos.slice(0, 12) }, { photoUris: thirteenPhotos.slice(12) }]}
+        photoUris={fourteenPhotos}
+        value={[{ photoUris: fourteenPhotos.slice(0, 12) }, { photoUris: fourteenPhotos.slice(12) }]}
       />,
     );
 
     fireEvent.press(screen.getByText("逐页配置", { exact: true }));
-    const move = screen.getByLabelText("把照片 13 分配到第 1 页");
+    const photoList = screen.UNSAFE_getByType(FlatList);
+    const move = photoList.props.renderItem({ item: fourteenPhotos[12], index: 12 });
     expect(move.props.accessibilityState).toMatchObject({ disabled: true });
     expect(screen.getByText("每页最多 12 张照片")).toBeTruthy();
-    fireEvent.press(move);
+    act(() => move.props.onPress());
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -217,5 +222,32 @@ describe("DraftPhotoAllocation", () => {
     fireEvent.press(screen.getByText("保存当前页，继续", { exact: true }));
     fireEvent.press(screen.getByText("完成逐页配置", { exact: true }));
     expect(screen.getByText("一起配置", { exact: true })).toBeTruthy();
+  });
+
+  it("keeps per-page controls linear for large selections and targets only the active page", () => {
+    const onChange = jest.fn();
+    const manyPhotos = Array.from({ length: 120 }, (_, index) => `file://large-${index + 1}.jpg`);
+    const manyPlans = Array.from({ length: 40 }, (_, pageIndex) => ({
+      photoUris: manyPhotos.slice(pageIndex * 3, pageIndex * 3 + 3),
+      photoTemplateId: "classic-3" as const,
+    }));
+    const screen = render(<DraftPhotoAllocation onChange={onChange} photoUris={manyPhotos} value={manyPlans} />);
+
+    fireEvent.press(screen.getByText("逐页配置", { exact: true }));
+    const photoList = screen.UNSAFE_getByType(FlatList);
+    expect(photoList.props.data).toHaveLength(120);
+    expect(photoList.props.initialNumToRender).toBe(12);
+    const firstItem = photoList.props.renderItem({ item: manyPhotos[0], index: 0 });
+    expect(firstItem.props.accessibilityLabel).toBe("照片 1，当前第 1 页");
+
+    fireEvent.press(screen.getByLabelText("编辑第 40 页，3 张照片"));
+    const switchedList = screen.UNSAFE_getByType(FlatList);
+    const switchedItem = switchedList.props.renderItem({ item: manyPhotos[0], index: 0 });
+    expect(switchedItem.props.accessibilityLabel).toBe("把照片 1 分配到第 40 页");
+
+    act(() => switchedItem.props.onPress());
+    expect(onChange).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ photoUris: expect.arrayContaining([manyPhotos[0]]) }),
+    ]));
   });
 });

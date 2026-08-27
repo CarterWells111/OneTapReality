@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, Text, View, type DimensionValue, type ListRenderItemInfo } from "react-native";
 
 import { colors, bodyFont, PaperCard, serifFont } from "../../components/ui";
 import { PhotoTemplatePicker } from "../canvas/photo-template-picker";
@@ -209,13 +209,18 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
               建议均衡分配：{value.map((plan, index) => `第 ${index + 1} 页 ${plan.photoUris.length} 张`).join("，")}
             </Text>
           ) : null}
-          <ScrollView
+          <FlatList
             contentContainerStyle={styles.previewRow}
+            data={value}
+            getItemLayout={(_, index) => ({ length: 122, offset: 122 * index, index })}
             horizontal
+            initialNumToRender={6}
+            keyExtractor={(_, index) => `preview-${index}`}
+            renderItem={({ item: plan, index }) => <DraftPagePreview pageIndex={index} plan={plan} />}
             showsHorizontalScrollIndicator={false}
+            windowSize={5}
           >
-            {value.map((plan, index) => <DraftPagePreview key={`preview-${index + 1}`} pageIndex={index} plan={plan} />)}
-          </ScrollView>
+          </FlatList>
           {message ? <Text selectable style={styles.message}>{message}</Text> : null}
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
         </View>
@@ -246,48 +251,47 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
             })}
           </View>
 
-          <View style={styles.photoMoveList}>
-            {photoUris.map((photoUri, photoIndex) => {
+          <FlatList
+            contentContainerStyle={styles.photoMoveList}
+            data={photoUris}
+            extraData={{ activePageIndex, value }}
+            getItemLayout={(_, index) => ({ length: 96, offset: 96 * index, index })}
+            horizontal
+            initialNumToRender={12}
+            keyExtractor={(_, index) => `photo-${index}`}
+            renderItem={({ item: photoUri, index: photoIndex }: ListRenderItemInfo<string>) => {
               const sourceIndex = value.findIndex((plan) => plan.photoUris.includes(photoUri));
+              const isCurrentPage = sourceIndex === activePageIndex;
+              const targetIsFull = activePlan?.photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE;
+              const disabled = sourceIndex < 0 || isCurrentPage || value[sourceIndex]?.photoUris.length === 1 || targetIsFull;
+              const label = isCurrentPage
+                ? `照片 ${photoIndex + 1}，当前第 ${activePageIndex + 1} 页`
+                : `把照片 ${photoIndex + 1} 分配到第 ${activePageIndex + 1} 页`;
               return (
-                <View key={photoUri} style={styles.photoMoveRow}>
-                  <View style={styles.photoLabelRow}>
-                    <Image
-                      accessibilityLabel={`照片 ${photoIndex + 1} 缩略图，当前${sourceIndex >= 0 ? `第 ${sourceIndex + 1} 页` : "未分配"}`}
-                      resizeMode="cover"
-                      source={{ uri: photoUri }}
-                      style={styles.photoThumbnail}
-                      testID={`draft-photo-thumbnail-${photoIndex + 1}`}
-                    />
-                    <Text selectable style={styles.photoLabel}>
-                      照片 {photoIndex + 1}：{sourceIndex >= 0 ? `第 ${sourceIndex + 1} 页` : "未分配"}
-                    </Text>
-                  </View>
-                  <View style={styles.moveButtons}>
-                    {value.map((_, targetIndex) => {
-                      const targetIsFull = value[targetIndex].photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE;
-                      const disabled = sourceIndex < 0 || sourceIndex === targetIndex || value[sourceIndex]?.photoUris.length === 1 || targetIsFull;
-                      return (
-                        <Pressable
-                          accessibilityLabel={`把照片 ${photoIndex + 1} 分配到第 ${targetIndex + 1} 页`}
-                          accessibilityHint={targetIsFull ? MAX_PHOTOS_PER_PAGE_ERROR : undefined}
-                          accessibilityRole="button"
-                          accessibilityState={{ disabled }}
-                          disabled={disabled}
-                          key={`${photoUri}-to-${targetIndex}`}
-                          onPress={() => movePhoto(photoUri, targetIndex)}
-                          style={[styles.moveButton, disabled && styles.moveButtonDisabled]}
-                        >
-                          <Image resizeMode="cover" source={{ uri: photoUri }} style={styles.moveThumbnail} />
-                          <Text selectable style={styles.moveText}>第 {targetIndex + 1} 页</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
+                <Pressable
+                  accessibilityHint={targetIsFull ? MAX_PHOTOS_PER_PAGE_ERROR : undefined}
+                  accessibilityLabel={label}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled, selected: isCurrentPage }}
+                  disabled={disabled}
+                  onPress={() => movePhoto(photoUri, activePageIndex)}
+                  style={[styles.photoItem, isCurrentPage && styles.photoItemSelected, disabled && !isCurrentPage && styles.moveButtonDisabled]}
+                >
+                  <Image
+                    accessible={false}
+                    resizeMode="cover"
+                    source={{ uri: photoUri }}
+                    style={styles.photoThumbnail}
+                    testID={`draft-photo-thumbnail-${photoIndex + 1}`}
+                  />
+                  <Text selectable style={styles.photoItemNumber}>照片 {photoIndex + 1}</Text>
+                  <Text selectable style={styles.photoItemPage}>{isCurrentPage ? "当前页" : `第 ${sourceIndex + 1} 页`}</Text>
+                </Pressable>
               );
-            })}
-          </View>
+            }}
+            showsHorizontalScrollIndicator={false}
+            windowSize={5}
+          />
 
           {activePlan && activePlan.photoUris.length <= 3 ? (
             <PhotoTemplatePicker
@@ -368,13 +372,12 @@ const styles = StyleSheet.create({
   pageSelectorSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderWidth: 2 },
   pageSelectorTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   pageSelectorSummary: { color: colors.muted, fontFamily: bodyFont, fontSize: 12 },
-  photoMoveList: { gap: 10 },
-  photoMoveRow: { gap: 7 },
-  photoLabel: { color: colors.ink, fontFamily: bodyFont, fontSize: 14 },
-  moveButtons: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  moveButton: { borderColor: colors.line, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 10 },
+  photoMoveList: { gap: 8, paddingVertical: 2 },
+  photoItem: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, gap: 4, minHeight: 108, padding: 6, width: 80 },
+  photoItemSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderWidth: 2 },
   moveButtonDisabled: { opacity: 0.4 },
-  moveText: { color: colors.accent, fontFamily: bodyFont, fontSize: 12, fontWeight: "700" },
+  photoItemNumber: { color: colors.ink, fontFamily: bodyFont, fontSize: 11, fontWeight: "700" },
+  photoItemPage: { color: colors.muted, fontFamily: bodyFont, fontSize: 10 },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   suggestion: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   previewRow: { gap: 10, paddingVertical: 2 },
@@ -386,7 +389,6 @@ const styles = StyleSheet.create({
   progressText: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   photoLabelRow: { alignItems: "center", flexDirection: "row", gap: 10 },
   photoThumbnail: { aspectRatio: 3 / 4, backgroundColor: colors.accentSoft, borderRadius: 8, height: 60, width: 45 },
-  moveThumbnail: { aspectRatio: 3 / 4, backgroundColor: colors.accentSoft, borderRadius: 4, height: 28, width: 21 },
   navigationRow: { flexDirection: "row", gap: 8, justifyContent: "space-between", marginTop: 2 },
   navigationButton: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 10 },
   navigationButtonDisabled: { opacity: 0.4 },
