@@ -8,19 +8,19 @@ import type {
 export { photoTemplateFamilyIds, type PhotoTemplateFamilyId, type PhotoTemplateId } from "../../types/memory";
 
 export type PhotoTemplateSlot = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly rotation: number;
 };
 
 export type PhotoTemplateDefinition = {
-  id: PhotoTemplateId;
-  familyId: PhotoTemplateFamilyId;
-  familyLabel: string;
-  photoCount: 1 | 2 | 3;
-  slots: readonly PhotoTemplateSlot[];
+  readonly id: PhotoTemplateId;
+  readonly familyId: PhotoTemplateFamilyId;
+  readonly familyLabel: string;
+  readonly photoCount: 1 | 2 | 3;
+  readonly slots: readonly PhotoTemplateSlot[];
 };
 
 export const PHOTO_TEMPLATE_FAMILIES = [
@@ -55,7 +55,7 @@ export function resolvePhotoTemplate(id: string | undefined): PhotoTemplateDefin
   return PHOTO_TEMPLATES.find((template) => template.id === id);
 }
 
-export function getPhotoTemplatesForCount(count: number): PhotoTemplateDefinition[] {
+export function getPhotoTemplatesForCount(count: number): readonly PhotoTemplateDefinition[] {
   return PHOTO_TEMPLATES.filter((template) => template.photoCount === count);
 }
 
