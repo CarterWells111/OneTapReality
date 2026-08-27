@@ -1,6 +1,7 @@
 import type { InvitedGiftAlbum } from "../../services/backend/api-client";
 import type { CanvasElement, CanvasLayout, StoryPage } from "../../types/memory";
 import { canvasPages } from "../canvas/editor-pages";
+import { resolvePhotoTemplate } from "../canvas/photo-templates";
 
 type SnapshotImageElement = Extract<CanvasElement, { type: "image" }> & {
   mediaId?: string;
@@ -47,8 +48,12 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
 
 function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elements: (CanvasElement | SnapshotImageElement)[] }) | undefined {
   if (!isRecord(value) || !isFiniteNumber(value.aspectRatio) || value.aspectRatio <= 0 || !Array.isArray(value.elements)) return undefined;
+  const photoTemplateId = typeof value.photoTemplateId === "string"
+    ? resolvePhotoTemplate(value.photoTemplateId)?.id
+    : undefined;
   return {
     aspectRatio: value.aspectRatio,
+    ...(photoTemplateId ? { photoTemplateId } : {}),
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" ? { coverImage: value.coverImage } : {}),

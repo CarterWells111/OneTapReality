@@ -6,7 +6,7 @@ import {
   migrateMemoryEditDrafts,
   saveMemoryEditDraft,
 } from "../src/storage/memory-edit-draft-repository";
-import type { Memory, StoryPage } from "../src/types/memory";
+import type { Memory, PhotoTemplateId, StoryPage } from "../src/types/memory";
 
 const mockEmitDiagnostic = jest.fn();
 
@@ -276,6 +276,25 @@ describe("memory edit draft repository", () => {
         coverColor: "#aBc123",
         layout: expect.objectContaining({ coverColor: "#D4E5F6" }),
       })]);
+  });
+
+  it("round trips known photo templates and omits forged template IDs", async () => {
+    const { database } = createDraftDatabase();
+    const validPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "classic-1" },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+      .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoTemplateId: "classic-1" }) })]);
+
+    const invalidPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "forged-template" as PhotoTemplateId },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    expect(restored?.[0].layout).not.toHaveProperty("photoTemplateId");
   });
 
   it("isolates recovery drafts across distinct albums owned by different accounts", async () => {

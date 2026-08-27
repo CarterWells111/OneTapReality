@@ -222,6 +222,24 @@ export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, f
   }));
 }
 
+function withoutOrSetLayoutValue<K extends "backgroundId" | "coverColor" | "coverImage">(
+  layout: CanvasLayout,
+  key: K,
+  value: CanvasLayout[K],
+): CanvasLayout {
+  const { [key]: _current, ...without } = layout;
+  return value === undefined ? without as CanvasLayout : { ...without, [key]: value } as unknown as CanvasLayout;
+}
+
+function withoutOrSetPageValue<K extends "coverColor" | "coverImage" | "photoUri">(
+  page: StoryPage,
+  key: K,
+  value: StoryPage[K],
+): StoryPage {
+  const { [key]: _current, ...without } = page;
+  return value === undefined ? without as StoryPage : { ...without, [key]: value } as unknown as StoryPage;
+}
+
 export function setCanvasBackground(
   pages: StoryPage[],
   pageId: string,
@@ -229,7 +247,7 @@ export function setCanvasBackground(
 ) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta({ ...page.layout!, backgroundId }, page.layout!.elements, "preserve"),
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "backgroundId", backgroundId), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -239,9 +257,8 @@ export function setCanvasCoverColor(
   coverColor: string | undefined,
 ) {
   return updatePage(pages, pageId, (page) => ({
-    ...page,
-    coverColor,
-    layout: preserveLayoutMeta({ ...page.layout!, coverColor }, page.layout!.elements, "preserve"),
+    ...withoutOrSetPageValue(page, "coverColor", coverColor),
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "coverColor", coverColor), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -251,9 +268,8 @@ export function setCanvasCoverImage(
   coverImage: string | undefined,
 ) {
   return updatePage(pages, pageId, (page) => ({
-    ...page,
-    coverImage,
-    layout: preserveLayoutMeta({ ...page.layout!, coverImage }, page.layout!.elements, "preserve"),
+    ...withoutOrSetPageValue(page, "coverImage", coverImage),
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "coverImage", coverImage), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -270,7 +286,6 @@ export function updateCanvasElement(
     );
     const next = nextElements.find((element) => element.id === elementId);
     const imageChanged = current?.type === "image" && next?.type === "image" && (
-      current.uri !== next.uri ||
       current.x !== next.x ||
       current.y !== next.y ||
       current.width !== next.width ||
@@ -414,7 +429,7 @@ export function replacePagePhotos(
       .filter((element): element is CanvasElement => element !== undefined);
     elements.push(...generated.slice(imageIndex));
     return {
-      ...page,
+      ...withoutOrSetPageValue(page, "photoUri", limitedPhotos[0]?.uri),
       layout: preserveLayoutMeta(previousLayout, elements, useTemplate ? template.id : "clear"),
     };
   });

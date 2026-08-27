@@ -21,6 +21,7 @@ describe("shared album snapshot mapper", () => {
           token: "nfc-secret",
           layout: {
             aspectRatio: 0.7,
+            photoTemplateId: "magazine-1",
             backgroundId: "paper-grid",
             coverColor: "#abcdef",
             coverImage: "shared-media:media-1",
@@ -49,6 +50,7 @@ describe("shared album snapshot mapper", () => {
       coverColor: "#123456",
       layout: expect.objectContaining({
         aspectRatio: 0.7,
+        photoTemplateId: "magazine-1",
         backgroundId: "paper-grid",
         coverColor: "#abcdef",
         coverImage: "https://cdn.test/first.jpg",
@@ -59,6 +61,23 @@ describe("shared album snapshot mapper", () => {
       }),
     })]);
     expect(pages[0]).not.toHaveProperty("token");
+  });
+
+  it("preserves known photo templates and rejects forged IDs in shared snapshots", () => {
+    const base = {
+      role: "viewer" as const,
+      title: "Template",
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "story-1", elements: [] } } }],
+      media: [],
+      publishedAt: "2026-08-16T00:00:00Z",
+      version: 1,
+      cover: null,
+    };
+    expect(mapSharedAlbumToStoryPages(base)[0].layout).toHaveProperty("photoTemplateId", "story-1");
+    expect(mapSharedAlbumToStoryPages({
+      ...base,
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "forged-template", elements: [] } } }],
+    })[0].layout).not.toHaveProperty("photoTemplateId");
   });
 
   it("falls back to media position order for legacy snapshots", () => {

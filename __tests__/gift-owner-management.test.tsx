@@ -1,5 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
+jest.mock("expo-file-system/legacy", () => ({
+  FileSystemUploadType: { BINARY_CONTENT: "binary" },
+  getInfoAsync: jest.fn(async () => ({ exists: true, size: 12 })),
+  uploadAsync: jest.fn(async () => ({ status: 200 })),
+}));
+
 const mockGetOwnedGiftManagement = jest.fn();
 const mockAddOwnedGiftMember = jest.fn();
 const mockUpdateOwnedGiftMemberRole = jest.fn();
@@ -38,6 +44,7 @@ jest.mock("../src/services/backend/api-client", () => ({
 }));
 
 import GiftManagementScreen from "../src/app/gifts/[id]";
+import * as FileSystem from "expo-file-system/legacy";
 
 const owner = { email: "owner@example.com", role: "owner" as const, createdAt: "2026-08-16T00:00:00.000Z" };
 const viewer = { email: "viewer@example.com", role: "viewer" as const, createdAt: "2026-08-16T00:00:00.000Z" };
@@ -122,6 +129,56 @@ describe("gift owner member management", () => {
     expect(mockStartOwnedGiftPublish).not.toHaveBeenCalled();
     expect(mockGetInfoAsync).not.toHaveBeenCalled();
     expect(mockGetInfoAsync).not.toHaveBeenCalled();
+  });
+
+  it("collects and uploads every layout image when publishing an owner gift", async () => {
+    const memory = {
+      id: "memory-1",
+      title: "Layout trip",
+      city: "London",
+      travelDate: "2026-08-16",
+      photoUris: [],
+      pages: [{
+        id: "page-1",
+        position: 0,
+        kind: "photo" as const,
+        headline: "Photos",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          elements: [
+            { id: "one", type: "image" as const, uri: "file:///one.jpg", x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 1 },
+            { id: "two", type: "image" as const, uri: "file:///two.jpg", x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 2 },
+          ],
+        },
+      }],
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({
+      publicationId: "publication-1",
+      uploads: [
+        { position: 0, objectKey: "one", uploadUrl: "https://upload.test/one" },
+        { position: 1, objectKey: "two", uploadUrl: "https://upload.test/two" },
+      ],
+      coverUpload: null,
+      expiresAt: "2026-08-16T01:00:00.000Z",
+    });
+
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText(memory.title));
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
+    expect(mockStartOwnedGiftPublish.mock.calls[0][2].media).toEqual([
+      { position: 0, contentType: "image/jpeg", byteSize: 12 },
+      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+    ]);
+    expect((FileSystem.uploadAsync as jest.Mock).mock.calls.map((call) => call[1])).toEqual([
+      "file:///one.jpg", "file:///two.jpg",
+    ]);
   });
 
   it("shows the dated existing shared album without replacement controls", async () => {

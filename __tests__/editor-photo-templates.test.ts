@@ -122,14 +122,24 @@ describe("editor photo templates", () => {
     expect(invalid[0].layout!.elements.find((element) => element.type === "image")).toMatchObject({ id: "new", x: 0.08, y: 0.08, width: 0.84, height: 0.84 });
   });
 
-  it("clears a page template for image membership, content, or manual geometry mutations", () => {
+  it("clears a page template for image membership or manual geometry mutations", () => {
     const base = [pageWithPhotos(2, "classic-2")];
     expect(addImageToPage(base, "page-1", "added", "file:///added.jpg")[0].layout).not.toHaveProperty("photoTemplateId");
     expect(duplicateCanvasElement(base, "page-1", "old-1", "copy")[0].layout).not.toHaveProperty("photoTemplateId");
     expect(deleteCanvasElement(base, "page-1", "old-1")[0].layout).not.toHaveProperty("photoTemplateId");
-    expect(updateCanvasElement(base, "page-1", "old-1", { uri: "file:///changed.jpg" } as never)[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(updateCanvasElement(base, "page-1", "old-1", { uri: "file:///changed.jpg" })[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(updateCanvasElement(base, "page-1", "old-1", { x: 0.22 })[0].layout).not.toHaveProperty("photoTemplateId");
     expect(updateCanvasElement(base, "page-1", "old-1", { rotation: 2 })[0].layout).not.toHaveProperty("photoTemplateId");
+  });
+
+  it("synchronizes the legacy top-level photo URI when replacing page photos", () => {
+    const pages = [{ ...pageWithPhotos(2, "classic-2"), photoUri: "file:///old-legacy.jpg" }];
+    const replaced = replacePagePhotos(pages, "page-1", [{ id: "new", uri: "file:///new.jpg" }], "classic-1");
+    expect(replaced[0].photoUri).toBe("file:///new.jpg");
+    expect(replaced[0].photoUri).not.toBe("file:///old-legacy.jpg");
+
+    const cleared = replacePagePhotos(pages, "page-1", [], undefined);
+    expect(cleared[0]).not.toHaveProperty("photoUri");
   });
 
   it("preserves a page template for non-image edits and cover/background changes", () => {
@@ -142,6 +152,23 @@ describe("editor photo templates", () => {
     expect(setCanvasCoverImage(base, "page-1", "file:///new-cover.jpg")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(deleteCanvasElement(base, "page-1", "caption")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(duplicateCanvasElement(base, "page-1", "caption", "caption-copy")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
+  });
+
+  it("omits cleared background and cover values while preserving the template", () => {
+    const base = [pageWithPhotos(2, "classic-2")];
+    const backgroundCleared = setCanvasBackground(base, "page-1", undefined)[0];
+    expect(backgroundCleared.layout).not.toHaveProperty("backgroundId");
+    expect(backgroundCleared.layout).toHaveProperty("photoTemplateId", "classic-2");
+
+    const colorCleared = setCanvasCoverColor(base, "page-1", undefined)[0];
+    expect(colorCleared).not.toHaveProperty("coverColor");
+    expect(colorCleared.layout).not.toHaveProperty("coverColor");
+    expect(colorCleared.layout).toHaveProperty("photoTemplateId", "classic-2");
+
+    const imageCleared = setCanvasCoverImage(base, "page-1", undefined)[0];
+    expect(imageCleared).not.toHaveProperty("coverImage");
+    expect(imageCleared.layout).not.toHaveProperty("coverImage");
+    expect(imageCleared.layout).toHaveProperty("photoTemplateId", "classic-2");
   });
 
   it("keeps unrelated pages and all input snapshots immutable", () => {
