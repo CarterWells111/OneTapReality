@@ -32,6 +32,7 @@ import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
+  addCanvasPage,
   addImageToPage,
   addStickerToPage,
   addTextToPage,
@@ -39,6 +40,8 @@ import {
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
+  pageImageUris,
+  replacePagePhotos,
   setCanvasBackground,
   setCanvasCoverColor,
   setCanvasCoverImage,
@@ -52,12 +55,15 @@ import {
   type CanvasTextStyleDraft,
 } from "./editor-save-transaction";
 import { PageManagerSheet } from "./page-manager-sheet";
+import { PhotoLayoutSheet } from "./photo-layout-sheet";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
+import { resolvePhotoTemplate } from "./photo-templates";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
 import { localDiagnostics } from "../diagnostics/local-diagnostics";
-import type { StoryPage } from "../../types/memory";
+import type { PhotoTemplateId, StoryPage } from "../../types/memory";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
@@ -77,6 +83,13 @@ type BookCanvasEditorProps = {
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
   ref?: React.Ref<BookCanvasEditorHandle>;
+};
+
+type PendingPhotoLayout = {
+  action: "add" | "edit";
+  pageId?: string;
+  photoUris: string[];
+  selectedTemplateId?: PhotoTemplateId;
 };
 
 const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
@@ -256,6 +269,7 @@ export function BookCanvasEditor({
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerOpen, setManagerOpen] = React.useState(false);
+  const [pendingPhotoLayout, setPendingPhotoLayout] = React.useState<PendingPhotoLayout | null>(null);
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
     if (saveBoundaryLockedRef.current) return;
     pagesRef.current = restoredPages;
@@ -414,6 +428,29 @@ export function BookCanvasEditor({
       return null;
     }
   }, [persistSelectedPhoto]);
+
+  const pickAndPersistPhotos = React.useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return null;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true,
+      mediaTypes: ["images"],
+      quality: 0.8,
+      selectionLimit: MAX_PHOTOS_PER_CANVAS_PAGE,
+    });
+    if (result.canceled) return null;
+
+    const selectedAssets = result.assets.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+    if (selectedAssets.length === 0) return null;
+    const persistedUris: string[] = [];
+    for (const asset of selectedAssets) {
+      const uri = await persistPickedPhoto(asset.uri);
+      if (!uri) return null;
+      persistedUris.push(uri);
+    }
+    return persistedUris;
+  }, [persistPickedPhoto]);
 
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pagesRef.current) => {
     const pendingId = pendingTextIdRef.current;
@@ -661,6 +698,74 @@ export function BookCanvasEditor({
     }
   };
 
+  const requestAddPhotoPage = async () => {
+    const photoUris = await pickAndPersistPhotos();
+    if (!photoUris) return;
+    setPendingPhotoLayout({ action: "add", photoUris });
+  };
+
+  const editPhotoLayout = () => {
+    setPendingPhotoLayout({
+      action: "edit",
+      pageId: currentPage.id,
+      photoUris: pageImageUris(currentPage),
+      selectedTemplateId: currentPage.layout?.photoTemplateId,
+    });
+  };
+
+  const replaceStagedPhotos = async () => {
+    const photoUris = await pickAndPersistPhotos();
+    if (!photoUris) return;
+    setPendingPhotoLayout((pending) => {
+      if (!pending) return pending;
+      const selectedTemplate = resolvePhotoTemplate(pending.selectedTemplateId);
+      return {
+        ...pending,
+        photoUris,
+        selectedTemplateId: selectedTemplate?.photoCount === photoUris.length
+          ? selectedTemplate.id
+          : undefined,
+      };
+    });
+  };
+
+  const confirmPhotoLayout = (templateId?: PhotoTemplateId) => {
+    const pending = pendingPhotoLayout;
+    if (!pending || pending.photoUris.length === 0) return;
+
+    if (pending.action === "add") {
+      const addedPageId = buildCanvasId("page");
+      const nextPages = addCanvasPage(pages, pending.photoUris, addedPageId, templateId);
+      const addedIndex = nextPages.findIndex((page) => page.id === addedPageId);
+      changePages(nextPages, "structure");
+      if (addedIndex >= 0) {
+        stableTurnGeneration.value += 1;
+        setPendingTurn(null);
+        translateX.value = 0;
+        turnDir.value = 0;
+        setSelectedElementId(undefined);
+        activePageIdRef.current = addedPageId;
+        setCurrentIndex(addedIndex);
+      }
+    } else if (pending.pageId) {
+      const sourcePages = clearPendingTextFrom();
+      if (sourcePages.some((page) => page.id === pending.pageId)) {
+        const nextPages = replacePagePhotos(
+          sourcePages,
+          pending.pageId,
+          pending.photoUris.map((uri, index) => ({
+            id: buildCanvasId(`image-${index + 1}`),
+            uri,
+          })),
+          templateId,
+        );
+        changePages(nextPages, "structure");
+        setSelectedElementId(undefined);
+      }
+    }
+    setPendingPhotoLayout(null);
+  };
+
   const addText = () => {
     const nextId = buildCanvasId("text");
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
@@ -731,7 +836,23 @@ export function BookCanvasEditor({
             setMenuMode(null);
             setCurrentIndex(index);
           }}
+          onRequestAddPage={() => {
+            void requestAddPhotoPage();
+          }}
           pages={pages}
+        />
+      ) : null}
+
+      {pendingPhotoLayout ? (
+        <PhotoLayoutSheet
+          action={pendingPhotoLayout.action}
+          onCancel={() => setPendingPhotoLayout(null)}
+          onConfirm={confirmPhotoLayout}
+          onReplacePhotos={() => {
+            void replaceStagedPhotos();
+          }}
+          photoUris={pendingPhotoLayout.photoUris}
+          selectedTemplateId={pendingPhotoLayout.selectedTemplateId}
         />
       ) : null}
 
@@ -951,6 +1072,13 @@ export function BookCanvasEditor({
             label="📷 添加照片"
             onPress={addPhoto}
           />
+          {currentPage.kind === "photo" ? (
+            <SmallButton
+              active={false}
+              label="照片布局"
+              onPress={editPhotoLayout}
+            />
+          ) : null}
           <SmallButton
             active={assetTrayMode === "sticker"}
             label="贴纸"

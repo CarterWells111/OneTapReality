@@ -1,6 +1,6 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout, normalizeLayout } from "./canvas-layout";
-import { resolvePhotoTemplate } from "./photo-templates";
+import { createPhotoTemplateLayout, resolvePhotoTemplate } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
 import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasImageElement, CanvasLayout, CanvasStickerId, PhotoTemplateId, StoryPage } from "../../types/memory";
 
@@ -75,8 +75,9 @@ export function toggleCanvasPhotoSelection(selectedPhotoUris: string[], uri: str
     : [...selectedPhotoUris, uri];
 }
 
-export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: string) {
-  const photoUri = photoUris[0];
+export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: string, templateId?: string) {
+  const limitedPhotoUris = photoUris.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+  const photoUri = limitedPhotoUris[0];
   const page: StoryPage = {
     id,
     position: pages.length,
@@ -86,14 +87,22 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
     ...(photoUri ? { photoUri } : {}),
   };
   const legacy = createLegacyLayout(page);
-  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 0.75 as const, elements: [] };
+  const photoLayout = createPhotoTemplateLayout(limitedPhotoUris, templateId ?? "")
+    ?? createPhotoLayout(limitedPhotoUris);
   const textElements = legacy.elements
     .filter((element) => element.type === "text")
     .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
-  return normalizePositions([
-    ...pages.map(withLayout),
-    { ...page, layout: { aspectRatio: 1, elements: [...photoLayout.elements, ...textElements] } },
-  ]);
+  const next = pages.map(withLayout);
+  const insertionIndex = next.at(-1)?.kind === "closing" ? next.length - 1 : next.length;
+  next.splice(insertionIndex, 0, {
+    ...page,
+    layout: {
+      ...photoLayout,
+      aspectRatio: 3 / 4,
+      elements: [...photoLayout.elements, ...textElements],
+    },
+  });
+  return normalizePositions(next);
 }
 
 export function deleteCanvasPage(pages: StoryPage[], pageId: string) {

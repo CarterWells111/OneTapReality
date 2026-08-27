@@ -188,25 +188,26 @@ const memory: Memory = {
 };
 
 describe("canvas page editing model", () => {
-  it("adds a square photo page, deletes one page, and keeps positions contiguous when reordering", () => {
+  it("adds a portrait photo page before closing, deletes one page, and keeps positions contiguous when reordering", () => {
     const withNewPage = addCanvasPage(legacyPages, ["file://coffee.jpg", "file://bridge.jpg"], "page-3");
     const reordered = moveCanvasPage(withNewPage, "page-3", "backward");
     const remaining = deleteCanvasPage(reordered, "closing-1");
 
-    expect(withNewPage[2].layout?.elements.filter((element) => element.type === "image")).toEqual(
+    expect(withNewPage[1].layout?.aspectRatio).toBe(3 / 4);
+    expect(withNewPage[1].layout?.elements.filter((element) => element.type === "image")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ uri: "file://coffee.jpg" }),
         expect.objectContaining({ uri: "file://bridge.jpg" }),
       ]),
     );
-    const imageLayers = withNewPage[2].layout!.elements
+    const imageLayers = withNewPage[1].layout!.elements
       .filter((element) => element.type === "image")
       .map((element) => element.zIndex);
-    const textLayers = withNewPage[2].layout!.elements
+    const textLayers = withNewPage[1].layout!.elements
       .filter((element) => element.type === "text")
       .map((element) => element.zIndex);
     expect(Math.min(...textLayers)).toBeGreaterThan(Math.max(...imageLayers));
-    expect(reordered.map((page) => page.id)).toEqual(["cover-1", "page-3", "closing-1"]);
+    expect(reordered.map((page) => page.id)).toEqual(["page-3", "cover-1", "closing-1"]);
     expect(remaining.map((page) => page.position)).toEqual([0, 1]);
   });
 

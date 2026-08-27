@@ -18,7 +18,7 @@ describe("PageManagerSheet", () => {
   it("selects a page and deletes it via the toolbar", () => {
     const onChange = jest.fn();
     const screen = render(
-      <PageManagerSheet onChange={onChange} onClose={() => undefined} pages={pages} />,
+      <PageManagerSheet onChange={onChange} onClose={() => undefined} onRequestAddPage={() => undefined} pages={pages} />,
     );
 
     fireEvent.press(screen.getByLabelText("第 1 页"));
@@ -28,16 +28,21 @@ describe("PageManagerSheet", () => {
     expect(onChange.mock.calls[0][0].map((page: StoryPage) => page.id)).toEqual(["b"]);
   });
 
-  it("adds a page when nothing is selected", () => {
+  it("closes and requests the photo-first add-page flow without mutating pages", () => {
     const onChange = jest.fn();
+    const calls: string[] = [];
+    const onClose = jest.fn(() => calls.push("close"));
+    const onRequestAddPage = jest.fn(() => calls.push("request"));
     const screen = render(
-      <PageManagerSheet onChange={onChange} onClose={() => undefined} pages={pages} />,
+      <PageManagerSheet onChange={onChange} onClose={onClose} onRequestAddPage={onRequestAddPage} pages={pages} />,
     );
 
     fireEvent.press(screen.getByLabelText("添加页面"));
 
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0]).toHaveLength(3);
+    expect(calls).toEqual(["close", "request"]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onRequestAddPage).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("renders page state as an overlay without shrinking the thumbnail canvas", () => {

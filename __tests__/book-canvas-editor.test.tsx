@@ -12,6 +12,7 @@ import { canvasPages } from "../src/features/canvas/editor-pages";
 import type { StoryPage } from "../src/types/memory";
 
 let mockContextMenuProps: Record<string, unknown> | undefined;
+let mockCurrentCanvasPageProps: Record<string, unknown> | undefined;
 const mockEmitDiagnostic = jest.fn();
 
 jest.mock("../src/features/diagnostics/local-diagnostics", () => ({
@@ -57,6 +58,18 @@ jest.mock("../src/features/canvas/selection-handles", () => {
   };
 });
 
+jest.mock("../src/features/canvas/canvas-page", () => {
+  const actual = jest.requireActual("../src/features/canvas/canvas-page") as typeof import("../src/features/canvas/canvas-page");
+  const React = require("react") as typeof import("react");
+  return {
+    ...actual,
+    CanvasPage: (props: Record<string, unknown>) => {
+      if (props.interactive) mockCurrentCanvasPageProps = props;
+      return React.createElement(actual.CanvasPage, props as React.ComponentProps<typeof actual.CanvasPage>);
+    },
+  };
+});
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 jest.mock("expo-image-picker", () => ({
@@ -72,12 +85,13 @@ const pages: StoryPage[] = [
   { id: "page-2", position: 1, kind: "closing", headline: "Last page", body: "Last body" },
 ];
 
-function EditorHarness({ initialPageId, onChange = () => undefined, persistSelectedPhoto }: {
+function EditorHarness({ initialPageId, initialPages = pages, onChange = () => undefined, persistSelectedPhoto }: {
   initialPageId?: string;
+  initialPages?: StoryPage[];
   onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => void;
   persistSelectedPhoto?: (uri: string) => Promise<string>;
 }) {
-  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(pages));
+  const [currentPages, setCurrentPages] = React.useState(() => canvasPages(initialPages));
   return <BookCanvasEditor initialPageId={initialPageId} pages={currentPages} persistSelectedPhoto={persistSelectedPhoto} onPagesChange={(nextPages, reason) => {
     setCurrentPages(nextPages);
     onChange(nextPages, reason);
@@ -120,6 +134,29 @@ const stickerChoice = "添加贴纸 2-01";
 const backgroundTray = "背景";
 const backgroundChoice = "选择背景 01";
 
+const photoPages: StoryPage[] = [
+  pages[0],
+  {
+    id: "photo-page",
+    position: 1,
+    kind: "photo",
+    headline: "照片页",
+    body: "保留正文",
+    photoUri: "file:///old-one.jpg",
+    layout: {
+      aspectRatio: 3 / 4,
+      backgroundId: "paper",
+      photoTemplateId: "classic-2",
+      elements: [
+        { id: "old-one", type: "image", uri: "file:///old-one.jpg", x: 0.09, y: 0.09, width: 0.82, height: 0.37, rotation: 0, zIndex: 1 },
+        { id: "old-two", type: "image", uri: "file:///old-two.jpg", x: 0.09, y: 0.54, width: 0.82, height: 0.37, rotation: 0, zIndex: 2 },
+        { id: "caption", type: "text", text: "保留文字", fontStyle: "System", color: "#111111", fontSize: 16, x: 0.1, y: 0.8, width: 0.8, height: 0.1, rotation: 0, zIndex: 3 },
+      ],
+    },
+  },
+  pages[1],
+];
+
 describe("BookCanvasEditor", () => {
   it("exports a plain function component so Expo React Compiler can call it on Fabric", () => {
     expect(typeof BookCanvasEditor).toBe("function");
@@ -133,6 +170,7 @@ describe("BookCanvasEditor", () => {
       assets: [{ uri: "file:///temporary.jpg" }],
     });
     mockContextMenuProps = undefined;
+    mockCurrentCanvasPageProps = undefined;
   });
 
   function openStyleMenu(screen: ReturnType<typeof render>, label: "颜色" | "字号") {
@@ -617,6 +655,192 @@ describe("BookCanvasEditor", () => {
     expect(latestPages[0].layout?.elements).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "image", uri: "file:///Documents/account/memory/photo.jpg" }),
     ]));
+  });
+
+  it("stages a two-photo page from page management and commits it only after template confirmation", async () => {
+    const onChange = jest.fn();
+    const persistSelectedPhoto = jest.fn(async (uri: string) => uri.replace("temporary", "permanent"));
+    launchImageLibraryMock.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
+    });
+    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("添加页面"));
+    });
+
+    expect(launchImageLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
+      allowsMultipleSelection: true,
+      selectionLimit: 12,
+    }));
+    expect(persistSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
+      "file:///temporary-one.jpg",
+      "file:///temporary-two.jpg",
+    ]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getAllByLabelText(/双图模板$/)).toHaveLength(5);
+
+    fireEvent.press(screen.getByLabelText("杂志侧栏双图模板"));
+    fireEvent.press(screen.getByLabelText("创建页面"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(expect.any(Array), "structure");
+    const nextPages = onChange.mock.calls[0][0] as StoryPage[];
+    expect(nextPages.map((page) => page.kind)).toEqual(["cover", "photo", "closing"]);
+    expect(nextPages[1].layout).toMatchObject({ photoTemplateId: "magazine-2" });
+    expect(nextPages[1].layout?.elements.filter((element) => element.type === "image").map((element) => element.uri)).toEqual([
+      "file:///permanent-one.jpg",
+      "file:///permanent-two.jpg",
+    ]);
+    expect(screen.getByText("第 2 / 3 页")).toBeTruthy();
+  });
+
+  it("does not open a layout sheet or create a page when the system picker is cancelled", async () => {
+    const onChange = jest.fn();
+    launchImageLibraryMock.mockResolvedValueOnce({ canceled: true, assets: [] });
+    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={jest.fn()} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("添加页面"));
+    });
+
+    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not create a page when the staged layout sheet is cancelled", async () => {
+    const onChange = jest.fn();
+    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={async (uri) => uri} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("添加页面"));
+    });
+    fireEvent.press(screen.getByLabelText("取消照片布局"));
+
+    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("creates a freeform page after staging four persisted photos", async () => {
+    const onChange = jest.fn();
+    launchImageLibraryMock.mockResolvedValueOnce({
+      canceled: false,
+      assets: [1, 2, 3, 4].map((index) => ({ uri: `file:///temporary-${index}.jpg` })),
+    });
+    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={async (uri) => uri.replace("temporary", "permanent")} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("添加页面"));
+    });
+
+    expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("创建自由排版页面"));
+
+    const added = (onChange.mock.calls[0][0] as StoryPage[])[1];
+    expect(added.layout?.elements.filter((element) => element.type === "image")).toHaveLength(4);
+    expect(added.layout).not.toHaveProperty("photoTemplateId");
+  });
+
+  it("alerts and leaves pages unchanged when the second selected photo cannot be persisted", async () => {
+    const onChange = jest.fn();
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const persistSelectedPhoto = jest.fn()
+      .mockResolvedValueOnce("file:///permanent-one.jpg")
+      .mockRejectedValueOnce(new Error("iCloud unavailable"));
+    launchImageLibraryMock.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
+    });
+    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("添加页面"));
+    });
+
+    expect(persistSelectedPhoto).toHaveBeenCalledTimes(2);
+    expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("新建照片页面")).toBeNull();
+  });
+
+  it("replaces an existing photo page with a template while preserving text and background", async () => {
+    const onChange = jest.fn();
+    launchImageLibraryMock.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///temporary-new-one.jpg" }, { uri: "file:///temporary-new-two.jpg" }],
+    });
+    const screen = render(
+      <EditorHarness
+        initialPageId="photo-page"
+        initialPages={photoPages}
+        onChange={onChange}
+        persistSelectedPhoto={async (uri) => uri.replace("temporary", "permanent")}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("照片布局"));
+    expect(launchImageLibraryMock).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新选择照片"));
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText("竖向切片双图模板"));
+    fireEvent.press(screen.getByLabelText("应用照片布局"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-2" });
+    expect(updated.layout?.elements.find((element) => element.id === "caption")).toMatchObject({ text: "保留文字" });
+    const images = updated.layout?.elements.filter((element) => element.type === "image") ?? [];
+    expect(images.map((element) => element.uri)).toEqual([
+      "file:///permanent-new-one.jpg",
+      "file:///permanent-new-two.jpg",
+    ]);
+    expect(images.map((element) => element.id)).not.toEqual(["old-one", "old-two"]);
+  });
+
+  it("preserves staged and saved photos when replacement is cancelled or persistence fails", async () => {
+    const onChange = jest.fn();
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const persistSelectedPhoto = jest.fn().mockRejectedValue(new Error("storage full"));
+    launchImageLibraryMock
+      .mockResolvedValueOnce({ canceled: true, assets: [] })
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-new.jpg" }] });
+    const screen = render(
+      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />,
+    );
+
+    fireEvent.press(screen.getByText("照片布局"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新选择照片"));
+    });
+    expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(onChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新选择照片"));
+    });
+    expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("存储空间"));
+    expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("clears the template after a manual image transform", () => {
+    const onChange = jest.fn();
+    render(<EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} />);
+
+    act(() => {
+      (mockCurrentCanvasPageProps?.onTransformEnd as ((id: string, patch: { x: number }) => void) | undefined)?.("old-one", { x: 0.22 });
+    });
+
+    const transformed = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
+    expect(transformed.find((page) => page.id === "photo-page")?.layout).not.toHaveProperty("photoTemplateId");
   });
 
   it("shows an alert and leaves the canvas unchanged when a selected photo cannot be copied", async () => {

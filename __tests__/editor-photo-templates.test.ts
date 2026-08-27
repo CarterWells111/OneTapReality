@@ -1,4 +1,5 @@
 import {
+  addCanvasPage,
   addImageToPage,
   addStickerToPage,
   addTextToPage,
@@ -50,6 +51,48 @@ const pageWithPhotos = (count: number, templateId?: string): StoryPage => ({
 });
 
 describe("editor photo templates", () => {
+  it("inserts a templated photo page before a trailing closing page without mutating inputs", () => {
+    const pages: StoryPage[] = [
+      { id: "cover", position: 0, kind: "cover", headline: "封面", body: "" },
+      { id: "closing", position: 1, kind: "closing", headline: "结束", body: "" },
+    ];
+    const original = structuredClone(pages);
+
+    const next = addCanvasPage(pages, ["file:///one.jpg", "file:///two.jpg"], "new-page", "magazine-2");
+
+    expect(next.map((page) => page.id)).toEqual(["cover", "new-page", "closing"]);
+    expect(next.map((page) => page.position)).toEqual([0, 1, 2]);
+    expect(next[1]).toMatchObject({ kind: "photo", photoUri: "file:///one.jpg" });
+    expect(next[1].layout).toMatchObject({ aspectRatio: 3 / 4, photoTemplateId: "magazine-2" });
+    expect(next[1].layout!.elements.filter((element) => element.type === "image")).toEqual([
+      expect.objectContaining({ uri: "file:///one.jpg", x: 0.08, y: 0.09, width: 0.52, height: 0.82 }),
+      expect.objectContaining({ uri: "file:///two.jpg", x: 0.64, y: 0.18, width: 0.28, height: 0.57 }),
+    ]);
+    expect(next[0]).toMatchObject({ id: "cover", kind: "cover", headline: "封面", body: "" });
+    expect(next[2]).toMatchObject({ id: "closing", kind: "closing", headline: "结束", body: "" });
+    expect(pages).toEqual(original);
+  });
+
+  it("caps new pages at twelve photos and falls back to freeform for mismatched or large templates", () => {
+    const photoUris = Array.from({ length: 13 }, (_, index) => `file:///${index + 1}.jpg`);
+    const next = addCanvasPage([], photoUris, "new-page", "classic-3");
+
+    expect(next).toHaveLength(1);
+    expect(next[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(12);
+    expect(next[0].layout).toMatchObject({ aspectRatio: 3 / 4 });
+    expect(next[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(next[0].photoUri).toBe("file:///1.jpg");
+  });
+
+  it("safely creates an empty freeform page when no photos are supplied", () => {
+    const next = addCanvasPage([], [], "empty-page", "classic-1");
+
+    expect(next[0]).not.toHaveProperty("photoUri");
+    expect(next[0].layout).toMatchObject({ aspectRatio: 3 / 4 });
+    expect(next[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(next[0].layout?.elements.filter((element) => element.type === "image")).toEqual([]);
+  });
+
   it("preserves arbitrary layout metadata only with an explicit preserve mode", () => {
     const previous = { ...pageWithPhotos(1).layout!, photoPlanVersion: 1 as const };
     const nextItems = previous.elements.filter((element) => element.type !== "image");

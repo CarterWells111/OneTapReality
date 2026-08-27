@@ -19,7 +19,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CanvasPage } from "./canvas-page";
 import { resolveCanvasPreviewContentScale } from "./canvas-display-metrics";
 import {
-  addCanvasPage,
   deleteCanvasPages,
   reorderCanvasPages,
 } from "./editor-pages";
@@ -30,10 +29,6 @@ const SHEET_PADDING = 16;
 const GAP = 12;
 const ROW_GAP = 14;
 const LABEL_HEIGHT = 30;
-
-function buildPageId() {
-  return `page-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
 
 type PageManagerSheetBaseProps = {
   pages: StoryPage[];
@@ -46,12 +41,14 @@ type PageManagerSheetProps = PageManagerSheetBaseProps & (
       mode?: "manage";
       onChange: (pages: StoryPage[]) => void;
       onDeleteAlbum?: never;
+      onRequestAddPage?: () => void;
     }
   | {
       mode: "preview";
       onChange?: (pages: StoryPage[]) => void;
       onDeleteAlbum?: () => void;
       onJumpToPage: (index: number) => void;
+      onRequestAddPage?: never;
     }
 );
 
@@ -62,6 +59,7 @@ export function PageManagerSheet({
   onClose,
   onDeleteAlbum,
   onJumpToPage,
+  onRequestAddPage,
 }: PageManagerSheetProps) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -129,7 +127,8 @@ export function PageManagerSheet({
   };
 
   const addPage = () => {
-    onChange?.(addCanvasPage(pages, [], buildPageId()));
+    onClose();
+    onRequestAddPage?.();
   };
 
   const deleteSelected = () => {
