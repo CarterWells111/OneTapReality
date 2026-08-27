@@ -62,9 +62,9 @@ describe("photo template registry", () => {
 
   it("resolves each family for supported photo counts", () => {
     for (const familyId of ["classic", "magazine", "story", "collage", "columns"] as const) {
-      expect(resolvePhotoTemplateForFamily(familyId, 1)?.familyId).toBe(familyId);
-      expect(resolvePhotoTemplateForFamily(familyId, 2)?.familyId).toBe(familyId);
-      expect(resolvePhotoTemplateForFamily(familyId, 3)?.familyId).toBe(familyId);
+      for (const count of [1, 2, 3] as const) {
+        expect(resolvePhotoTemplateForFamily(familyId, count)).toMatchObject({ id: `${familyId}-${count}`, familyId, photoCount: count });
+      }
     }
   });
 
