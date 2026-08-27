@@ -36,6 +36,12 @@ describe("photo page planner", () => {
     expect(plans).toHaveLength(3);
     expect(plans.map((plan) => plan.photoUris.length)).toEqual([3, 3, 2]);
     expect(plans.flatMap((plan) => plan.photoUris)).toEqual(photos);
+    expect(plans.map((plan) => plan.photoTemplateId)).toEqual(["classic-3", "classic-3", "classic-2"]);
+    expect(createBalancedPhotoPagePlans(photos, "magazine").map((plan) => plan.photoTemplateId)).toEqual([
+      "magazine-3",
+      "magazine-3",
+      "magazine-2",
+    ]);
   });
 
   it("maps every family to its one-, two-, and three-photo templates", () => {
