@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../../components/ui";
 import type { PhotoTemplateId } from "../../types/memory";
+import { createPhotoLayout } from "./auto-layout";
 import { PhotoTemplatePicker } from "./photo-template-picker";
 import { resolvePhotoTemplate } from "./photo-templates";
 
@@ -48,6 +49,11 @@ export function PhotoLayoutSheet({
       ? "创建自由排版页面"
       : "创建页面";
   const canUseTemplate = photoCount >= 1 && photoCount <= 3;
+  const freeformLayout = React.useMemo(
+    () => (photoCount > 3 ? createPhotoLayout(photoUris) : undefined),
+    [photoCount, photoUris],
+  );
+  const percent = (value: number) => `${Math.round(value * 10_000) / 100}%` as const;
 
   return (
     <Modal animationType="slide" onRequestClose={onCancel} transparent={false} visible>
@@ -106,8 +112,31 @@ export function PhotoLayoutSheet({
                 selectedTemplateId={selection}
               />
             </View>
-          ) : photoCount > 3 ? (
-            <Text selectable style={styles.warning}>模板仅支持 3 张及以内照片，仍可自行排版</Text>
+          ) : photoCount > 3 && freeformLayout ? (
+            <View style={styles.freeformSection}>
+              <Text selectable style={styles.warning}>模板仅支持 3 张及以内照片，仍可自行排版</Text>
+              <View
+                accessibilityLabel="自由排版预览"
+                accessibilityRole="image"
+                style={[styles.freeformPreview, { aspectRatio: freeformLayout.aspectRatio }]}
+              >
+                {freeformLayout.elements.map((element, index) => element.type === "image" ? (
+                  <Image
+                    accessibilityLabel={`自由排版预览照片 ${index + 1}`}
+                    contentFit="cover"
+                    key={element.id}
+                    source={{ uri: element.uri }}
+                    style={{
+                      height: percent(element.height),
+                      left: percent(element.x),
+                      position: "absolute",
+                      top: percent(element.y),
+                      width: percent(element.width),
+                    }}
+                  />
+                ) : null)}
+              </View>
+            </View>
           ) : (
             <Text selectable style={styles.hint}>请先选择照片</Text>
           )}
@@ -144,6 +173,8 @@ const styles = StyleSheet.create({
   templateSection: { gap: 10 },
   sectionTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   warning: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
+  freeformSection: { gap: 12 },
+  freeformPreview: { alignSelf: "center", backgroundColor: colors.paper, borderColor: colors.line, borderRadius: 12, borderWidth: 1, overflow: "hidden", width: "72%" },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14 },
   progress: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, textAlign: "center" },
   confirmButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, justifyContent: "center", minHeight: 48, paddingHorizontal: 16 },

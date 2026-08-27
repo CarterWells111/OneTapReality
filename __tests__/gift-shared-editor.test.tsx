@@ -152,6 +152,22 @@ describe("SharedAlbumEditor", () => {
     expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(1);
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(staged.uri, { idempotent: true });
 
+    const quick = await stageSharedPhoto("file:///quick-add.jpg");
+    acceptSharedPages([{
+      ...mockBookCanvasProps.pages[0],
+      layout: {
+        aspectRatio: 0.75,
+        elements: [{ id: "quick", type: "image", uri: quick.uri, x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 }],
+      },
+    }]);
+    quick.commit();
+    const cover = await stageSharedPhoto("file:///cover-upload.jpg");
+    acceptSharedPages([{ ...mockBookCanvasProps.pages[0], coverImage: cover.uri }]);
+    cover.commit();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(quick.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(cover.uri, expect.anything());
+
     const publishButtonBeforePending = screen.getByRole("button", { name: "保存并发布更新" });
     act(() => {
       mockBookCanvasProps.onTransformPendingChange(true);
@@ -409,6 +425,7 @@ describe("SharedAlbumEditor", () => {
     const staged = await stageSharedPhoto("file:///revoked.jpg");
     acceptSharedPages([...mockBookCanvasProps.pages, { ...mockBookCanvasProps.pages[0], id: "local", position: 1, photoUri: staged.uri }]);
     staged.commit();
+    const rejected = await stageSharedPhoto("file:///rejected-quick.jpg");
     global.fetch = jest.fn(async (url: any) => url === staged.uri
       ? ({ ok: true, blob: async () => new Blob(["revoked"], { type: "image/jpeg" }) })
       : ({ ok: true })) as any;
@@ -418,6 +435,8 @@ describe("SharedAlbumEditor", () => {
     fireEvent.press(screen.getByText("正在发布…"));
     await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
     expect(mockBookCanvasProps.onPagesChange(mockBookCanvasProps.pages, "structure")).toBe(false);
+    await rejected.rollback();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(rejected.uri, { idempotent: true });
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
     expect(screen.queryByTestId("saved-memory-metadata-header")).toBeNull();

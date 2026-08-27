@@ -35,11 +35,12 @@ function sharedPage(page: Memory["pages"][number], positions: Map<string, { posi
     ? { ...safePage, photoUri: `shared-position:${legacyRef.position}` }
     : safePage;
   if (!safePage.layout) return withLegacy;
+  const { photoPlanVersion: _photoPlanVersion, ...sharedLayout } = safePage.layout;
   return {
     ...withLegacy,
     layout: {
-      ...safePage.layout,
-      elements: safePage.layout.elements.map((element) => {
+      ...sharedLayout,
+      elements: sharedLayout.elements.map((element) => {
         if (element.type !== "image") return element;
         const ref = positions.get(element.uri);
         return { ...element, uri: "", ...(ref ? { mediaPosition: ref.position } : {}) };

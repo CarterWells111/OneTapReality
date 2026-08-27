@@ -147,6 +147,7 @@ describe("gift owner member management", () => {
         body: "",
         layout: {
           aspectRatio: 0.75,
+          photoPlanVersion: 1 as const,
           elements: [
             { id: "one", type: "image" as const, uri: "file:///one.jpg", x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 1 },
             { id: "two", type: "image" as const, uri: "file:///two.jpg", x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 2 },
@@ -180,6 +181,7 @@ describe("gift owner member management", () => {
     expect((FileSystem.uploadAsync as jest.Mock).mock.calls.map((call) => call[1])).toEqual([
       "file:///one.jpg", "file:///two.jpg",
     ]);
+    expect(mockStartOwnedGiftPublish.mock.calls[0][2].pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
   });
 
   it("maps layout media explicitly when legacy photoUri is stale", async () => {

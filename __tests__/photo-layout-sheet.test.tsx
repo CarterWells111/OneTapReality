@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
+import { StyleSheet } from "react-native";
 
 import { PhotoLayoutSheet } from "../src/features/canvas/photo-layout-sheet";
 
@@ -53,6 +54,16 @@ describe("PhotoLayoutSheet", () => {
 
     expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
     expect(screen.queryAllByLabelText(/模板$/)).toHaveLength(0);
+    const preview = screen.getByLabelText("自由排版预览");
+    expect(StyleSheet.flatten(preview.props.style)).toEqual(expect.objectContaining({ aspectRatio: 0.75 }));
+    const positioned = screen.getAllByLabelText(/自由排版预览照片/);
+    expect(positioned).toHaveLength(4);
+    expect(StyleSheet.flatten(positioned[0].props.style)).toEqual(expect.objectContaining({
+      height: "40%", left: "8%", top: "8%", width: "40%",
+    }));
+    expect(StyleSheet.flatten(positioned[3].props.style)).toEqual(expect.objectContaining({
+      height: "40%", left: "51%", top: "52%", width: "40%",
+    }));
     fireEvent.press(screen.getByLabelText("创建自由排版页面"));
     expect(onConfirm).toHaveBeenCalledWith(undefined);
   });

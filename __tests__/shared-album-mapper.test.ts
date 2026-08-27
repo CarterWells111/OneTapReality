@@ -67,8 +67,10 @@ describe("shared album snapshot mapper", () => {
     const base = {
       role: "viewer" as const,
       title: "Template",
-      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "story-1", elements: [] } } }],
-      media: [],
+      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "story-1", elements: [
+        { id: "image", type: "image", uri: "", mediaPosition: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 },
+      ] } } }],
+      media: [{ id: "media", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/template.jpg" }],
       publishedAt: "2026-08-16T00:00:00Z",
       version: 1,
       cover: null,
@@ -76,7 +78,7 @@ describe("shared album snapshot mapper", () => {
     expect(mapSharedAlbumToStoryPages(base)[0].layout).toHaveProperty("photoTemplateId", "story-1");
     expect(mapSharedAlbumToStoryPages({
       ...base,
-      pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "forged-template", elements: [] } } }],
+      pages: [{ position: 0, page: { layout: { ...base.pages[0].page.layout, photoTemplateId: "forged-template" } } }],
     })[0].layout).not.toHaveProperty("photoTemplateId");
   });
 

@@ -698,6 +698,41 @@ describe("BookCanvasEditor", () => {
     ]));
   });
 
+  it("commits staged quick-add and cover photos only after the page changes are accepted", async () => {
+    const quick = stagedPhoto("file:///session/quick.jpg");
+    const cover = stagedPhoto("file:///session/cover.jpg");
+    const stageSelectedPhoto = jest.fn().mockResolvedValueOnce(quick).mockResolvedValueOnce(cover);
+    const screen = render(<EditorHarness stageSelectedPhoto={stageSelectedPhoto} />);
+
+    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
+    expect(quick.commit).toHaveBeenCalledTimes(1);
+    expect(quick.rollback).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByText("封面"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("上传封面背景图")); });
+    expect(cover.commit).toHaveBeenCalledTimes(1);
+    expect(cover.rollback).not.toHaveBeenCalled();
+    expect(stageSelectedPhoto).toHaveBeenNthCalledWith(1, "file:///temporary.jpg");
+    expect(stageSelectedPhoto).toHaveBeenNthCalledWith(2, "file:///temporary.jpg");
+  });
+
+  it("rolls back staged quick-add and cover photos when the parent rejects their mutations", async () => {
+    const quick = stagedPhoto("file:///session/rejected-quick.jpg");
+    const cover = stagedPhoto("file:///session/rejected-cover.jpg");
+    const stageSelectedPhoto = jest.fn().mockResolvedValueOnce(quick).mockResolvedValueOnce(cover);
+    const onChange = jest.fn(() => false);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
+
+    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
+    expect(quick.commit).not.toHaveBeenCalled();
+    expect(quick.rollback).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByText("封面"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("上传封面背景图")); });
+    expect(cover.commit).not.toHaveBeenCalled();
+    expect(cover.rollback).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["false", "throw"])("keeps undo history when the parent %s-rejects a restore", (mode) => {
     const onChange = jest.fn(() => {
       if (onChange.mock.calls.length > 1) {
@@ -1134,17 +1169,17 @@ describe("BookCanvasEditor", () => {
     await act(async () => { resolveStage(stagedPhoto("file:///owned-new.jpg")); await pendingStage; });
   });
 
-  it("clears a mismatched stale template without changing existing image geometry", () => {
+  it("normalizes a mismatched stale template before editing without changing image geometry", () => {
     const onChange = jest.fn();
     const mismatched = structuredClone(photoPages);
     mismatched[1].layout!.photoTemplateId = "classic-3";
     const originalElements = structuredClone(mismatched[1].layout!.elements);
     const screen = render(<EditorHarness initialPageId="photo-page" initialPages={mismatched} onChange={onChange} />);
+    expect(mockCurrentCanvasPageProps?.layout).not.toHaveProperty("photoTemplateId");
+    expect((mockCurrentCanvasPageProps?.layout as StoryPage["layout"])?.elements).toEqual(originalElements);
     fireEvent.press(screen.getByText("照片布局"));
     fireEvent.press(screen.getByLabelText("应用照片布局"));
-    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
-    expect(updated.layout).not.toHaveProperty("photoTemplateId");
-    expect(updated.layout!.elements).toEqual(originalElements);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("does not mutate an unchanged four-photo freeform page on confirm", () => {

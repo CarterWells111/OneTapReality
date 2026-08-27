@@ -227,14 +227,46 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         throw new Error(validation.issues[0]);
       }
 
-      const pages = await generator.generate(input);
-      const now = new Date().toISOString();
-      const memory = createMemoryRecord({ id: buildId(), now, input, pages });
-      const persisted = await ensureMemoryPhotosPersisted(memory, owner);
-      const hydrated = await hydrateForStorage(persisted.memory, owner);
-      assertActive();
-      await createDraftInDb(db, hydrated.storageMemory, owner);
-      return { ...hydrated.runtimeMemory, status: "draft" as const };
+      const id = buildId();
+      const stagedPhotos: StagedPhotoFile[] = [];
+      try {
+        const uriMap = new Map<string, string>();
+        for (const uri of new Set(input.photoUris)) {
+          const staged = await stagePhotoUriStrict(uri, owner, id);
+          stagedPhotos.push(staged);
+          uriMap.set(uri, staged.uri);
+        }
+        const stagedInput: MemoryDraftInput = {
+          ...input,
+          photoUris: input.photoUris.map((uri) => uriMap.get(uri) ?? uri),
+          ...(input.pagePlans
+            ? {
+                pagePlans: input.pagePlans.map((plan) => ({
+                  ...plan,
+                  photoUris: plan.photoUris.map((uri) => uriMap.get(uri) ?? uri),
+                })),
+              }
+            : {}),
+        };
+        const pages = await generator.generate(stagedInput);
+        const now = new Date().toISOString();
+        const memory = createMemoryRecord({ id, now, input: stagedInput, pages });
+        const persisted = await ensureMemoryPhotosPersisted(memory, owner);
+        const hydrated = await hydrateForStorage(persisted.memory, owner);
+        assertActive();
+        await createDraftInDb(db, hydrated.storageMemory, owner);
+        stagedPhotos.forEach((photo) => photo.commit());
+        return { ...hydrated.runtimeMemory, status: "draft" as const };
+      } catch (error) {
+        for (const staged of stagedPhotos) {
+          try {
+            await staged.rollback();
+          } catch (cleanupError) {
+            console.warn("[memories-provider] 无法回滚草稿照片：", cleanupError);
+          }
+        }
+        throw error;
+      }
     }),
     [db, hydrateForStorage, runWrite]
   );

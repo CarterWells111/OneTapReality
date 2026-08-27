@@ -509,6 +509,32 @@ export function BookCanvasEditor({
     }
   }, [persistSelectedPhoto]);
 
+  const preparePickedPhoto = React.useCallback(async (uri: string): Promise<StagedPhotoFile | null> => {
+    if (stageSelectedPhoto) {
+      try {
+        return await stageSelectedPhoto(uri);
+      } catch {
+        Alert.alert(
+          "照片保存失败",
+          "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+        );
+        return null;
+      }
+    }
+    const persistedUri = await persistPickedPhoto(uri);
+    return persistedUri
+      ? { uri: persistedUri, commit: () => undefined, rollback: async () => undefined }
+      : null;
+  }, [persistPickedPhoto, stageSelectedPhoto]);
+
+  const rollbackRejectedPhoto = React.useCallback(async (photo: StagedPhotoFile) => {
+    try {
+      await photo.rollback();
+    } catch (error) {
+      console.warn("[book-canvas-editor] 无法回滚未应用的照片：", error);
+    }
+  }, []);
+
   const finishPhotoOperation = React.useCallback((generation: number) => {
     if (photoOperationGenerationsRef.current.delete(generation) && mountedRef.current) {
       setPhotoOperationCount(photoOperationGenerationsRef.current.size);
@@ -830,10 +856,14 @@ export function BookCanvasEditor({
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      const uri = await persistPickedPhoto(result.assets[0].uri);
-      if (!uri) return;
+      const photo = await preparePickedPhoto(result.assets[0].uri);
+      if (!photo) return;
       const nextId = buildCanvasId("image");
-      changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
+      if (!changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, photo.uri), "structure")) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      photo.commit();
       setSelectedElementId(nextId);
     }
   };
@@ -1415,9 +1445,13 @@ export function BookCanvasEditor({
                     quality: 0.8,
                   });
                   if (!result.canceled && result.assets[0]) {
-                    const uri = await persistPickedPhoto(result.assets[0].uri);
-                    if (!uri) return;
-                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, uri), "structure");
+                    const photo = await preparePickedPhoto(result.assets[0].uri);
+                    if (!photo) return;
+                    if (!changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, photo.uri), "structure")) {
+                      await rollbackRejectedPhoto(photo);
+                      return;
+                    }
+                    photo.commit();
                   }
                 }}
                 style={styles.coverUploadButton}

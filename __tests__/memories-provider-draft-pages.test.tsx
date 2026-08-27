@@ -5,6 +5,7 @@ import type { CanvasImageElement, Memory, StoryPage } from "../src/types/memory"
 const mockDatabase = { name: "local" };
 const mockListMemories = jest.fn();
 const mockGetDraft = jest.fn();
+const mockCreateDraft = jest.fn();
 const mockUpdateMemoryPages = jest.fn();
 const mockPersistPhotoUriStrict = jest.fn();
 const mockHydrateMemoryPhotoReferences = jest.fn();
@@ -55,7 +56,7 @@ jest.mock("../src/storage/memory-edit-draft-repository", () => ({
 
 jest.mock("../src/storage/memory-repository", () => ({
   clearMemories: jest.fn(),
-  createDraft: jest.fn(),
+  createDraft: (...args: unknown[]) => mockCreateDraft(...args),
   deleteMemory: jest.fn(),
   discardDraft: jest.fn(),
   getDraft: (...args: unknown[]) => mockGetDraft(...args),
@@ -115,6 +116,7 @@ describe("MemoriesProvider draft page persistence", () => {
     mockReplaceMemoryMediaSnapshot.mockResolvedValue(true);
     mockGetDraft.mockResolvedValue(null);
     mockGenerate.mockResolvedValue([]);
+    mockCreateDraft.mockResolvedValue(undefined);
     mockUpdateMemoryPages.mockResolvedValue(undefined);
     mockGetMemoryEditDraft.mockResolvedValue(null);
     mockSaveMemoryEditDraft.mockResolvedValue(undefined);
@@ -356,6 +358,90 @@ describe("MemoriesProvider draft page persistence", () => {
       "account:owner@example.com",
       "draft-1",
     );
+  });
+
+  it("rolls back the first draft photo and never generates when the second staging copy fails", async () => {
+    const first = { uri: "file:///owned/one.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict
+      .mockResolvedValueOnce(first)
+      .mockRejectedValueOnce(new Error("iCloud unavailable"));
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.createDraft({
+      title: "原子草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-one.jpg", "file:///temporary-two.jpg"],
+    })).rejects.toThrow("iCloud unavailable");
+
+    expect(first.rollback).toHaveBeenCalledTimes(1);
+    expect(first.commit).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it.each(["generation", "repository"])("rolls back all staged draft photos when %s fails", async (failure) => {
+    const handles = [
+      { uri: "file:///owned/one.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) },
+      { uri: "file:///owned/two.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) },
+    ];
+    mockStagePhotoUriStrict.mockResolvedValueOnce(handles[0]).mockResolvedValueOnce(handles[1]);
+    if (failure === "generation") mockGenerate.mockRejectedValueOnce(new Error("generation failed"));
+    else mockCreateDraft.mockRejectedValueOnce(new Error("repository failed"));
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.createDraft({
+      title: "失败草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-one.jpg", "file:///temporary-two.jpg"],
+    })).rejects.toThrow(`${failure} failed`);
+
+    handles.forEach((handle) => {
+      expect(handle.rollback).toHaveBeenCalledTimes(1);
+      expect(handle.commit).not.toHaveBeenCalled();
+    });
+    if (failure === "generation") expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("stages unique draft photos atomically and maps duplicates into generation and transient page plans", async () => {
+    const first = { uri: "file:///owned/one.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    const second = { uri: "file:///owned/two.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    mockGenerate.mockResolvedValueOnce([{ id: "cover", position: 0, kind: "cover", headline: "草稿", body: "" }]);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    const created = await capturedMemories!.createDraft({
+      title: "映射草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-one.jpg", "file:///temporary-one.jpg", "file:///temporary-two.jpg"],
+      pagePlans: [{
+        photoUris: ["file:///temporary-two.jpg", "file:///temporary-one.jpg", "file:///temporary-one.jpg"],
+        photoTemplateId: "classic-3",
+      }],
+    });
+
+    expect(mockStagePhotoUriStrict).toHaveBeenCalledTimes(2);
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+      photoUris: [first.uri, first.uri, second.uri],
+      pagePlans: [{ photoUris: [second.uri, first.uri, first.uri], photoTemplateId: "classic-3" }],
+    }));
+    expect(mockCreateDraft).toHaveBeenCalledWith(
+      mockDatabase,
+      expect.objectContaining({ photoUris: [first.uri, first.uri, second.uri] }),
+      "account:owner@example.com",
+    );
+    expect(mockCreateDraft.mock.calls[0][1]).not.toHaveProperty("pagePlans");
+    expect(created.photoUris).toEqual([first.uri, first.uri, second.uri]);
+    expect(JSON.stringify(created)).not.toContain("temporary-");
+    expect(first.commit).toHaveBeenCalledTimes(1);
+    expect(second.commit).toHaveBeenCalledTimes(1);
+    expect(first.rollback).not.toHaveBeenCalled();
+    expect(second.rollback).not.toHaveBeenCalled();
   });
 
   it("passes reconstructed grouped plans into draft retry without persisting them", async () => {

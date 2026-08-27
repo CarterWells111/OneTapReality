@@ -41,8 +41,21 @@ describe("canvas layout", () => {
   });
 
   it("preserves known template IDs and drops unknown serialized IDs", () => {
-    expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-1", elements: [] })).toMatchObject({ photoTemplateId: "classic-1" });
+    const image = { id: "image-1", type: "image" as const, uri: "file:///one.jpg", x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 };
+    expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-1", elements: [image] })).toMatchObject({ photoTemplateId: "classic-1" });
     expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "forged-template" as unknown as CanvasLayout["photoTemplateId"], elements: [] })).not.toHaveProperty("photoTemplateId");
+  });
+
+  it("drops a known template when its image count mismatches while preserving freeform geometry", () => {
+    const elements: CanvasLayout["elements"] = [
+      { id: "one", type: "image", uri: "file:///one.jpg", x: 0.13, y: 0.17, width: 0.31, height: 0.27, rotation: 4, zIndex: 3 },
+      { id: "two", type: "image", uri: "file:///two.jpg", x: 0.56, y: 0.49, width: 0.28, height: 0.33, rotation: -2, zIndex: 8 },
+    ];
+
+    const normalized = normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-3", elements });
+
+    expect(normalized).not.toHaveProperty("photoTemplateId");
+    expect(normalized.elements).toEqual(elements);
   });
 
   it("preserves only the valid planned-photo marker", () => {

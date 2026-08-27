@@ -6,7 +6,7 @@ import {
   migrateMemoryEditDrafts,
   saveMemoryEditDraft,
 } from "../src/storage/memory-edit-draft-repository";
-import type { Memory, PhotoTemplateId, StoryPage } from "../src/types/memory";
+import type { CanvasImageElement, Memory, PhotoTemplateId, StoryPage } from "../src/types/memory";
 
 const mockEmitDiagnostic = jest.fn();
 
@@ -280,9 +280,12 @@ describe("memory edit draft repository", () => {
 
   it("round trips known photo templates and omits forged template IDs", async () => {
     const { database } = createDraftDatabase();
+    const image = (id: string, uri: string, x: number): CanvasImageElement => (
+      { id, type: "image", uri, x, y: 0.2, width: 0.3, height: 0.4, rotation: 0, zIndex: 1 }
+    );
     const validPage: StoryPage = {
       ...secondPage,
-      layout: { ...secondPage.layout!, photoTemplateId: "classic-1" },
+      layout: { ...secondPage.layout!, photoTemplateId: "classic-1", elements: [image("one", "file:///one.jpg", 0.1)] },
     };
     await saveMemoryEditDraft(database, baseMemory, [validPage], "owner@example.com");
     await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
@@ -295,6 +298,16 @@ describe("memory edit draft repository", () => {
     await saveMemoryEditDraft(database, baseMemory, [invalidPage], "owner@example.com");
     const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
     expect(restored?.[0].layout).not.toHaveProperty("photoTemplateId");
+
+    const mismatchedElements = [image("one", "file:///one.jpg", 0.13), image("two", "file:///two.jpg", 0.57)];
+    const mismatchedPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "classic-3", elements: mismatchedElements },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [mismatchedPage], "owner@example.com");
+    const mismatchedRestored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    expect(mismatchedRestored?.[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(mismatchedRestored?.[0].layout?.elements).toEqual(mismatchedElements);
   });
 
   it("round trips the valid planned-photo marker and omits forged marker values", async () => {
