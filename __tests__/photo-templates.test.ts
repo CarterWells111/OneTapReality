@@ -16,6 +16,7 @@ describe("photo template registry", () => {
       "collage",
       "columns",
     ]);
+    expect(PHOTO_TEMPLATE_FAMILIES.map((family) => family.label)).toEqual(["经典留白", "杂志侧栏", "横向叙事", "手账错落", "竖向切片"]);
     expect(PHOTO_TEMPLATES).toHaveLength(15);
     expect(new Set(PHOTO_TEMPLATES.map((template) => template.id)).size).toBe(15);
     expect([1, 2, 3, 4].map((count) => getPhotoTemplatesForCount(count).length)).toEqual([5, 5, 5, 0]);
@@ -27,9 +28,12 @@ describe("photo template registry", () => {
       for (const slot of template.slots) {
         expect(slot.x).toBeGreaterThanOrEqual(0);
         expect(slot.y).toBeGreaterThanOrEqual(0);
-        expect(slot.x + slot.w).toBeLessThanOrEqual(1);
-        expect(slot.y + slot.h).toBeLessThanOrEqual(1);
+        expect(slot.x + slot.width).toBeLessThanOrEqual(1);
+        expect(slot.y + slot.height).toBeLessThanOrEqual(1);
+        expect(slot).toHaveProperty("width");
+        expect(slot).toHaveProperty("height");
       }
+      expect(template.familyLabel).toBeDefined();
     }
   });
 
