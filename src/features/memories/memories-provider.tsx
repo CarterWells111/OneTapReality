@@ -25,7 +25,8 @@ import {
   saveMemory,
   replaceMemoryMediaSnapshot,
 } from "../../storage/memory-repository";
-import type { Memory, MemoryDraftInput, StoryPage } from "../../types/memory";
+import type { Memory, MemoryDraftInput, MemoryDraftPagePlan, StoryPage } from "../../types/memory";
+import { resolvePhotoTemplate } from "../canvas/photo-templates";
 import { createMemory as createMemoryRecord } from "./memory-factory";
 import { validateMemoryDraft } from "./validation";
 
@@ -85,6 +86,41 @@ function restoreKnownMissingPhotoTokens(memory: Memory, baseline: ReadonlyMap<st
       } : undefined,
     })),
   };
+}
+
+/**
+ * 从已持久化的页面布局恢复草稿生成所需的临时页面计划。
+ * 只有检测到分组照片或匹配模板时才返回计划，以保持旧版一图一页草稿的重试行为。
+ */
+export function reconstructDraftPagePlans(memory: Memory): MemoryDraftPagePlan[] | undefined {
+  const photoPages = memory.pages
+    .filter((page) => page.kind === "photo")
+    .map((page, index) => ({ page, index }))
+    .sort((left, right) => left.page.position - right.page.position || left.index - right.index)
+    .map(({ page }) => page);
+  const hasPlannedLayout = photoPages.some((page) => {
+    const imageCount = page.layout?.elements.filter((element) => element.type === "image").length ?? 0;
+    const template = resolvePhotoTemplate(page.layout?.photoTemplateId);
+    return imageCount > 1 || (template !== undefined && template.photoCount === imageCount);
+  });
+  if (!hasPlannedLayout) return undefined;
+
+  return photoPages.map((page) => {
+    const imageUris = (page.layout?.elements ?? [])
+      .map((element, index) => ({ element, index }))
+      .filter((item) => item.element.type === "image")
+      .sort((left, right) => left.element.zIndex - right.element.zIndex || left.index - right.index)
+      .map((item) => item.element.type === "image" ? item.element.uri : "");
+    const photoUris = imageUris.length > 0
+      ? imageUris
+      : page.photoUri
+        ? [page.photoUri]
+        : [];
+    const template = resolvePhotoTemplate(page.layout?.photoTemplateId);
+    return template && template.photoCount === photoUris.length
+      ? { photoUris, photoTemplateId: template.id }
+      : { photoUris };
+  });
 }
 
 export function MemoriesProvider({ children }: { children: React.ReactNode }) {
@@ -222,7 +258,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         throw new Error("未找到可重试的草稿");
       }
 
-      const pages = await generator.generate(draft);
+      const pagePlans = reconstructDraftPagePlans(draft);
+      const pages = await generator.generate(pagePlans ? { ...draft, pagePlans } : draft);
       // 为页面 id 加命名空间前缀，避免全局主键冲突（与 createMemory 保持一致）
       const namespacedPages = pages.map((page) => ({
         ...page,

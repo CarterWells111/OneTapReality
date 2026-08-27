@@ -1,9 +1,10 @@
 import { act, render, waitFor } from "@testing-library/react-native";
 
-import type { Memory, StoryPage } from "../src/types/memory";
+import type { CanvasImageElement, Memory, StoryPage } from "../src/types/memory";
 
 const mockDatabase = { name: "local" };
 const mockListMemories = jest.fn();
+const mockGetDraft = jest.fn();
 const mockUpdateMemoryPages = jest.fn();
 const mockPersistPhotoUriStrict = jest.fn();
 const mockHydrateMemoryPhotoReferences = jest.fn();
@@ -13,6 +14,7 @@ const mockSaveMemoryEditDraft = jest.fn();
 const mockRunWrite = (operation: (owner: string, assertActive: () => void) => Promise<unknown>) => (
   operation("account:owner@example.com", () => undefined)
 );
+const mockGenerate = jest.fn();
 
 jest.mock("expo-sqlite", () => ({
   useSQLiteContext: () => mockDatabase,
@@ -26,6 +28,11 @@ jest.mock("../src/features/auth/local-library-provider", () => ({
     owner: "account:owner@example.com",
     runWrite: mockRunWrite,
   }),
+}));
+jest.mock("../src/services/ai/demo-draft-generator", () => ({
+  DemoDraftGenerator: jest.fn().mockImplementation(() => ({
+    generate: (...args: unknown[]) => mockGenerate(...args),
+  })),
 }));
 jest.mock("../src/features/memories/photo-persistence", () => ({
   cleanupMigratedLegacyPhotoUris: jest.fn(async () => undefined),
@@ -49,7 +56,7 @@ jest.mock("../src/storage/memory-repository", () => ({
   createDraft: jest.fn(),
   deleteMemory: jest.fn(),
   discardDraft: jest.fn(),
-  getDraft: jest.fn(),
+  getDraft: (...args: unknown[]) => mockGetDraft(...args),
   listDiscardedMemories: jest.fn(),
   listMemories: (...args: unknown[]) => mockListMemories(...args),
   restoreDiscardedMemory: jest.fn(),
@@ -61,6 +68,7 @@ jest.mock("../src/storage/memory-repository", () => ({
 
 import {
   MemoriesProvider,
+  reconstructDraftPagePlans,
   useMemories,
 } from "../src/features/memories/memories-provider";
 
@@ -103,9 +111,74 @@ describe("MemoriesProvider draft page persistence", () => {
       unresolved: [],
     }));
     mockReplaceMemoryMediaSnapshot.mockResolvedValue(true);
+    mockGetDraft.mockResolvedValue(null);
+    mockGenerate.mockResolvedValue([]);
     mockUpdateMemoryPages.mockResolvedValue(undefined);
     mockGetMemoryEditDraft.mockResolvedValue(null);
     mockSaveMemoryEditDraft.mockResolvedValue(undefined);
+  });
+
+  it("reconstructs grouped photo plans from persisted layout image z-order", () => {
+    const image = (id: string, uri: string, zIndex: number): CanvasImageElement => ({
+      id,
+      type: "image",
+      uri,
+      x: 0.1,
+      y: 0.1,
+      width: 0.8,
+      height: 0.8,
+      rotation: 0,
+      zIndex,
+    });
+    const persisted: Memory = {
+      id: "draft-1",
+      title: "模板草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file://one.jpg", "file://two.jpg", "file://three.jpg"],
+      pages: [
+        { id: "draft-1:cover", position: 0, kind: "cover", headline: "封面", body: "开始" },
+        {
+          id: "draft-1:photo-1",
+          position: 1,
+          kind: "photo",
+          headline: "照片",
+          body: "两张",
+          photoUri: "file://one.jpg",
+          layout: {
+            aspectRatio: 0.75,
+            photoTemplateId: "classic-2",
+            elements: [image("image-2", "file://two.jpg", 8), image("image-1", "file://one.jpg", 3)],
+          },
+        },
+        {
+          id: "draft-1:photo-2",
+          position: 2,
+          kind: "photo",
+          headline: "照片",
+          body: "一张",
+          photoUri: "file://three.jpg",
+          layout: {
+            aspectRatio: 0.75,
+            photoTemplateId: "story-1",
+            elements: [image("image-1", "file://three.jpg", 1)],
+          },
+        },
+        { id: "draft-1:closing", position: 3, kind: "closing", headline: "结束", body: "再见" },
+      ],
+      createdAt: "2026-07-23T10:00:00.000Z",
+      updatedAt: "2026-07-23T10:00:00.000Z",
+      status: "draft",
+    };
+
+    expect(reconstructDraftPagePlans(persisted)).toEqual([
+      { photoUris: ["file://one.jpg", "file://two.jpg"], photoTemplateId: "classic-2" },
+      { photoUris: ["file://three.jpg"], photoTemplateId: "story-1" },
+    ]);
+  });
+
+  it("does not reconstruct legacy one-photo pages without planned layout markers", () => {
+    expect(reconstructDraftPagePlans({ ...draft, pages: [{ ...pages[0], kind: "photo", photoUri: "file://legacy.jpg" }] })).toBeUndefined();
   });
 
   it("updates draft pages without refreshing the saved-memory list", async () => {
@@ -222,5 +295,76 @@ describe("MemoriesProvider draft page persistence", () => {
     await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
     expect(capturedMemories?.memories).toEqual([runtimeMemory]);
     expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(mockDatabase, storageMemory, "account:owner@example.com");
+  });
+
+  it("passes reconstructed grouped plans into draft retry without persisting them", async () => {
+    const persistedDraft: Memory = {
+      id: "draft-1",
+      title: "模板草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file://one.jpg", "file://two.jpg", "file://three.jpg"],
+      pages: [
+        { ...pages[0], id: "draft-1:cover", position: 0 },
+        {
+          id: "draft-1:photo-1",
+          position: 1,
+          kind: "photo",
+          headline: "照片",
+          body: "两张",
+          photoUri: "file://one.jpg",
+          layout: {
+            aspectRatio: 0.75,
+            photoTemplateId: "classic-2",
+            elements: [
+              { id: "image-2", type: "image", uri: "file://two.jpg", x: 0.1, y: 0.5, width: 0.8, height: 0.4, rotation: 0, zIndex: 2 },
+              { id: "image-1", type: "image", uri: "file://one.jpg", x: 0.1, y: 0.1, width: 0.8, height: 0.4, rotation: 0, zIndex: 1 },
+            ],
+          },
+        },
+        {
+          id: "draft-1:photo-2",
+          position: 2,
+          kind: "photo",
+          headline: "照片",
+          body: "一张",
+          photoUri: "file://three.jpg",
+          layout: {
+            aspectRatio: 0.75,
+            photoTemplateId: "story-1",
+            elements: [{ id: "image-1", type: "image", uri: "file://three.jpg", x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 }],
+          },
+        },
+        { id: "draft-1:closing", position: 3, kind: "closing", headline: "结束", body: "再见" },
+      ],
+      createdAt: "2026-07-23T10:00:00.000Z",
+      updatedAt: "2026-07-23T10:00:00.000Z",
+      status: "draft",
+    };
+    mockGetDraft.mockResolvedValue(persistedDraft);
+    mockGenerate.mockResolvedValue([{ id: "cover", position: 0, kind: "cover", headline: "重试", body: "重试" }]);
+
+    render(
+      <MemoriesProvider>
+        <CaptureMemories />
+      </MemoriesProvider>,
+    );
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await act(async () => {
+      await capturedMemories!.retryDraft("draft-1");
+    });
+
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+      pagePlans: [
+        { photoUris: ["file://one.jpg", "file://two.jpg"], photoTemplateId: "classic-2" },
+        { photoUris: ["file://three.jpg"], photoTemplateId: "story-1" },
+      ],
+    }));
+    expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(
+      mockDatabase,
+      expect.not.objectContaining({ pagePlans: expect.anything() }),
+      "account:owner@example.com",
+    );
   });
 });

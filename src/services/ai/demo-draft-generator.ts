@@ -22,7 +22,8 @@ const cityPhrases: Record<City, string> = Object.fromEntries(cityRegistry.map((c
 /**
  * 根据用户上传照片数量动态生成旅行册页面。
  *
- * 结构：封面(1) + 每张照片一页(N) + 尾页(1)
+ * 结构：无页面计划时为封面(1) + 每张照片一页(N) + 尾页(1)；
+ * 提供非空页面计划时为封面(1) + 按计划排列的照片页 + 尾页(1)。
  * 封面包含完整 layout，可在编辑器中修改颜色/背景图。
  */
 export class DemoDraftGenerator implements DraftGenerator {
