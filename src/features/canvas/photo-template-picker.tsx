@@ -68,7 +68,7 @@ export function PhotoTemplatePicker({ photoCount, selectedTemplateId, onSelect }
                   ) : null}
                 </View>
                 <Text selectable style={styles.label}>
-                  {template.familyLabel} · {countLabel}
+                  {template.familyLabel}
                 </Text>
               </Pressable>
             );

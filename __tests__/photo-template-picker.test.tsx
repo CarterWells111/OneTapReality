@@ -12,6 +12,7 @@ describe("PhotoTemplatePicker", () => {
     const screen = render(<PhotoTemplatePicker photoCount={photoCount} onSelect={() => undefined} />);
 
     expect(screen.getAllByRole("button")).toHaveLength(5);
+    expect(familyLabels.map((familyLabel) => screen.getByText(familyLabel, { exact: true }).props.children)).toEqual(familyLabels);
     expect(screen.getAllByRole("button").map((button) => button.props.accessibilityLabel)).toEqual(
       familyLabels.map((familyLabel) => `${familyLabel}${countLabels[photoCount - 1]}模板`),
     );
