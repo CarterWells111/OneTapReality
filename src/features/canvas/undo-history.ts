@@ -16,7 +16,7 @@ type UndoHistoryState = {
   redoStack: StoryPage[][];
 };
 
-export function useUndoHistory(onRestore: (pages: StoryPage[]) => void) {
+export function useUndoHistory(onRestore: (pages: StoryPage[]) => boolean | void) {
   const stateRef = React.useRef<UndoHistoryState>({
     undoStack: [],
     redoStack: [],
@@ -44,9 +44,14 @@ export function useUndoHistory(onRestore: (pages: StoryPage[]) => void) {
     if (prev.undoStack.length === 0) return;
     const newUndo = [...prev.undoStack];
     const previous = newUndo.pop()!;
+    try {
+      if (onRestore(previous) === false) return false;
+    } catch {
+      return false;
+    }
     const newRedo = [...prev.redoStack, currentPages];
     stateRef.current = { undoStack: newUndo, redoStack: newRedo };
-    onRestore(previous);
+    return true;
   }, [onRestore]);
 
   /** 重做：前进到下一个状态。 */
@@ -55,9 +60,14 @@ export function useUndoHistory(onRestore: (pages: StoryPage[]) => void) {
     if (prev.redoStack.length === 0) return;
     const newRedo = [...prev.redoStack];
     const next = newRedo.pop()!;
+    try {
+      if (onRestore(next) === false) return false;
+    } catch {
+      return false;
+    }
     const newUndo = [...prev.undoStack, currentPages];
     stateRef.current = { undoStack: newUndo, redoStack: newRedo };
-    onRestore(next);
+    return true;
   }, [onRestore]);
 
   return { canUndo, canRedo, pushState, undo, redo } as const;

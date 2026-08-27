@@ -312,9 +312,14 @@ export function BookCanvasEditor({
   const pendingChangeCallbackRef = React.useRef(onTransformPendingChange);
   pendingChangeCallbackRef.current = onTransformPendingChange;
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
-    if (saveBoundaryLockedRef.current) return;
-    pagesRef.current = restoredPages;
-    onPagesChange(restoredPages, "structure");
+    if (saveBoundaryLockedRef.current) return false;
+    try {
+      if (onPagesChange(restoredPages, "structure") === false) return false;
+      pagesRef.current = restoredPages;
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   const setOwnedPendingPhotoLayout = React.useCallback((next: PendingPhotoLayout | null) => {
@@ -517,6 +522,10 @@ export function BookCanvasEditor({
 
   const pickAndStagePhotos = React.useCallback(async () => {
     if (activePickerRef.current !== null) return null;
+    if (!stageSelectedPhoto) {
+      Alert.alert("照片保存失败", "当前编辑器无法安全暂存照片，请稍后重试。");
+      return null;
+    }
     const generation = ++pickerGenerationRef.current;
     photoOperationGenerationsRef.current.add(generation);
     setPhotoOperationCount(photoOperationGenerationsRef.current.size);
@@ -559,14 +568,7 @@ export function BookCanvasEditor({
       for (const asset of selectedAssets) {
         let staged: StagedPhotoFile;
         try {
-          if (stageSelectedPhoto) {
-            staged = await stageSelectedPhoto(asset.uri);
-          } else if (persistSelectedPhoto) {
-            const uri = await persistSelectedPhoto(asset.uri);
-            staged = { uri, commit: () => undefined, rollback: async () => undefined };
-          } else {
-            staged = { uri: asset.uri, commit: () => undefined, rollback: async () => undefined };
-          }
+          staged = await stageSelectedPhoto(asset.uri);
         } catch {
           await rollbackStagedPhotos(stagedPhotos);
           if (isCurrent()) {
@@ -588,7 +590,7 @@ export function BookCanvasEditor({
     } finally {
       if (!handedOff) finishPhotoOperation(generation);
     }
-  }, [finishPhotoOperation, persistSelectedPhoto, stageSelectedPhoto]);
+  }, [finishPhotoOperation, stageSelectedPhoto]);
 
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pagesRef.current) => {
     const pendingId = pendingTextIdRef.current;

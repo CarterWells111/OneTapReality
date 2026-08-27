@@ -698,14 +698,35 @@ describe("BookCanvasEditor", () => {
     ]));
   });
 
+  it.each(["false", "throw"])("keeps undo history when the parent %s-rejects a restore", (mode) => {
+    const onChange = jest.fn(() => {
+      if (onChange.mock.calls.length > 1) {
+        if (mode === "throw") throw new Error("commit locked");
+        return false;
+      }
+      return undefined;
+    });
+    const screen = render(<EditorHarness onChange={onChange} />);
+    openStyleMenu(screen, "颜色");
+    act(() => {
+      (mockContextMenuProps?.onChangeColor as ((color: string) => void) | undefined)?.("#123456");
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    expect(() => fireEvent.press(screen.getByText("↩"))).not.toThrow();
+    expect(() => fireEvent.press(screen.getByText("↩"))).not.toThrow();
+
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
   it("stages a two-photo page from page management and commits it only after template confirmation", async () => {
     const onChange = jest.fn();
-    const persistSelectedPhoto = jest.fn(async (uri: string) => uri.replace("temporary", "permanent"));
+    const stageSelectedPhoto = jest.fn(async (uri: string) => stagedPhoto(uri.replace("temporary", "permanent")));
     launchImageLibraryMock.mockResolvedValueOnce({
       canceled: false,
       assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
     });
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
@@ -716,7 +737,7 @@ describe("BookCanvasEditor", () => {
       allowsMultipleSelection: true,
       selectionLimit: 12,
     }));
-    expect(persistSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
+    expect(stageSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
       "file:///temporary-one.jpg",
       "file:///temporary-two.jpg",
     ]);
@@ -741,7 +762,7 @@ describe("BookCanvasEditor", () => {
   it("does not open a layout sheet or create a page when the system picker is cancelled", async () => {
     const onChange = jest.fn();
     launchImageLibraryMock.mockResolvedValueOnce({ canceled: true, assets: [] });
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={jest.fn()} />);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={jest.fn()} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
@@ -754,7 +775,7 @@ describe("BookCanvasEditor", () => {
 
   it("does not create a page when the staged layout sheet is cancelled", async () => {
     const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={async (uri) => uri} />);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={async (uri) => stagedPhoto(uri)} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
@@ -772,7 +793,7 @@ describe("BookCanvasEditor", () => {
       canceled: false,
       assets: [1, 2, 3, 4].map((index) => ({ uri: `file:///temporary-${index}.jpg` })),
     });
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={async (uri) => uri.replace("temporary", "permanent")} />);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={async (uri) => stagedPhoto(uri.replace("temporary", "permanent"))} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
@@ -790,21 +811,21 @@ describe("BookCanvasEditor", () => {
   it("alerts and leaves pages unchanged when the second selected photo cannot be persisted", async () => {
     const onChange = jest.fn();
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const persistSelectedPhoto = jest.fn()
-      .mockResolvedValueOnce("file:///permanent-one.jpg")
+    const stageSelectedPhoto = jest.fn()
+      .mockResolvedValueOnce(stagedPhoto("file:///permanent-one.jpg"))
       .mockRejectedValueOnce(new Error("iCloud unavailable"));
     launchImageLibraryMock.mockResolvedValueOnce({
       canceled: false,
       assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
     });
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />);
+    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
 
-    expect(persistSelectedPhoto).toHaveBeenCalledTimes(2);
+    expect(stageSelectedPhoto).toHaveBeenCalledTimes(2);
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("新建照片页面")).toBeNull();
@@ -821,7 +842,7 @@ describe("BookCanvasEditor", () => {
         initialPageId="photo-page"
         initialPages={photoPages}
         onChange={onChange}
-        persistSelectedPhoto={async (uri) => uri.replace("temporary", "permanent")}
+        stageSelectedPhoto={async (uri) => stagedPhoto(uri.replace("temporary", "permanent"))}
       />,
     );
 
@@ -857,7 +878,7 @@ describe("BookCanvasEditor", () => {
         initialPageId="photo-page"
         initialPages={photoPages}
         onChange={onChange}
-        persistSelectedPhoto={async (uri) => uri}
+        stageSelectedPhoto={async (uri) => stagedPhoto(uri)}
       />,
     );
 
@@ -898,6 +919,20 @@ describe("BookCanvasEditor", () => {
     expect(first.commit).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("refuses a staged layout flow when only permanent photo persistence is available", async () => {
+    const persistSelectedPhoto = jest.fn().mockResolvedValue("file:///permanent.jpg");
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = render(<EditorHarness persistSelectedPhoto={persistSelectedPhoto} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => { await dismissPageManagerForAdd(screen); });
+
+    expect(persistSelectedPhoto).not.toHaveBeenCalled();
+    expect(launchImageLibraryMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("暂存"));
   });
 
   it("rolls back staged add files on sheet cancel and commits them on confirmation", async () => {
@@ -1130,12 +1165,12 @@ describe("BookCanvasEditor", () => {
   it("preserves staged and saved photos when replacement is cancelled or persistence fails", async () => {
     const onChange = jest.fn();
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const persistSelectedPhoto = jest.fn().mockRejectedValue(new Error("storage full"));
+    const stageSelectedPhoto = jest.fn().mockRejectedValue(new Error("storage full"));
     launchImageLibraryMock
       .mockResolvedValueOnce({ canceled: true, assets: [] })
       .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-new.jpg" }] });
     const screen = render(
-      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />,
+      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
 
     fireEvent.press(screen.getByText("照片布局"));
