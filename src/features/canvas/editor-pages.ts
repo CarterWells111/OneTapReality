@@ -29,6 +29,10 @@ function updatePage(pages: StoryPage[], pageId: string, update: (page: StoryPage
   return pages.map((page) => (page.id === pageId ? update(withLayout(page)) : withLayout(page)));
 }
 
+function updatePageWithoutNormalization(pages: StoryPage[], pageId: string, update: (page: StoryPage) => StoryPage) {
+  return pages.map((page) => (page.id === pageId ? update(page) : page));
+}
+
 function maxLayer(elements: CanvasElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex));
 }
@@ -45,7 +49,7 @@ export function preserveLayoutMeta(previous: CanvasLayout, elements: CanvasEleme
       : resolvePhotoTemplate(templateMode)?.id;
   return {
     ...metadata,
-    aspectRatio: 0.75 as const,
+    aspectRatio: previous.aspectRatio,
     ...(templateId ? { photoTemplateId: templateId } : {}),
     elements,
   };
@@ -351,22 +355,25 @@ export function applyPhotoTemplateToPage(pages: StoryPage[], pageId: string, tem
   const page = pages.find((candidate) => candidate.id === pageId);
   const template = resolvePhotoTemplate(templateId);
   if (!page || !template) return pages;
-  const currentPage = withLayout(page);
-  const images = orderedImages(currentPage.layout!.elements);
+  const currentLayout = page.layout ?? createLegacyLayout(page);
+  const images = orderedImages(currentLayout.elements);
   if (images.length !== template.photoCount) return pages;
 
   const slotById = new Map(images.map(({ element }, index) => [element.id, template.slots[index]]));
-  return updatePage(pages, pageId, (nextPage) => ({
-    ...nextPage,
-    layout: preserveLayoutMeta(
-      nextPage.layout!,
-      nextPage.layout!.elements.map((element) => {
-        const slot = element.type === "image" ? slotById.get(element.id) : undefined;
-        return slot ? { ...element, ...slot } : element;
-      }),
-      template.id,
-    ),
-  }));
+  return updatePageWithoutNormalization(pages, pageId, (nextPage) => {
+    const nextLayout = nextPage.layout ?? createLegacyLayout(nextPage);
+    return {
+      ...nextPage,
+      layout: preserveLayoutMeta(
+        nextLayout,
+        nextLayout.elements.map((element) => {
+          const slot = element.type === "image" ? slotById.get(element.id) : undefined;
+          return slot ? { ...element, ...slot } : element;
+        }),
+        template.id,
+      ),
+    };
+  });
 }
 
 export function replacePagePhotos(
@@ -376,7 +383,8 @@ export function replacePagePhotos(
   templateId?: string,
 ) {
   if (!pages.some((page) => page.id === pageId)) return pages;
-  return updatePage(pages, pageId, (page) => {
+  return updatePageWithoutNormalization(pages, pageId, (page) => {
+    const previousLayout = page.layout ?? createLegacyLayout(page);
     const limitedPhotos = photos.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
     const template = resolvePhotoTemplate(templateId);
     const useTemplate = template !== undefined && template.photoCount === limitedPhotos.length;
@@ -396,7 +404,7 @@ export function replacePagePhotos(
     }
 
     let imageIndex = 0;
-    const elements = page.layout!.elements
+    const elements = previousLayout.elements
       .map((element) => {
         if (element.type !== "image") return element;
         const replacement = generated[imageIndex];
@@ -407,7 +415,7 @@ export function replacePagePhotos(
     elements.push(...generated.slice(imageIndex));
     return {
       ...page,
-      layout: preserveLayoutMeta(page.layout!, elements, useTemplate ? template.id : "clear"),
+      layout: preserveLayoutMeta(previousLayout, elements, useTemplate ? template.id : "clear"),
     };
   });
 }

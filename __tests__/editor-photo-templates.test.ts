@@ -12,6 +12,7 @@ import {
   setCanvasCoverImage,
   updateCanvasElement,
 } from "../src/features/canvas/editor-pages";
+import { resolvePhotoTemplate } from "../src/features/canvas/photo-templates";
 import type { CanvasElement, CanvasLayout, StoryPage } from "../src/types/memory";
 
 const image = (id: string, uri: string, zIndex: number, offset = 0): CanvasElement => ({
@@ -98,8 +99,9 @@ describe("editor photo templates", () => {
     expect(actualPhotos.map((photo) => ({ id: photo.id, uri: photo.uri, zIndex: photo.zIndex }))).toEqual(
       photos.map((photo, index) => ({ ...photo, zIndex: index + 1 })),
     );
+    const slots = resolvePhotoTemplate(`columns-${count}`)!.slots;
     expect(actualPhotos.map((photo) => [photo.x, photo.y, photo.width, photo.height, photo.rotation])).toEqual(
-      nextPage.layout!.elements.filter((element) => element.type === "image").map((photo) => [photo.x, photo.y, photo.width, photo.height, photo.rotation]),
+      slots.map((slot) => [slot.x, slot.y, slot.width, slot.height, slot.rotation]),
     );
     expect(nextPage.layout).toMatchObject({ photoTemplateId: `columns-${count}`, backgroundId: "paper", schemaVersion: 7 });
     expect(nextPage.layout!.elements.filter((element) => element.type !== "image").map((element) => element.id)).toEqual(["caption", "sticker"]);
@@ -154,5 +156,26 @@ describe("editor photo templates", () => {
     expect(next[1]).toEqual(original[1]);
     expect(pages).toEqual(original);
     expect(photos).toEqual([{ id: "replacement", uri: "file:///replacement.jpg" }]);
+  });
+
+  it("does not normalize unrelated pages or target non-images during photo layout edits", () => {
+    const target = pageWithPhotos(2);
+    const targetCaption = target.layout!.elements.find((element) => element.id === "caption");
+    target.layout = { ...target.layout!, aspectRatio: 1 };
+    const unrelated = { ...pageWithPhotos(1), id: "page-2", position: 1 };
+    unrelated.layout = { ...unrelated.layout!, aspectRatio: 1 };
+    const pages = [target, unrelated];
+
+    const applied = applyPhotoTemplateToPage(pages, "page-1", "columns-2");
+    expect(applied[1]).toBe(unrelated);
+    expect(applied[1]).toEqual(unrelated);
+    expect(applied[0].layout!.aspectRatio).toBe(1);
+    expect(applied[0].layout!.elements.find((element) => element.id === "caption")).toBe(targetCaption);
+
+    const replaced = replacePagePhotos(pages, "page-1", [{ id: "new", uri: "file:///new.jpg" }], "columns-1");
+    expect(replaced[1]).toBe(unrelated);
+    expect(replaced[1]).toEqual(unrelated);
+    expect(replaced[0].layout!.aspectRatio).toBe(1);
+    expect(replaced[0].layout!.elements.find((element) => element.id === "caption")).toBe(targetCaption);
   });
 });
