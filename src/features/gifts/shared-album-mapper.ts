@@ -51,10 +51,8 @@ function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elemen
   const photoTemplateId = typeof value.photoTemplateId === "string"
     ? resolvePhotoTemplate(value.photoTemplateId)?.id
     : undefined;
-  const photoPlanVersion = value.photoPlanVersion === 1 ? 1 as const : undefined;
   return {
     aspectRatio: value.aspectRatio,
-    ...(photoPlanVersion ? { photoPlanVersion } : {}),
     ...(photoTemplateId ? { photoTemplateId } : {}),
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),

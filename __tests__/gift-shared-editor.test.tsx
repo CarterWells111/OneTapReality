@@ -95,6 +95,35 @@ describe("SharedAlbumEditor", () => {
     expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
   });
 
+  it("strips the local planned-photo marker from publication snapshots", async () => {
+    const markedAlbum = {
+      ...album,
+      pages: [{
+        position: 0,
+        page: {
+          id: "p0",
+          position: 0,
+          kind: "photo",
+          headline: "Planned",
+          body: "",
+          layout: {
+            aspectRatio: 0.75,
+            photoPlanVersion: 1,
+            elements: [{ id: "image-1", type: "image", uri: "https://signed.test/old.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 }],
+          },
+        },
+      }],
+    };
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-marker", uploads: [], coverUpload: null });
+    mockFinish.mockResolvedValueOnce({ albumId: "album-1" });
+    render(<SharedAlbumEditor accessToken="token" album={markedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("发布新版本"));
+
+    await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-marker"));
+    const payload = mockStart.mock.calls.at(-1)?.[2];
+    expect(payload.pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
+  });
+
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
     const ownedAlbum = { ...album, role: "owner" };
     const view = render(<SharedAlbumEditor accessToken="token" album={ownedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);

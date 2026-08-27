@@ -59,16 +59,17 @@ function snapshotPage(page: StoryPage, positions: Map<string, { position: number
     ...(topCover ? { coverImage: topCover.mediaId ? `shared-media:${topCover.mediaId}` : `shared-position:${topCover.position}` } : {}),
   };
   if (!safe.layout) return withTopCover;
+  const { photoPlanVersion: _photoPlanVersion, ...layoutWithoutLocalPlan } = safe.layout;
   return {
     ...withTopCover,
     layout: {
-      ...safe.layout,
-      ...(safe.layout.coverImage && positions.get(safe.layout.coverImage)
-        ? { coverImage: positions.get(safe.layout.coverImage)!.mediaId
-          ? `shared-media:${positions.get(safe.layout.coverImage)!.mediaId}`
-          : `shared-position:${positions.get(safe.layout.coverImage)!.position}` }
+      ...layoutWithoutLocalPlan,
+      ...(layoutWithoutLocalPlan.coverImage && positions.get(layoutWithoutLocalPlan.coverImage)
+        ? { coverImage: positions.get(layoutWithoutLocalPlan.coverImage)!.mediaId
+          ? `shared-media:${positions.get(layoutWithoutLocalPlan.coverImage)!.mediaId}`
+          : `shared-position:${positions.get(layoutWithoutLocalPlan.coverImage)!.position}` }
         : {}),
-      elements: safe.layout.elements.map((element): CanvasElement | Record<string, unknown> => {
+      elements: layoutWithoutLocalPlan.elements.map((element): CanvasElement | Record<string, unknown> => {
         if (element.type !== "image") return element;
         const ref = positions.get(element.uri);
         return { ...element, uri: "", ...(ref?.mediaId ? { mediaId: ref.mediaId } : {}), ...(ref ? { mediaPosition: ref.position } : {}) };
