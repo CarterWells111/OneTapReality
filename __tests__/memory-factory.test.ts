@@ -49,4 +49,29 @@ describe("createMemory", () => {
     expect(first.pages.map((page) => page.id)).toEqual(["memory-a:cover", "memory-a:photo-1"]);
     expect(second.pages.map((page) => page.id)).toEqual(["memory-b:cover", "memory-b:photo-1"]);
   });
+
+  it("does not persist transient page plans while retaining other draft fields", () => {
+    const memory = createMemory({
+      id: "memory-3",
+      now: "2026-07-22T10:00:00.000Z",
+      input: {
+        title: "Planned album",
+        city: "hangzhou",
+        travelDate: "2026-07-22",
+        photoUris: ["file://one.jpg"],
+        pagePlans: [{ photoUris: ["file://one.jpg"], photoTemplateId: "classic-1" }],
+        coverColor: "#FFFFFF",
+        coverImage: "file://cover.jpg",
+      },
+      pages: [],
+    });
+
+    expect(memory).not.toHaveProperty("pagePlans");
+    expect(memory).toMatchObject({
+      title: "Planned album",
+      photoUris: ["file://one.jpg"],
+      coverColor: "#FFFFFF",
+      coverImage: "file://cover.jpg",
+    });
+  });
 });
