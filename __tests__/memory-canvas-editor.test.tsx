@@ -34,7 +34,7 @@ const mockPersistSelectedPhoto = jest.fn();
 const mockStageSelectedPhoto = jest.fn();
 const mockEmitDiagnostic = jest.fn();
 const mockReleaseSaveLock = jest.fn();
-const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text") => void> = [];
+const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text" | "structure") => boolean | void> = [];
 const mockTransformPendingCallbacks: Array<(pending: boolean) => void> = [];
 let mockPreparedPages: StoryPage[] | undefined;
 let mockPreparedCursor = { pageId: "cover-1", index: 0 };
@@ -92,7 +92,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     fallbackIndex?: number;
     initialPageId?: string;
     onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
-    onPagesChange: (pages: StoryPage[], reason: "text") => void;
+    onPagesChange: (pages: StoryPage[], reason: "text" | "structure") => boolean | void;
     onTransformPendingChange?: (pending: boolean) => void;
     pages: StoryPage[];
   }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
@@ -1322,15 +1322,23 @@ describe("EditMemoryScreen", () => {
     const capturedCallback = mockPageChangeCallbacks[0];
     await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
-    await act(async () => capturedCallback(
+    let rejectedDuringSave: boolean | void;
+    await act(async () => {
+      rejectedDuringSave = capturedCallback(
       legacyPages.map((page, index) => index === 0 ? { ...page, headline: "保存中迟到" } : page),
       "text",
-    ));
+      );
+    });
+    expect(rejectedDuringSave!).toBe(false);
     await act(async () => resolveFormal?.());
-    await act(async () => capturedCallback(
+    let rejectedDuringClear: boolean | void;
+    await act(async () => {
+      rejectedDuringClear = capturedCallback(
       legacyPages.map((page, index) => index === 0 ? { ...page, headline: "清理中迟到" } : page),
       "text",
-    ));
+      );
+    });
+    expect(rejectedDuringClear!).toBe(false);
 
     expect(mockUpdatePages.mock.calls[0][1][0].headline).toBe("本地编辑");
     expect(mockSaveMemoryEditDraft).toHaveBeenCalledTimes(1);

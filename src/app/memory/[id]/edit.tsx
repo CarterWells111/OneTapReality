@@ -303,12 +303,13 @@ export default function EditMemoryScreen() {
       || editorSessionToken !== editorSessionGenerationRef.current
       || currentLoadKeyRef.current !== loadKey
       || editorCommitLockedRef.current) {
-      return;
+      return false;
     }
     const stablePages = canvasPages(nextPages);
     pagesRef.current = stablePages;
     setPages(stablePages);
     queueLeaseRef.current?.enqueue(stablePages);
+    return true;
   }, [editorSessionToken, loadKey]);
 
   const changeActivePage = React.useCallback((cursor: { pageId: string; index: number }) => {

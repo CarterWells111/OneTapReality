@@ -81,7 +81,7 @@ type BookCanvasEditorProps = {
   fallbackIndex?: number;
   initialPageId?: string;
   onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
-  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
+  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => boolean | void;
   onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
@@ -303,9 +303,14 @@ export function BookCanvasEditor({
   const pendingPhotoLayoutRef = React.useRef<PendingPhotoLayout | null>(null);
   const [photoLayoutBusy, setPhotoLayoutBusy] = React.useState(false);
   const photoLayoutBusyRef = React.useRef(false);
+  const [gestureTransformPending, setGestureTransformPending] = React.useState(false);
+  const [photoOperationCount, setPhotoOperationCount] = React.useState(0);
+  const photoOperationGenerationsRef = React.useRef(new Set<number>());
   const pickerGenerationRef = React.useRef(0);
   const activePickerRef = React.useRef<number | null>(null);
   const mountedRef = React.useRef(true);
+  const pendingChangeCallbackRef = React.useRef(onTransformPendingChange);
+  pendingChangeCallbackRef.current = onTransformPendingChange;
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
     if (saveBoundaryLockedRef.current) return;
     pagesRef.current = restoredPages;
@@ -316,6 +321,12 @@ export function BookCanvasEditor({
     pendingPhotoLayoutRef.current = next;
     setPendingPhotoLayout(next);
   }, []);
+  const photoLayoutTransactionPending = pendingPhotoLayout !== null || photoOperationCount > 0;
+  const editorChangePending = gestureTransformPending || photoLayoutTransactionPending;
+
+  React.useEffect(() => {
+    onTransformPendingChange?.(editorChangePending);
+  }, [editorChangePending, onTransformPendingChange]);
 
   const activePageIndex = activePageIdRef.current
     ? pages.findIndex((page) => page.id === activePageIdRef.current)
@@ -372,6 +383,8 @@ export function BookCanvasEditor({
 
   React.useEffect(() => () => {
     mountedRef.current = false;
+    pendingChangeCallbackRef.current?.(false);
+    photoOperationGenerationsRef.current.clear();
     pickerGenerationRef.current += 1;
     stableTurnGeneration.value += 1;
     const pending = pendingPhotoLayoutRef.current;
@@ -386,8 +399,9 @@ export function BookCanvasEditor({
     activePickerRef.current = null;
     photoLayoutBusyRef.current = false;
     setPhotoLayoutBusy(false);
-    setOwnedPendingPhotoLayout(null);
-    void rollbackStagedPhotos(pending.stagedPhotos);
+    void rollbackStagedPhotos(pending.stagedPhotos).then(() => {
+      if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    });
   }, [pages, setOwnedPendingPhotoLayout]);
 
   const selectedElement = currentPage?.layout?.elements.find(
@@ -430,11 +444,15 @@ export function BookCanvasEditor({
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
     if (saveBoundaryLockedRef.current && reason !== "transform") return false;
     const previousPages = pagesRef.current;
+    try {
+      if (onPagesChange(nextPages, reason) === false) return false;
+    } catch {
+      return false;
+    }
     if (reason === "structure" || reason === "transform") {
       pushState(previousPages);
     }
     pagesRef.current = nextPages;
-    onPagesChange(nextPages, reason);
     return true;
   }, [onPagesChange, pushState]);
 
@@ -487,15 +505,21 @@ export function BookCanvasEditor({
   }, [persistSelectedPhoto]);
 
   const finishPhotoOperation = React.useCallback((generation: number) => {
-    if (activePickerRef.current !== generation) return;
-    activePickerRef.current = null;
-    photoLayoutBusyRef.current = false;
-    if (mountedRef.current) setPhotoLayoutBusy(false);
+    if (photoOperationGenerationsRef.current.delete(generation) && mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    if (activePickerRef.current === generation) {
+      activePickerRef.current = null;
+      photoLayoutBusyRef.current = false;
+      if (mountedRef.current) setPhotoLayoutBusy(false);
+    }
   }, []);
 
   const pickAndStagePhotos = React.useCallback(async () => {
     if (activePickerRef.current !== null) return null;
     const generation = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(generation);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
     activePickerRef.current = generation;
     photoLayoutBusyRef.current = true;
     setPhotoLayoutBusy(true);
@@ -867,16 +891,34 @@ export function BookCanvasEditor({
   };
 
   const cancelPhotoLayout = async () => {
-    pickerGenerationRef.current += 1;
+    const cleanupGeneration = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(cleanupGeneration);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
     activePickerRef.current = null;
     photoLayoutBusyRef.current = false;
     if (mountedRef.current) setPhotoLayoutBusy(false);
     const pending = pendingPhotoLayoutRef.current;
     setOwnedPendingPhotoLayout(null);
-    if (pending) await rollbackStagedPhotos(pending.stagedPhotos);
+    try {
+      if (pending) await rollbackStagedPhotos(pending.stagedPhotos);
+    } finally {
+      finishPhotoOperation(cleanupGeneration);
+    }
   };
 
-  const confirmPhotoLayout = (templateId?: PhotoTemplateId) => {
+  const rejectPhotoLayoutCommit = async (pending: PendingPhotoLayout) => {
+    photoLayoutBusyRef.current = true;
+    setPhotoLayoutBusy(true);
+    await rollbackStagedPhotos(pending.stagedPhotos);
+    if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    photoLayoutBusyRef.current = false;
+    if (mountedRef.current) {
+      setPhotoLayoutBusy(false);
+      Alert.alert("照片布局未应用", "当前旅行册正在保存，照片布局未能应用，请稍后重试。");
+    }
+  };
+
+  const confirmPhotoLayout = async (templateId?: PhotoTemplateId) => {
     const pending = pendingPhotoLayoutRef.current;
     if (photoLayoutBusyRef.current || !pending || pending.photoUris.length === 0) return;
     const validTemplateId = matchingPhotoTemplateId(templateId, pending.photoUris.length);
@@ -885,8 +927,11 @@ export function BookCanvasEditor({
       const addedPageId = buildCanvasId("page");
       const nextPages = addCanvasPage(pages, pending.photoUris, addedPageId, validTemplateId);
       const addedIndex = nextPages.findIndex((page) => page.id === addedPageId);
+      if (!changePages(nextPages, "structure")) {
+        await rejectPhotoLayoutCommit(pending);
+        return;
+      }
       pending.stagedPhotos.forEach((photo) => photo.commit());
-      changePages(nextPages, "structure");
       if (addedIndex >= 0) {
         stableTurnGeneration.value += 1;
         setPendingTurn(null);
@@ -912,10 +957,11 @@ export function BookCanvasEditor({
           : validTemplateId
             ? applyPhotoTemplateToPage(sourcePages, pending.pageId, validTemplateId)
             : clearPhotoTemplateFromPage(sourcePages, pending.pageId);
-        pending.stagedPhotos.forEach((photo) => photo.commit());
-        if (nextPages !== pages) {
-          changePages(nextPages, "structure");
+        if (nextPages !== pages && !changePages(nextPages, "structure")) {
+          await rejectPhotoLayoutCommit(pending);
+          return;
         }
+        pending.stagedPhotos.forEach((photo) => photo.commit());
         setSelectedElementId(undefined);
       } else {
         void rollbackStagedPhotos(pending.stagedPhotos);
@@ -1057,11 +1103,11 @@ export function BookCanvasEditor({
                 },
                 onTransformSettled: () => {
                   const pending = transformSettleGateRef.current.end();
-                  onTransformPendingChange?.(pending);
+                  setGestureTransformPending(pending);
                 },
                 onTransformStart: () => {
                   transformSettleGateRef.current.begin();
-                  onTransformPendingChange?.(true);
+                  setGestureTransformPending(true);
                 },
                 coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
                   ? stableCoverColorPreview

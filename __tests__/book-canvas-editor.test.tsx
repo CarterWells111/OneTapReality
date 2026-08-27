@@ -86,17 +86,20 @@ const pages: StoryPage[] = [
   { id: "page-2", position: 1, kind: "closing", headline: "Last page", body: "Last body" },
 ];
 
-function EditorHarness({ initialPageId, initialPages = pages, onChange = () => undefined, persistSelectedPhoto, stageSelectedPhoto }: {
+function EditorHarness({ initialPageId, initialPages = pages, onChange = () => undefined, onPendingChange, persistSelectedPhoto, stageSelectedPhoto }: {
   initialPageId?: string;
   initialPages?: StoryPage[];
-  onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => void;
+  onChange?: (nextPages: StoryPage[], reason: BookEditorChangeReason) => boolean | void;
+  onPendingChange?: (pending: boolean) => void;
   persistSelectedPhoto?: (uri: string) => Promise<string>;
   stageSelectedPhoto?: (uri: string) => Promise<StagedPhotoFile>;
 }) {
   const [currentPages, setCurrentPages] = React.useState(() => canvasPages(initialPages));
-  return <BookCanvasEditor initialPageId={initialPageId} pages={currentPages} persistSelectedPhoto={persistSelectedPhoto} stageSelectedPhoto={stageSelectedPhoto} onPagesChange={(nextPages, reason) => {
+  return <BookCanvasEditor initialPageId={initialPageId} pages={currentPages} persistSelectedPhoto={persistSelectedPhoto} stageSelectedPhoto={stageSelectedPhoto} onTransformPendingChange={onPendingChange} onPagesChange={(nextPages, reason) => {
+    const accepted = onChange(nextPages, reason);
+    if (accepted === false) return false;
     setCurrentPages(nextPages);
-    onChange(nextPages, reason);
+    return accepted;
   }} />;
 }
 
@@ -757,7 +760,7 @@ describe("BookCanvasEditor", () => {
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
-    fireEvent.press(screen.getByLabelText("取消照片布局"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
 
     expect(screen.queryByText("新建照片页面")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
@@ -917,6 +920,55 @@ describe("BookCanvasEditor", () => {
     expect(commitHandle.rollback).not.toHaveBeenCalled();
   });
 
+  it.each(["false", "throw"])("does not commit staged files when the parent %s-rejects the page change", async (mode) => {
+    const staged = stagedPhoto("file:///owned-rejected.jpg");
+    const onChange = jest.fn(() => {
+      if (mode === "throw") throw new Error("commit locked");
+      return false;
+    });
+    const onPendingChange = jest.fn();
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const screen = render(
+      <EditorHarness
+        onChange={onChange}
+        onPendingChange={onPendingChange}
+        stageSelectedPhoto={jest.fn().mockResolvedValue(staged)}
+      />,
+    );
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => { await dismissPageManagerForAdd(screen); });
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { fireEvent.press(screen.getByLabelText("创建页面")); });
+
+    expect(staged.commit).not.toHaveBeenCalled();
+    expect(staged.rollback).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    expect(alert).toHaveBeenCalledWith("照片布局未应用", expect.stringContaining("正在保存"));
+  });
+
+  it("keeps the composed pending signal true until a staged sheet is cancelled", async () => {
+    const onPendingChange = jest.fn();
+    const screen = render(
+      <EditorHarness
+        initialPageId="photo-page"
+        initialPages={photoPages}
+        onPendingChange={onPendingChange}
+      />,
+    );
+    fireEvent.press(screen.getByText("照片布局"));
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    act(() => {
+      (mockCurrentCanvasPageProps?.onTransformStart as (() => void) | undefined)?.();
+      (mockCurrentCanvasPageProps?.onTransformSettled as (() => void) | undefined)?.();
+    });
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("rolls back superseded staged files and only commits the current replacement", async () => {
     const original = stagedPhoto("file:///owned-original.jpg");
     const replacement = stagedPhoto("file:///owned-replacement.jpg");
@@ -988,7 +1040,7 @@ describe("BookCanvasEditor", () => {
     fireEvent.press(screen.getByText("照片布局"));
     fireEvent.press(screen.getByLabelText("重新选择照片"));
     await act(async () => undefined);
-    fireEvent.press(screen.getByLabelText("取消照片布局"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
     fireEvent.press(screen.getByText("照片布局"));
     fireEvent.press(screen.getByLabelText("重新选择照片"));
     await act(async () => { resolveNew(newHandle); await newPromise; });

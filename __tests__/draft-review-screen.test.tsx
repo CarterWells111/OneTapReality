@@ -1,5 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Modal } from "react-native";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -296,5 +297,23 @@ describe("DraftReviewScreen", () => {
     });
 
     expect(mockPersistSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
+  });
+
+  it("disables draft actions for the full staged photo-layout transaction", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    fireEvent.press(screen.getByLabelText("添加页面"));
+    fireEvent(screen.UNSAFE_getByType(Modal), "dismiss");
+    await waitFor(() => expect(screen.getByText("新建照片页面")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(true);
+
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(false);
   });
 });
