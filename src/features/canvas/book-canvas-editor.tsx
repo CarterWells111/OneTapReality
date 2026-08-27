@@ -37,6 +37,7 @@ import {
   addStickerToPage,
   addTextToPage,
   addFrameToPage,
+  applyPhotoTemplateToPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
@@ -85,12 +86,20 @@ type BookCanvasEditorProps = {
   ref?: React.Ref<BookCanvasEditorHandle>;
 };
 
-type PendingPhotoLayout = {
-  action: "add" | "edit";
-  pageId?: string;
-  photoUris: string[];
-  selectedTemplateId?: PhotoTemplateId;
-};
+type PendingPhotoLayout =
+  | {
+      action: "add";
+      photoUris: string[];
+      selectedTemplateId?: PhotoTemplateId;
+    }
+  | {
+      action: "edit";
+      originalPhotoUris: string[];
+      pageId: string;
+      photoUris: string[];
+      photosChanged: boolean;
+      selectedTemplateId?: PhotoTemplateId;
+    };
 
 const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
 const MIN_FONT_SIZE = 2;
@@ -103,6 +112,10 @@ function resolveCoverColor(page: StoryPage | undefined) {
 
 function isValidFontSize(value: number) {
   return Number.isFinite(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+function samePhotoUriSequence(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((uri, index) => uri === right[index]);
 }
 
 function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
@@ -705,10 +718,13 @@ export function BookCanvasEditor({
   };
 
   const editPhotoLayout = () => {
+    const photoUris = pageImageUris(currentPage);
     setPendingPhotoLayout({
       action: "edit",
+      originalPhotoUris: photoUris,
       pageId: currentPage.id,
-      photoUris: pageImageUris(currentPage),
+      photoUris,
+      photosChanged: false,
       selectedTemplateId: currentPage.layout?.photoTemplateId,
     });
   };
@@ -722,6 +738,9 @@ export function BookCanvasEditor({
       return {
         ...pending,
         photoUris,
+        ...(pending.action === "edit"
+          ? { photosChanged: !samePhotoUriSequence(pending.originalPhotoUris, photoUris) }
+          : {}),
         selectedTemplateId: selectedTemplate?.photoCount === photoUris.length
           ? selectedTemplate.id
           : undefined,
@@ -747,19 +766,25 @@ export function BookCanvasEditor({
         activePageIdRef.current = addedPageId;
         setCurrentIndex(addedIndex);
       }
-    } else if (pending.pageId) {
+    } else {
       const sourcePages = clearPendingTextFrom();
       if (sourcePages.some((page) => page.id === pending.pageId)) {
-        const nextPages = replacePagePhotos(
-          sourcePages,
-          pending.pageId,
-          pending.photoUris.map((uri, index) => ({
-            id: buildCanvasId(`image-${index + 1}`),
-            uri,
-          })),
-          templateId,
-        );
-        changePages(nextPages, "structure");
+        const nextPages = pending.photosChanged
+          ? replacePagePhotos(
+              sourcePages,
+              pending.pageId,
+              pending.photoUris.map((uri, index) => ({
+                id: buildCanvasId(`image-${index + 1}`),
+                uri,
+              })),
+              templateId,
+            )
+          : templateId
+            ? applyPhotoTemplateToPage(sourcePages, pending.pageId, templateId)
+            : sourcePages;
+        if (nextPages !== pages) {
+          changePages(nextPages, "structure");
+        }
         setSelectedElementId(undefined);
       }
     }

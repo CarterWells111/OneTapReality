@@ -147,10 +147,36 @@ const photoPages: StoryPage[] = [
       aspectRatio: 3 / 4,
       backgroundId: "paper",
       photoTemplateId: "classic-2",
+      schemaVersion: 7,
       elements: [
         { id: "old-one", type: "image", uri: "file:///old-one.jpg", x: 0.09, y: 0.09, width: 0.82, height: 0.37, rotation: 0, zIndex: 1 },
         { id: "old-two", type: "image", uri: "file:///old-two.jpg", x: 0.09, y: 0.54, width: 0.82, height: 0.37, rotation: 0, zIndex: 2 },
         { id: "caption", type: "text", text: "保留文字", fontStyle: "System", color: "#111111", fontSize: 16, x: 0.1, y: 0.8, width: 0.8, height: 0.1, rotation: 0, zIndex: 3 },
+      ],
+    },
+  },
+  pages[1],
+];
+
+const fourPhotoFreeformPages: StoryPage[] = [
+  pages[0],
+  {
+    id: "freeform-page",
+    position: 1,
+    kind: "photo",
+    headline: "自由排版",
+    body: "保留正文",
+    photoUri: "file:///freeform-1.jpg",
+    layout: {
+      aspectRatio: 3 / 4,
+      backgroundId: "linen",
+      schemaVersion: 7,
+      elements: [
+        { id: "freeform-1", type: "image", uri: "file:///freeform-1.jpg", x: 0.03, y: 0.04, width: 0.42, height: 0.31, rotation: -4, zIndex: 8 },
+        { id: "freeform-2", type: "image", uri: "file:///freeform-2.jpg", x: 0.51, y: 0.11, width: 0.37, height: 0.28, rotation: 3, zIndex: 3 },
+        { id: "freeform-3", type: "image", uri: "file:///freeform-3.jpg", x: 0.12, y: 0.48, width: 0.33, height: 0.39, rotation: 1, zIndex: 11 },
+        { id: "freeform-4", type: "image", uri: "file:///freeform-4.jpg", x: 0.58, y: 0.52, width: 0.29, height: 0.34, rotation: -2, zIndex: 5 },
+        { id: "freeform-caption", type: "text", text: "不要移动", fontStyle: "System", color: "#222222", fontSize: 15, x: 0.1, y: 0.9, width: 0.8, height: 0.07, rotation: 0, zIndex: 20 },
       ],
     },
   },
@@ -769,11 +795,11 @@ describe("BookCanvasEditor", () => {
     expect(screen.queryByText("新建照片页面")).toBeNull();
   });
 
-  it("replaces an existing photo page with a template while preserving text and background", async () => {
+  it("replaces an existing photo page when reselecting changes the photo count and template", async () => {
     const onChange = jest.fn();
     launchImageLibraryMock.mockResolvedValueOnce({
       canceled: false,
-      assets: [{ uri: "file:///temporary-new-one.jpg" }, { uri: "file:///temporary-new-two.jpg" }],
+      assets: [{ uri: "file:///temporary-new-one.jpg" }],
     });
     const screen = render(
       <EditorHarness
@@ -790,19 +816,67 @@ describe("BookCanvasEditor", () => {
       fireEvent.press(screen.getByLabelText("重新选择照片"));
     });
     expect(onChange).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText("竖向切片单图模板"));
+    fireEvent.press(screen.getByLabelText("应用照片布局"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-1" });
+    expect(updated.layout?.elements.find((element) => element.id === "caption")).toMatchObject({ text: "保留文字" });
+    const images = updated.layout?.elements.filter((element) => element.type === "image") ?? [];
+    expect(images.map((element) => element.uri)).toEqual(["file:///permanent-new-one.jpg"]);
+    expect(images.map((element) => element.id)).not.toEqual(["old-one", "old-two"]);
+  });
+
+  it("changes only template geometry when a successful reselect keeps the same URI sequence", async () => {
+    const onChange = jest.fn();
+    const originalPage = photoPages[1];
+    const originalImages = originalPage.layout!.elements.filter((element) => element.type === "image");
+    const originalCaption = originalPage.layout!.elements.find((element) => element.id === "caption");
+    launchImageLibraryMock.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: "file:///old-one.jpg" }, { uri: "file:///old-two.jpg" }],
+    });
+    const screen = render(
+      <EditorHarness
+        initialPageId="photo-page"
+        initialPages={photoPages}
+        onChange={onChange}
+        persistSelectedPhoto={async (uri) => uri}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("照片布局"));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新选择照片"));
+    });
+    expect(onChange).not.toHaveBeenCalled();
     fireEvent.press(screen.getByLabelText("竖向切片双图模板"));
     fireEvent.press(screen.getByLabelText("应用照片布局"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
-    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-2" });
-    expect(updated.layout?.elements.find((element) => element.id === "caption")).toMatchObject({ text: "保留文字" });
-    const images = updated.layout?.elements.filter((element) => element.type === "image") ?? [];
-    expect(images.map((element) => element.uri)).toEqual([
-      "file:///permanent-new-one.jpg",
-      "file:///permanent-new-two.jpg",
-    ]);
-    expect(images.map((element) => element.id)).not.toEqual(["old-one", "old-two"]);
+    const updatedImages = updated.layout!.elements.filter((element) => element.type === "image");
+    expect(updatedImages.map(({ id, type, uri, zIndex }) => ({ id, type, uri, zIndex }))).toEqual(
+      originalImages.map(({ id, type, uri, zIndex }) => ({ id, type, uri, zIndex })),
+    );
+    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-2", schemaVersion: 7 });
+    expect(updated.layout!.elements.find((element) => element.id === "caption")).toEqual(originalCaption);
+  });
+
+  it("does not mutate an unchanged four-photo freeform page on confirm", () => {
+    const onChange = jest.fn();
+    const original = structuredClone(fourPhotoFreeformPages[1]);
+    const screen = render(
+      <EditorHarness initialPageId="freeform-page" initialPages={fourPhotoFreeformPages} onChange={onChange} />,
+    );
+
+    fireEvent.press(screen.getByText("照片布局"));
+    expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("应用照片布局"));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(fourPhotoFreeformPages[1]).toEqual(original);
   });
 
   it("preserves staged and saved photos when replacement is cancelled or persistence fails", async () => {
