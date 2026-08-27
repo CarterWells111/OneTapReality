@@ -1,11 +1,11 @@
-import type { StoryPage } from "../../types/memory";
+import type { CanvasImageElement, StoryPage } from "../../types/memory";
 
 export function pageImageUris(page: StoryPage): string[] {
-  const uris: string[] = [];
-  if (page.photoUri) uris.push(page.photoUri);
-  page.layout?.elements.forEach((element) => {
-    if (element.type === "image" && element.uri) uris.push(element.uri);
-  });
+  const layoutImages = page.layout?.elements.filter((element) => element.type === "image") ?? [];
+  const layoutUris = layoutImages
+    .filter((element): element is CanvasImageElement => Boolean(element.uri))
+    .map((element) => element.uri) ?? [];
+  const uris = layoutImages.length > 0 ? layoutUris : page.photoUri ? [page.photoUri] : [];
   return [...new Set(uris)];
 }
 

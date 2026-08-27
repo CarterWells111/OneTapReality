@@ -120,7 +120,16 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
       }),
     } : undefined;
 
-    const legacyMedia = layout ? undefined : takeMedia();
+    const rawPhotoUri = typeof raw.photoUri === "string" ? raw.photoUri : undefined;
+    const hasStablePhotoReference = rawPhotoUri?.startsWith("shared-media:") || rawPhotoUri?.startsWith("shared-position:");
+    const resolvedPhotoUri = rawPhotoUri ? resolveStableUri(rawPhotoUri) : undefined;
+    const legacyMedia = layout
+      ? undefined
+      : resolvedPhotoUri
+        ? { readUrl: resolvedPhotoUri }
+        : hasStablePhotoReference
+          ? undefined
+          : takeMedia();
     return {
       id: typeof raw.id === "string" ? raw.id : `shared-${position}`,
       position: typeof raw.position === "number" ? raw.position : position,

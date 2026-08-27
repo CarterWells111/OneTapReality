@@ -28,9 +28,24 @@ function imageContentType(uri: string) {
   return "image/jpeg";
 }
 
-function sharedPage(page: Memory["pages"][number]) {
+function sharedPage(page: Memory["pages"][number], positions: Map<string, { position: number; mediaId?: string }>) {
   const { photoUri: _photoUri, coverImage: _coverImage, ...safePage } = page;
-  return safePage;
+  const legacyRef = page.photoUri ? positions.get(page.photoUri) : undefined;
+  const withLegacy = legacyRef
+    ? { ...safePage, photoUri: `shared-position:${legacyRef.position}` }
+    : safePage;
+  if (!safePage.layout) return withLegacy;
+  return {
+    ...withLegacy,
+    layout: {
+      ...safePage.layout,
+      elements: safePage.layout.elements.map((element) => {
+        if (element.type !== "image") return element;
+        const ref = positions.get(element.uri);
+        return { ...element, uri: "", ...(ref ? { mediaPosition: ref.position } : {}) };
+      }),
+    },
+  };
 }
 
 type CoverCandidate = { label: string; uri: string };
@@ -154,6 +169,7 @@ export default function GiftManagementScreen() {
         return { position, contentType: imageContentType(uri), byteSize: info.size, uri };
       }));
       if (!operationIsCurrent(operation)) return;
+      const refs = new Map(media.map((source) => [source.uri, { position: source.position }]));
       let coverSize: number | null = null;
       let coverContentType: string | null = null;
       if (selectedCoverUri) {
@@ -170,7 +186,7 @@ export default function GiftManagementScreen() {
         sourceMemoryId: selectedMemory.id,
         title: selectedMemory.title,
         travelDate: selectedMemory.travelDate,
-        pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page) })),
+        pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page, refs) })),
         media: media.map(({ position, contentType, byteSize }) => ({ position, contentType, byteSize })),
         cover: coverSize && coverContentType ? { contentType: coverContentType, byteSize: coverSize } : null,
       });
