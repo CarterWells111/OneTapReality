@@ -4,6 +4,7 @@ import { DraftPhotoAllocation } from "../src/features/memories/draft-photo-alloc
 import { createBalancedPhotoPagePlans } from "../src/features/memories/photo-page-planner";
 
 const photos = ["file://one.jpg", "file://two.jpg", "file://three.jpg", "file://four.jpg"];
+const thirteenPhotos = Array.from({ length: 13 }, (_, index) => `file://photo-${index + 1}.jpg`);
 
 describe("DraftPhotoAllocation", () => {
   it("reduces two pages to one free-layout page and respects increment boundaries", () => {
@@ -127,5 +128,39 @@ describe("DraftPhotoAllocation", () => {
     fireEvent.press(screen.getByText("一起配置", { exact: true }));
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByText("2 个内容页")).toBeTruthy();
+  });
+
+  it("keeps thirteen photos on at least two pages in together mode", () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <DraftPhotoAllocation
+        onChange={onChange}
+        photoUris={thirteenPhotos}
+        value={[{ photoUris: thirteenPhotos.slice(0, 12) }, { photoUris: thirteenPhotos.slice(12) }]}
+      />,
+    );
+
+    const decrement = screen.getByLabelText("减少内容页数");
+    expect(decrement.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(decrement);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("disables moving a photo into a page that already has twelve photos", () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <DraftPhotoAllocation
+        onChange={onChange}
+        photoUris={thirteenPhotos}
+        value={[{ photoUris: thirteenPhotos.slice(0, 12) }, { photoUris: thirteenPhotos.slice(12) }]}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("逐页配置", { exact: true }));
+    const move = screen.getByLabelText("把照片 13 分配到第 1 页");
+    expect(move.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText("每页最多 12 张照片")).toBeTruthy();
+    fireEvent.press(move);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,9 @@
 import type { MemoryDraftPagePlan, PhotoTemplateFamilyId } from "../../types/memory";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "../canvas/auto-layout";
 import { resolvePhotoTemplateForFamily } from "../canvas/photo-templates";
 
 const EMPTY_PHOTO_ERROR = "请至少选择一张照片";
+export const MAX_PHOTOS_PER_PAGE_ERROR = `每页最多 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片`;
 
 function invalidPageCountError(photoCount: number): Error {
   return new Error(`页数必须在 1 到 ${photoCount} 之间`);
@@ -59,6 +61,18 @@ export function createBalancedPhotoPagePlans(
   return applyTemplateFamilyToPlans(distributePhotoUris(photoUris, pageCount), familyId).plans;
 }
 
+export function areDraftPhotoPlansValid(
+  photoUris: readonly string[],
+  plans: readonly MemoryDraftPagePlan[],
+): boolean {
+  if (photoUris.length === 0 || plans.length === 0 || new Set(photoUris).size !== photoUris.length) return false;
+  if (plans.some((plan) => plan.photoUris.length === 0 || plan.photoUris.length > MAX_PHOTOS_PER_CANVAS_PAGE)) return false;
+  const plannedPhotos = plans.flatMap((plan) => plan.photoUris);
+  return plannedPhotos.length === photoUris.length
+    && new Set(plannedPhotos).size === photoUris.length
+    && photoUris.every((uri) => plannedPhotos.includes(uri));
+}
+
 export function movePhotoToPage(
   plans: readonly MemoryDraftPagePlan[],
   photoUri: string,
@@ -73,6 +87,10 @@ export function movePhotoToPage(
 
   if (plans[sourceIndex].photoUris.length === 1) {
     return { plans: clonedPlans, error: "每页至少保留一张照片" };
+  }
+
+  if (plans[targetIndex].photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+    return { plans: clonedPlans, error: MAX_PHOTOS_PER_PAGE_ERROR };
   }
 
   return {

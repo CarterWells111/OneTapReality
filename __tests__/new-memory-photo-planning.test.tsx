@@ -1,6 +1,8 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
 
+import { areDraftPhotoPlansValid } from "../src/features/memories/photo-page-planner";
+
 const mockCreateDraft = jest.fn();
 const mockReplace = jest.fn();
 
@@ -28,6 +30,11 @@ describe("new memory photo planning", () => {
         { uri: "file://four.jpg" },
       ],
     });
+  });
+
+  it("rejects a draft plan with more than twelve photos on one page", () => {
+    const thirteen = Array.from({ length: 13 }, (_, index) => `file://photo-${index + 1}.jpg`);
+    expect(areDraftPhotoPlansValid(thirteen, [{ photoUris: thirteen }])).toBe(false);
   });
 
   it("sends two balanced plans with the magazine template when generating", async () => {

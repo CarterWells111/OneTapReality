@@ -9,7 +9,7 @@ import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../com
 import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
-import { createBalancedPhotoPagePlans } from "../../features/memories/photo-page-planner";
+import { areDraftPhotoPlansValid, createBalancedPhotoPagePlans } from "../../features/memories/photo-page-planner";
 import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
 import { useMemories } from "../../features/memories/memories-provider";
 import {
@@ -139,14 +139,7 @@ export default function NewMemoryScreen() {
     }
   };
 
-  const canGenerate = photoUris.length > 0
-    && pagePlans.length > 0
-    && pagePlans.every((plan) => plan.photoUris.length > 0)
-    && pagePlans.reduce((counts, plan) => {
-      for (const uri of plan.photoUris) counts.set(uri, (counts.get(uri) ?? 0) + 1);
-      return counts;
-    }, new Map<string, number>()).size === photoUris.length
-    && photoUris.every((uri) => pagePlans.reduce((count, plan) => count + plan.photoUris.filter((candidate) => candidate === uri).length, 0) === 1);
+  const canGenerate = areDraftPhotoPlansValid(photoUris, pagePlans);
 
   return (
     <View style={styles.root}>

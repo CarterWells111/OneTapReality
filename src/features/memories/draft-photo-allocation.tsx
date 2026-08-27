@@ -8,7 +8,9 @@ import {
   applyTemplateFamilyToPlans,
   distributePhotoUris,
   movePhotoToPage,
+  MAX_PHOTOS_PER_PAGE_ERROR,
 } from "./photo-page-planner";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "../canvas/auto-layout";
 import type { MemoryDraftPagePlan, PhotoTemplateFamilyId, PhotoTemplateId } from "../../types/memory";
 
 export type DraftPhotoAllocationProps = {
@@ -47,7 +49,8 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
   }, [value]);
 
   const changePageCount = (delta: number) => {
-    const nextCount = Math.min(photoUris.length, Math.max(1, value.length + delta));
+    const minimumPageCount = Math.max(1, Math.ceil(photoUris.length / MAX_PHOTOS_PER_CANVAS_PAGE));
+    const nextCount = Math.min(photoUris.length, Math.max(minimumPageCount, value.length + delta));
     if (nextCount === value.length) return;
 
     try {
@@ -114,8 +117,8 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
               <Pressable
                 accessibilityLabel="减少内容页数"
                 accessibilityRole="button"
-                accessibilityState={{ disabled: value.length <= 1 }}
-                disabled={value.length <= 1}
+                accessibilityState={{ disabled: value.length <= Math.max(1, Math.ceil(photoUris.length / MAX_PHOTOS_PER_CANVAS_PAGE)) }}
+                disabled={value.length <= Math.max(1, Math.ceil(photoUris.length / MAX_PHOTOS_PER_CANVAS_PAGE))}
                 onPress={() => changePageCount(-1)}
                 style={styles.stepperButton}
               >
@@ -198,10 +201,12 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
                   </Text>
                   <View style={styles.moveButtons}>
                     {value.map((_, targetIndex) => {
-                      const disabled = sourceIndex < 0 || sourceIndex === targetIndex || value[sourceIndex]?.photoUris.length === 1;
+                      const targetIsFull = value[targetIndex].photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE;
+                      const disabled = sourceIndex < 0 || sourceIndex === targetIndex || value[sourceIndex]?.photoUris.length === 1 || targetIsFull;
                       return (
                         <Pressable
                           accessibilityLabel={`把照片 ${photoIndex + 1} 分配到第 ${targetIndex + 1} 页`}
+                          accessibilityHint={targetIsFull ? MAX_PHOTOS_PER_PAGE_ERROR : undefined}
                           accessibilityRole="button"
                           accessibilityState={{ disabled }}
                           disabled={disabled}
@@ -230,6 +235,9 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
             />
           ) : activePlan ? (
             <Text selectable style={styles.hint}>当前页超过三张照片，将使用自由排版。</Text>
+          ) : null}
+          {value.some((plan) => plan.photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE) ? (
+            <Text selectable style={styles.error}>{MAX_PHOTOS_PER_PAGE_ERROR}</Text>
           ) : null}
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
         </View>
