@@ -1,16 +1,16 @@
 import * as React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } from "react-native";
 
 import { colors, bodyFont, PaperCard, serifFont } from "../../components/ui";
 import { PhotoTemplatePicker } from "../canvas/photo-template-picker";
-import { PHOTO_TEMPLATE_FAMILIES, resolvePhotoTemplate } from "../canvas/photo-templates";
+import { createPhotoTemplateLayout, PHOTO_TEMPLATE_FAMILIES, resolvePhotoTemplate } from "../canvas/photo-templates";
+import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "../canvas/auto-layout";
 import {
   applyTemplateFamilyToPlans,
   distributePhotoUris,
   movePhotoToPage,
   MAX_PHOTOS_PER_PAGE_ERROR,
 } from "./photo-page-planner";
-import { MAX_PHOTOS_PER_CANVAS_PAGE } from "../canvas/auto-layout";
 import type { MemoryDraftPagePlan, PhotoTemplateFamilyId, PhotoTemplateId } from "../../types/memory";
 
 export type DraftPhotoAllocationProps = {
@@ -31,6 +31,44 @@ function familyFromPlans(plans: readonly MemoryDraftPagePlan[]): PhotoTemplateFa
 
 function skippedMessage(pageNumbers: readonly number[]): string {
   return `第 ${pageNumbers.join("、")} 页保持自由排版`;
+}
+
+const percentage = (value: number): DimensionValue => `${Number((value * 100).toFixed(4))}%`;
+
+function DraftPagePreview({ plan, pageIndex }: { plan: MemoryDraftPagePlan; pageIndex: number }) {
+  const template = resolvePhotoTemplate(plan.photoTemplateId);
+  const templateLayout = plan.photoTemplateId ? createPhotoTemplateLayout(plan.photoUris, plan.photoTemplateId) : null;
+  const layout = templateLayout ?? createPhotoLayout(plan.photoUris);
+  const layoutLabel = templateLayout && template ? `${template.familyLabel}模板` : "自由排版";
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={`第 ${pageIndex + 1} 页预览，${plan.photoUris.length} 张照片，${layoutLabel}`}
+      style={styles.pagePreview}
+    >
+      <View style={styles.previewCanvas} testID={`draft-photo-preview-${pageIndex + 1}`}>
+        {layout.elements.map((element) => element.type === "image" ? (
+          <Image
+            resizeMode="cover"
+            key={element.id}
+            source={{ uri: element.uri }}
+            style={{
+              height: percentage(element.height),
+              left: percentage(element.x),
+              position: "absolute",
+              top: percentage(element.y),
+              transform: [{ rotate: `${element.rotation}deg` }],
+              width: percentage(element.width),
+            }}
+            testID={`draft-photo-preview-${pageIndex + 1}-${element.id}`}
+          />
+        ) : null)}
+      </View>
+      <Text selectable style={styles.previewPageLabel}>第 {pageIndex + 1} 页</Text>
+      <Text selectable style={styles.previewCount}>{plan.photoUris.length} 张照片 · {layoutLabel}</Text>
+    </View>
+  );
 }
 
 export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoAllocationProps) {
@@ -111,6 +149,7 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
 
       {mode === "together" ? (
         <View style={styles.section}>
+          <Text selectable style={styles.totalPhotos}>共 {photoUris.length} 张照片</Text>
           <View style={styles.pageCountRow}>
             <Text selectable style={styles.pageCount}>{value.length} 个内容页</Text>
             <View style={styles.stepper}>
@@ -165,11 +204,27 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
           {value.some((plan) => plan.photoUris.length > 3) ? (
             <Text selectable style={styles.hint}>超过三张照片将使用自由排版</Text>
           ) : null}
+          {value.length > 0 ? (
+            <Text selectable style={styles.suggestion}>
+              建议均衡分配：{value.map((plan, index) => `第 ${index + 1} 页 ${plan.photoUris.length} 张`).join("，")}
+            </Text>
+          ) : null}
+          <ScrollView
+            contentContainerStyle={styles.previewRow}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+          >
+            {value.map((plan, index) => <DraftPagePreview key={`preview-${index + 1}`} pageIndex={index} plan={plan} />)}
+          </ScrollView>
           {message ? <Text selectable style={styles.message}>{message}</Text> : null}
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
         </View>
       ) : (
         <View style={styles.section}>
+          <View style={styles.progressRow}>
+            <Text selectable style={styles.progressText}>第 {Math.min(activePageIndex + 1, Math.max(1, value.length))} 页，共 {value.length} 页</Text>
+            <Text selectable style={styles.progressText}>剩余 {value.slice(activePageIndex + 1).reduce((count, plan) => count + plan.photoUris.length, 0)} 张照片</Text>
+          </View>
           <View style={styles.pageSelectorRow}>
             {value.map((plan, index) => {
               const selected = activePageIndex === index;
@@ -196,9 +251,18 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
               const sourceIndex = value.findIndex((plan) => plan.photoUris.includes(photoUri));
               return (
                 <View key={photoUri} style={styles.photoMoveRow}>
-                  <Text selectable style={styles.photoLabel}>
-                    照片 {photoIndex + 1}：{sourceIndex >= 0 ? `第 ${sourceIndex + 1} 页` : "未分配"}
-                  </Text>
+                  <View style={styles.photoLabelRow}>
+                    <Image
+                      accessibilityLabel={`照片 ${photoIndex + 1} 缩略图，当前${sourceIndex >= 0 ? `第 ${sourceIndex + 1} 页` : "未分配"}`}
+                      resizeMode="cover"
+                      source={{ uri: photoUri }}
+                      style={styles.photoThumbnail}
+                      testID={`draft-photo-thumbnail-${photoIndex + 1}`}
+                    />
+                    <Text selectable style={styles.photoLabel}>
+                      照片 {photoIndex + 1}：{sourceIndex >= 0 ? `第 ${sourceIndex + 1} 页` : "未分配"}
+                    </Text>
+                  </View>
                   <View style={styles.moveButtons}>
                     {value.map((_, targetIndex) => {
                       const targetIsFull = value[targetIndex].photoUris.length >= MAX_PHOTOS_PER_CANVAS_PAGE;
@@ -214,6 +278,7 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
                           onPress={() => movePhoto(photoUri, targetIndex)}
                           style={[styles.moveButton, disabled && styles.moveButtonDisabled]}
                         >
+                          <Image resizeMode="cover" source={{ uri: photoUri }} style={styles.moveThumbnail} />
                           <Text selectable style={styles.moveText}>第 {targetIndex + 1} 页</Text>
                         </Pressable>
                       );
@@ -240,6 +305,33 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
             <Text selectable style={styles.error}>{MAX_PHOTOS_PER_PAGE_ERROR}</Text>
           ) : null}
           {error ? <Text selectable style={styles.error}>{error}</Text> : null}
+          <View style={styles.navigationRow}>
+            <Pressable
+              accessibilityLabel="返回上一页"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: activePageIndex === 0 }}
+              disabled={activePageIndex === 0}
+              onPress={() => setActivePageIndex((current) => Math.max(0, current - 1))}
+              style={[styles.navigationButton, activePageIndex === 0 && styles.navigationButtonDisabled]}
+            >
+              <Text selectable style={styles.navigationText}>返回上一页</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                if (activePageIndex < value.length - 1) {
+                  setActivePageIndex((current) => Math.min(value.length - 1, current + 1));
+                } else {
+                  setMode("together");
+                }
+              }}
+              style={({ pressed }) => [styles.navigationButton, styles.navigationButtonPrimary, pressed && styles.pressed]}
+            >
+              <Text selectable style={styles.navigationTextPrimary}>
+                {activePageIndex < value.length - 1 ? "保存当前页，继续" : "完成逐页配置"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </PaperCard>
@@ -258,6 +350,7 @@ const styles = StyleSheet.create({
   modeText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   modeTextSelected: { color: colors.background },
   section: { gap: 12 },
+  totalPhotos: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   pageCountRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   pageCount: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontVariant: ["tabular-nums"] },
   stepper: { flexDirection: "row", gap: 8 },
@@ -283,6 +376,23 @@ const styles = StyleSheet.create({
   moveButtonDisabled: { opacity: 0.4 },
   moveText: { color: colors.accent, fontFamily: bodyFont, fontSize: 12, fontWeight: "700" },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
+  suggestion: { color: colors.muted, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
+  previewRow: { gap: 10, paddingVertical: 2 },
+  pagePreview: { alignItems: "center", gap: 4, width: 112 },
+  previewCanvas: { aspectRatio: 3 / 4, backgroundColor: colors.surface, borderColor: colors.paperEdge, borderRadius: 8, borderWidth: 1, overflow: "hidden", position: "relative", width: 108 },
+  previewPageLabel: { color: colors.ink, fontFamily: bodyFont, fontSize: 12, fontWeight: "700" },
+  previewCount: { color: colors.muted, fontFamily: bodyFont, fontSize: 11, textAlign: "center" },
+  progressRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  progressText: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
+  photoLabelRow: { alignItems: "center", flexDirection: "row", gap: 10 },
+  photoThumbnail: { aspectRatio: 3 / 4, backgroundColor: colors.accentSoft, borderRadius: 8, height: 60, width: 45 },
+  moveThumbnail: { aspectRatio: 3 / 4, backgroundColor: colors.accentSoft, borderRadius: 4, height: 28, width: 21 },
+  navigationRow: { flexDirection: "row", gap: 8, justifyContent: "space-between", marginTop: 2 },
+  navigationButton: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 10 },
+  navigationButtonDisabled: { opacity: 0.4 },
+  navigationButtonPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
+  navigationText: { color: colors.accent, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
+  navigationTextPrimary: { color: colors.background, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
   message: { color: colors.accent, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   error: { color: colors.danger, fontFamily: bodyFont, fontSize: 13, lineHeight: 19 },
   pressed: { opacity: 0.82 },

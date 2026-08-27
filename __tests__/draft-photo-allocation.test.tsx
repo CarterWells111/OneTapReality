@@ -163,4 +163,59 @@ describe("DraftPhotoAllocation", () => {
     fireEvent.press(move);
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("shows controlled page previews with real images, template labels, and a balanced suggestion", () => {
+    const onChange = jest.fn();
+    const sixPhotos = photos.concat(["file://five.jpg", "file://six.jpg"]);
+    const screen = render(
+      <DraftPhotoAllocation
+        onChange={onChange}
+        photoUris={sixPhotos}
+        value={[
+          { photoUris: sixPhotos.slice(0, 2), photoTemplateId: "classic-2" },
+          { photoUris: sixPhotos.slice(2), photoTemplateId: undefined },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("共 6 张照片")).toBeTruthy();
+    expect(screen.getByText("建议均衡分配：第 1 页 2 张，第 2 页 4 张")).toBeTruthy();
+    expect(screen.getByLabelText("第 1 页预览，2 张照片，经典留白模板")).toBeTruthy();
+    expect(screen.getByLabelText("第 2 页预览，4 张照片，自由排版")).toBeTruthy();
+    expect(screen.getByTestId("draft-photo-preview-1-image-1").type).toBe("Image");
+    expect(screen.getByTestId("draft-photo-preview-2-image-1").type).toBe("Image");
+  });
+
+  it("shows per-page progress and advances or returns without changing controlled plans", () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <DraftPhotoAllocation
+        onChange={onChange}
+        photoUris={photos}
+        value={[
+          { photoUris: photos.slice(0, 2), photoTemplateId: "classic-2" },
+          { photoUris: photos.slice(2), photoTemplateId: "classic-2" },
+        ]}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("逐页配置", { exact: true }));
+    expect(screen.getByText("第 1 页，共 2 页")).toBeTruthy();
+    expect(screen.getByText("剩余 2 张照片")).toBeTruthy();
+    expect(screen.getByTestId("draft-photo-thumbnail-1").type).toBe("Image");
+    expect(screen.getByLabelText("返回上一页").props.accessibilityState).toMatchObject({ disabled: true });
+
+    fireEvent.press(screen.getByText("保存当前页，继续", { exact: true }));
+    expect(screen.getByText("第 2 页，共 2 页")).toBeTruthy();
+    expect(screen.getByText("剩余 0 张照片")).toBeTruthy();
+    expect(screen.getByText("完成逐页配置", { exact: true })).toBeTruthy();
+
+    fireEvent.press(screen.getByText("返回上一页", { exact: true }));
+    expect(screen.getByText("第 1 页，共 2 页")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByText("保存当前页，继续", { exact: true }));
+    fireEvent.press(screen.getByText("完成逐页配置", { exact: true }));
+    expect(screen.getByText("一起配置", { exact: true })).toBeTruthy();
+  });
 });
