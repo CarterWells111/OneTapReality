@@ -288,7 +288,7 @@ describe("DraftReviewScreen", () => {
     await waitFor(() => expect(screen.getByText("已自动保存")).toBeTruthy());
   });
 
-  it("binds selected photos to the current draft before adding them", async () => {
+  it("stages selected photos in the current draft transaction before adding them", async () => {
     const screen = render(<DraftReviewScreen />);
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
@@ -296,7 +296,37 @@ describe("DraftReviewScreen", () => {
       fireEvent.press(screen.getByText("📷 添加照片"));
     });
 
-    expect(mockPersistSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
+    expect(mockStageSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
+    expect(mockPersistSelectedPhoto).not.toHaveBeenCalled();
+  });
+
+  it("disables local draft actions while a delayed quick photo is staged", async () => {
+    let finishStage!: (photo: { uri: string; commit: jest.Mock; rollback: jest.Mock }) => void;
+    const pendingStage = new Promise<{ uri: string; commit: jest.Mock; rollback: jest.Mock }>((resolve) => {
+      finishStage = resolve;
+    });
+    const staged = {
+      uri: "file:///permanent-delayed.jpg",
+      commit: jest.fn(),
+      rollback: jest.fn(async () => undefined),
+    };
+    mockStageSelectedPhoto.mockReturnValueOnce(pendingStage);
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    fireEvent.press(screen.getByText("📷 添加照片"));
+    await act(async () => undefined);
+
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(true);
+
+    await act(async () => { finishStage(staged); await pendingStage; });
+
+    expect(staged.commit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(false);
   });
 
   it("disables draft actions for the full staged photo-layout transaction", async () => {

@@ -107,6 +107,31 @@ function stagedPhoto(uri: string) {
   return { uri, commit: jest.fn(), rollback: jest.fn(async () => undefined) } satisfies StagedPhotoFile;
 }
 
+function photoPageWithImageCount(count: number): StoryPage {
+  return {
+    id: "photo-cap-page",
+    position: 0,
+    kind: "photo",
+    headline: "照片上限",
+    body: "",
+    photoUri: count > 0 ? "file:///cap-1.jpg" : undefined,
+    layout: {
+      aspectRatio: 0.75,
+      elements: Array.from({ length: count }, (_, index) => ({
+        id: `cap-${index + 1}`,
+        type: "image" as const,
+        uri: `file:///cap-${index + 1}.jpg`,
+        x: 0.05,
+        y: 0.05,
+        width: 0.2,
+        height: 0.2,
+        rotation: 0,
+        zIndex: index + 1,
+      })),
+    },
+  };
+}
+
 function CursorHarness({ onActivePageChange }: {
   onActivePageChange: jest.Mock;
 }) {
@@ -731,6 +756,139 @@ describe("BookCanvasEditor", () => {
     await act(async () => { fireEvent.press(screen.getByLabelText("上传封面背景图")); });
     expect(cover.commit).not.toHaveBeenCalled();
     expect(cover.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the composed pending signal true while delayed quick-add staging commits", async () => {
+    let resolveStage!: (photo: StagedPhotoFile) => void;
+    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
+    const quick = stagedPhoto("file:///session/delayed-quick.jpg");
+    const onPendingChange = jest.fn();
+    const screen = render(
+      <EditorHarness onPendingChange={onPendingChange} stageSelectedPhoto={jest.fn(() => pendingStage)} />,
+    );
+
+    fireEvent.press(screen.getByText("📷 添加照片"));
+    await act(async () => undefined);
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    expect(quick.commit).not.toHaveBeenCalled();
+
+    await act(async () => { resolveStage(quick); await pendingStage; });
+
+    expect(quick.commit).toHaveBeenCalledTimes(1);
+    expect(quick.rollback).not.toHaveBeenCalled();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps the composed pending signal true through delayed cover rollback", async () => {
+    let resolveStage!: (photo: StagedPhotoFile) => void;
+    let finishRollback!: () => void;
+    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
+    const pendingRollback = new Promise<undefined>((resolve) => { finishRollback = () => resolve(undefined); });
+    const cover = stagedPhoto("file:///session/delayed-cover.jpg");
+    cover.rollback.mockReturnValueOnce(pendingRollback);
+    const onPendingChange = jest.fn();
+    const screen = render(
+      <EditorHarness
+        onChange={() => false}
+        onPendingChange={onPendingChange}
+        stageSelectedPhoto={jest.fn(() => pendingStage)}
+      />,
+    );
+    fireEvent.press(screen.getByText("封面"));
+
+    fireEvent.press(screen.getByLabelText("上传封面背景图"));
+    await act(async () => undefined);
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { resolveStage(cover); await pendingStage; });
+    expect(cover.rollback).toHaveBeenCalledTimes(1);
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { finishRollback(); await pendingRollback; });
+    expect(cover.commit).not.toHaveBeenCalled();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("rolls back a delayed quick-add stage that completes after unmount", async () => {
+    let resolveStage!: (photo: StagedPhotoFile) => void;
+    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
+    const quick = stagedPhoto("file:///session/unmounted-quick.jpg");
+    const onChange = jest.fn();
+    const onPendingChange = jest.fn();
+    const screen = render(
+      <EditorHarness onChange={onChange} onPendingChange={onPendingChange} stageSelectedPhoto={jest.fn(() => pendingStage)} />,
+    );
+    fireEvent.press(screen.getByText("📷 添加照片"));
+    await act(async () => undefined);
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+
+    screen.unmount();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    await act(async () => { resolveStage(quick); await pendingStage; });
+
+    expect(quick.rollback).toHaveBeenCalledTimes(1);
+    expect(quick.commit).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("commits the twelfth quick photo but preflights the thirteenth without opening the picker", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const twelfth = stagedPhoto("file:///session/twelfth.jpg");
+    const stageSelectedPhoto = jest.fn().mockResolvedValue(twelfth);
+    const onChange = jest.fn();
+    const screen = render(
+      <EditorHarness
+        initialPageId="photo-cap-page"
+        initialPages={[photoPageWithImageCount(11), pages[1]]}
+        onChange={onChange}
+        stageSelectedPhoto={stageSelectedPhoto}
+      />,
+    );
+
+    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
+    expect(twelfth.commit).toHaveBeenCalledTimes(1);
+    const accepted = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
+    expect(accepted[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(12);
+
+    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
+    expect(requestPermissionMock).toHaveBeenCalledTimes(1);
+    expect(launchImageLibraryMock).toHaveBeenCalledTimes(1);
+    expect(stageSelectedPhoto).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith("无法添加照片", expect.stringContaining("12 张"));
+  });
+
+  it("rolls back a staged quick photo when a concurrent page update reaches the cap", async () => {
+    let resolveStage!: (photo: StagedPhotoFile) => void;
+    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
+    const staged = stagedPhoto("file:///session/raced-thirteenth.jpg");
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const onChange = jest.fn();
+    const initialPages = canvasPages([photoPageWithImageCount(11), pages[1]]);
+    const screen = render(
+      <BookCanvasEditor
+        initialPageId="photo-cap-page"
+        onPagesChange={onChange}
+        pages={initialPages}
+        stageSelectedPhoto={jest.fn(() => pendingStage)}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("📷 添加照片"));
+    await act(async () => undefined);
+    screen.rerender(
+      <BookCanvasEditor
+        initialPageId="photo-cap-page"
+        onPagesChange={onChange}
+        pages={canvasPages([photoPageWithImageCount(12), pages[1]])}
+        stageSelectedPhoto={jest.fn(() => pendingStage)}
+      />,
+    );
+    await act(async () => { resolveStage(staged); await pendingStage; });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(staged.commit).not.toHaveBeenCalled();
+    expect(staged.rollback).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith("无法添加照片", expect.stringContaining("12 张"));
   });
 
   it.each(["false", "throw"])("keeps undo history when the parent %s-rejects a restore", (mode) => {

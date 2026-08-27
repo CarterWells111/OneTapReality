@@ -306,6 +306,7 @@ export function BookCanvasEditor({
   const [gestureTransformPending, setGestureTransformPending] = React.useState(false);
   const [photoOperationCount, setPhotoOperationCount] = React.useState(0);
   const photoOperationGenerationsRef = React.useRef(new Set<number>());
+  const transientPhotoOperationIdRef = React.useRef(0);
   const pickerGenerationRef = React.useRef(0);
   const activePickerRef = React.useRef<number | null>(null);
   const mountedRef = React.useRef(true);
@@ -533,6 +534,15 @@ export function BookCanvasEditor({
     } catch (error) {
       console.warn("[book-canvas-editor] 无法回滚未应用的照片：", error);
     }
+  }, []);
+
+  const beginTransientPhotoOperation = React.useCallback(() => {
+    const operationId = --transientPhotoOperationIdRef.current;
+    photoOperationGenerationsRef.current.add(operationId);
+    if (mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    return operationId;
   }, []);
 
   const finishPhotoOperation = React.useCallback((generation: number) => {
@@ -850,21 +860,96 @@ export function BookCanvasEditor({
   };
 
   const addPhoto = async () => {
+    const pageId = currentPage.id;
+    const pageBeforePicker = pagesRef.current.find((page) => page.id === pageId);
+    if (!pageBeforePicker || pageImageUris(pageBeforePicker).length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+      Alert.alert("无法添加照片", `每页最多支持 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片，请先移除一张后重试。`);
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
+      const operationId = beginTransientPhotoOperation();
+      try {
+        const photo = await preparePickedPhoto(result.assets[0].uri);
+        if (!photo) return;
+        if (!mountedRef.current) {
+          await rollbackRejectedPhoto(photo);
+          return;
+        }
+        const latestPage = pagesRef.current.find((page) => page.id === pageId);
+        if (!latestPage || pageImageUris(latestPage).length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+          await rollbackRejectedPhoto(photo);
+          if (mountedRef.current) {
+            Alert.alert("无法添加照片", `每页最多支持 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片，请先移除一张后重试。`);
+          }
+          return;
+        }
+        const nextId = buildCanvasId("image");
+        const nextPages = addImageToPage(clearPendingTextFrom(pagesRef.current), pageId, nextId, photo.uri);
+        const nextPage = nextPages.find((page) => page.id === pageId);
+        const referencesStagedPhoto = nextPage?.layout?.elements.some(
+          (element) => element.type === "image" && element.id === nextId && element.uri === photo.uri,
+        ) === true;
+        if (!referencesStagedPhoto) {
+          await rollbackRejectedPhoto(photo);
+          if (mountedRef.current) {
+            Alert.alert("无法添加照片", `每页最多支持 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片，请先移除一张后重试。`);
+          }
+          return;
+        }
+        if (!changePages(nextPages, "structure")) {
+          await rollbackRejectedPhoto(photo);
+          if (mountedRef.current) {
+            Alert.alert("照片未添加", "当前旅行册正在保存，照片未能添加，请稍后重试。");
+          }
+          return;
+        }
+        photo.commit();
+        setSelectedElementId(nextId);
+      } finally {
+        finishPhotoOperation(operationId);
+      }
+    }
+  };
+
+  const uploadCoverPhoto = async () => {
+    const pageId = currentPage.id;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: false,
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    const operationId = beginTransientPhotoOperation();
+    try {
       const photo = await preparePickedPhoto(result.assets[0].uri);
       if (!photo) return;
-      const nextId = buildCanvasId("image");
-      if (!changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, photo.uri), "structure")) {
+      if (!mountedRef.current) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      const nextPages = setCanvasCoverImage(clearPendingTextFrom(pagesRef.current), pageId, photo.uri);
+      const nextPage = nextPages.find((page) => page.id === pageId);
+      const referencesStagedPhoto = nextPage?.coverImage === photo.uri
+        || nextPage?.layout?.coverImage === photo.uri;
+      if (!referencesStagedPhoto || !changePages(nextPages, "structure")) {
         await rollbackRejectedPhoto(photo);
         return;
       }
       photo.commit();
-      setSelectedElementId(nextId);
+    } finally {
+      finishPhotoOperation(operationId);
     }
   };
 
@@ -1438,22 +1523,7 @@ export function BookCanvasEditor({
               <Pressable
                 accessibilityLabel="上传封面背景图"
                 accessibilityRole="button"
-                onPress={async () => {
-                  const result = await ImagePicker.launchImageLibraryAsync({
-                    allowsMultipleSelection: false,
-                    mediaTypes: ["images"],
-                    quality: 0.8,
-                  });
-                  if (!result.canceled && result.assets[0]) {
-                    const photo = await preparePickedPhoto(result.assets[0].uri);
-                    if (!photo) return;
-                    if (!changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, photo.uri), "structure")) {
-                      await rollbackRejectedPhoto(photo);
-                      return;
-                    }
-                    photo.commit();
-                  }
-                }}
+                onPress={uploadCoverPhoto}
                 style={styles.coverUploadButton}
               >
                 <Text style={styles.coverUploadText}>{currentPage.coverImage ? "更换背景图" : "上传背景图"}</Text>
