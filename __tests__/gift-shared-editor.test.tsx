@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as React from "react";
+import * as FileSystem from "expo-file-system/legacy";
 
 const mockStart = jest.fn();
 const mockFinish = jest.fn();
@@ -7,6 +8,22 @@ const mockStartOwned = jest.fn();
 const mockFinishOwned = jest.fn();
 const mockPrepareSave = jest.fn();
 const mockReleaseSaveLock = jest.fn();
+let mockBookCanvasProps: any;
+
+jest.mock("expo-file-system/legacy", () => ({
+  documentDirectory: "file:///shared-documents/",
+  makeDirectoryAsync: jest.fn(async () => undefined),
+  getInfoAsync: jest.fn(async () => ({ exists: false })),
+  copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock("expo-media-library", () => ({
+  getAssetInfoAsync: jest.fn(),
+}));
+
+const mockSharedCopy = FileSystem.copyAsync as jest.Mock;
+const mockSharedInfo = FileSystem.getInfoAsync as jest.Mock;
 
 jest.mock("../src/services/backend/api-client", () => ({
   BackendApiClient: jest.fn(() => ({
@@ -24,7 +41,9 @@ jest.mock("../src/services/backend/api-client", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text } = require("react-native");
-  return { BookCanvasEditor: React.forwardRef(({ fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange }: any, ref: any) => {
+  return { BookCanvasEditor: React.forwardRef((props: any, ref: any) => {
+    mockBookCanvasProps = props;
+    const { fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange } = props;
     const cursor = React.useRef({ pageId: initialPageId ?? pages[0]?.id ?? "", index: fallbackIndex ?? 0 });
     React.useImperativeHandle(ref, () => ({
       prepareSave: () => mockPrepareSave(pages, cursor.current),
@@ -64,6 +83,10 @@ const album: any = {
 describe("SharedAlbumEditor", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSharedInfo.mockImplementation(async (uri: string) => ({
+      exists: mockSharedCopy.mock.calls.some(([input]) => input.to === uri),
+      isDirectory: false,
+    }));
     mockPrepareSave.mockImplementation(async (pages, cursor) => ({ pages, cursor }));
     mockStart.mockResolvedValue({ publicationId: "pub-1", uploads: [{ position: 1, uploadUrl: "https://upload.test/new", objectKey: "server-key" }], coverUpload: null });
     mockFinish.mockResolvedValue({ albumId: "album-1" });
@@ -95,6 +118,37 @@ describe("SharedAlbumEditor", () => {
     expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
   });
 
+  it("owns shared-session staged photos and locks publishing for the complete editor transaction", async () => {
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+
+    expect(mockBookCanvasProps.stageSelectedPhoto).toEqual(expect.any(Function));
+    let staged: Awaited<ReturnType<typeof mockBookCanvasProps.stageSelectedPhoto>>;
+    await act(async () => {
+      staged = await mockBookCanvasProps.stageSelectedPhoto("file:///picker-temporary.jpg");
+    });
+    expect(FileSystem.copyAsync).toHaveBeenCalledWith({
+      from: "file:///picker-temporary.jpg",
+      to: expect.stringMatching(/^file:\/\/\/shared-documents\/photos\/accounts\/guest\/gift-1\/.+\.jpg$/),
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    await staged!.rollback();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(staged!.uri, { idempotent: true });
+
+    const publishButtonBeforePending = screen.getByRole("button", { name: "保存并发布更新" });
+    act(() => {
+      mockBookCanvasProps.onTransformPendingChange(true);
+      fireEvent.press(publishButtonBeforePending);
+    });
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(true);
+    expect(mockStart).not.toHaveBeenCalled();
+    let accepted: boolean | void;
+    act(() => { accepted = mockBookCanvasProps.onPagesChange(mockBookCanvasProps.pages, "structure"); });
+    expect(accepted!).toBe(true);
+
+    act(() => mockBookCanvasProps.onTransformPendingChange(false));
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(false);
+  });
+
   it("strips the local planned-photo marker from publication snapshots", async () => {
     const markedAlbum = {
       ...album,
@@ -117,7 +171,8 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-marker", uploads: [], coverUpload: null });
     mockFinish.mockResolvedValueOnce({ albumId: "album-1" });
     render(<SharedAlbumEditor accessToken="token" album={markedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
 
     await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-marker"));
     const payload = mockStart.mock.calls.at(-1)?.[2];
@@ -232,6 +287,12 @@ describe("SharedAlbumEditor", () => {
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
     fireEvent.press(screen.getByText("保存并发布更新"));
     expect(mockStart).toHaveBeenCalledTimes(1);
+    act(() => mockBookCanvasProps.onTransformPendingChange(true));
+    expect(screen.getByRole("button", { name: "重新加载最新版" }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByText("重新加载最新版"));
+    expect(onReload).not.toHaveBeenCalled();
+    act(() => mockBookCanvasProps.onTransformPendingChange(false));
+    expect(screen.getByRole("button", { name: "重新加载最新版" }).props.accessibilityState.disabled).toBe(false);
     fireEvent.press(screen.getByText("重新加载最新版"));
     expect(onPublished).not.toHaveBeenCalled();
     expect(onReload).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
@@ -252,6 +313,7 @@ describe("SharedAlbumEditor", () => {
     fireEvent.press(screen.getByText("保存并发布更新"));
     fireEvent.press(screen.getByText("正在发布…"));
     await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
+    expect(mockBookCanvasProps.onPagesChange(mockBookCanvasProps.pages, "structure")).toBe(false);
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
     expect(screen.queryByTestId("saved-memory-metadata-header")).toBeNull();
