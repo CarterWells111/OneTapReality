@@ -21,7 +21,7 @@ import {
   AlbumMetadataEditor,
   type AlbumMetadataValue,
 } from "../memories/album-metadata-editor";
-import { stagePhotoUriStrict } from "../memories/photo-persistence";
+import { createPhotoStagingSession, type PhotoStagingSession } from "../memories/photo-persistence";
 import { mapSharedAlbumToEditablePages } from "./shared-album-mapper";
 
 type Props = {
@@ -42,7 +42,12 @@ type MediaSource = { uri: string; existingId?: string; contentType?: string; byt
 
 const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
 const STAGED_MESSAGE = "修改已暂存在当前编辑会话，尚未发布。";
-const SHARED_PHOTO_ACCOUNT_KEY = "guest" as const;
+let sharedPhotoSessionSequence = 0;
+
+function nextSharedPhotoSessionId(giftId: string) {
+  sharedPhotoSessionSequence += 1;
+  return `shared-gift-${giftId}-${Date.now()}-${sharedPhotoSessionSequence}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function pageImageUris(page: StoryPage) {
   const uris: string[] = [];
@@ -118,6 +123,11 @@ export function SharedAlbumEditor({
   const metadataRef = React.useRef(metadata);
   const dirtyRef = React.useRef(false);
   const publishedBaseline = React.useRef(createPublishedBaseline(initialPages, album));
+  const photoStagingSessionRef = React.useRef<PhotoStagingSession | null>(null);
+  if (!photoStagingSessionRef.current) {
+    photoStagingSessionRef.current = createPhotoStagingSession(nextSharedPhotoSessionId(giftId));
+  }
+  const photoStagingSession = photoStagingSessionRef.current;
   pagesRef.current = pages;
   metadataRef.current = metadata;
   const initialIndex = resolveInitialIndex(initialPages, initialPageId, fallbackIndex);
@@ -136,8 +146,11 @@ export function SharedAlbumEditor({
     pagesRef.current = nextPages;
     setPages(nextPages);
     changeDirty(hasEffectiveChanges(nextPages, metadataRef.current, publishedBaseline.current));
+    void photoStagingSession.reconcile(nextPages.flatMap(pageImageUris)).catch((error) => {
+      console.warn("[shared-album-editor] 无法清理未引用的暂存照片：", error);
+    });
     return true;
-  }, [changeDirty, stale]);
+  }, [changeDirty, photoStagingSession, stale]);
   const handleMetadataChange = React.useCallback((change: Partial<AlbumMetadataValue>) => {
     const nextMetadata = { ...metadataRef.current, ...change };
     metadataRef.current = nextMetadata;
@@ -145,14 +158,26 @@ export function SharedAlbumEditor({
     changeDirty(hasEffectiveChanges(pagesRef.current, nextMetadata, publishedBaseline.current));
   }, [changeDirty]);
 
+  const cleanupPhotoStagingSession = React.useCallback(async () => {
+    try {
+      await photoStagingSession.cleanup();
+    } catch (error) {
+      console.warn("[shared-album-editor] 无法清理照片暂存会话：", error);
+    }
+  }, [photoStagingSession]);
+
+  React.useEffect(() => () => {
+    void cleanupPhotoStagingSession();
+  }, [cleanupPhotoStagingSession]);
+
   const changeEditorPending = React.useCallback((pending: boolean) => {
     editorChangePendingRef.current = pending;
     setTransformPending(pending);
   }, []);
 
   const stageSelectedPhoto = React.useCallback(
-    (uri: string) => stagePhotoUriStrict(uri, SHARED_PHOTO_ACCOUNT_KEY, giftId),
-    [giftId],
+    (uri: string) => photoStagingSession.stagePhoto(uri),
+    [photoStagingSession],
   );
 
   React.useEffect(() => {
@@ -310,6 +335,10 @@ export function SharedAlbumEditor({
       if (!current()) return;
       changeDirty(false);
       if (!current()) return;
+      pagesRef.current = [];
+      setPages([]);
+      await cleanupPhotoStagingSession();
+      if (!current()) return;
       await onPublished({ cursor: publishCursor });
     } catch (error) {
       if (!current()) return;
@@ -322,6 +351,7 @@ export function SharedAlbumEditor({
         metadataRef.current = clearedMetadata;
         setMetadata(clearedMetadata);
         changeDirty(false);
+        await cleanupPhotoStagingSession();
       } else if (error instanceof BackendApiError && error.status === 409 && error.code === "gift_album_version_conflict") {
         setStale(true);
         setMessage("相册已有新版本，请重新加载后再编辑。");
@@ -339,9 +369,13 @@ export function SharedAlbumEditor({
     }
   };
 
-  const reload = () => {
+  const reload = async () => {
     if (inFlight.current || editorChangePendingRef.current) return;
-    void onReload?.(activePage.current);
+    const cursor = activePage.current;
+    pagesRef.current = [];
+    setPages([]);
+    await cleanupPhotoStagingSession();
+    await onReload?.(cursor);
   };
 
   if (accessLost) return null;

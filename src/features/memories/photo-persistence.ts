@@ -96,6 +96,19 @@ function isPersisted(uri: string, directory: string): boolean {
   return uri.startsWith(directory);
 }
 
+async function getPhotoStagingDirectory(sessionId: string): Promise<string> {
+  const root = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+  const stem = `${root}photo-staging/${encodeURIComponent(sessionId)}`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const directory = `${stem}-${attempt}/`;
+    const info = await FileSystem.getInfoAsync(directory);
+    if (info.exists) continue;
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    return directory;
+  }
+  throw new Error("无法为照片暂存会话分配安全目录");
+}
+
 async function allocatePhotoDestination(directory: string, extension: string): Promise<string> {
   const stem = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -110,6 +123,12 @@ export type StagedPhotoFile = {
   uri: string;
   commit: () => void;
   rollback: () => Promise<void>;
+};
+
+export type PhotoStagingSession = {
+  cleanup: () => Promise<void>;
+  reconcile: (referencedUris: readonly string[]) => Promise<void>;
+  stagePhoto: (uri: string) => Promise<StagedPhotoFile>;
 };
 
 function existingPhotoHandle(uri: string): StagedPhotoFile {
@@ -152,6 +171,10 @@ export async function stagePhotoUriStrict(
   memoryId: string,
 ): Promise<StagedPhotoFile> {
   const directory = await getPhotosDirectory(accountKey, memoryId);
+  return stagePhotoUriInDirectoryStrict(uri, directory);
+}
+
+async function stagePhotoUriInDirectoryStrict(uri: string, directory: string): Promise<StagedPhotoFile> {
   if (isPersisted(uri, directory)) return existingPhotoHandle(uri);
   let sourceUri = uri;
   if (uri.startsWith("ph://")) {
@@ -174,6 +197,81 @@ export async function stagePhotoUriStrict(
     throw error;
   }
   return createdPhotoHandle(destination);
+}
+
+/**
+ * Owns temporary photos for one mounted editor session. A staged handle remains
+ * individually rollback-safe until commit transfers it into the session. The
+ * session then deletes committed files when pages stop referencing them, or
+ * removes its unique directory at a terminal lifecycle boundary.
+ */
+export function createPhotoStagingSession(sessionId: string): PhotoStagingSession {
+  let closed = false;
+  let cleanupPromise: Promise<void> | null = null;
+  let reconcileQueue = Promise.resolve();
+  let currentReferences = new Set<string>();
+  const ownedUris = new Set<string>();
+  const activeStages = new Set<Promise<StagedPhotoFile>>();
+  const directoryPromise = getPhotoStagingDirectory(sessionId);
+
+  const stagePhoto = async (uri: string): Promise<StagedPhotoFile> => {
+    if (closed) throw new Error("照片暂存会话已结束");
+    const operation = directoryPromise.then((directory) => stagePhotoUriInDirectoryStrict(uri, directory));
+    activeStages.add(operation);
+    let staged: StagedPhotoFile;
+    try {
+      staged = await operation;
+    } finally {
+      activeStages.delete(operation);
+    }
+    if (closed) {
+      await staged.rollback();
+      throw new Error("照片暂存会话已结束");
+    }
+    let transferred = false;
+    return {
+      uri: staged.uri,
+      commit: () => {
+        if (transferred || closed) return;
+        staged.commit();
+        transferred = true;
+        ownedUris.add(staged.uri);
+      },
+      rollback: staged.rollback,
+    };
+  };
+
+  const reconcile = (referencedUris: readonly string[]) => {
+    currentReferences = new Set(referencedUris);
+    reconcileQueue = reconcileQueue.catch(() => undefined).then(async () => {
+      for (const uri of [...ownedUris]) {
+        if (closed || currentReferences.has(uri)) continue;
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+        ownedUris.delete(uri);
+      }
+    });
+    return reconcileQueue;
+  };
+
+  const cleanup = () => {
+    closed = true;
+    currentReferences.clear();
+    if (!cleanupPromise) {
+      cleanupPromise = (async () => {
+        await Promise.allSettled([...activeStages]);
+        await reconcileQueue.catch(() => undefined);
+        const directory = await directoryPromise;
+        await FileSystem.deleteAsync(directory, { idempotent: true });
+        ownedUris.clear();
+      })().catch((error) => {
+        cleanupPromise = null;
+        throw error;
+      });
+    }
+    return cleanupPromise;
+  };
+
+  return { cleanup, reconcile, stagePhoto };
 }
 
 /**
