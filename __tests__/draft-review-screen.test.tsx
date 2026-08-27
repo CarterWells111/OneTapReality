@@ -11,6 +11,7 @@ const mockRetryDraft = jest.fn();
 const mockDiscardDraft = jest.fn();
 const mockUpdateDraftPages = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
+const mockStageSelectedPhoto = jest.fn();
 
 jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
@@ -54,6 +55,7 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     retryDraft: mockRetryDraft,
     discardDraft: mockDiscardDraft,
     persistSelectedPhoto: mockPersistSelectedPhoto,
+    stageSelectedPhoto: mockStageSelectedPhoto,
     updateDraftPages: mockUpdateDraftPages,
   }),
 }));
@@ -92,6 +94,11 @@ describe("DraftReviewScreen", () => {
       assets: [{ uri: "file:///temporary.jpg" }],
     });
     mockPersistSelectedPhoto.mockResolvedValue("file:///permanent.jpg");
+    mockStageSelectedPhoto.mockImplementation(async (_memoryId: string, uri: string) => ({
+      uri: uri.replace("temporary", "permanent"),
+      commit: jest.fn(),
+      rollback: jest.fn(async () => undefined),
+    }));
   });
 
   it("saves a loaded draft and opens its completed memory", async () => {

@@ -10,6 +10,7 @@ import { resolvePhotoTemplate } from "./photo-templates";
 
 export type PhotoLayoutSheetProps = {
   action: "add" | "edit";
+  busy?: boolean;
   photoUris: string[];
   selectedTemplateId?: PhotoTemplateId;
   onCancel: () => void;
@@ -24,6 +25,7 @@ function matchingTemplate(templateId: PhotoTemplateId | undefined, photoCount: n
 
 export function PhotoLayoutSheet({
   action,
+  busy = false,
   photoUris,
   selectedTemplateId,
   onCancel,
@@ -49,7 +51,10 @@ export function PhotoLayoutSheet({
 
   return (
     <Modal animationType="slide" onRequestClose={onCancel} transparent={false} visible>
-      <View style={[styles.root, { paddingBottom: insets.bottom + 16, paddingTop: insets.top + 12 }]}>
+      <View
+        accessibilityState={{ busy }}
+        style={[styles.root, { paddingBottom: insets.bottom + 16, paddingTop: insets.top + 12 }]}
+        testID="photo-layout-sheet">
         <View style={styles.header}>
           <View style={styles.headingCopy}>
             <Text selectable style={styles.title}>{action === "add" ? "新建照片页面" : "照片布局"}</Text>
@@ -82,11 +87,15 @@ export function PhotoLayoutSheet({
           <Pressable
             accessibilityLabel="重新选择照片"
             accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
             onPress={onReplacePhotos}
             style={styles.replaceButton}
           >
             <Text selectable style={styles.replaceText}>重新选择照片</Text>
           </Pressable>
+
+          {busy ? <Text accessibilityLiveRegion="polite" selectable style={styles.progress}>正在保存照片…</Text> : null}
 
           {canUseTemplate ? (
             <View style={styles.templateSection}>
@@ -107,10 +116,10 @@ export function PhotoLayoutSheet({
         <Pressable
           accessibilityLabel={confirmLabel}
           accessibilityRole="button"
-          accessibilityState={{ disabled: photoCount === 0 }}
-          disabled={photoCount === 0}
+          accessibilityState={{ disabled: photoCount === 0 || busy }}
+          disabled={photoCount === 0 || busy}
           onPress={() => onConfirm(canUseTemplate ? selection : undefined)}
-          style={[styles.confirmButton, photoCount === 0 && styles.disabled]}
+          style={[styles.confirmButton, (photoCount === 0 || busy) && styles.disabled]}
         >
           <Text selectable style={styles.confirmText}>{confirmLabel}</Text>
         </Pressable>
@@ -136,6 +145,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   warning: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14 },
+  progress: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, textAlign: "center" },
   confirmButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, justifyContent: "center", minHeight: 48, paddingHorizontal: 16 },
   confirmText: { color: colors.background, fontFamily: bodyFont, fontSize: 15, fontWeight: "800" },
   disabled: { opacity: 0.4 },

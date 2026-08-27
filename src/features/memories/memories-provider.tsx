@@ -5,7 +5,7 @@ import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import { useLocalLibrary } from "../auth/local-library-provider";
 import type { LocalLibraryOwner } from "../auth/local-library-owner";
 import { isMissingPhotoToken } from "./photo-references";
-import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
+import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict, stagePhotoUriStrict, type StagedPhotoFile } from "./photo-persistence";
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
   getMemoryEditDraft as getMemoryEditDraftFromDb,
@@ -45,6 +45,7 @@ type MemoriesContextValue = {
   saveMemoryEditDraft: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   clearMemoryEditDraft: (memoryId: string) => Promise<void>;
   persistSelectedPhoto: (memoryId: string, uri: string) => Promise<string>;
+  stageSelectedPhoto: (memoryId: string, uri: string) => Promise<StagedPhotoFile>;
   discardMemory: (id: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
@@ -364,6 +365,20 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [runWrite],
   );
 
+  const stageSelectedPhoto = React.useCallback(
+    async (memoryId: string, uri: string) => runWrite(async (owner, assertActive) => {
+      const staged = await stagePhotoUriStrict(uri, owner, memoryId);
+      try {
+        assertActive();
+        return staged;
+      } catch (error) {
+        await staged.rollback();
+        throw error;
+      }
+    }),
+    [runWrite],
+  );
+
   const discardMemory = React.useCallback(
     async (id: string) => runWrite(async (owner, assertActive) => {
       await discardMemoryInDb(db, id, new Date().toISOString(), owner);
@@ -423,6 +438,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       saveMemoryEditDraft,
       clearMemoryEditDraft,
       persistSelectedPhoto,
+      stageSelectedPhoto,
       discardMemory,
       deleteMemory,
       clearAllMemories,
@@ -449,6 +465,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       updatePages,
       updateDraftPages,
       persistSelectedPhoto,
+      stageSelectedPhoto,
       clearMemoryEditDraft,
     ]
   );

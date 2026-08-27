@@ -401,6 +401,16 @@ export function applyPhotoTemplateToPage(pages: StoryPage[], pageId: string, tem
   });
 }
 
+/** Clear only template ownership, preserving every element and layout field. */
+export function clearPhotoTemplateFromPage(pages: StoryPage[], pageId: string) {
+  const current = pages.find((page) => page.id === pageId);
+  if (!current?.layout?.photoTemplateId) return pages;
+  return updatePageWithoutNormalization(pages, pageId, (page) => {
+    const layout = page.layout ?? createLegacyLayout(page);
+    return { ...page, layout: preserveLayoutMeta(layout, layout.elements, "clear") };
+  });
+}
+
 export function replacePagePhotos(
   pages: StoryPage[],
   pageId: string,

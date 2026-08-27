@@ -96,35 +96,94 @@ function isPersisted(uri: string, directory: string): boolean {
   return uri.startsWith(directory);
 }
 
+async function allocatePhotoDestination(directory: string, extension: string): Promise<string> {
+  const stem = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = `${directory}${stem}-${attempt}.${extension}`;
+    const info = await FileSystem.getInfoAsync(destination);
+    if (!info.exists) return destination;
+  }
+  throw new Error("无法为照片分配安全的本地文件名");
+}
+
+export type StagedPhotoFile = {
+  uri: string;
+  commit: () => void;
+  rollback: () => Promise<void>;
+};
+
+function existingPhotoHandle(uri: string): StagedPhotoFile {
+  return {
+    uri,
+    commit: () => undefined,
+    rollback: async () => undefined,
+  };
+}
+
+function createdPhotoHandle(uri: string): StagedPhotoFile {
+  let committed = false;
+  let rollbackPromise: Promise<void> | null = null;
+  return {
+    uri,
+    commit: () => {
+      committed = true;
+    },
+    rollback: async () => {
+      if (committed) return;
+      if (!rollbackPromise) {
+        rollbackPromise = FileSystem.deleteAsync(uri, { idempotent: true }).catch((error) => {
+          rollbackPromise = null;
+          throw error;
+        });
+      }
+      await rollbackPromise;
+    },
+  };
+}
+
 /**
- * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
- * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
+ * Copies one picker URI into the album directory while retaining ownership of
+ * that exact destination until the caller commits it. Existing album files are
+ * represented by no-op handles and can therefore never be removed by rollback.
  */
-export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
+export async function stagePhotoUriStrict(
+  uri: string,
+  accountKey: LocalLibraryOwner,
+  memoryId: string,
+): Promise<StagedPhotoFile> {
   const directory = await getPhotosDirectory(accountKey, memoryId);
-  if (isPersisted(uri, directory)) return uri;
+  if (isPersisted(uri, directory)) return existingPhotoHandle(uri);
   let sourceUri = uri;
   if (uri.startsWith("ph://")) {
     sourceUri = await resolvePhUri(uri);
-    if (isPersisted(sourceUri, directory)) return sourceUri;
+    if (isPersisted(sourceUri, directory)) return existingPhotoHandle(sourceUri);
   }
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${getExtension(sourceUri)}`;
-  const destination = `${directory}${fileName}`;
+  const destination = await allocatePhotoDestination(directory, getExtension(sourceUri));
   try {
     await FileSystem.copyAsync({ from: sourceUri, to: destination });
     const destinationInfo = await FileSystem.getInfoAsync(destination);
     if (!destinationInfo.exists || destinationInfo.isDirectory) {
       throw new Error("Photo destination verification failed");
     }
-    return destination;
   } catch (error) {
     try {
       await FileSystem.deleteAsync(destination, { idempotent: true });
-    } catch {
-      // The copy failure remains the useful error; cleanup is best-effort.
+    } catch (cleanupError) {
+      console.warn("[photo-persistence] 无法清理复制失败的照片：", cleanupError);
     }
     throw error;
   }
+  return createdPhotoHandle(destination);
+}
+
+/**
+ * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
+ * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
+ */
+export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
+  const staged = await stagePhotoUriStrict(uri, accountKey, memoryId);
+  staged.commit();
+  return staged.uri;
 }
 
 export async function persistPhotoUri(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {

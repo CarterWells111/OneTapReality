@@ -31,6 +31,7 @@ const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
 const mockClearMemoryEditDraft = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
+const mockStageSelectedPhoto = jest.fn();
 const mockEmitDiagnostic = jest.fn();
 const mockReleaseSaveLock = jest.fn();
 const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text") => void> = [];
@@ -147,6 +148,7 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     getMemoryById: mockGetMemoryById,
     getMemoryEditDraft: mockGetMemoryEditDraft,
     persistSelectedPhoto: mockPersistSelectedPhoto,
+    stageSelectedPhoto: mockStageSelectedPhoto,
     saveMemoryEditDraft: mockSaveMemoryEditDraft,
     updatePages: mockUpdatePages,
   }),

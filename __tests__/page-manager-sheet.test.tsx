@@ -28,19 +28,26 @@ describe("PageManagerSheet", () => {
     expect(onChange.mock.calls[0][0].map((page: StoryPage) => page.id)).toEqual(["b"]);
   });
 
-  it("closes and requests the photo-first add-page flow without mutating pages", () => {
+  it("requests the photo-first add-page flow only after modal dismissal without mutating pages", () => {
     const onChange = jest.fn();
     const calls: string[] = [];
     const onClose = jest.fn(() => calls.push("close"));
     const onRequestAddPage = jest.fn(() => calls.push("request"));
     const screen = render(
-      <PageManagerSheet onChange={onChange} onClose={onClose} onRequestAddPage={onRequestAddPage} pages={pages} />,
+      <PageManagerSheet onChange={onChange} onClose={onClose} onRequestAddPage={onRequestAddPage} pages={pages} visible />,
     );
 
     fireEvent.press(screen.getByLabelText("添加页面"));
 
-    expect(calls).toEqual(["close", "request"]);
+    expect(calls).toEqual(["close"]);
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onRequestAddPage).not.toHaveBeenCalled();
+    screen.rerender(
+      <PageManagerSheet onChange={onChange} onClose={onClose} onRequestAddPage={onRequestAddPage} pages={pages} visible={false} />,
+    );
+    expect(onRequestAddPage).not.toHaveBeenCalled();
+    fireEvent(screen.UNSAFE_getByType(require("react-native").Modal), "dismiss");
+    expect(calls).toEqual(["close", "request"]);
     expect(onRequestAddPage).toHaveBeenCalledTimes(1);
     expect(onChange).not.toHaveBeenCalled();
   });

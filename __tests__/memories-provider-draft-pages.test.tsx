@@ -14,6 +14,7 @@ const mockSaveMemoryEditDraft = jest.fn();
 const mockRunWrite = (operation: (owner: string, assertActive: () => void) => Promise<unknown>) => (
   operation("account:owner@example.com", () => undefined)
 );
+const mockStagePhotoUriStrict = jest.fn();
 const mockGenerate = jest.fn();
 
 jest.mock("expo-sqlite", () => ({
@@ -43,6 +44,7 @@ jest.mock("../src/features/memories/photo-persistence", () => ({
   findMigratedLegacyPhotoUris: jest.fn(() => []),
   hydrateMemoryPhotoReferences: (...args: unknown[]) => mockHydrateMemoryPhotoReferences(...args),
   persistPhotoUriStrict: (...args: unknown[]) => mockPersistPhotoUriStrict(...args),
+  stagePhotoUriStrict: (...args: unknown[]) => mockStagePhotoUriStrict(...args),
 }));
 
 jest.mock("../src/storage/memory-edit-draft-repository", () => ({
@@ -335,6 +337,25 @@ describe("MemoriesProvider draft page persistence", () => {
     await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
     expect(capturedMemories?.memories).toEqual([runtimeMemory]);
     expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledWith(mockDatabase, storageMemory, "account:owner@example.com");
+  });
+
+  it("stages a selected photo with an owned rollback handle", async () => {
+    const handle = { uri: "file:///documents/account/draft-1/staged.jpg", commit: jest.fn(), rollback: jest.fn() };
+    mockStagePhotoUriStrict.mockResolvedValue(handle);
+    render(
+      <MemoriesProvider>
+        <CaptureMemories />
+      </MemoriesProvider>,
+    );
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+
+    await expect(capturedMemories!.stageSelectedPhoto("draft-1", "file:///temporary.jpg"))
+      .resolves.toBe(handle);
+    expect(mockStagePhotoUriStrict).toHaveBeenCalledWith(
+      "file:///temporary.jpg",
+      "account:owner@example.com",
+      "draft-1",
+    );
   });
 
   it("passes reconstructed grouped plans into draft retry without persisting them", async () => {

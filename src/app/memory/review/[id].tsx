@@ -32,6 +32,7 @@ export default function DraftReviewScreen() {
     discardDraft,
     getDraftById,
     persistSelectedPhoto,
+    stageSelectedPhoto,
     retryDraft,
     saveDraft,
     updateDraftPages,
@@ -340,6 +341,7 @@ export default function DraftReviewScreen() {
             onPagesChange={changePages}
             pages={draft.pages}
             persistSelectedPhoto={(uri) => persistSelectedPhoto(draft.id, uri)}
+            stageSelectedPhoto={(uri) => stageSelectedPhoto(draft.id, uri)}
           />
 
           <AutosaveStatus

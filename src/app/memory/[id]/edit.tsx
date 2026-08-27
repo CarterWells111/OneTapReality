@@ -59,6 +59,7 @@ export default function EditMemoryScreen() {
     getMemoryById,
     getMemoryEditDraft,
     persistSelectedPhoto,
+    stageSelectedPhoto,
     saveMemoryEditDraft,
     updatePages,
   } = useMemories();
@@ -576,6 +577,7 @@ export default function EditMemoryScreen() {
           pages={pages}
           persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
           ref={editorRef}
+          stageSelectedPhoto={(uri) => stageSelectedPhoto(memory.id, uri)}
         />
       </View>
       {recoveryState.status === "error" ? (

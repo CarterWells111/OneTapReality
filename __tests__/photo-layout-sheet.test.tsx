@@ -106,4 +106,34 @@ describe("PhotoLayoutSheet", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it("exposes saving progress, blocks mutation, and still delegates cancellation while busy", () => {
+    const onCancel = jest.fn();
+    const onConfirm = jest.fn();
+    const onReplacePhotos = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        busy
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        onReplacePhotos={onReplacePhotos}
+        photoUris={["file:///one.jpg"]}
+      />,
+    );
+
+    expect(screen.getByText("正在保存照片…")).toBeTruthy();
+    expect(screen.getByTestId("photo-layout-sheet").props.accessibilityState).toEqual(
+      expect.objectContaining({ busy: true }),
+    );
+    for (const label of ["应用照片布局", "重新选择照片"]) {
+      const button = screen.getByLabelText(label);
+      expect(button.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+      fireEvent.press(button);
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onReplacePhotos).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText("取消照片布局"));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });
