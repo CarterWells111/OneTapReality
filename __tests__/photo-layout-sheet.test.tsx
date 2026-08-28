@@ -7,6 +7,93 @@ import { PhotoLayoutSheet } from "../src/features/canvas/photo-layout-sheet";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("PhotoLayoutSheet", () => {
+  it("adds one photo from the trailing plus tile and keeps the template family", () => {
+    const onAddPhoto = jest.fn();
+    const onConfirm = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={onAddPhoto}
+        onCancel={() => undefined}
+        onConfirm={onConfirm}
+        onPhotosChange={() => undefined}
+        photos={[{ id: "one", uri: "file:///one.jpg" }, { id: "two", uri: "file:///two.jpg" }]}
+        selectedTemplateId="magazine-2"
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
+
+    expect(onAddPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the shared crop modal when a selected thumbnail is pressed", () => {
+    const onPhotosChange = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={() => undefined}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        onPhotosChange={onPhotosChange}
+        photos={[{ id: "one", uri: "file:///one.jpg", crop: { focusX: 0.1, focusY: 0.9, zoom: 3 } }]}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("照片 1，点击裁剪"));
+    fireEvent.press(screen.getByLabelText("重置裁剪"));
+    fireEvent.press(screen.getByLabelText("完成裁剪"));
+
+    expect(onPhotosChange).toHaveBeenCalledWith([
+      { id: "one", uri: "file:///one.jpg", crop: { focusX: 0.5, focusY: 0.5, zoom: 1 } },
+    ]);
+  });
+
+  it("offers accessible reorder and delete equivalents for drag gestures", () => {
+    const onPhotosChange = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={() => undefined}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        onPhotosChange={onPhotosChange}
+        photos={[{ id: "one", uri: "file:///one.jpg" }, { id: "two", uri: "file:///two.jpg" }]}
+      />,
+    );
+
+    fireEvent(screen.getByLabelText("照片 2，点击裁剪"), "accessibilityAction", {
+      nativeEvent: { actionName: "moveBackward" },
+    });
+    expect(onPhotosChange).toHaveBeenLastCalledWith([
+      { id: "two", uri: "file:///two.jpg" },
+      { id: "one", uri: "file:///one.jpg" },
+    ]);
+
+    fireEvent(screen.getByLabelText("照片 1，点击裁剪"), "accessibilityAction", {
+      nativeEvent: { actionName: "delete" },
+    });
+    expect(onPhotosChange).toHaveBeenLastCalledWith([{ id: "two", uri: "file:///two.jpg" }]);
+  });
+
+  it("allows an edited page to apply an empty photo draft", () => {
+    const onConfirm = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={() => undefined}
+        onCancel={() => undefined}
+        onConfirm={onConfirm}
+        onPhotosChange={() => undefined}
+        photos={[]}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
+
+    expect(onConfirm).toHaveBeenCalledWith(undefined);
+  });
+
   it("disables confirmation when there are no photos", () => {
     const onConfirm = jest.fn();
     const screen = render(
@@ -14,13 +101,14 @@ describe("PhotoLayoutSheet", () => {
     );
 
     const confirm = screen.getByLabelText("创建页面");
-    expect(screen.queryByText("已选择图片")).toBeNull();
+    expect(screen.getByText("已选择图片")).toBeTruthy();
+    expect(screen.getByLabelText("添加一张照片")).toBeTruthy();
     expect(confirm.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
     fireEvent.press(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it("shows selected photos immediately above the replacement action", () => {
+  it("shows selected photos beside the trailing addition action", () => {
     const screen = render(
       <PhotoLayoutSheet
         action="edit"
@@ -34,14 +122,14 @@ describe("PhotoLayoutSheet", () => {
     const selectionControls = screen.getByTestId("photo-selection-controls");
 
     expect(screen.getByText("已选择图片")).toBeTruthy();
-    expect(screen.getByLabelText("照片 1").props.source).toEqual([{ uri: "file:///one.jpg" }]);
-    expect(screen.getByLabelText("照片 2").props.source).toEqual([{ uri: "file:///two.jpg" }]);
-    expect(StyleSheet.flatten(screen.getByLabelText("照片 1").props.style)).toEqual(expect.objectContaining({
+    expect(screen.getByTestId("photo-layout-thumbnail-legacy-photo-1-content").props.source).toEqual([{ uri: "file:///one.jpg" }]);
+    expect(screen.getByTestId("photo-layout-thumbnail-legacy-photo-2-content").props.source).toEqual([{ uri: "file:///two.jpg" }]);
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-thumbnail-legacy-photo-1").props.style)).toEqual(expect.objectContaining({
       height: 72,
       width: 72,
     }));
-    expect(selectionControls.props.children[0].props.testID).toBe("selected-photo-section");
-    expect(selectionControls.props.children[1].props.accessibilityLabel).toBe("重新选择照片");
+    expect(screen.getByLabelText("照片 1，点击裁剪")).toBeTruthy();
+    expect(selectionControls.props.children.at(-1).props.accessibilityLabel).toBe("添加一张照片");
   });
 
   it("updates the large layout preview immediately when selecting a template", () => {
@@ -59,8 +147,8 @@ describe("PhotoLayoutSheet", () => {
     const firstPreviewPhoto = screen.getByLabelText("布局效果预览照片 1");
 
     expect(StyleSheet.flatten(preview.props.style)).toEqual(expect.objectContaining({ aspectRatio: 0.75 }));
-    expect(firstPreviewPhoto.props.source).toEqual([{ uri: "file:///one.jpg" }]);
-    expect(screen.getByLabelText("布局效果预览照片 2").props.source).toEqual([{ uri: "file:///two.jpg" }]);
+    expect(screen.getByTestId("photo-layout-preview-image-1-content").props.source).toEqual([{ uri: "file:///one.jpg" }]);
+    expect(screen.getByTestId("photo-layout-preview-image-2-content").props.source).toEqual([{ uri: "file:///two.jpg" }]);
     expect(StyleSheet.flatten(firstPreviewPhoto.props.style)).toEqual(expect.objectContaining({
       height: "82%", left: "8%", top: "9%", width: "52%",
     }));
@@ -161,7 +249,7 @@ describe("PhotoLayoutSheet", () => {
         selectedTemplateId="columns-2"
       />,
     );
-    fireEvent.press(view.getByLabelText("应用照片布局"));
+    fireEvent.press(view.getByLabelText("应用照片与模板"));
 
     expect(onConfirm).toHaveBeenCalledWith("columns-2");
   });
@@ -180,7 +268,7 @@ describe("PhotoLayoutSheet", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
     fireEvent.press(screen.getByLabelText("取消照片布局"));
 
     expect(onReplacePhotos).toHaveBeenCalledTimes(1);
@@ -207,7 +295,7 @@ describe("PhotoLayoutSheet", () => {
     expect(screen.getByTestId("photo-layout-sheet").props.accessibilityState).toEqual(
       expect.objectContaining({ busy: true }),
     );
-    for (const label of ["应用照片布局", "重新选择照片"]) {
+    for (const label of ["应用照片与模板", "添加一张照片"]) {
       const button = screen.getByLabelText(label);
       expect(button.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
       fireEvent.press(button);
