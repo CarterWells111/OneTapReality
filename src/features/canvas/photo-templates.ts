@@ -31,7 +31,22 @@ export const PHOTO_TEMPLATE_FAMILIES = [
   { id: "columns", label: "竖向切片" },
 ] as const satisfies readonly { id: PhotoTemplateFamilyId; label: string }[];
 
-const slot = (x: number, y: number, width: number, height: number, rotation = 0): PhotoTemplateSlot => ({ x, y, width, height, rotation });
+export const degreesToRadians = (degrees: number) => degrees * Math.PI / 180;
+export const radiansToDegrees = (radians: number) => radians * 180 / Math.PI;
+
+const slot = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotationDegrees = 0,
+): PhotoTemplateSlot => ({
+  x,
+  y,
+  width,
+  height,
+  rotation: degreesToRadians(rotationDegrees),
+});
 
 export const PHOTO_TEMPLATES = [
   { id: "classic-1", familyId: "classic", familyLabel: "经典留白", photoCount: 1, slots: [slot(.10, .10, .80, .80)] },

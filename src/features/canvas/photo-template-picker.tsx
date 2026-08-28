@@ -54,7 +54,7 @@ export function PhotoTemplatePicker({ photoCount, selectedTemplateId, onSelect }
                           height: percentage(slot.height),
                           left: percentage(slot.x),
                           top: percentage(slot.y),
-                          transform: [{ rotate: `${slot.rotation}deg` }],
+                          transform: [{ rotate: `${slot.rotation}rad` }],
                           width: percentage(slot.width),
                         },
                       ]}

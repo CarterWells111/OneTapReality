@@ -1,5 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
-import { FlatList } from "react-native";
+import { FlatList, StyleSheet } from "react-native";
 
 import { DraftPhotoAllocation } from "../src/features/memories/draft-photo-allocation";
 import { createBalancedPhotoPagePlans } from "../src/features/memories/photo-page-planner";
@@ -191,6 +191,19 @@ describe("DraftPhotoAllocation", () => {
     expect(screen.getByLabelText("第 2 页预览，4 张照片，自由排版")).toBeTruthy();
     expect(screen.getByTestId("draft-photo-preview-1-image-1").type).toBe("Image");
     expect(screen.getByTestId("draft-photo-preview-2-image-1").type).toBe("Image");
+  });
+
+  it("renders collage page previews with canvas radians", () => {
+    const screen = render(
+      <DraftPhotoAllocation
+        onChange={jest.fn()}
+        photoUris={photos.slice(0, 2)}
+        value={[{ photoUris: photos.slice(0, 2), photoTemplateId: "collage-2" }]}
+      />,
+    );
+    const firstImageStyle = StyleSheet.flatten(screen.getByTestId("draft-photo-preview-1-image-1").props.style);
+
+    expect(firstImageStyle.transform).toEqual([{ rotate: `${-Math.PI / 60}rad` }]);
   });
 
   it("shows per-page progress and advances or returns without changing controlled plans", () => {

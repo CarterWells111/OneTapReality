@@ -64,7 +64,7 @@ function DraftPagePreview({ plan, pageIndex }: { plan: MemoryDraftPagePlan; page
               left: percentage(element.x),
               position: "absolute",
               top: percentage(element.y),
-              transform: [{ rotate: `${element.rotation}deg` }],
+              transform: [{ rotate: `${element.rotation}rad` }],
               width: percentage(element.width),
             }}
             testID={`draft-photo-preview-${pageIndex + 1}-${element.id}`}

@@ -65,7 +65,7 @@ describe("PhotoTemplatePicker", () => {
       top: "11%",
       width: "56%",
       height: "48%",
-      transform: [{ rotate: "-3deg" }],
+      transform: [{ rotate: `${-Math.PI / 60}rad` }],
       borderColor: colors.accent,
     });
   });

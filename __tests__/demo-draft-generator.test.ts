@@ -78,6 +78,25 @@ describe("DemoDraftGenerator", () => {
     expect(pages[1].layout?.elements.map((element) => element.zIndex)).toEqual([1, 2, 3, 4]);
   });
 
+  it("generates collage pages with canvas radians on the first draft", async () => {
+    const pages = await new DemoDraftGenerator().generate({
+      title: "方向正确的手账",
+      city: "hangzhou",
+      travelDate: "2026-07-24",
+      photoUris: ["file://one.jpg", "file://two.jpg"],
+      pagePlans: [{
+        photoUris: ["file://one.jpg", "file://two.jpg"],
+        photoTemplateId: "collage-2",
+      }],
+    });
+    const rotations = pages[1].layout?.elements
+      .filter((element) => element.type === "image")
+      .map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
   it("falls back to freeform layout and omits a bad or count-mismatched template", async () => {
     const pages = await new DemoDraftGenerator().generate({
       title: "自由排版",

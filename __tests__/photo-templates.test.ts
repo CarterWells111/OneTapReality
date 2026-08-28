@@ -2,6 +2,7 @@ import {
   PHOTO_TEMPLATE_FAMILIES,
   PHOTO_TEMPLATES,
   createPhotoTemplateLayout,
+  degreesToRadians,
   getPhotoTemplatesForCount,
   resolvePhotoTemplate,
   resolvePhotoTemplateForFamily,
@@ -19,9 +20,9 @@ describe("photo template registry", () => {
       ["story-1", "story", "横向叙事", 1, [[.07, .25, .86, .49, 0]]],
       ["story-2", "story", "横向叙事", 2, [[.07, .07, .86, .43, 0], [.18, .57, .75, .36, 0]]],
       ["story-3", "story", "横向叙事", 3, [[.07, .07, .86, .25, 0], [.14, .375, .79, .25, 0], [.07, .68, .79, .25, 0]]],
-      ["collage-1", "collage", "手账错落", 1, [[.14, .09, .72, .82, -2.5]]],
-      ["collage-2", "collage", "手账错落", 2, [[.08, .11, .56, .48, -3], [.38, .44, .54, .45, 3]]],
-      ["collage-3", "collage", "手账错落", 3, [[.08, .08, .53, .39, -3], [.47, .27, .45, .34, 3], [.13, .58, .47, .34, -1.5]]],
+      ["collage-1", "collage", "手账错落", 1, [[.14, .09, .72, .82, degreesToRadians(-2.5)]]],
+      ["collage-2", "collage", "手账错落", 2, [[.08, .11, .56, .48, degreesToRadians(-3)], [.38, .44, .54, .45, degreesToRadians(3)]]],
+      ["collage-3", "collage", "手账错落", 3, [[.08, .08, .53, .39, degreesToRadians(-3)], [.47, .27, .45, .34, degreesToRadians(3)], [.13, .58, .47, .34, degreesToRadians(-1.5)]]],
       ["columns-1", "columns", "竖向切片", 1, [[.20, .08, .60, .84, 0]]],
       ["columns-2", "columns", "竖向切片", 2, [[.08, .08, .39, .84, 0], [.53, .08, .39, .84, 0]]],
       ["columns-3", "columns", "竖向切片", 3, [[.06, .08, .27, .84, 0], [.365, .08, .27, .84, 0], [.67, .08, .27, .84, 0]]],
@@ -75,6 +76,17 @@ describe("photo template registry", () => {
       expect.objectContaining({ id: "image-1", type: "image", uri: "one.jpg", x: 0.08, y: 0.09, width: 0.52, height: 0.82 }),
       expect.objectContaining({ id: "image-2", type: "image", uri: "two.jpg", x: 0.64, y: 0.18, width: 0.28, height: 0.57 }),
     ]);
+  });
+
+  it("stores collage rotations in canvas radians", () => {
+    const layout = createPhotoTemplateLayout(["one.jpg", "two.jpg"], "collage-2");
+    const rotations = layout?.elements
+      .filter((element) => element.type === "image")
+      .map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+    expect(rotations?.every((rotation) => Math.abs(rotation) < 0.1)).toBe(true);
   });
 
   it("rejects unknown templates and photo count mismatches", () => {
