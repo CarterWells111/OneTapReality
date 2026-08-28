@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   photoSelectionControls: { gap: 18 },
   selectedPhotoSection: { gap: 10 },
   thumbnailRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  thumbnail: { aspectRatio: 1, backgroundColor: colors.surface, borderRadius: 12, width: 72 },
+  thumbnail: { backgroundColor: colors.surface, borderRadius: 12, height: 72, width: 72 },
   replaceButton: { alignItems: "center", borderColor: colors.accent, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
   replaceText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   templateSection: { gap: 10 },

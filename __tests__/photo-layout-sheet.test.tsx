@@ -36,6 +36,10 @@ describe("PhotoLayoutSheet", () => {
     expect(screen.getByText("已选择图片")).toBeTruthy();
     expect(screen.getByLabelText("照片 1").props.source).toEqual([{ uri: "file:///one.jpg" }]);
     expect(screen.getByLabelText("照片 2").props.source).toEqual([{ uri: "file:///two.jpg" }]);
+    expect(StyleSheet.flatten(screen.getByLabelText("照片 1").props.style)).toEqual(expect.objectContaining({
+      height: 72,
+      width: 72,
+    }));
     expect(selectionControls.props.children[0].props.testID).toBe("selected-photo-section");
     expect(selectionControls.props.children[1].props.accessibilityLabel).toBe("重新选择照片");
   });
