@@ -41,6 +41,28 @@ export type PhotoCropGeometry = {
   width: number;
 };
 
+export type PhotoCropPan = {
+  translationX: number;
+  translationY: number;
+  viewportHeight: number;
+  viewportWidth: number;
+};
+
+export function panPhotoCrop(crop: PhotoCropState, pan: PhotoCropPan): PhotoCropState {
+  const normalized = normalizePhotoCropState(crop);
+  if (pan.viewportWidth <= 0 || pan.viewportHeight <= 0) return normalized;
+  return normalizePhotoCropState({
+    focusX: normalized.focusX - (pan.translationX / (pan.viewportWidth * normalized.zoom)),
+    focusY: normalized.focusY - (pan.translationY / (pan.viewportHeight * normalized.zoom)),
+    zoom: normalized.zoom,
+  });
+}
+
+export function zoomPhotoCrop(crop: PhotoCropState, scale: number): PhotoCropState {
+  const normalized = normalizePhotoCropState(crop);
+  return normalizePhotoCropState({ ...normalized, zoom: normalized.zoom * scale });
+}
+
 export function resolvePhotoCropGeometry({
   crop,
   sourceHeight,

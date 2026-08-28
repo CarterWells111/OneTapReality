@@ -1,4 +1,9 @@
-import { normalizePhotoCropState, resolvePhotoCropGeometry } from "../src/features/canvas/photo-crop";
+import {
+  panPhotoCrop,
+  normalizePhotoCropState,
+  resolvePhotoCropGeometry,
+  zoomPhotoCrop,
+} from "../src/features/canvas/photo-crop";
 
 describe("photo crop geometry", () => {
   it("defaults invalid crop data to a centered one-times crop", () => {
@@ -34,5 +39,19 @@ describe("photo crop geometry", () => {
       viewportHeight: 100,
       viewportWidth: 100,
     })).toEqual({ height: 200, left: -50, top: -100, width: 400 });
+  });
+
+  it("converts pan and pinch gestures into bounded crop state", () => {
+    expect(panPhotoCrop({ focusX: 0.5, focusY: 0.5, zoom: 2 }, {
+      translationX: 60,
+      translationY: -100,
+      viewportHeight: 400,
+      viewportWidth: 300,
+    })).toEqual({ focusX: 0.4, focusY: 0.625, zoom: 2 });
+    expect(zoomPhotoCrop({ focusX: 0.4, focusY: 0.625, zoom: 2 }, 3)).toEqual({
+      focusX: 0.4,
+      focusY: 0.625,
+      zoom: 4,
+    });
   });
 });
