@@ -43,6 +43,7 @@ let mockAccountEmail = "owner@example.com";
 let mockRouteId = "memory-1";
 let mockRoutePageId: string | undefined;
 let mockRoutePageIndex: string | undefined;
+let mockBookCanvasStageSelectedPhoto: ((uri: string) => Promise<unknown>) | undefined;
 let mockDatePickerProps: {
   maximumDate?: Date;
   minimumDate?: Date;
@@ -95,7 +96,9 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     onPagesChange: (pages: StoryPage[], reason: "text" | "structure") => boolean | void;
     onTransformPendingChange?: (pending: boolean) => void;
     pages: StoryPage[];
-  }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
+    stageSelectedPhoto?: (uri: string) => Promise<unknown>;
+  }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages, stageSelectedPhoto }, ref) {
+    mockBookCanvasStageSelectedPhoto = stageSelectedPhoto;
     const [currentPageId, setCurrentPageId] = React.useState(() => (
       pages.find((page) => page.id === initialPageId)?.id
       ?? pages[Math.min(fallbackIndex, Math.max(0, pages.length - 1))]?.id
@@ -278,6 +281,7 @@ describe("EditMemoryScreen", () => {
     mockPreparedCursor = { pageId: "cover-1", index: 0 };
     mockPrepareSaveReturnsNull = false;
     mockDatePickerProps = null;
+    mockBookCanvasStageSelectedPhoto = undefined;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);
@@ -314,6 +318,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
 
     expect(await screen.findByTestId("current-headline")).toHaveTextContent("杭州周末");
+    expect(mockBookCanvasStageSelectedPhoto).toEqual(expect.any(Function));
   });
 
   it("does not reset local edits when the provider refreshes the memory identity", async () => {

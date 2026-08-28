@@ -1378,13 +1378,11 @@ export function BookCanvasEditor({
             label="📷 添加照片"
             onPress={addPhoto}
           />
-          {currentPage.kind === "photo" ? (
-            <SmallButton
-              active={false}
-              label="照片布局"
-              onPress={editPhotoLayout}
-            />
-          ) : null}
+          <SmallButton
+            active={false}
+            label="照片与模板"
+            onPress={editPhotoLayout}
+          />
           <SmallButton
             active={assetTrayMode === "sticker"}
             label="贴纸"

@@ -56,6 +56,7 @@ describe("SharedAlbumEditor real Canvas chain", () => {
     expect(screen.getByTestId("album-canvas")).toBeTruthy();
     expect(screen.getByTestId("saved-memory-metadata-header")).toBeTruthy();
     expect(screen.getByLabelText("打开页面管理")).toBeTruthy();
+    expect(screen.getByText("照片与模板")).toBeTruthy();
     expect(screen.getByText("暂存当前修改")).toBeTruthy();
     expect(screen.getByText("保存并发布更新")).toBeTruthy();
   });

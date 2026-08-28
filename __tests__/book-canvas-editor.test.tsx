@@ -237,6 +237,41 @@ describe("BookCanvasEditor", () => {
     mockCurrentCanvasPageProps = undefined;
   });
 
+  it("adds photos and a template from an empty cover page", async () => {
+    const onChange = jest.fn();
+    const staged = stagedPhoto("file:///permanent-cover.jpg");
+    const stageSelectedPhoto = jest.fn().mockResolvedValue(staged);
+    const screen = render(
+      <EditorHarness initialPageId="page-1" onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
+    );
+
+    fireEvent.press(screen.getByText("照片与模板"));
+    expect(screen.getByText("请先选择照片")).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("重新选择照片"));
+    });
+    fireEvent.press(screen.getByLabelText("竖向切片单图模板"));
+    fireEvent.press(screen.getByLabelText("应用照片布局"));
+
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "page-1")!;
+    expect(updated.photoUri).toBe("file:///permanent-cover.jpg");
+    expect(updated.layout).toMatchObject({ photoTemplateId: "columns-1" });
+    expect(staged.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows photo and template editing for a legacy cover without serialized layout", () => {
+    const legacyCover: StoryPage = {
+      ...pages[0],
+      photoUri: "file:///legacy-cover.jpg",
+    };
+    const screen = render(
+      <EditorHarness initialPageId="page-1" initialPages={[legacyCover, pages[1]]} stageSelectedPhoto={jest.fn()} />,
+    );
+
+    fireEvent.press(screen.getByText("照片与模板"));
+    expect(screen.getByLabelText("经典留白单图模板")).toBeTruthy();
+  });
+
   function openStyleMenu(screen: ReturnType<typeof render>, label: "颜色" | "字号") {
     const headline = screen.getByTestId("canvas-element-page-1:headline");
     const nowSpy = jest.spyOn(Date, "now");
@@ -1037,7 +1072,7 @@ describe("BookCanvasEditor", () => {
       />,
     );
 
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     expect(launchImageLibraryMock).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.press(screen.getByLabelText("重新选择照片"));
@@ -1073,7 +1108,7 @@ describe("BookCanvasEditor", () => {
       />,
     );
 
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     await act(async () => {
       fireEvent.press(screen.getByLabelText("重新选择照片"));
     });
@@ -1184,7 +1219,7 @@ describe("BookCanvasEditor", () => {
         onPendingChange={onPendingChange}
       />,
     );
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     expect(onPendingChange).toHaveBeenLastCalledWith(true);
     act(() => {
       (mockCurrentCanvasPageProps?.onTransformStart as (() => void) | undefined)?.();
@@ -1263,11 +1298,11 @@ describe("BookCanvasEditor", () => {
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
 
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     fireEvent.press(screen.getByLabelText("重新选择照片"));
     await act(async () => undefined);
     await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     fireEvent.press(screen.getByLabelText("重新选择照片"));
     await act(async () => { resolveNew(newHandle); await newPromise; });
     expect(screen.getByLabelText("照片 1").props.source).toEqual([{ uri: newHandle.uri }]);
@@ -1284,7 +1319,7 @@ describe("BookCanvasEditor", () => {
     const screen = render(
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} stageSelectedPhoto={stageSelectedPhoto} />,
     );
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
     expect(stageSelectedPhoto).not.toHaveBeenCalled();
   });
@@ -1309,7 +1344,7 @@ describe("BookCanvasEditor", () => {
     const screen = render(
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     fireEvent.press(screen.getByLabelText("重新选择照片"));
     await act(async () => undefined);
     expect(screen.getByText("正在保存照片…")).toBeTruthy();
@@ -1329,7 +1364,7 @@ describe("BookCanvasEditor", () => {
     const screen = render(<EditorHarness initialPageId="photo-page" initialPages={mismatched} onChange={onChange} />);
     expect(mockCurrentCanvasPageProps?.layout).not.toHaveProperty("photoTemplateId");
     expect((mockCurrentCanvasPageProps?.layout as StoryPage["layout"])?.elements).toEqual(originalElements);
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     fireEvent.press(screen.getByLabelText("应用照片布局"));
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -1341,7 +1376,7 @@ describe("BookCanvasEditor", () => {
       <EditorHarness initialPageId="freeform-page" initialPages={fourPhotoFreeformPages} onChange={onChange} />,
     );
 
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
     fireEvent.press(screen.getByLabelText("应用照片布局"));
 
@@ -1360,7 +1395,7 @@ describe("BookCanvasEditor", () => {
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
 
-    fireEvent.press(screen.getByText("照片布局"));
+    fireEvent.press(screen.getByText("照片与模板"));
     await act(async () => {
       fireEvent.press(screen.getByLabelText("重新选择照片"));
     });
