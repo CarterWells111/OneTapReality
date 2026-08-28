@@ -5,7 +5,7 @@ import { DemoDraftGenerator } from "../../services/ai/demo-draft-generator";
 import { useLocalLibrary } from "../auth/local-library-provider";
 import type { LocalLibraryOwner } from "../auth/local-library-owner";
 import { isMissingPhotoToken } from "./photo-references";
-import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict } from "./photo-persistence";
+import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMemoryPhotosPersisted, hydrateMemoryPhotoReferences, persistPhotoUriStrict, stagePhotoUriStrict, type StagedPhotoFile } from "./photo-persistence";
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
   getMemoryEditDraft as getMemoryEditDraftFromDb,
@@ -25,7 +25,8 @@ import {
   saveMemory,
   replaceMemoryMediaSnapshot,
 } from "../../storage/memory-repository";
-import type { Memory, MemoryDraftInput, StoryPage } from "../../types/memory";
+import type { Memory, MemoryDraftInput, MemoryDraftPagePlan, StoryPage } from "../../types/memory";
+import { resolvePhotoTemplate } from "../canvas/photo-templates";
 import { createMemory as createMemoryRecord } from "./memory-factory";
 import { validateMemoryDraft } from "./validation";
 
@@ -44,6 +45,7 @@ type MemoriesContextValue = {
   saveMemoryEditDraft: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   clearMemoryEditDraft: (memoryId: string) => Promise<void>;
   persistSelectedPhoto: (memoryId: string, uri: string) => Promise<string>;
+  stageSelectedPhoto: (memoryId: string, uri: string) => Promise<StagedPhotoFile>;
   discardMemory: (id: string) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
   clearAllMemories: () => Promise<void>;
@@ -85,6 +87,43 @@ function restoreKnownMissingPhotoTokens(memory: Memory, baseline: ReadonlyMap<st
       } : undefined,
     })),
   };
+}
+
+/**
+ * 从已持久化的页面布局恢复草稿生成所需的临时页面计划。
+ * 只有检测到分组照片或匹配模板时才返回计划，以保持旧版一图一页草稿的重试行为。
+ */
+export function reconstructDraftPagePlans(memory: Memory): MemoryDraftPagePlan[] | undefined {
+  const photoPages = memory.pages
+    .filter((page) => page.kind === "photo")
+    .map((page, index) => ({ page, index }))
+    .sort((left, right) => left.page.position - right.page.position || left.index - right.index)
+    .map(({ page }) => page);
+  const hasPlannedLayout = photoPages.some((page) => {
+    const imageCount = page.layout?.elements.filter((element) => element.type === "image").length ?? 0;
+    const template = resolvePhotoTemplate(page.layout?.photoTemplateId);
+    return page.layout?.photoPlanVersion === 1
+      || imageCount > 1
+      || (template !== undefined && template.photoCount === imageCount);
+  });
+  if (!hasPlannedLayout) return undefined;
+
+  return photoPages.map((page) => {
+    const imageUris = (page.layout?.elements ?? [])
+      .map((element, index) => ({ element, index }))
+      .filter((item) => item.element.type === "image")
+      .sort((left, right) => left.element.zIndex - right.element.zIndex || left.index - right.index)
+      .map((item) => item.element.type === "image" ? item.element.uri : "");
+    const photoUris = imageUris.length > 0
+      ? imageUris
+      : page.photoUri
+        ? [page.photoUri]
+        : [];
+    const template = resolvePhotoTemplate(page.layout?.photoTemplateId);
+    return template && template.photoCount === photoUris.length
+      ? { photoUris, photoTemplateId: template.id }
+      : { photoUris };
+  });
 }
 
 export function MemoriesProvider({ children }: { children: React.ReactNode }) {
@@ -188,14 +227,52 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         throw new Error(validation.issues[0]);
       }
 
-      const pages = await generator.generate(input);
-      const now = new Date().toISOString();
-      const memory = createMemoryRecord({ id: buildId(), now, input, pages });
-      const persisted = await ensureMemoryPhotosPersisted(memory, owner);
-      const hydrated = await hydrateForStorage(persisted.memory, owner);
-      assertActive();
-      await createDraftInDb(db, hydrated.storageMemory, owner);
-      return { ...hydrated.runtimeMemory, status: "draft" as const };
+      const id = buildId();
+      const stagedPhotos: StagedPhotoFile[] = [];
+      try {
+        const uriMap = new Map<string, string>();
+        const inputUris = input.coverImage
+          ? [...input.photoUris, input.coverImage]
+          : input.photoUris;
+        for (const uri of new Set(inputUris)) {
+          const staged = await stagePhotoUriStrict(uri, owner, id);
+          stagedPhotos.push(staged);
+          uriMap.set(uri, staged.uri);
+        }
+        const stagedInput: MemoryDraftInput = {
+          ...input,
+          photoUris: input.photoUris.map((uri) => uriMap.get(uri) ?? uri),
+          ...(input.coverImage
+            ? { coverImage: uriMap.get(input.coverImage) ?? input.coverImage }
+            : {}),
+          ...(input.pagePlans
+            ? {
+                pagePlans: input.pagePlans.map((plan) => ({
+                  ...plan,
+                  photoUris: plan.photoUris.map((uri) => uriMap.get(uri) ?? uri),
+                })),
+              }
+            : {}),
+        };
+        const pages = await generator.generate(stagedInput);
+        const now = new Date().toISOString();
+        const memory = createMemoryRecord({ id, now, input: stagedInput, pages });
+        const persisted = await ensureMemoryPhotosPersisted(memory, owner);
+        const hydrated = await hydrateForStorage(persisted.memory, owner);
+        assertActive();
+        await createDraftInDb(db, hydrated.storageMemory, owner);
+        stagedPhotos.forEach((photo) => photo.commit());
+        return { ...hydrated.runtimeMemory, status: "draft" as const };
+      } catch (error) {
+        for (const staged of stagedPhotos) {
+          try {
+            await staged.rollback();
+          } catch (cleanupError) {
+            console.warn("[memories-provider] 无法回滚草稿照片：", cleanupError);
+          }
+        }
+        throw error;
+      }
     }),
     [db, hydrateForStorage, runWrite]
   );
@@ -222,7 +299,8 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         throw new Error("未找到可重试的草稿");
       }
 
-      const pages = await generator.generate(draft);
+      const pagePlans = reconstructDraftPagePlans(draft);
+      const pages = await generator.generate(pagePlans ? { ...draft, pagePlans } : draft);
       // 为页面 id 加命名空间前缀，避免全局主键冲突（与 createMemory 保持一致）
       const namespacedPages = pages.map((page) => ({
         ...page,
@@ -325,6 +403,20 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     [runWrite],
   );
 
+  const stageSelectedPhoto = React.useCallback(
+    async (memoryId: string, uri: string) => runWrite(async (owner, assertActive) => {
+      const staged = await stagePhotoUriStrict(uri, owner, memoryId);
+      try {
+        assertActive();
+        return staged;
+      } catch (error) {
+        await staged.rollback();
+        throw error;
+      }
+    }),
+    [runWrite],
+  );
+
   const discardMemory = React.useCallback(
     async (id: string) => runWrite(async (owner, assertActive) => {
       await discardMemoryInDb(db, id, new Date().toISOString(), owner);
@@ -384,6 +476,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       saveMemoryEditDraft,
       clearMemoryEditDraft,
       persistSelectedPhoto,
+      stageSelectedPhoto,
       discardMemory,
       deleteMemory,
       clearAllMemories,
@@ -410,6 +503,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       updatePages,
       updateDraftPages,
       persistSelectedPhoto,
+      stageSelectedPhoto,
       clearMemoryEditDraft,
     ]
   );

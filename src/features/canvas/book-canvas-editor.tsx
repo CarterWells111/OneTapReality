@@ -32,18 +32,23 @@ import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
-  addImageToPage,
+  addCanvasPage,
   addStickerToPage,
   addTextToPage,
   addFrameToPage,
+  applyPhotoTemplateToPage,
+  clearPhotoTemplateFromPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
+  replacePagePhotos,
   setCanvasBackground,
   setCanvasCoverColor,
+  setCanvasCoverCrop,
   setCanvasCoverImage,
   updateCanvasElement,
   type CanvasElementPatch,
+  type CanvasPagePhoto,
 } from "./editor-pages";
 import {
   createEditorSaveSnapshot,
@@ -52,12 +57,18 @@ import {
   type CanvasTextStyleDraft,
 } from "./editor-save-transaction";
 import { PageManagerSheet } from "./page-manager-sheet";
+import { PhotoLayoutSheet } from "./photo-layout-sheet";
+import type { PhotoLayoutDraftItem } from "./photo-layout-draft";
+import { PhotoCropModal } from "./photo-crop-modal";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
+import { resolvePhotoTemplate } from "./photo-templates";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
 import { localDiagnostics } from "../diagnostics/local-diagnostics";
-import type { StoryPage } from "../../types/memory";
+import type { CanvasImageElement, PhotoCropState, PhotoTemplateId, StoryPage } from "../../types/memory";
+import type { StagedPhotoFile } from "../memories/photo-persistence";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
@@ -72,11 +83,42 @@ type BookCanvasEditorProps = {
   fallbackIndex?: number;
   initialPageId?: string;
   onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
-  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
+  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => boolean | void;
   onTransformPendingChange?: (pending: boolean) => void;
   pages: StoryPage[];
   persistSelectedPhoto?: (uri: string) => Promise<string>;
   ref?: React.Ref<BookCanvasEditorHandle>;
+  stageSelectedPhoto?: (uri: string) => Promise<StagedPhotoFile>;
+};
+
+type PendingStagedPhoto = {
+  file: StagedPhotoFile;
+  photoId: string;
+};
+
+type PendingPhotoLayout =
+  | {
+      action: "add";
+      photos: PhotoLayoutDraftItem[];
+      stagedPhotos: PendingStagedPhoto[];
+      selectedTemplateId?: PhotoTemplateId;
+    }
+  | {
+      action: "edit";
+      pageId: string;
+      photos: PhotoLayoutDraftItem[];
+      photosChanged: boolean;
+      stagedPhotos: PendingStagedPhoto[];
+      selectedTemplateId?: PhotoTemplateId;
+    };
+
+type DirectCropTarget = {
+  aspectRatio: number;
+  crop?: PhotoCropState;
+  elementId?: string;
+  kind: "cover" | "element";
+  pageId: string;
+  uri: string;
 };
 
 const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
@@ -205,6 +247,28 @@ function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+async function rollbackStagedPhotos(stagedPhotos: readonly (StagedPhotoFile | PendingStagedPhoto)[]) {
+  for (const staged of stagedPhotos) {
+    try {
+      await ("file" in staged ? staged.file : staged).rollback();
+    } catch (error) {
+      console.warn("[BookCanvasEditor] 无法清理未提交照片：", error);
+    }
+  }
+}
+
+function matchingPhotoTemplateId(templateId: PhotoTemplateId | undefined, photoCount: number) {
+  const template = resolvePhotoTemplate(templateId);
+  return template?.photoCount === photoCount ? template.id : undefined;
+}
+
+function pagePhotoDraftItems(page: StoryPage): PhotoLayoutDraftItem[] {
+  return (page.layout?.elements ?? [])
+    .filter((element): element is CanvasImageElement => element.type === "image")
+    .sort((left, right) => left.zIndex - right.zIndex)
+    .map((element) => ({ id: element.id, uri: element.uri, ...(element.crop ? { crop: element.crop } : {}) }));
+}
+
 export function BookCanvasEditor({
   fallbackIndex = 0,
   initialPageId,
@@ -214,6 +278,7 @@ export function BookCanvasEditor({
   pages,
   persistSelectedPhoto,
   ref,
+  stageSelectedPhoto,
 }: BookCanvasEditorProps) {
   const { width: windowWidth } = useWindowDimensions();
   const pageWidth = resolveCanvasPageWidth(windowWidth);
@@ -244,6 +309,8 @@ export function BookCanvasEditor({
   activePageChangeRef.current = onActivePageChange;
   const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [selectedCoverPageId, setSelectedCoverPageId] = React.useState<string>();
+  const [directCropTarget, setDirectCropTarget] = React.useState<DirectCropTarget>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
   const editingElementIdRef = React.useRef<string | undefined>(undefined);
   const [menuMode, setMenuMode] = React.useState<"font" | "size" | "color" | null>(null); // 打开的面板；null = 文字编辑态
@@ -255,12 +322,42 @@ export function BookCanvasEditor({
   const transformSettleGateRef = React.useRef(createTransformSettleGate());
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
-  const [managerOpen, setManagerOpen] = React.useState(false);
+  const [managerMounted, setManagerMounted] = React.useState(false);
+  const [managerVisible, setManagerVisible] = React.useState(false);
+  const [pendingPhotoLayout, setPendingPhotoLayout] = React.useState<PendingPhotoLayout | null>(null);
+  const pendingPhotoLayoutRef = React.useRef<PendingPhotoLayout | null>(null);
+  const [photoLayoutBusy, setPhotoLayoutBusy] = React.useState(false);
+  const photoLayoutBusyRef = React.useRef(false);
+  const [gestureTransformPending, setGestureTransformPending] = React.useState(false);
+  const [photoOperationCount, setPhotoOperationCount] = React.useState(0);
+  const photoOperationGenerationsRef = React.useRef(new Set<number>());
+  const transientPhotoOperationIdRef = React.useRef(0);
+  const pickerGenerationRef = React.useRef(0);
+  const activePickerRef = React.useRef<number | null>(null);
+  const mountedRef = React.useRef(true);
+  const pendingChangeCallbackRef = React.useRef(onTransformPendingChange);
+  pendingChangeCallbackRef.current = onTransformPendingChange;
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
-    if (saveBoundaryLockedRef.current) return;
-    pagesRef.current = restoredPages;
-    onPagesChange(restoredPages, "structure");
+    if (saveBoundaryLockedRef.current) return false;
+    try {
+      if (onPagesChange(restoredPages, "structure") === false) return false;
+      pagesRef.current = restoredPages;
+      return true;
+    } catch {
+      return false;
+    }
   });
+
+  const setOwnedPendingPhotoLayout = React.useCallback((next: PendingPhotoLayout | null) => {
+    pendingPhotoLayoutRef.current = next;
+    setPendingPhotoLayout(next);
+  }, []);
+  const photoLayoutTransactionPending = pendingPhotoLayout !== null || photoOperationCount > 0;
+  const editorChangePending = gestureTransformPending || photoLayoutTransactionPending;
+
+  React.useEffect(() => {
+    onTransformPendingChange?.(editorChangePending);
+  }, [editorChangePending, onTransformPendingChange]);
 
   const activePageIndex = activePageIdRef.current
     ? pages.findIndex((page) => page.id === activePageIdRef.current)
@@ -286,6 +383,7 @@ export function BookCanvasEditor({
     if (currentIndex !== validCurrentIndex) {
       setCurrentIndex(validCurrentIndex);
       setSelectedElementId(undefined);
+      setSelectedCoverPageId(undefined);
     }
   }, [currentIndex, validCurrentIndex]);
 
@@ -316,8 +414,27 @@ export function BookCanvasEditor({
   }, [pages, pendingTurn, stableTurnGeneration, translateX, turnDir]);
 
   React.useEffect(() => () => {
+    mountedRef.current = false;
+    pendingChangeCallbackRef.current?.(false);
+    photoOperationGenerationsRef.current.clear();
+    pickerGenerationRef.current += 1;
     stableTurnGeneration.value += 1;
+    const pending = pendingPhotoLayoutRef.current;
+    pendingPhotoLayoutRef.current = null;
+    if (pending) void rollbackStagedPhotos(pending.stagedPhotos);
   }, [stableTurnGeneration]);
+
+  React.useEffect(() => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (pending?.action !== "edit" || pages.some((page) => page.id === pending.pageId)) return;
+    pickerGenerationRef.current += 1;
+    activePickerRef.current = null;
+    photoLayoutBusyRef.current = false;
+    setPhotoLayoutBusy(false);
+    void rollbackStagedPhotos(pending.stagedPhotos).then(() => {
+      if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    });
+  }, [pages, setOwnedPendingPhotoLayout]);
 
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
@@ -359,11 +476,15 @@ export function BookCanvasEditor({
   const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
     if (saveBoundaryLockedRef.current && reason !== "transform") return false;
     const previousPages = pagesRef.current;
+    try {
+      if (onPagesChange(nextPages, reason) === false) return false;
+    } catch {
+      return false;
+    }
     if (reason === "structure" || reason === "transform") {
       pushState(previousPages);
     }
     pagesRef.current = nextPages;
-    onPagesChange(nextPages, reason);
     return true;
   }, [onPagesChange, pushState]);
 
@@ -415,6 +536,118 @@ export function BookCanvasEditor({
     }
   }, [persistSelectedPhoto]);
 
+  const preparePickedPhoto = React.useCallback(async (uri: string): Promise<StagedPhotoFile | null> => {
+    if (stageSelectedPhoto) {
+      try {
+        return await stageSelectedPhoto(uri);
+      } catch {
+        Alert.alert(
+          "照片保存失败",
+          "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+        );
+        return null;
+      }
+    }
+    const persistedUri = await persistPickedPhoto(uri);
+    return persistedUri
+      ? { uri: persistedUri, commit: () => undefined, rollback: async () => undefined }
+      : null;
+  }, [persistPickedPhoto, stageSelectedPhoto]);
+
+  const rollbackRejectedPhoto = React.useCallback(async (photo: StagedPhotoFile) => {
+    try {
+      await photo.rollback();
+    } catch (error) {
+      console.warn("[book-canvas-editor] 无法回滚未应用的照片：", error);
+    }
+  }, []);
+
+  const beginTransientPhotoOperation = React.useCallback(() => {
+    const operationId = --transientPhotoOperationIdRef.current;
+    photoOperationGenerationsRef.current.add(operationId);
+    if (mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    return operationId;
+  }, []);
+
+  const finishPhotoOperation = React.useCallback((generation: number) => {
+    if (photoOperationGenerationsRef.current.delete(generation) && mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    if (activePickerRef.current === generation) {
+      activePickerRef.current = null;
+      photoLayoutBusyRef.current = false;
+      if (mountedRef.current) setPhotoLayoutBusy(false);
+    }
+  }, []);
+
+  const pickAndStagePhotos = React.useCallback(async ({
+    selectionLimit = MAX_PHOTOS_PER_CANVAS_PAGE,
+    multiple = true,
+  }: { selectionLimit?: number; multiple?: boolean } = {}) => {
+    if (activePickerRef.current !== null) return null;
+    if (!stageSelectedPhoto) {
+      Alert.alert("照片保存失败", "当前编辑器无法安全暂存照片，请稍后重试。");
+      return null;
+    }
+    const generation = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(generation);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    activePickerRef.current = generation;
+    photoLayoutBusyRef.current = true;
+    setPhotoLayoutBusy(true);
+    const stagedPhotos: PendingStagedPhoto[] = [];
+    let handedOff = false;
+    const isCurrent = () => mountedRef.current && pickerGenerationRef.current === generation;
+    try {
+      let result: Awaited<ReturnType<typeof ImagePicker.launchImageLibraryAsync>>;
+      try {
+        result = await ImagePicker.launchImageLibraryAsync({
+          allowsMultipleSelection: multiple,
+          mediaTypes: ["images"],
+          quality: 0.8,
+          selectionLimit,
+        });
+      } catch {
+        if (isCurrent()) Alert.alert("照片选择失败", "无法打开照片选择器，请稍后重试。");
+        return null;
+      }
+      if (!isCurrent() || result.canceled) return null;
+
+      const selectedAssets = result.assets.slice(0, selectionLimit);
+      if (selectedAssets.length === 0) return null;
+      for (const asset of selectedAssets) {
+        let staged: StagedPhotoFile;
+        try {
+          staged = await stageSelectedPhoto(asset.uri);
+        } catch {
+          await rollbackStagedPhotos(stagedPhotos);
+          if (isCurrent()) {
+            Alert.alert(
+              "照片保存失败",
+              "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+            );
+          }
+          return null;
+        }
+        stagedPhotos.push({ file: staged, photoId: buildCanvasId("image") });
+        if (!isCurrent()) {
+          await rollbackStagedPhotos(stagedPhotos);
+          return null;
+        }
+      }
+      handedOff = true;
+      return {
+        generation,
+        photos: stagedPhotos.map(({ file, photoId }) => ({ id: photoId, uri: file.uri })),
+        stagedPhotos,
+      };
+    } finally {
+      if (!handedOff) finishPhotoOperation(generation);
+    }
+  }, [finishPhotoOperation, stageSelectedPhoto]);
+
   const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pagesRef.current) => {
     const pendingId = pendingTextIdRef.current;
     const activePageId = activePageIdRef.current;
@@ -455,6 +688,7 @@ export function BookCanvasEditor({
       initializeCoverPreview(pagesRef.current[targetIndex]);
       discardPendingText();
       setSelectedElementId(undefined);
+      setSelectedCoverPageId(undefined);
       activePageIdRef.current = targetPageId;
       currentIndexRef.current = targetIndex;
       editingElementIdRef.current = undefined;
@@ -646,19 +880,208 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
   };
 
-  const addPhoto = async () => {
+  const uploadCoverPhoto = async () => {
+    const pageId = currentPage.id;
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      const uri = await persistPickedPhoto(result.assets[0].uri);
-      if (!uri) return;
-      const nextId = buildCanvasId("image");
-      changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
-      setSelectedElementId(nextId);
+    if (result.canceled || !result.assets[0]) return;
+
+    const operationId = beginTransientPhotoOperation();
+    try {
+      const photo = await preparePickedPhoto(result.assets[0].uri);
+      if (!photo) return;
+      if (!mountedRef.current) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      const nextPages = setCanvasCoverImage(clearPendingTextFrom(pagesRef.current), pageId, photo.uri);
+      const nextPage = nextPages.find((page) => page.id === pageId);
+      const referencesStagedPhoto = nextPage?.coverImage === photo.uri
+        || nextPage?.layout?.coverImage === photo.uri;
+      if (!referencesStagedPhoto || !changePages(nextPages, "structure")) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      photo.commit();
+    } finally {
+      finishPhotoOperation(operationId);
     }
+  };
+
+  const requestAddPhotoPage = () => {
+    setOwnedPendingPhotoLayout({
+      action: "add",
+      photos: [],
+      stagedPhotos: [],
+    });
+  };
+
+  const openElementCrop = (elementId: string) => {
+    const page = pagesRef.current.find((candidate) => candidate.id === currentPage.id);
+    const element = page?.layout?.elements.find((candidate) => candidate.id === elementId);
+    if (element?.type !== "image" || !page?.layout) return;
+    setDirectCropTarget({
+      aspectRatio: element.height > 0 ? (element.width * page.layout.aspectRatio) / element.height : 1,
+      crop: element.crop,
+      elementId: element.id,
+      kind: "element",
+      pageId: page.id,
+      uri: element.uri,
+    });
+  };
+
+  const openCoverCrop = () => {
+    const page = pagesRef.current.find((candidate) => candidate.id === currentPage.id);
+    const uri = page?.layout?.coverImage ?? page?.coverImage;
+    if (!page?.layout || !uri) return;
+    setDirectCropTarget({
+      aspectRatio: page.layout.aspectRatio,
+      crop: page.layout.coverCrop,
+      kind: "cover",
+      pageId: page.id,
+      uri,
+    });
+  };
+
+  const confirmDirectCrop = (crop: PhotoCropState) => {
+    const target = directCropTarget;
+    if (!target) return;
+    const nextPages = target.kind === "cover"
+      ? setCanvasCoverCrop(pagesRef.current, target.pageId, crop)
+      : updateCanvasElement(pagesRef.current, target.pageId, target.elementId!, { crop });
+    if (changePages(nextPages, "structure")) setDirectCropTarget(undefined);
+  };
+
+  const editPhotoLayout = () => {
+    const photos = pagePhotoDraftItems(currentPage);
+    setOwnedPendingPhotoLayout({
+      action: "edit",
+      pageId: currentPage.id,
+      photos,
+      photosChanged: false,
+      stagedPhotos: [],
+      selectedTemplateId: matchingPhotoTemplateId(currentPage.layout?.photoTemplateId, photos.length),
+    });
+  };
+
+  const addStagedPhoto = async () => {
+    const previous = pendingPhotoLayoutRef.current;
+    if (!previous || previous.photos.length >= MAX_PHOTOS_PER_CANVAS_PAGE) return;
+    const batch = await pickAndStagePhotos({ multiple: false, selectionLimit: 1 });
+    if (!batch) return;
+    try {
+      if (pendingPhotoLayoutRef.current !== previous) {
+        await rollbackStagedPhotos(batch.stagedPhotos);
+        return;
+      }
+      const photos = [...previous.photos, ...batch.photos].slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+      const acceptedIds = new Set(photos.map((photo) => photo.id));
+      const rejected = batch.stagedPhotos.filter((photo) => !acceptedIds.has(photo.photoId));
+      if (rejected.length > 0) await rollbackStagedPhotos(rejected);
+      setOwnedPendingPhotoLayout({
+        ...previous,
+        photos,
+        stagedPhotos: [...previous.stagedPhotos, ...batch.stagedPhotos.filter((photo) => acceptedIds.has(photo.photoId))],
+        ...(previous.action === "edit" ? { photosChanged: true } : {}),
+      });
+    } finally {
+      finishPhotoOperation(batch.generation);
+    }
+  };
+
+  const updatePendingPhotos = (photos: PhotoLayoutDraftItem[]) => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (!pending) return;
+    const retainedIds = new Set(photos.map((photo) => photo.id));
+    const removedStaged = pending.stagedPhotos.filter((photo) => !retainedIds.has(photo.photoId));
+    setOwnedPendingPhotoLayout({
+      ...pending,
+      photos,
+      stagedPhotos: pending.stagedPhotos.filter((photo) => retainedIds.has(photo.photoId)),
+      ...(pending.action === "edit" ? { photosChanged: true } : {}),
+    });
+    if (removedStaged.length > 0) void rollbackStagedPhotos(removedStaged);
+  };
+
+  const cancelPhotoLayout = async () => {
+    const cleanupGeneration = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(cleanupGeneration);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    activePickerRef.current = null;
+    photoLayoutBusyRef.current = false;
+    if (mountedRef.current) setPhotoLayoutBusy(false);
+    const pending = pendingPhotoLayoutRef.current;
+    setOwnedPendingPhotoLayout(null);
+    try {
+      if (pending) await rollbackStagedPhotos(pending.stagedPhotos);
+    } finally {
+      finishPhotoOperation(cleanupGeneration);
+    }
+  };
+
+  const rejectPhotoLayoutCommit = async (pending: PendingPhotoLayout) => {
+    photoLayoutBusyRef.current = true;
+    setPhotoLayoutBusy(true);
+    await rollbackStagedPhotos(pending.stagedPhotos);
+    if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    photoLayoutBusyRef.current = false;
+    if (mountedRef.current) {
+      setPhotoLayoutBusy(false);
+      Alert.alert("照片布局未应用", "当前旅行册正在保存，照片布局未能应用，请稍后重试。");
+    }
+  };
+
+  const confirmPhotoLayout = async (templateId?: PhotoTemplateId) => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (photoLayoutBusyRef.current || !pending || (pending.action === "add" && pending.photos.length === 0)) return;
+    const validTemplateId = matchingPhotoTemplateId(templateId, pending.photos.length);
+
+    if (pending.action === "add") {
+      const addedPageId = buildCanvasId("page");
+      const nextPages = addCanvasPage(pages, pending.photos, addedPageId, validTemplateId);
+      const addedIndex = nextPages.findIndex((page) => page.id === addedPageId);
+      if (!changePages(nextPages, "structure")) {
+        await rejectPhotoLayoutCommit(pending);
+        return;
+      }
+      pending.stagedPhotos.forEach((photo) => photo.file.commit());
+      if (addedIndex >= 0) {
+        stableTurnGeneration.value += 1;
+        setPendingTurn(null);
+        translateX.value = 0;
+        turnDir.value = 0;
+        setSelectedElementId(undefined);
+        setSelectedCoverPageId(undefined);
+        activePageIdRef.current = addedPageId;
+        setCurrentIndex(addedIndex);
+      }
+    } else {
+      const sourcePages = clearPendingTextFrom();
+      if (sourcePages.some((page) => page.id === pending.pageId)) {
+        const nextPages = pending.photosChanged
+          ? replacePagePhotos(
+              sourcePages,
+              pending.pageId,
+              pending.photos as CanvasPagePhoto[],
+              validTemplateId,
+            )
+          : validTemplateId
+            ? applyPhotoTemplateToPage(sourcePages, pending.pageId, validTemplateId)
+            : clearPhotoTemplateFromPage(sourcePages, pending.pageId);
+        if (nextPages !== pages && !changePages(nextPages, "structure")) {
+          await rejectPhotoLayoutCommit(pending);
+          return;
+        }
+        pending.stagedPhotos.forEach((photo) => photo.file.commit());
+        setSelectedElementId(undefined);
+      } else {
+        void rollbackStagedPhotos(pending.stagedPhotos);
+      }
+    }
+    setOwnedPendingPhotoLayout(null);
   };
 
   const addText = () => {
@@ -702,7 +1125,8 @@ export function BookCanvasEditor({
             accessibilityRole="button"
             onPress={() => {
               discardPendingText();
-              setManagerOpen(true);
+              setManagerMounted(true);
+              setManagerVisible(true);
             }}
             style={styles.pageMenuButton}>
             <Text style={styles.pageMenuButtonText}>页面管理</Text>
@@ -710,10 +1134,11 @@ export function BookCanvasEditor({
         </View>
       </View>
 
-      {managerOpen ? (
+      {managerMounted ? (
         <PageManagerSheet
           onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
-          onClose={() => setManagerOpen(false)}
+          onClose={() => setManagerVisible(false)}
+          onDismiss={() => setManagerMounted(false)}
           onJumpToPage={(index) => {
             stableTurnGeneration.value += 1;
             setPendingTurn(null);
@@ -723,6 +1148,7 @@ export function BookCanvasEditor({
             initializeCoverPreview(targetPage);
             discardPendingText();
             setSelectedElementId(undefined);
+            setSelectedCoverPageId(undefined);
             activePageIdRef.current = targetPage?.id;
             currentIndexRef.current = index;
             editingElementIdRef.current = undefined;
@@ -731,7 +1157,36 @@ export function BookCanvasEditor({
             setMenuMode(null);
             setCurrentIndex(index);
           }}
+          onRequestAddPage={() => {
+            void requestAddPhotoPage();
+          }}
           pages={pages}
+          visible={managerVisible}
+        />
+      ) : null}
+
+      {pendingPhotoLayout ? (
+        <PhotoLayoutSheet
+          action={pendingPhotoLayout.action}
+          busy={photoLayoutBusy}
+          onCancel={() => { void cancelPhotoLayout(); }}
+          onConfirm={confirmPhotoLayout}
+          onAddPhoto={() => {
+            void addStagedPhoto();
+          }}
+          onPhotosChange={updatePendingPhotos}
+          photos={pendingPhotoLayout.photos}
+          selectedTemplateId={pendingPhotoLayout.selectedTemplateId}
+        />
+      ) : null}
+
+      {directCropTarget ? (
+        <PhotoCropModal
+          aspectRatio={directCropTarget.aspectRatio}
+          crop={directCropTarget.crop}
+          onCancel={() => setDirectCropTarget(undefined)}
+          onConfirm={confirmDirectCrop}
+          uri={directCropTarget.uri}
         />
       ) : null}
 
@@ -741,10 +1196,14 @@ export function BookCanvasEditor({
             <BookCanvasEditorLayerBuffer
               current={currentPage}
               currentCanvasProps={{
+                coverSelected: selectedCoverPageId === currentPage.id,
                 onInteractElement: handleElementInteraction,
+                onCropCover: openCoverCrop,
+                onCropElement: openElementCrop,
                 onPressBlank: () => {
                   discardPendingText();
                   setSelectedElementId(undefined);
+                  setSelectedCoverPageId(undefined);
                   editingElementIdRef.current = undefined;
                   menuModeRef.current = null;
                   setEditingElementId(undefined);
@@ -765,7 +1224,17 @@ export function BookCanvasEditor({
                     setMenuMode(null);
                   }
                   setSelectedElementId(id);
+                  setSelectedCoverPageId(undefined);
                   // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
+                },
+                onSelectCover: () => {
+                  discardPendingText();
+                  setSelectedElementId(undefined);
+                  setSelectedCoverPageId(currentPage.id);
+                  editingElementIdRef.current = undefined;
+                  menuModeRef.current = null;
+                  setEditingElementId(undefined);
+                  setMenuMode(null);
                 },
                 onTransformEnd: (elementId, patch) => {
                   handleElementInteraction(elementId);
@@ -774,11 +1243,11 @@ export function BookCanvasEditor({
                 },
                 onTransformSettled: () => {
                   const pending = transformSettleGateRef.current.end();
-                  onTransformPendingChange?.(pending);
+                  setGestureTransformPending(pending);
                 },
                 onTransformStart: () => {
                   transformSettleGateRef.current.begin();
-                  onTransformPendingChange?.(true);
+                  setGestureTransformPending(true);
                 },
                 coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
                   ? stableCoverColorPreview
@@ -948,8 +1417,8 @@ export function BookCanvasEditor({
         <View style={styles.assetModeRow}>
           <SmallButton
             active={false}
-            label="📷 添加照片"
-            onPress={addPhoto}
+            label="照片与模板"
+            onPress={editPhotoLayout}
           />
           <SmallButton
             active={assetTrayMode === "sticker"}
@@ -1070,18 +1539,7 @@ export function BookCanvasEditor({
               <Pressable
                 accessibilityLabel="上传封面背景图"
                 accessibilityRole="button"
-                onPress={async () => {
-                  const result = await ImagePicker.launchImageLibraryAsync({
-                    allowsMultipleSelection: false,
-                    mediaTypes: ["images"],
-                    quality: 0.8,
-                  });
-                  if (!result.canceled && result.assets[0]) {
-                    const uri = await persistPickedPhoto(result.assets[0].uri);
-                    if (!uri) return;
-                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, uri), "structure");
-                  }
-                }}
+                onPress={uploadCoverPhoto}
                 style={styles.coverUploadButton}
               >
                 <Text style={styles.coverUploadText}>{currentPage.coverImage ? "更换背景图" : "上传背景图"}</Text>

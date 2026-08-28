@@ -6,11 +6,21 @@ export const memoryStatuses = ["draft", "saved", "discarded"] as const;
 
 export type MemoryStatus = (typeof memoryStatuses)[number];
 
+export const photoTemplateFamilyIds = ["classic", "magazine", "story", "collage", "columns"] as const;
+export type PhotoTemplateFamilyId = (typeof photoTemplateFamilyIds)[number];
+export type PhotoTemplateId = `${PhotoTemplateFamilyId}-${1 | 2 | 3}`;
+
+export type MemoryDraftPagePlan = {
+  photoUris: string[];
+  photoTemplateId?: PhotoTemplateId;
+};
+
 export type MemoryDraftInput = {
   title: string;
   city: City;
   travelDate: string;
   photoUris: string[];
+  pagePlans?: MemoryDraftPagePlan[];
   /** 封面颜色（十六进制）。为空时回退到城市默认色。 */
   coverColor?: string;
   /** 封面自定义背景图 URI。为空时显示纯色封面。 */
@@ -36,6 +46,12 @@ export type CanvasStickerId = string;
 export type CanvasFrameId = string;
 export type CanvasBackgroundId = string;
 
+export type PhotoCropState = {
+  focusX: number;
+  focusY: number;
+  zoom: number;
+};
+
 type CanvasElementBase = {
   id: string;
   x: number;
@@ -49,6 +65,7 @@ type CanvasElementBase = {
 export type CanvasImageElement = CanvasElementBase & {
   type: "image";
   uri: string;
+  crop?: PhotoCropState;
 };
 
 export type CanvasTextElement = CanvasElementBase & {
@@ -78,15 +95,21 @@ export type CanvasElement =
 export type CanvasLayout = {
   /** 画布宽高比，3:4 竖版（宽度:高度） */
   aspectRatio: number;
+  schemaVersion?: number;
+  /** 由页面计划生成的本地布局标记；不进入远程契约。 */
+  photoPlanVersion?: 1;
+  photoTemplateId?: PhotoTemplateId;
   backgroundId?: CanvasBackgroundId;
   /** 封面专用：纯色背景（十六进制） */
   coverColor?: string;
   /** 封面专用：自定义背景图 URI */
   coverImage?: string;
+  /** 封面背景图的无损取景参数。 */
+  coverCrop?: PhotoCropState;
   elements: CanvasElement[];
 };
 
-export type Memory = MemoryDraftInput & {
+export type Memory = Omit<MemoryDraftInput, "pagePlans"> & {
   id: string;
   status?: MemoryStatus;
   pages: StoryPage[];

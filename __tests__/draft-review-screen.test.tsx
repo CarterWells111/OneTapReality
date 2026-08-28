@@ -1,5 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Modal } from "react-native";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -11,6 +12,7 @@ const mockRetryDraft = jest.fn();
 const mockDiscardDraft = jest.fn();
 const mockUpdateDraftPages = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
+const mockStageSelectedPhoto = jest.fn();
 
 jest.mock("expo-image-picker", () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
@@ -54,6 +56,7 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     retryDraft: mockRetryDraft,
     discardDraft: mockDiscardDraft,
     persistSelectedPhoto: mockPersistSelectedPhoto,
+    stageSelectedPhoto: mockStageSelectedPhoto,
     updateDraftPages: mockUpdateDraftPages,
   }),
 }));
@@ -92,6 +95,11 @@ describe("DraftReviewScreen", () => {
       assets: [{ uri: "file:///temporary.jpg" }],
     });
     mockPersistSelectedPhoto.mockResolvedValue("file:///permanent.jpg");
+    mockStageSelectedPhoto.mockImplementation(async (_memoryId: string, uri: string) => ({
+      uri: uri.replace("temporary", "permanent"),
+      commit: jest.fn(),
+      rollback: jest.fn(async () => undefined),
+    }));
   });
 
   it("saves a loaded draft and opens its completed memory", async () => {
@@ -280,14 +288,66 @@ describe("DraftReviewScreen", () => {
     await waitFor(() => expect(screen.getByText("已自动保存")).toBeTruthy());
   });
 
-  it("binds selected photos to the current draft before adding them", async () => {
+  it("stages selected photos in the current draft transaction before adding them", async () => {
     const screen = render(<DraftReviewScreen />);
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
-    await act(async () => {
-      fireEvent.press(screen.getByText("📷 添加照片"));
-    });
+    fireEvent.press(screen.getByText("照片与模板"));
+    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
 
-    expect(mockPersistSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
+    expect(mockStageSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
+    expect(mockPersistSelectedPhoto).not.toHaveBeenCalled();
+  });
+
+  it("disables local draft actions while a delayed quick photo is staged", async () => {
+    let finishStage!: (photo: { uri: string; commit: jest.Mock; rollback: jest.Mock }) => void;
+    const pendingStage = new Promise<{ uri: string; commit: jest.Mock; rollback: jest.Mock }>((resolve) => {
+      finishStage = resolve;
+    });
+    const staged = {
+      uri: "file:///permanent-delayed.jpg",
+      commit: jest.fn(),
+      rollback: jest.fn(async () => undefined),
+    };
+    mockStageSelectedPhoto.mockReturnValueOnce(pendingStage);
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    fireEvent.press(screen.getByText("照片与模板"));
+    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    await act(async () => undefined);
+
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(true);
+
+    await act(async () => { finishStage(staged); await pendingStage; });
+
+    expect(staged.commit).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
+    expect(staged.commit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(false);
+  });
+
+  it("disables draft actions for the full staged photo-layout transaction", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    fireEvent.press(screen.getByLabelText("添加页面"));
+    fireEvent(screen.UNSAFE_getByType(Modal), "dismiss");
+    await waitFor(() => expect(screen.getByText("新建照片页面")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(true);
+
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
+    expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByLabelText("丢弃草稿").props.accessibilityState.disabled).toBe(false);
   });
 });

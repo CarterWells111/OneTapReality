@@ -14,7 +14,9 @@ import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-el
 import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
 import { isMissingPhotoToken } from "../memories/photo-references";
-import type { CanvasElement as CanvasElementModel } from "../../types/memory";
+import { CroppedImage } from "./cropped-image";
+import { CropIcon } from "./crop-icon";
+import type { CanvasElement as CanvasElementModel, CanvasImageElement } from "../../types/memory";
 
 type ElementPatch = {
   x: number;
@@ -41,6 +43,7 @@ type CanvasElementProps = {
   selectionContext: string | undefined;
   stylePreview?: CanvasElementStylePreview;
   onInteract?: (id: string) => void;
+  onCrop?: (id: string) => void;
   onSelect: (id: string) => void;
   onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
@@ -169,6 +172,7 @@ export function CanvasElement({
   selectionContext,
   stylePreview,
   onInteract,
+  onCrop,
   onSelect,
   onTransformStart,
   onTransformEnd,
@@ -449,6 +453,20 @@ export function CanvasElement({
             testID={`canvas-element-selection-${element.id}`}
           />
         ) : null}
+        {interactive && isSelected && element.type === "image" && onCrop ? (
+          <Pressable
+            accessibilityLabel="裁剪照片"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => onCrop(element.id)}
+            style={[
+              styles.cropButton,
+              element.y + element.height > 0.88 ? styles.cropButtonAbove : styles.cropButtonBelow,
+            ]}
+          >
+            <CropIcon color="#FFFFFF" size={20} />
+          </Pressable>
+        ) : null}
         {/* 选中时显示四角拖拽手柄 */}
         {isSelected && element.type !== "image" ? (
           <SelectionHandles
@@ -498,7 +516,7 @@ function ElementContent({
     element.type === "text" ? element.fontStyle : undefined,
   );
   if (element.type === "image") {
-    return <ImageElement testID={`canvas-image-${element.id}`} uri={element.uri} />;
+    return <ImageElement crop={element.crop} testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
@@ -532,7 +550,7 @@ function ElementContent({
  * 照片元素：加载失败（文件已丢失/URI 失效）时显示占位，而不是静默空白。
  * 成功后不再重复检查，避免同一 URI 反复触发 onError。
  */
-function ImageElement({ testID, uri }: { testID: string; uri: string }) {
+function ImageElement({ crop, testID, uri }: { crop?: CanvasImageElement["crop"]; testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
   if (isMissingPhotoToken(uri) || failed) {
     return (
@@ -543,12 +561,13 @@ function ImageElement({ testID, uri }: { testID: string; uri: string }) {
     );
   }
   return (
-    <Image
-      contentFit="cover"
+    <CroppedImage
+      crop={crop}
+      imageTestID={testID}
       onError={() => setFailed(true)}
-      source={uri}
       style={styles.image}
-      testID={testID}
+      testID={`${testID}-viewport`}
+      uri={uri}
     />
   );
 }
@@ -628,4 +647,19 @@ const styles = StyleSheet.create({
   },
   imagePlaceholderGlyph: { fontSize: 18 },
   imagePlaceholderText: { color: "rgba(0,0,0,0.35)", fontSize: 11, fontWeight: "600" },
+  cropButton: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(28,44,40,0.92)",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -18,
+    position: "absolute",
+    width: 36,
+    zIndex: 30,
+  },
+  cropButtonAbove: { bottom: "100%", marginBottom: 6 },
+  cropButtonBelow: { marginTop: 6, top: "100%" },
 });

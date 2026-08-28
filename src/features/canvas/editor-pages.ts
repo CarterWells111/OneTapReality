@@ -1,15 +1,20 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout, normalizeLayout } from "./canvas-layout";
+import { createPhotoTemplateLayout, resolvePhotoTemplate } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
-import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasStickerId, StoryPage } from "../../types/memory";
+import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasImageElement, CanvasLayout, CanvasStickerId, PhotoCropState, PhotoTemplateId, StoryPage } from "../../types/memory";
+
+export type CanvasPagePhoto = { id: string; uri: string; crop?: PhotoCropState };
 
 export type CanvasElementPatch = {
   color?: string;
+  crop?: PhotoCropState;
   fontSize?: number;
   fontStyle?: string;
   height?: number;
   rotation?: number;
   text?: string;
+  uri?: string;
   width?: number;
   x?: number;
   y?: number;
@@ -27,17 +32,29 @@ function updatePage(pages: StoryPage[], pageId: string, update: (page: StoryPage
   return pages.map((page) => (page.id === pageId ? update(withLayout(page)) : withLayout(page)));
 }
 
+function updatePageWithoutNormalization(pages: StoryPage[], pageId: string, update: (page: StoryPage) => StoryPage) {
+  return pages.map((page) => (page.id === pageId ? update(page) : page));
+}
+
 function maxLayer(elements: CanvasElement[]) {
   return Math.max(0, ...elements.map((element) => element.zIndex));
 }
 
-/** 保留当前 layout 的背景、封面色、封面图等 meta 字段，仅替换 elements。 */
-function preserveLayoutMeta(page: StoryPage, elements: CanvasElement[]) {
-  const prev = page.layout;
+export type LayoutMetaMode = "preserve" | "clear" | PhotoTemplateId;
+
+/** Preserve all persisted layout metadata with explicit template intent. */
+export function preserveLayoutMeta(previous: CanvasLayout, elements: CanvasElement[], templateMode: LayoutMetaMode): CanvasLayout {
+  const { photoPlanVersion, photoTemplateId: _previousTemplate, elements: _previousElements, ...metadata } = previous;
+  const templateId = templateMode === "preserve"
+    ? resolvePhotoTemplate(previous.photoTemplateId)?.id
+    : templateMode === "clear"
+      ? undefined
+      : resolvePhotoTemplate(templateMode)?.id;
   return {
-    aspectRatio: 0.75 as const,    ...(prev?.backgroundId ? { backgroundId: prev.backgroundId } : {}),
-    ...(prev?.coverColor ? { coverColor: prev.coverColor } : {}),
-    ...(prev?.coverImage ? { coverImage: prev.coverImage } : {}),
+    ...metadata,
+    aspectRatio: previous.aspectRatio,
+    ...(photoPlanVersion === 1 ? { photoPlanVersion: 1 } : {}),
+    ...(templateId ? { photoTemplateId: templateId } : {}),
     elements,
   };
 }
@@ -61,8 +78,11 @@ export function toggleCanvasPhotoSelection(selectedPhotoUris: string[], uri: str
     : [...selectedPhotoUris, uri];
 }
 
-export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: string) {
-  const photoUri = photoUris[0];
+export function addCanvasPage(pages: StoryPage[], inputPhotos: (string | CanvasPagePhoto)[], id: string, templateId?: string) {
+  const limitedPhotos = inputPhotos.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE).map((photo, index) => typeof photo === "string"
+    ? { id: `image-${index + 1}`, uri: photo }
+    : photo);
+  const photoUri = limitedPhotos[0]?.uri;
   const page: StoryPage = {
     id,
     position: pages.length,
@@ -72,14 +92,32 @@ export function addCanvasPage(pages: StoryPage[], photoUris: string[], id: strin
     ...(photoUri ? { photoUri } : {}),
   };
   const legacy = createLegacyLayout(page);
-  const photoLayout = photoUris.length > 0 ? createPhotoLayout(photoUris) : { aspectRatio: 0.75 as const, elements: [] };
+  const generatedLayout = createPhotoTemplateLayout(limitedPhotos.map((photo) => photo.uri), templateId ?? "")
+    ?? createPhotoLayout(limitedPhotos.map((photo) => photo.uri));
+  const photoLayout: CanvasLayout = {
+    ...generatedLayout,
+    elements: generatedLayout.elements.map((element, index) => element.type === "image"
+      ? {
+          ...element,
+          id: limitedPhotos[index].id,
+          ...(limitedPhotos[index].crop ? { crop: limitedPhotos[index].crop } : {}),
+        }
+      : element),
+  };
   const textElements = legacy.elements
     .filter((element) => element.type === "text")
     .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
-  return normalizePositions([
-    ...pages.map(withLayout),
-    { ...page, layout: { aspectRatio: 1, elements: [...photoLayout.elements, ...textElements] } },
-  ]);
+  const next = pages.map(withLayout);
+  const insertionIndex = next.at(-1)?.kind === "closing" ? next.length - 1 : next.length;
+  next.splice(insertionIndex, 0, {
+    ...page,
+    layout: {
+      ...photoLayout,
+      aspectRatio: 3 / 4,
+      elements: [...photoLayout.elements, ...textElements],
+    },
+  });
+  return normalizePositions(next);
 }
 
 export function deleteCanvasPage(pages: StoryPage[], pageId: string) {
@@ -124,9 +162,11 @@ export function moveCanvasPage(pages: StoryPage[], pageId: string, direction: "f
 }
 
 export function addImageToPage(pages: StoryPage[], pageId: string, id: string, uri: string) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, [
+  return updatePage(pages, pageId, (page) => {
+    if (page.layout!.elements.filter((element) => element.type === "image").length >= MAX_PHOTOS_PER_CANVAS_PAGE) return page;
+    return {
+      ...page,
+      layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -139,14 +179,15 @@ export function addImageToPage(pages: StoryPage[], pageId: string, id: string, u
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
-  }));
+      ], "clear"),
+    };
+  });
 }
 
 export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -162,14 +203,14 @@ export function addTextToPage(pages: StoryPage[], pageId: string, id: string) {
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
 }
 
 export function addStickerToPage(pages: StoryPage[], pageId: string, id: string, stickerId: CanvasStickerId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -182,14 +223,14 @@ export function addStickerToPage(pages: StoryPage[], pageId: string, id: string,
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
 }
 
 export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, frameId: CanvasFrameId) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: preserveLayoutMeta(page, [
+    layout: preserveLayoutMeta(page.layout!, [
         ...page.layout!.elements,
         {
           id,
@@ -202,8 +243,26 @@ export function addFrameToPage(pages: StoryPage[], pageId: string, id: string, f
           rotation: 0,
           zIndex: maxLayer(page.layout!.elements) + 1,
         },
-      ]),
+      ], "preserve"),
   }));
+}
+
+function withoutOrSetLayoutValue<K extends "backgroundId" | "coverColor" | "coverCrop" | "coverImage">(
+  layout: CanvasLayout,
+  key: K,
+  value: CanvasLayout[K],
+): CanvasLayout {
+  const { [key]: _current, ...without } = layout;
+  return value === undefined ? without as CanvasLayout : { ...without, [key]: value } as unknown as CanvasLayout;
+}
+
+function withoutOrSetPageValue<K extends "coverColor" | "coverImage" | "photoUri">(
+  page: StoryPage,
+  key: K,
+  value: StoryPage[K],
+): StoryPage {
+  const { [key]: _current, ...without } = page;
+  return value === undefined ? without as StoryPage : { ...without, [key]: value } as unknown as StoryPage;
 }
 
 export function setCanvasBackground(
@@ -213,13 +272,7 @@ export function setCanvasBackground(
 ) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    layout: {
-      aspectRatio: 0.75,
-      ...(backgroundId ? { backgroundId } : {}),
-      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
-      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "backgroundId", backgroundId), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -229,15 +282,8 @@ export function setCanvasCoverColor(
   coverColor: string | undefined,
 ) {
   return updatePage(pages, pageId, (page) => ({
-    ...page,
-    coverColor,
-    layout: {
-      aspectRatio: 0.75,
-      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      ...(coverColor ? { coverColor } : {}),
-      ...(page.layout?.coverImage ? { coverImage: page.layout.coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    ...withoutOrSetPageValue(page, "coverColor", coverColor),
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "coverColor", coverColor), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -246,16 +292,27 @@ export function setCanvasCoverImage(
   pageId: string,
   coverImage: string | undefined,
 ) {
+  return updatePage(pages, pageId, (page) => {
+    const previousCoverImage = page.layout?.coverImage ?? page.coverImage;
+    const layoutWithImage = withoutOrSetLayoutValue(page.layout!, "coverImage", coverImage);
+    const nextLayout = previousCoverImage === coverImage
+      ? layoutWithImage
+      : withoutOrSetLayoutValue(layoutWithImage, "coverCrop", undefined);
+    return {
+      ...withoutOrSetPageValue(page, "coverImage", coverImage),
+      layout: preserveLayoutMeta(nextLayout, page.layout!.elements, "preserve"),
+    };
+  });
+}
+
+export function setCanvasCoverCrop(
+  pages: StoryPage[],
+  pageId: string,
+  coverCrop: PhotoCropState | undefined,
+) {
   return updatePage(pages, pageId, (page) => ({
     ...page,
-    coverImage,
-    layout: {
-      aspectRatio: 0.75,
-      ...(page.layout?.backgroundId ? { backgroundId: page.layout.backgroundId } : {}),
-      ...(page.layout?.coverColor ? { coverColor: page.layout.coverColor } : {}),
-      ...(coverImage ? { coverImage } : {}),
-      elements: page.layout!.elements,
-    },
+    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "coverCrop", coverCrop), page.layout!.elements, "preserve"),
   }));
 }
 
@@ -265,13 +322,24 @@ export function updateCanvasElement(
   elementId: string,
   patch: CanvasElementPatch,
 ) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, page.layout!.elements.map((element) =>
-        element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
-      ),
-    ),
-  }));
+  return updatePage(pages, pageId, (page) => {
+    const current = page.layout!.elements.find((element) => element.id === elementId);
+    const nextElements = page.layout!.elements.map((element) =>
+      element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
+    );
+    const next = nextElements.find((element) => element.id === elementId);
+    const imageChanged = current?.type === "image" && next?.type === "image" && (
+      current.x !== next.x ||
+      current.y !== next.y ||
+      current.width !== next.width ||
+      current.height !== next.height ||
+      current.rotation !== next.rotation
+    );
+    return {
+      ...page,
+      layout: preserveLayoutMeta(page.layout!, nextElements, imageChanged ? "clear" : "preserve"),
+    };
+  });
 }
 
 export function duplicateCanvasElement(pages: StoryPage[], pageId: string, elementId: string, copyId: string) {
@@ -280,9 +348,12 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
     if (!source) {
       return page;
     }
+    if (source.type === "image" && page.layout!.elements.filter((element) => element.type === "image").length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
+      return page;
+    }
     return {
       ...page,
-      layout: preserveLayoutMeta(page, [
+      layout: preserveLayoutMeta(page.layout!, [
           ...page.layout!.elements,
           {
             ...source,
@@ -291,7 +362,7 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
             y: Math.min(source.y + 0.05, 1 - source.height),
             zIndex: maxLayer(page.layout!.elements) + 1,
           },
-        ]),
+        ], source.type === "image" ? "clear" : "preserve"),
     };
   });
 }
@@ -312,13 +383,112 @@ export function changeCanvasElementLayer(
     const currentLayer = elements[index].zIndex;
     elements[index] = { ...elements[index], zIndex: elements[target].zIndex };
     elements[target] = { ...elements[target], zIndex: currentLayer };
-    return { ...page, layout: preserveLayoutMeta(page, elements) };
+    return { ...page, layout: preserveLayoutMeta(page.layout!, elements, "preserve") };
   });
 }
 
 export function deleteCanvasElement(pages: StoryPage[], pageId: string, elementId: string) {
-  return updatePage(pages, pageId, (page) => ({
-    ...page,
-    layout: preserveLayoutMeta(page, page.layout!.elements.filter((element) => element.id !== elementId)),
-  }));
+  return updatePage(pages, pageId, (page) => {
+    const deleted = page.layout!.elements.find((element) => element.id === elementId);
+    return {
+      ...page,
+      layout: preserveLayoutMeta(
+        page.layout!,
+        page.layout!.elements.filter((element) => element.id !== elementId),
+        deleted?.type === "image" ? "clear" : "preserve",
+      ),
+    };
+  });
+}
+
+function orderedImages(elements: CanvasElement[]) {
+  const images: { element: CanvasImageElement; index: number }[] = [];
+  elements.forEach((element, index) => {
+    if (element.type === "image") images.push({ element, index });
+  });
+  return images.sort((left, right) => left.element.zIndex - right.element.zIndex || left.index - right.index);
+}
+
+export function applyPhotoTemplateToPage(pages: StoryPage[], pageId: string, templateId: string) {
+  const page = pages.find((candidate) => candidate.id === pageId);
+  const template = resolvePhotoTemplate(templateId);
+  if (!page || !template) return pages;
+  const currentLayout = page.layout ?? createLegacyLayout(page);
+  const images = orderedImages(currentLayout.elements);
+  if (images.length !== template.photoCount) return pages;
+
+  const slotById = new Map(images.map(({ element }, index) => [element.id, template.slots[index]]));
+  return updatePageWithoutNormalization(pages, pageId, (nextPage) => {
+    const nextLayout = nextPage.layout ?? createLegacyLayout(nextPage);
+    return {
+      ...nextPage,
+      layout: preserveLayoutMeta(
+        nextLayout,
+        nextLayout.elements.map((element) => {
+          const slot = element.type === "image" ? slotById.get(element.id) : undefined;
+          return slot ? { ...element, ...slot } : element;
+        }),
+        template.id,
+      ),
+    };
+  });
+}
+
+/** Clear only template ownership, preserving every element and layout field. */
+export function clearPhotoTemplateFromPage(pages: StoryPage[], pageId: string) {
+  const current = pages.find((page) => page.id === pageId);
+  if (!current?.layout?.photoTemplateId) return pages;
+  return updatePageWithoutNormalization(pages, pageId, (page) => {
+    const layout = page.layout ?? createLegacyLayout(page);
+    return { ...page, layout: preserveLayoutMeta(layout, layout.elements, "clear") };
+  });
+}
+
+export function replacePagePhotos(
+  pages: StoryPage[],
+  pageId: string,
+  photos: CanvasPagePhoto[],
+  templateId?: string,
+) {
+  if (!pages.some((page) => page.id === pageId)) return pages;
+  return updatePageWithoutNormalization(pages, pageId, (page) => {
+    const previousLayout = page.layout ?? createLegacyLayout(page);
+    const limitedPhotos = photos.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+    const template = resolvePhotoTemplate(templateId);
+    const useTemplate = template !== undefined && template.photoCount === limitedPhotos.length;
+    const generated: CanvasImageElement[] = [];
+    if (useTemplate && template) {
+      limitedPhotos.forEach((photo, index) => generated.push({
+        id: photo.id,
+        type: "image",
+        uri: photo.uri,
+        ...(photo.crop ? { crop: photo.crop } : {}),
+        ...template.slots[index],
+        zIndex: index + 1,
+      }));
+    } else {
+      createPhotoLayout(limitedPhotos.map((photo) => photo.uri)).elements.forEach((element, index) => {
+        if (element.type === "image") generated.push({
+          ...element,
+          id: limitedPhotos[index].id,
+          ...(limitedPhotos[index].crop ? { crop: limitedPhotos[index].crop } : {}),
+        });
+      });
+    }
+
+    let imageIndex = 0;
+    const elements = previousLayout.elements
+      .map((element) => {
+        if (element.type !== "image") return element;
+        const replacement = generated[imageIndex];
+        imageIndex += 1;
+        return replacement;
+      })
+      .filter((element): element is CanvasElement => element !== undefined);
+    elements.push(...generated.slice(imageIndex));
+    return {
+      ...withoutOrSetPageValue(page, "photoUri", limitedPhotos[0]?.uri),
+      layout: preserveLayoutMeta(previousLayout, elements, useTemplate ? template.id : "clear"),
+    };
+  });
 }

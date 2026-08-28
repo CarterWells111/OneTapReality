@@ -96,35 +96,175 @@ function isPersisted(uri: string, directory: string): boolean {
   return uri.startsWith(directory);
 }
 
+async function getPhotoStagingDirectory(sessionId: string): Promise<string> {
+  const root = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+  const stem = `${root}photo-staging/${encodeURIComponent(sessionId)}`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const directory = `${stem}-${attempt}/`;
+    const info = await FileSystem.getInfoAsync(directory);
+    if (info.exists) continue;
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    return directory;
+  }
+  throw new Error("无法为照片暂存会话分配安全目录");
+}
+
+async function allocatePhotoDestination(directory: string, extension: string): Promise<string> {
+  const stem = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const destination = `${directory}${stem}-${attempt}.${extension}`;
+    const info = await FileSystem.getInfoAsync(destination);
+    if (!info.exists) return destination;
+  }
+  throw new Error("无法为照片分配安全的本地文件名");
+}
+
+export type StagedPhotoFile = {
+  uri: string;
+  commit: () => void;
+  rollback: () => Promise<void>;
+};
+
+export type PhotoStagingSession = {
+  cleanup: () => Promise<void>;
+  stagePhoto: (uri: string) => Promise<StagedPhotoFile>;
+};
+
+function existingPhotoHandle(uri: string): StagedPhotoFile {
+  return {
+    uri,
+    commit: () => undefined,
+    rollback: async () => undefined,
+  };
+}
+
+function createdPhotoHandle(uri: string): StagedPhotoFile {
+  let committed = false;
+  let rollbackPromise: Promise<void> | null = null;
+  return {
+    uri,
+    commit: () => {
+      committed = true;
+    },
+    rollback: async () => {
+      if (committed) return;
+      if (!rollbackPromise) {
+        rollbackPromise = FileSystem.deleteAsync(uri, { idempotent: true }).catch((error) => {
+          rollbackPromise = null;
+          throw error;
+        });
+      }
+      await rollbackPromise;
+    },
+  };
+}
+
 /**
- * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
- * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
+ * Copies one picker URI into the album directory while retaining ownership of
+ * that exact destination until the caller commits it. Existing album files are
+ * represented by no-op handles and can therefore never be removed by rollback.
  */
-export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
+export async function stagePhotoUriStrict(
+  uri: string,
+  accountKey: LocalLibraryOwner,
+  memoryId: string,
+): Promise<StagedPhotoFile> {
   const directory = await getPhotosDirectory(accountKey, memoryId);
-  if (isPersisted(uri, directory)) return uri;
+  return stagePhotoUriInDirectoryStrict(uri, directory);
+}
+
+async function stagePhotoUriInDirectoryStrict(uri: string, directory: string): Promise<StagedPhotoFile> {
+  if (isPersisted(uri, directory)) return existingPhotoHandle(uri);
   let sourceUri = uri;
   if (uri.startsWith("ph://")) {
     sourceUri = await resolvePhUri(uri);
-    if (isPersisted(sourceUri, directory)) return sourceUri;
+    if (isPersisted(sourceUri, directory)) return existingPhotoHandle(sourceUri);
   }
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${getExtension(sourceUri)}`;
-  const destination = `${directory}${fileName}`;
+  const destination = await allocatePhotoDestination(directory, getExtension(sourceUri));
   try {
     await FileSystem.copyAsync({ from: sourceUri, to: destination });
     const destinationInfo = await FileSystem.getInfoAsync(destination);
     if (!destinationInfo.exists || destinationInfo.isDirectory) {
       throw new Error("Photo destination verification failed");
     }
-    return destination;
   } catch (error) {
     try {
       await FileSystem.deleteAsync(destination, { idempotent: true });
-    } catch {
-      // The copy failure remains the useful error; cleanup is best-effort.
+    } catch (cleanupError) {
+      console.warn("[photo-persistence] 无法清理复制失败的照片：", cleanupError);
     }
     throw error;
   }
+  return createdPhotoHandle(destination);
+}
+
+/**
+ * Owns temporary photos for one mounted editor session. A staged handle remains
+ * individually rollback-safe until commit transfers it into the session. The
+ * session retains committed files so undo/redo snapshots stay readable, then
+ * removes its unique directory at a terminal lifecycle boundary.
+ */
+export function createPhotoStagingSession(sessionId: string): PhotoStagingSession {
+  let closed = false;
+  let cleanupPromise: Promise<void> | null = null;
+  const ownedUris = new Set<string>();
+  const activeStages = new Set<Promise<StagedPhotoFile>>();
+  const directoryPromise = getPhotoStagingDirectory(sessionId);
+
+  const stagePhoto = async (uri: string): Promise<StagedPhotoFile> => {
+    if (closed) throw new Error("照片暂存会话已结束");
+    const operation = directoryPromise.then((directory) => stagePhotoUriInDirectoryStrict(uri, directory));
+    activeStages.add(operation);
+    let staged: StagedPhotoFile;
+    try {
+      staged = await operation;
+    } finally {
+      activeStages.delete(operation);
+    }
+    if (closed) {
+      await staged.rollback();
+      throw new Error("照片暂存会话已结束");
+    }
+    let transferred = false;
+    return {
+      uri: staged.uri,
+      commit: () => {
+        if (transferred || closed) return;
+        staged.commit();
+        transferred = true;
+        ownedUris.add(staged.uri);
+      },
+      rollback: staged.rollback,
+    };
+  };
+
+  const cleanup = () => {
+    closed = true;
+    if (!cleanupPromise) {
+      cleanupPromise = (async () => {
+        await Promise.allSettled([...activeStages]);
+        const directory = await directoryPromise;
+        await FileSystem.deleteAsync(directory, { idempotent: true });
+        ownedUris.clear();
+      })().catch((error) => {
+        cleanupPromise = null;
+        throw error;
+      });
+    }
+    return cleanupPromise;
+  };
+
+  return { cleanup, stagePhoto };
+}
+
+/**
+ * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
+ * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
+ */
+export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
+  const staged = await stagePhotoUriStrict(uri, accountKey, memoryId);
+  staged.commit();
+  return staged.uri;
 }
 
 export async function persistPhotoUri(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {

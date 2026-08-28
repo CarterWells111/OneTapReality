@@ -10,6 +10,7 @@ import {
   type BookEditorChangeReason,
 } from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
+import { splitOverflowPhotoPages } from "../../../features/canvas/photo-page-limit";
 import { cityContent } from "../../../features/cities/city-content";
 import {
   AutosaveQueue,
@@ -32,6 +33,7 @@ export default function DraftReviewScreen() {
     discardDraft,
     getDraftById,
     persistSelectedPhoto,
+    stageSelectedPhoto,
     retryDraft,
     saveDraft,
     updateDraftPages,
@@ -45,12 +47,13 @@ export default function DraftReviewScreen() {
   const [autosaveState, setAutosaveState] = React.useState<AutosaveQueueState>({ status: "saved" });
   const [isLoading, setIsLoading] = React.useState(true);
   const [action, setAction] = React.useState<Action>(null);
+  const [editorChangePending, setEditorChangePending] = React.useState(false);
   const [error, setError] = React.useState("");
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const draftId = draft?.id;
 
   const installDraft = React.useCallback((nextDraft: Memory) => {
-    const preparedDraft = { ...nextDraft, pages: canvasPages(nextDraft.pages) };
+    const preparedDraft = { ...nextDraft, pages: splitOverflowPhotoPages(canvasPages(nextDraft.pages)) };
     draftRef.current = preparedDraft;
     setDraft(preparedDraft);
   }, []);
@@ -139,7 +142,7 @@ export default function DraftReviewScreen() {
   const changePages = (pages: StoryPage[], reason: BookEditorChangeReason) => {
     const currentDraft = draftRef.current;
     if (!currentDraft) {
-      return;
+      return false;
     }
     const nextDraft = { ...currentDraft, pages };
     draftRef.current = nextDraft;
@@ -151,11 +154,12 @@ export default function DraftReviewScreen() {
         clearTimeout(textTimer.current);
       }
       textTimer.current = setTimeout(enqueuePendingDraft, 400);
-      return;
+      return true;
     }
 
     clearTextDebounce();
     enqueueDraft(nextDraft);
+    return true;
   };
 
   const changeTitle = (title: string) => {
@@ -202,6 +206,7 @@ export default function DraftReviewScreen() {
   };
 
   const keepDraft = async () => {
+    if (editorChangePending) return;
     if (!draftRef.current?.title.trim()) {
       setError("请输入纪念册标题");
       return;
@@ -225,6 +230,7 @@ export default function DraftReviewScreen() {
   };
 
   const regenerate = async () => {
+    if (editorChangePending) return;
     setAction("retry");
     setError("");
     try {
@@ -238,6 +244,7 @@ export default function DraftReviewScreen() {
   };
 
   const discard = async () => {
+    if (editorChangePending) return;
     setAction("discard");
     setError("");
     try {
@@ -252,13 +259,14 @@ export default function DraftReviewScreen() {
   };
 
   const confirmDiscard = () => {
+    if (editorChangePending) return;
     Alert.alert("丢弃草稿", "丢弃后不会保存为旅行记忆。", [
       { text: "取消", style: "cancel" },
       { text: "丢弃", style: "destructive", onPress: () => void discard() },
     ]);
   };
 
-  const isActing = action !== null;
+  const isActing = action !== null || editorChangePending;
   const headerRight = draft
     ? () => (
         <View style={styles.headerActions}>
@@ -338,8 +346,10 @@ export default function DraftReviewScreen() {
 
           <BookCanvasEditor
             onPagesChange={changePages}
+            onTransformPendingChange={setEditorChangePending}
             pages={draft.pages}
             persistSelectedPhoto={(uri) => persistSelectedPhoto(draft.id, uri)}
+            stageSelectedPhoto={(uri) => stageSelectedPhoto(draft.id, uri)}
           />
 
           <AutosaveStatus

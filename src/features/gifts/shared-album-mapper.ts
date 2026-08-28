@@ -1,6 +1,8 @@
 import type { InvitedGiftAlbum } from "../../services/backend/api-client";
 import type { CanvasElement, CanvasLayout, StoryPage } from "../../types/memory";
 import { canvasPages } from "../canvas/editor-pages";
+import { normalizePhotoCropState } from "../canvas/photo-crop";
+import { resolvePhotoTemplate } from "../canvas/photo-templates";
 
 type SnapshotImageElement = Extract<CanvasElement, { type: "image" }> & {
   mediaId?: string;
@@ -31,6 +33,7 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
     ...base,
     type: "image",
     uri: value.uri,
+    ...(value.crop !== undefined ? { crop: normalizePhotoCropState(value.crop) } : {}),
     ...(typeof value.mediaId === "string" ? { mediaId: value.mediaId } : {}),
     ...(typeof value.mediaRef === "string" ? { mediaRef: value.mediaRef } : {}),
     ...(isFiniteNumber(value.photoSlot) ? { photoSlot: value.photoSlot } : {}),
@@ -47,12 +50,21 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
 
 function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elements: (CanvasElement | SnapshotImageElement)[] }) | undefined {
   if (!isRecord(value) || !isFiniteNumber(value.aspectRatio) || value.aspectRatio <= 0 || !Array.isArray(value.elements)) return undefined;
+  const elements = value.elements.map(parseElement).filter((element): element is CanvasElement | SnapshotImageElement => element !== null);
+  const template = typeof value.photoTemplateId === "string"
+    ? resolvePhotoTemplate(value.photoTemplateId)
+    : undefined;
+  const photoTemplateId = template?.photoCount === elements.filter((element) => element.type === "image").length
+    ? template.id
+    : undefined;
   return {
     aspectRatio: value.aspectRatio,
+    ...(photoTemplateId ? { photoTemplateId } : {}),
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" ? { coverImage: value.coverImage } : {}),
-    elements: value.elements.map(parseElement).filter((element): element is CanvasElement | SnapshotImageElement => element !== null),
+    ...(value.coverCrop !== undefined ? { coverCrop: normalizePhotoCropState(value.coverCrop) } : {}),
+    elements,
   };
 }
 
@@ -115,7 +127,16 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
       }),
     } : undefined;
 
-    const legacyMedia = layout ? undefined : takeMedia();
+    const rawPhotoUri = typeof raw.photoUri === "string" ? raw.photoUri : undefined;
+    const hasStablePhotoReference = rawPhotoUri?.startsWith("shared-media:") || rawPhotoUri?.startsWith("shared-position:");
+    const resolvedPhotoUri = rawPhotoUri ? resolveStableUri(rawPhotoUri) : undefined;
+    const legacyMedia = layout
+      ? undefined
+      : resolvedPhotoUri
+        ? { readUrl: resolvedPhotoUri }
+        : hasStablePhotoReference
+          ? undefined
+          : takeMedia();
     return {
       id: typeof raw.id === "string" ? raw.id : `shared-${position}`,
       position: typeof raw.position === "number" ? raw.position : position,

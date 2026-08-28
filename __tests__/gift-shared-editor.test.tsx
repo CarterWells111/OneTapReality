@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as React from "react";
+import * as FileSystem from "expo-file-system/legacy";
 
 const mockStart = jest.fn();
 const mockFinish = jest.fn();
@@ -7,6 +8,23 @@ const mockStartOwned = jest.fn();
 const mockFinishOwned = jest.fn();
 const mockPrepareSave = jest.fn();
 const mockReleaseSaveLock = jest.fn();
+let mockBookCanvasProps: any;
+
+jest.mock("expo-file-system/legacy", () => ({
+  documentDirectory: "file:///shared-documents/",
+  cacheDirectory: "file:///shared-cache/",
+  makeDirectoryAsync: jest.fn(async () => undefined),
+  getInfoAsync: jest.fn(async () => ({ exists: false })),
+  copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock("expo-media-library", () => ({
+  getAssetInfoAsync: jest.fn(),
+}));
+
+const mockSharedCopy = FileSystem.copyAsync as jest.Mock;
+const mockSharedInfo = FileSystem.getInfoAsync as jest.Mock;
 
 jest.mock("../src/services/backend/api-client", () => ({
   BackendApiClient: jest.fn(() => ({
@@ -24,7 +42,9 @@ jest.mock("../src/services/backend/api-client", () => ({
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
   const { Button, Text } = require("react-native");
-  return { BookCanvasEditor: React.forwardRef(({ fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange }: any, ref: any) => {
+  return { BookCanvasEditor: React.forwardRef((props: any, ref: any) => {
+    mockBookCanvasProps = props;
+    const { fallbackIndex, initialPageId, pages, onActivePageChange, onPagesChange, onTransformPendingChange } = props;
     const cursor = React.useRef({ pageId: initialPageId ?? pages[0]?.id ?? "", index: fallbackIndex ?? 0 });
     React.useImperativeHandle(ref, () => ({
       prepareSave: () => mockPrepareSave(pages, cursor.current),
@@ -61,9 +81,31 @@ const album: any = {
   media: [{ id: "media-1", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://signed.test/old.jpg" }],
 };
 
+async function stageSharedPhoto(uri: string) {
+  let staged: Awaited<ReturnType<typeof mockBookCanvasProps.stageSelectedPhoto>>;
+  await act(async () => {
+    staged = await mockBookCanvasProps.stageSelectedPhoto(uri);
+  });
+  return staged!;
+}
+
+function acceptSharedPages(nextPages: any[]) {
+  let accepted: boolean | void;
+  act(() => { accepted = mockBookCanvasProps.onPagesChange(nextPages, "structure"); });
+  expect(accepted!).toBe(true);
+}
+
+function sessionDirectory(uri: string) {
+  return uri.slice(0, uri.lastIndexOf("/") + 1);
+}
+
 describe("SharedAlbumEditor", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSharedInfo.mockImplementation(async (uri: string) => ({
+      exists: mockSharedCopy.mock.calls.some(([input]) => input.to === uri),
+      isDirectory: false,
+    }));
     mockPrepareSave.mockImplementation(async (pages, cursor) => ({ pages, cursor }));
     mockStart.mockResolvedValue({ publicationId: "pub-1", uploads: [{ position: 1, uploadUrl: "https://upload.test/new", objectKey: "server-key" }], coverUpload: null });
     mockFinish.mockResolvedValue({ albumId: "album-1" });
@@ -93,6 +135,155 @@ describe("SharedAlbumEditor", () => {
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
     expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
     expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
+  });
+
+  it("owns shared-session staged photos and locks publishing for the complete editor transaction", async () => {
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+
+    expect(mockBookCanvasProps.stageSelectedPhoto).toEqual(expect.any(Function));
+    const staged = await stageSharedPhoto("file:///picker-temporary.jpg");
+    expect(FileSystem.copyAsync).toHaveBeenCalledWith({
+      from: "file:///picker-temporary.jpg",
+      to: expect.stringMatching(/^file:\/\/\/shared-cache\/photo-staging\/shared-gift-gift-1-[^/]+-0\/.+\.jpg$/),
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    await staged.rollback();
+    await staged.rollback();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(1);
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(staged.uri, { idempotent: true });
+
+    const quick = await stageSharedPhoto("file:///quick-add.jpg");
+    acceptSharedPages([{
+      ...mockBookCanvasProps.pages[0],
+      layout: {
+        aspectRatio: 0.75,
+        elements: [{ id: "quick", type: "image", uri: quick.uri, x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 }],
+      },
+    }]);
+    quick.commit();
+    const cover = await stageSharedPhoto("file:///cover-upload.jpg");
+    acceptSharedPages([{ ...mockBookCanvasProps.pages[0], coverImage: cover.uri }]);
+    cover.commit();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(quick.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(cover.uri, expect.anything());
+
+    const publishButtonBeforePending = screen.getByRole("button", { name: "保存并发布更新" });
+    act(() => {
+      mockBookCanvasProps.onTransformPendingChange(true);
+      fireEvent.press(publishButtonBeforePending);
+    });
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(true);
+    expect(mockStart).not.toHaveBeenCalled();
+    acceptSharedPages(mockBookCanvasProps.pages);
+
+    act(() => mockBookCanvasProps.onTransformPendingChange(false));
+    expect(screen.getByRole("button", { name: "保存并发布更新" }).props.accessibilityState.disabled).toBe(false);
+  });
+
+  it("retains committed replacements for undo and redo until exact terminal session cleanup", async () => {
+    const firstView = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    const first = await stageSharedPhoto("file:///first.jpg");
+    const firstPages = [{ ...mockBookCanvasProps.pages[0], photoUri: first.uri }];
+    acceptSharedPages(firstPages);
+    first.commit();
+
+    const second = await stageSharedPhoto("file:///second.jpg");
+    const secondPages = [{ ...mockBookCanvasProps.pages[0], photoUri: second.uri }];
+    acceptSharedPages(secondPages);
+    second.commit();
+    await act(async () => undefined);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+
+    acceptSharedPages(firstPages);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain(first.uri);
+    acceptSharedPages(secondPages);
+    expect(screen.getByTestId("canvas-pages").props.children).toContain(second.uri);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+
+    const firstDirectory = sessionDirectory(first.uri);
+    firstView.unmount();
+    await waitFor(() => expect(FileSystem.deleteAsync).toHaveBeenCalledWith(firstDirectory, { idempotent: true }));
+    expect((FileSystem.deleteAsync as jest.Mock).mock.calls.filter(([uri]) => uri === firstDirectory)).toHaveLength(1);
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(first.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith(second.uri, expect.anything());
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith("https://signed.test/old.jpg", expect.anything());
+
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    const nextMount = await stageSharedPhoto("file:///third.jpg");
+    expect(sessionDirectory(nextMount.uri)).not.toBe(firstDirectory);
+  });
+
+  it("cleans the session only after a successful upload finishes", async () => {
+    const onPublished = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
+    const staged = await stageSharedPhoto("file:///publish.jpg");
+    acceptSharedPages([...mockBookCanvasProps.pages, { ...mockBookCanvasProps.pages[0], id: "local", position: 1, photoUri: staged.uri }]);
+    staged.commit();
+    global.fetch = jest.fn(async (url: any, options?: any) => {
+      if (url === staged.uri) return { ok: true, blob: async () => new Blob(["new"], { type: "image/jpeg" }) };
+      if (options?.method === "PUT") return { ok: true };
+      return { ok: true };
+    }) as any;
+
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(onPublished).toHaveBeenCalled());
+
+    const directory = sessionDirectory(staged.uri);
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(directory, { idempotent: true });
+    const uploadCall = (global.fetch as jest.Mock).mock.calls.find(([, options]) => options?.method === "PUT");
+    expect(uploadCall).toBeDefined();
+    expect((global.fetch as jest.Mock).mock.invocationCallOrder.at(-1)).toBeLessThan(
+      (FileSystem.deleteAsync as jest.Mock).mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it("retains a failed-publish session for retry and cleans it on unmount", async () => {
+    mockStart.mockRejectedValueOnce(new Error("server unavailable"));
+    const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    const staged = await stageSharedPhoto("file:///retry.jpg");
+    acceptSharedPages([...mockBookCanvasProps.pages, { ...mockBookCanvasProps.pages[0], id: "local", position: 1, photoUri: staged.uri }]);
+    staged.commit();
+    global.fetch = jest.fn(async (url: any) => url === staged.uri
+      ? ({ ok: true, blob: async () => new Blob(["retry"], { type: "image/jpeg" }) })
+      : ({ ok: true })) as any;
+
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(screen.getByText("发布失败，请检查网络后重试。")).toBeTruthy());
+    expect(screen.queryByText("server unavailable")).toBeNull();
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+    view.unmount();
+    await waitFor(() => expect(FileSystem.deleteAsync).toHaveBeenCalledWith(sessionDirectory(staged.uri), { idempotent: true }));
+  });
+
+  it("strips the local planned-photo marker from publication snapshots", async () => {
+    const markedAlbum = {
+      ...album,
+      pages: [{
+        position: 0,
+        page: {
+          id: "p0",
+          position: 0,
+          kind: "photo",
+          headline: "Planned",
+          body: "",
+          layout: {
+            aspectRatio: 0.75,
+            photoPlanVersion: 1,
+            elements: [{ id: "image-1", type: "image", uri: "https://signed.test/old.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 }],
+          },
+        },
+      }],
+    };
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-marker", uploads: [], coverUpload: null });
+    mockFinish.mockResolvedValueOnce({ albumId: "album-1" });
+    render(<SharedAlbumEditor accessToken="token" album={markedAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("change text"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+
+    await waitFor(() => expect(mockFinish).toHaveBeenCalledWith("gift-1", "token", "pub-marker"));
+    const payload = mockStart.mock.calls.at(-1)?.[2];
+    expect(payload.pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
   });
 
   it("uses the owner publication API while keeping the same canvas editor payload", async () => {
@@ -197,15 +388,28 @@ describe("SharedAlbumEditor", () => {
     const onPublished = jest.fn();
     const onReload = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} onReload={onReload} />);
+    const staged = await stageSharedPhoto("file:///reload.jpg");
+    acceptSharedPages([...mockBookCanvasProps.pages, { ...mockBookCanvasProps.pages[0], id: "local", position: 1, photoUri: staged.uri }]);
+    staged.commit();
+    global.fetch = jest.fn(async (url: any) => url === staged.uri
+      ? ({ ok: true, blob: async () => new Blob(["reload"], { type: "image/jpeg" }) })
+      : ({ ok: true })) as any;
     fireEvent.press(screen.getByText("change text"));
     fireEvent.press(screen.getByText("report second page"));
     fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(screen.getByText("相册已有新版本，请重新加载后再编辑。" )).toBeTruthy());
     fireEvent.press(screen.getByText("保存并发布更新"));
     expect(mockStart).toHaveBeenCalledTimes(1);
+    act(() => mockBookCanvasProps.onTransformPendingChange(true));
+    expect(screen.getByRole("button", { name: "重新加载最新版" }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByText("重新加载最新版"));
+    expect(onReload).not.toHaveBeenCalled();
+    act(() => mockBookCanvasProps.onTransformPendingChange(false));
+    expect(screen.getByRole("button", { name: "重新加载最新版" }).props.accessibilityState.disabled).toBe(false);
     fireEvent.press(screen.getByText("重新加载最新版"));
     expect(onPublished).not.toHaveBeenCalled();
-    expect(onReload).toHaveBeenCalledWith({ pageId: "p2", index: 1 });
+    await waitFor(() => expect(onReload).toHaveBeenCalledWith({ pageId: "p2", index: 1 }));
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(sessionDirectory(staged.uri), { idempotent: true });
   });
 
   it("clears the complete editor when access is revoked and prevents duplicate submits", async () => {
@@ -218,11 +422,21 @@ describe("SharedAlbumEditor", () => {
     });
     const onDirtyChange = jest.fn();
     const view = render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={onAccessLost} onDirtyChange={onDirtyChange} onPublished={jest.fn()} />);
+    const staged = await stageSharedPhoto("file:///revoked.jpg");
+    acceptSharedPages([...mockBookCanvasProps.pages, { ...mockBookCanvasProps.pages[0], id: "local", position: 1, photoUri: staged.uri }]);
+    staged.commit();
+    const rejected = await stageSharedPhoto("file:///rejected-quick.jpg");
+    global.fetch = jest.fn(async (url: any) => url === staged.uri
+      ? ({ ok: true, blob: async () => new Blob(["revoked"], { type: "image/jpeg" }) })
+      : ({ ok: true })) as any;
     fireEvent.press(screen.getByText("change text"));
     actMetadataChange(view, { title: "Revoked draft", travelDate: "2026-08-20" });
     fireEvent.press(screen.getByText("保存并发布更新"));
     fireEvent.press(screen.getByText("正在发布…"));
     await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
+    expect(mockBookCanvasProps.onPagesChange(mockBookCanvasProps.pages, "structure")).toBe(false);
+    await rejected.rollback();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(rejected.uri, { idempotent: true });
     reject(new BackendApiError(403, "gift_editor_required", "revoked"));
     await waitFor(() => expect(onAccessLost).toHaveBeenCalled());
     expect(screen.queryByTestId("saved-memory-metadata-header")).toBeNull();
@@ -232,6 +446,7 @@ describe("SharedAlbumEditor", () => {
     expect(screen.queryByText("Revoked draft")).toBeNull();
     expect(screen.queryByText("2026-08-20")).toBeNull();
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(sessionDirectory(staged.uri), { idempotent: true });
   });
 
   it("stops a pending publication after unmount without finishing or publishing callbacks", async () => {

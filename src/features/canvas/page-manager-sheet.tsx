@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
   Modal,
+  InteractionManager,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,7 +21,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CanvasPage } from "./canvas-page";
 import { resolveCanvasPreviewContentScale } from "./canvas-display-metrics";
 import {
-  addCanvasPage,
   deleteCanvasPages,
   reorderCanvasPages,
 } from "./editor-pages";
@@ -31,13 +32,11 @@ const GAP = 12;
 const ROW_GAP = 14;
 const LABEL_HEIGHT = 30;
 
-function buildPageId() {
-  return `page-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
 type PageManagerSheetBaseProps = {
   pages: StoryPage[];
+  visible?: boolean;
   onClose: () => void;
+  onDismiss?: () => void;
   onJumpToPage?: (index: number) => void;
 };
 
@@ -46,12 +45,14 @@ type PageManagerSheetProps = PageManagerSheetBaseProps & (
       mode?: "manage";
       onChange: (pages: StoryPage[]) => void;
       onDeleteAlbum?: never;
+      onRequestAddPage?: () => void;
     }
   | {
       mode: "preview";
       onChange?: (pages: StoryPage[]) => void;
       onDeleteAlbum?: () => void;
       onJumpToPage: (index: number) => void;
+      onRequestAddPage?: never;
     }
 );
 
@@ -62,6 +63,9 @@ export function PageManagerSheet({
   onClose,
   onDeleteAlbum,
   onJumpToPage,
+  onRequestAddPage,
+  visible = true,
+  onDismiss,
 }: PageManagerSheetProps) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -78,6 +82,27 @@ export function PageManagerSheet({
   const hoverRef = React.useRef<number | null>(null);
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+  const addRequestedRef = React.useRef(false);
+  const dismissCompletedRef = React.useRef(false);
+  const completeDismissal = React.useCallback(() => {
+    if (dismissCompletedRef.current) return;
+    dismissCompletedRef.current = true;
+    if (addRequestedRef.current) {
+      addRequestedRef.current = false;
+      onRequestAddPage?.();
+    }
+    onDismiss?.();
+  }, [onDismiss, onRequestAddPage]);
+
+  React.useEffect(() => {
+    if (visible) {
+      dismissCompletedRef.current = false;
+      return;
+    }
+    if (Platform.OS === "ios") return;
+    const completion = InteractionManager.runAfterInteractions(completeDismissal);
+    return () => completion.cancel();
+  }, [completeDismissal, visible]);
 
   const centerOf = React.useCallback((index: number) => {
     const col = index % 2;
@@ -129,7 +154,8 @@ export function PageManagerSheet({
   };
 
   const addPage = () => {
-    onChange?.(addCanvasPage(pages, [], buildPageId()));
+    addRequestedRef.current = true;
+    onClose();
   };
 
   const deleteSelected = () => {
@@ -152,7 +178,12 @@ export function PageManagerSheet({
   }));
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent={false} visible>
+    <Modal
+      animationType="slide"
+      onDismiss={completeDismissal}
+      onRequestClose={onClose}
+      transparent={false}
+      visible={visible}>
       <GestureHandlerRootView style={styles.root}>
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <Text selectable style={styles.title}>

@@ -13,9 +13,10 @@ export function createMemory({
   input,
   pages,
 }: CreateMemoryArguments): Memory {
+  const { pagePlans: _pagePlans, ...persistedInput } = input;
   return {
     id,
-    ...input,
+    ...persistedInput,
     pages: pages.map((page) => ({
       ...page,
       id: page.id.startsWith(`${id}:`) ? page.id : `${id}:${page.id}`,

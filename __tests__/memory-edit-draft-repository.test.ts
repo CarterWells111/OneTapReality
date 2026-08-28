@@ -6,7 +6,7 @@ import {
   migrateMemoryEditDrafts,
   saveMemoryEditDraft,
 } from "../src/storage/memory-edit-draft-repository";
-import type { Memory, StoryPage } from "../src/types/memory";
+import type { CanvasImageElement, Memory, PhotoTemplateId, StoryPage } from "../src/types/memory";
 
 const mockEmitDiagnostic = jest.fn();
 
@@ -239,6 +239,28 @@ describe("memory edit draft repository", () => {
     expect(restored?.[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 
+  it("repairs legacy collage rotations when restoring a saved edit draft", async () => {
+    const { database } = createDraftDatabase();
+    const page: StoryPage = {
+      ...firstPage,
+      layout: {
+        aspectRatio: 0.75,
+        photoTemplateId: "collage-2",
+        elements: [
+          { id: "one", type: "image", uri: "file:///one.jpg", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: -3, zIndex: 1 },
+          { id: "two", type: "image", uri: "file:///two.jpg", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: 3, zIndex: 2 },
+        ],
+      },
+    };
+
+    await saveMemoryEditDraft(database, baseMemory, [page], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+    const rotations = restored?.[0].layout?.elements.map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
   it.each([48, 99])("round trips a legitimately scaled %i point canvas font", async (fontSize) => {
     const { database } = createDraftDatabase();
     const scaledPage: StoryPage = {
@@ -276,6 +298,88 @@ describe("memory edit draft repository", () => {
         coverColor: "#aBc123",
         layout: expect.objectContaining({ coverColor: "#D4E5F6" }),
       })]);
+  });
+
+  it("round trips normalized photo and cover crop metadata", async () => {
+    const { database } = createDraftDatabase();
+    const croppedPage: StoryPage = {
+      ...secondPage,
+      layout: {
+        ...secondPage.layout!,
+        coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
+        elements: [{
+          id: "cropped",
+          type: "image",
+          uri: "file:///cropped.jpg",
+          crop: { focusX: 0.8, focusY: 0.2, zoom: 3 },
+          x: 0.1,
+          y: 0.1,
+          width: 0.8,
+          height: 0.8,
+          rotation: 0,
+          zIndex: 1,
+        }],
+      },
+    };
+
+    await saveMemoryEditDraft(database, baseMemory, [croppedPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+
+    expect(restored?.[0].layout).toMatchObject({
+      coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
+      elements: [expect.objectContaining({ crop: { focusX: 0.8, focusY: 0.2, zoom: 3 } })],
+    });
+  });
+
+  it("round trips known photo templates and omits forged template IDs", async () => {
+    const { database } = createDraftDatabase();
+    const image = (id: string, uri: string, x: number): CanvasImageElement => (
+      { id, type: "image", uri, x, y: 0.2, width: 0.3, height: 0.4, rotation: 0, zIndex: 1 }
+    );
+    const validPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "classic-1", elements: [image("one", "file:///one.jpg", 0.1)] },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "account:owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
+      .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoTemplateId: "classic-1" }) })]);
+
+    const invalidPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "forged-template" as PhotoTemplateId },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+    expect(restored?.[0].layout).not.toHaveProperty("photoTemplateId");
+
+    const mismatchedElements = [image("one", "file:///one.jpg", 0.13), image("two", "file:///two.jpg", 0.57)];
+    const mismatchedPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoTemplateId: "classic-3", elements: mismatchedElements },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [mismatchedPage], "account:owner@example.com");
+    const mismatchedRestored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+    expect(mismatchedRestored?.[0].layout).not.toHaveProperty("photoTemplateId");
+    expect(mismatchedRestored?.[0].layout?.elements).toEqual(mismatchedElements);
+  });
+
+  it("round trips the valid planned-photo marker and omits forged marker values", async () => {
+    const { database } = createDraftDatabase();
+    const validPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoPlanVersion: 1 },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "account:owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
+      .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoPlanVersion: 1 }) })]);
+
+    const invalidPage: StoryPage = {
+      ...secondPage,
+      layout: { ...secondPage.layout!, photoPlanVersion: 2 as unknown as 1 },
+    };
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+    expect(restored?.[0].layout).not.toHaveProperty("photoPlanVersion");
   });
 
   it("isolates recovery drafts across distinct albums owned by different accounts", async () => {

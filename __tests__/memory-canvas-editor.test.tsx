@@ -31,9 +31,10 @@ const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
 const mockClearMemoryEditDraft = jest.fn();
 const mockPersistSelectedPhoto = jest.fn();
+const mockStageSelectedPhoto = jest.fn();
 const mockEmitDiagnostic = jest.fn();
 const mockReleaseSaveLock = jest.fn();
-const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text") => void> = [];
+const mockPageChangeCallbacks: Array<(pages: StoryPage[], reason: "text" | "structure") => boolean | void> = [];
 const mockTransformPendingCallbacks: Array<(pending: boolean) => void> = [];
 let mockPreparedPages: StoryPage[] | undefined;
 let mockPreparedCursor = { pageId: "cover-1", index: 0 };
@@ -42,6 +43,7 @@ let mockAccountEmail = "owner@example.com";
 let mockRouteId = "memory-1";
 let mockRoutePageId: string | undefined;
 let mockRoutePageIndex: string | undefined;
+let mockBookCanvasStageSelectedPhoto: ((uri: string) => Promise<unknown>) | undefined;
 let mockDatePickerProps: {
   maximumDate?: Date;
   minimumDate?: Date;
@@ -91,10 +93,12 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
     fallbackIndex?: number;
     initialPageId?: string;
     onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
-    onPagesChange: (pages: StoryPage[], reason: "text") => void;
+    onPagesChange: (pages: StoryPage[], reason: "text" | "structure") => boolean | void;
     onTransformPendingChange?: (pending: boolean) => void;
     pages: StoryPage[];
-  }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages }, ref) {
+    stageSelectedPhoto?: (uri: string) => Promise<unknown>;
+  }>(function MockBookCanvasEditor({ fallbackIndex = 0, initialPageId, onActivePageChange, onPagesChange, onTransformPendingChange, pages, stageSelectedPhoto }, ref) {
+    mockBookCanvasStageSelectedPhoto = stageSelectedPhoto;
     const [currentPageId, setCurrentPageId] = React.useState(() => (
       pages.find((page) => page.id === initialPageId)?.id
       ?? pages[Math.min(fallbackIndex, Math.max(0, pages.length - 1))]?.id
@@ -147,6 +151,7 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     getMemoryById: mockGetMemoryById,
     getMemoryEditDraft: mockGetMemoryEditDraft,
     persistSelectedPhoto: mockPersistSelectedPhoto,
+    stageSelectedPhoto: mockStageSelectedPhoto,
     saveMemoryEditDraft: mockSaveMemoryEditDraft,
     updatePages: mockUpdatePages,
   }),
@@ -188,25 +193,26 @@ const memory: Memory = {
 };
 
 describe("canvas page editing model", () => {
-  it("adds a square photo page, deletes one page, and keeps positions contiguous when reordering", () => {
+  it("adds a portrait photo page before closing, deletes one page, and keeps positions contiguous when reordering", () => {
     const withNewPage = addCanvasPage(legacyPages, ["file://coffee.jpg", "file://bridge.jpg"], "page-3");
     const reordered = moveCanvasPage(withNewPage, "page-3", "backward");
     const remaining = deleteCanvasPage(reordered, "closing-1");
 
-    expect(withNewPage[2].layout?.elements.filter((element) => element.type === "image")).toEqual(
+    expect(withNewPage[1].layout?.aspectRatio).toBe(3 / 4);
+    expect(withNewPage[1].layout?.elements.filter((element) => element.type === "image")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ uri: "file://coffee.jpg" }),
         expect.objectContaining({ uri: "file://bridge.jpg" }),
       ]),
     );
-    const imageLayers = withNewPage[2].layout!.elements
+    const imageLayers = withNewPage[1].layout!.elements
       .filter((element) => element.type === "image")
       .map((element) => element.zIndex);
-    const textLayers = withNewPage[2].layout!.elements
+    const textLayers = withNewPage[1].layout!.elements
       .filter((element) => element.type === "text")
       .map((element) => element.zIndex);
     expect(Math.min(...textLayers)).toBeGreaterThan(Math.max(...imageLayers));
-    expect(reordered.map((page) => page.id)).toEqual(["cover-1", "page-3", "closing-1"]);
+    expect(reordered.map((page) => page.id)).toEqual(["page-3", "cover-1", "closing-1"]);
     expect(remaining.map((page) => page.position)).toEqual([0, 1]);
   });
 
@@ -227,10 +233,10 @@ describe("canvas page editing model", () => {
     );
   });
 
-  it("does not allow more than twelve source photos on one canvas page", () => {
-    const selected = Array.from({ length: 12 }, (_, index) => `file://photo-${index}.jpg`);
+  it("does not allow more than eight source photos on one canvas page", () => {
+    const selected = Array.from({ length: 8 }, (_, index) => `file://photo-${index}.jpg`);
 
-    expect(toggleCanvasPhotoSelection(selected, "file://photo-12.jpg")).toEqual(selected);
+    expect(toggleCanvasPhotoSelection(selected, "file://photo-8.jpg")).toEqual(selected);
   });
 
   it("normalizes the formal canvas snapshot before it can be written and reloaded", () => {
@@ -275,6 +281,7 @@ describe("EditMemoryScreen", () => {
     mockPreparedCursor = { pageId: "cover-1", index: 0 };
     mockPrepareSaveReturnsNull = false;
     mockDatePickerProps = null;
+    mockBookCanvasStageSelectedPhoto = undefined;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);
@@ -311,6 +318,7 @@ describe("EditMemoryScreen", () => {
     const screen = render(<EditMemoryScreen />);
 
     expect(await screen.findByTestId("current-headline")).toHaveTextContent("杭州周末");
+    expect(mockBookCanvasStageSelectedPhoto).toEqual(expect.any(Function));
   });
 
   it("does not reset local edits when the provider refreshes the memory identity", async () => {
@@ -1319,15 +1327,23 @@ describe("EditMemoryScreen", () => {
     const capturedCallback = mockPageChangeCallbacks[0];
     await act(async () => fireEvent.press(screen.getByText("保存并退出画布")));
 
-    await act(async () => capturedCallback(
+    let rejectedDuringSave: boolean | void;
+    await act(async () => {
+      rejectedDuringSave = capturedCallback(
       legacyPages.map((page, index) => index === 0 ? { ...page, headline: "保存中迟到" } : page),
       "text",
-    ));
+      );
+    });
+    expect(rejectedDuringSave!).toBe(false);
     await act(async () => resolveFormal?.());
-    await act(async () => capturedCallback(
+    let rejectedDuringClear: boolean | void;
+    await act(async () => {
+      rejectedDuringClear = capturedCallback(
       legacyPages.map((page, index) => index === 0 ? { ...page, headline: "清理中迟到" } : page),
       "text",
-    ));
+      );
+    });
+    expect(rejectedDuringClear!).toBe(false);
 
     expect(mockUpdatePages.mock.calls[0][1][0].headline).toBe("本地编辑");
     expect(mockSaveMemoryEditDraft).toHaveBeenCalledTimes(1);

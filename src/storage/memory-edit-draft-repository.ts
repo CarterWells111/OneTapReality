@@ -1,7 +1,9 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import { normalizeLayout } from "../features/canvas/canvas-layout";
+import { normalizePhotoCropState } from "../features/canvas/photo-crop";
 import type { LocalLibraryOwner } from "../features/auth/local-library-owner";
+import { resolvePhotoTemplate } from "../features/canvas/photo-templates";
 import { localDiagnostics } from "../features/diagnostics/local-diagnostics";
 import { normalizeStoryPages } from "../features/pages/story-page-manager";
 import type { CanvasElement, CanvasLayout, Memory, StoryPage } from "../types/memory";
@@ -81,7 +83,12 @@ function parseCanvasElement(value: unknown): CanvasElement | null {
     zIndex: value.zIndex,
   };
   if (value.type === "image" && isNonEmptyString(value.uri)) {
-    return { ...base, type: "image", uri: value.uri };
+    return {
+      ...base,
+      type: "image",
+      uri: value.uri,
+      ...(value.crop !== undefined ? { crop: normalizePhotoCropState(value.crop) } : {}),
+    };
   }
   if (value.type === "text"
     && typeof value.text === "string"
@@ -120,12 +127,19 @@ function parseCanvasLayout(value: unknown): CanvasLayout | null {
   }
   const elements = value.elements.map(parseCanvasElement);
   if (elements.some((element) => element === null)) return null;
+  const photoTemplateId = typeof value.photoTemplateId === "string"
+    ? resolvePhotoTemplate(value.photoTemplateId)?.id
+    : undefined;
+  const photoPlanVersion = value.photoPlanVersion === 1 ? 1 as const : undefined;
 
   return normalizeLayout({
     aspectRatio: value.aspectRatio,
+    ...(photoPlanVersion ? { photoPlanVersion } : {}),
+    ...(photoTemplateId ? { photoTemplateId } : {}),
     ...(typeof value.backgroundId === "string" && value.backgroundId ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" && value.coverColor ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" && value.coverImage ? { coverImage: value.coverImage } : {}),
+    ...(value.coverCrop !== undefined ? { coverCrop: normalizePhotoCropState(value.coverCrop) } : {}),
     elements: elements as CanvasElement[],
   });
 }

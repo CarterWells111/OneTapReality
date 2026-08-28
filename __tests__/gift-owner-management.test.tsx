@@ -20,7 +20,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => mockRouter,
 }));
 jest.mock("expo-image", () => ({ Image: () => null }));
-jest.mock("expo-file-system/legacy", () => ({ getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args) }));
+jest.mock("expo-file-system/legacy", () => ({
+  FileSystemUploadType: { BINARY_CONTENT: "binary" },
+  getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args),
+  uploadAsync: jest.fn(async () => ({ status: 200 })),
+}));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/memories/memories-provider", () => ({ useMemories: () => ({ memories: mockMemories() }) }));
 jest.mock("../src/services/backend/api-client", () => ({
@@ -38,6 +42,8 @@ jest.mock("../src/services/backend/api-client", () => ({
 }));
 
 import GiftManagementScreen from "../src/app/gifts/[id]";
+import * as FileSystem from "expo-file-system/legacy";
+import { mapSharedAlbumToStoryPages } from "../src/features/gifts/shared-album-mapper";
 
 const owner = { email: "owner@example.com", role: "owner" as const, createdAt: "2026-08-16T00:00:00.000Z" };
 const viewer = { email: "viewer@example.com", role: "viewer" as const, createdAt: "2026-08-16T00:00:00.000Z" };
@@ -56,6 +62,7 @@ function management(members: Management["members"] = [owner, viewer, editor]): M
 describe("gift owner member management", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 12 });
     mockUseLocalSearchParams.mockReturnValue({ id: "gift-1" });
     mockUseAuth.mockReturnValue({ session: { accessToken: "account-token", user: { id: "owner-1", email: owner.email, isAdmin: false } } });
     mockMemories.mockReturnValue([]);
@@ -122,6 +129,169 @@ describe("gift owner member management", () => {
     expect(mockStartOwnedGiftPublish).not.toHaveBeenCalled();
     expect(mockGetInfoAsync).not.toHaveBeenCalled();
     expect(mockGetInfoAsync).not.toHaveBeenCalled();
+  });
+
+  it("collects and uploads every layout image when publishing an owner gift", async () => {
+    const memory = {
+      id: "memory-1",
+      title: "Layout trip",
+      city: "London",
+      travelDate: "2026-08-16",
+      photoUris: [],
+      pages: [{
+        id: "page-1",
+        position: 0,
+        kind: "photo" as const,
+        headline: "Photos",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          photoPlanVersion: 1 as const,
+          elements: [
+            { id: "one", type: "image" as const, uri: "file:///one.jpg", x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 1 },
+            { id: "two", type: "image" as const, uri: "file:///two.jpg", x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 2 },
+          ],
+        },
+      }],
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({
+      publicationId: "publication-1",
+      uploads: [
+        { position: 0, objectKey: "one", uploadUrl: "https://upload.test/one" },
+        { position: 1, objectKey: "two", uploadUrl: "https://upload.test/two" },
+      ],
+      coverUpload: null,
+      expiresAt: "2026-08-16T01:00:00.000Z",
+    });
+
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText(memory.title));
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
+    expect(mockStartOwnedGiftPublish.mock.calls[0][2].media).toEqual([
+      { position: 0, contentType: "image/jpeg", byteSize: 12 },
+      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+    ]);
+    expect((FileSystem.uploadAsync as jest.Mock).mock.calls.map((call) => call[1])).toEqual([
+      "file:///one.jpg", "file:///two.jpg",
+    ]);
+    expect(mockStartOwnedGiftPublish.mock.calls[0][2].pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
+  });
+
+  it("maps layout media explicitly when legacy photoUri is stale", async () => {
+    const memory = {
+      id: "memory-1", title: "Layout trip", city: "London", travelDate: "2026-08-16", photoUris: [],
+      pages: [{
+        id: "page-1", position: 0, kind: "photo" as const, headline: "Photos", body: "",
+        photoUri: "file:///stale.jpg",
+        layout: {
+          aspectRatio: 0.75,
+          elements: [
+            { id: "one", type: "image" as const, uri: "file:///one.jpg", x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 1 },
+            { id: "two", type: "image" as const, uri: "file:///two.jpg", x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 2 },
+          ],
+        },
+      }],
+      createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({
+      publicationId: "publication-1",
+      uploads: [
+        { position: 0, objectKey: "one", uploadUrl: "https://upload.test/one" },
+        { position: 1, objectKey: "two", uploadUrl: "https://upload.test/two" },
+      ],
+      coverUpload: null, expiresAt: "2026-08-16T01:00:00.000Z",
+    });
+
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText(memory.title));
+    fireEvent.press(screen.getByText("发布共享相册"));
+    await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
+
+    const payload = mockStartOwnedGiftPublish.mock.calls[0][2];
+    expect(payload.media).toEqual([
+      { position: 0, contentType: "image/jpeg", byteSize: 12 },
+      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+    ]);
+    expect(payload.pages[0].page).not.toHaveProperty("photoUri");
+    expect(payload.pages[0].page.layout.elements.filter((element: { type: string }) => element.type === "image")).toEqual([
+      expect.objectContaining({ uri: "", mediaPosition: 0 }),
+      expect.objectContaining({ uri: "", mediaPosition: 1 }),
+    ]);
+
+    const restored = mapSharedAlbumToStoryPages({
+      role: "viewer", title: "Layout trip", travelDate: null, pages: payload.pages,
+      media: [
+        { id: "one", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
+        { id: "two", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
+      ],
+      publishedAt: "2026-08-16T00:00:00Z", version: 1, cover: null,
+    });
+    expect(restored[0].layout?.elements.filter((element) => element.type === "image").map((element) => element.uri)).toEqual([
+      "https://cdn.test/one.jpg", "https://cdn.test/two.jpg",
+    ]);
+    expect(restored[0].layout?.elements.some((element) => element.type === "image" && element.uri === "file:///stale.jpg")).toBe(false);
+  });
+
+  it("reuses one explicit media position for repeated layout URIs across pages", async () => {
+    const repeatedPage = (id: string, position: number, includeOther: boolean) => ({
+      id, position, kind: "photo" as const, headline: "Photos", body: "",
+      layout: {
+        aspectRatio: 0.75,
+        elements: [
+          { id: `${id}-same-1`, type: "image" as const, uri: "file:///same.jpg", x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 1 },
+          ...(includeOther ? [{ id: `${id}-other`, type: "image" as const, uri: "file:///other.jpg", x: 0.5, y: 0, width: 0.5, height: 0.5, rotation: 0, zIndex: 2 }] : []),
+          { id: `${id}-same-2`, type: "image" as const, uri: "file:///same.jpg", x: 0, y: 0.5, width: 0.5, height: 0.5, rotation: 0, zIndex: 3 },
+        ],
+      },
+    });
+    const memory = {
+      id: "memory-1", title: "Repeated", city: "London", travelDate: "2026-08-16", photoUris: [],
+      pages: [repeatedPage("page-1", 0, true), repeatedPage("page-2", 1, false)],
+      createdAt: "2026-08-16T00:00:00.000Z", updatedAt: "2026-08-16T00:00:00.000Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({
+      publicationId: "publication-1",
+      uploads: [
+        { position: 0, objectKey: "same", uploadUrl: "https://upload.test/same" },
+        { position: 1, objectKey: "other", uploadUrl: "https://upload.test/other" },
+      ],
+      coverUpload: null, expiresAt: "2026-08-16T01:00:00.000Z",
+    });
+
+    render(<GiftManagementScreen />);
+    await screen.findByText(owner.email);
+    fireEvent.press(screen.getByText(memory.title));
+    fireEvent.press(screen.getByText("发布共享相册"));
+    await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
+
+    const payload = mockStartOwnedGiftPublish.mock.calls[0][2];
+    const imageSnapshots = payload.pages.flatMap((entry: { page: { layout?: { elements: { type: string; mediaPosition?: number }[] } } }) => entry.page.layout?.elements ?? [])
+      .filter((element: { type: string }) => element.type === "image");
+    expect(imageSnapshots.filter((element: { mediaPosition?: number }) => element.mediaPosition === 0)).toHaveLength(4);
+    expect(imageSnapshots.find((element: { mediaPosition?: number }) => element.mediaPosition === 1)).toBeDefined();
+
+    const restored = mapSharedAlbumToStoryPages({
+      role: "viewer", title: "Repeated", travelDate: null, pages: payload.pages,
+      media: [
+        { id: "same", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/same.jpg" },
+        { id: "other", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/other.jpg" },
+      ],
+      publishedAt: "2026-08-16T00:00:00Z", version: 1, cover: null,
+    });
+    expect(restored.flatMap((page) => page.layout?.elements ?? [])
+      .filter((element) => element.type === "image").map((element) => element.uri)).toEqual([
+      "https://cdn.test/same.jpg", "https://cdn.test/other.jpg", "https://cdn.test/same.jpg",
+        "https://cdn.test/same.jpg", "https://cdn.test/same.jpg",
+      ]);
   });
 
   it("shows the dated existing shared album without replacement controls", async () => {

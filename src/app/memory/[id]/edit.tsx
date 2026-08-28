@@ -9,6 +9,7 @@ import {
   type BookCanvasEditorHandle,
 } from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
+import { splitOverflowPhotoPages } from "../../../features/canvas/photo-page-limit";
 import { cityContent } from "../../../features/cities/city-content";
 import { localDiagnostics } from "../../../features/diagnostics/local-diagnostics";
 import {
@@ -59,6 +60,7 @@ export default function EditMemoryScreen() {
     getMemoryById,
     getMemoryEditDraft,
     persistSelectedPhoto,
+    stageSelectedPhoto,
     saveMemoryEditDraft,
     updatePages,
   } = useMemories();
@@ -217,7 +219,7 @@ export default function EditMemoryScreen() {
     setRecoveryState({ status: "saved" });
 
     if (!isSavedMemory) {
-      const initialPages = canvasPages(loadedMemory.pages);
+      const initialPages = splitOverflowPhotoPages(canvasPages(loadedMemory.pages));
       pagesRef.current = initialPages;
       setPages(initialPages);
       setIsRecoveryLoading(false);
@@ -248,7 +250,7 @@ export default function EditMemoryScreen() {
 
     const latestSnapshot = queueLease.getLatestSnapshot();
     if (latestSnapshot) {
-      const initialPages = canvasPages(latestSnapshot);
+      const initialPages = splitOverflowPhotoPages(canvasPages(latestSnapshot));
       pagesRef.current = initialPages;
       setPages(initialPages);
       setDidRecover(true);
@@ -269,7 +271,7 @@ export default function EditMemoryScreen() {
       setRecoveryReadError(false);
       void queue.waitForIdle().then(() => getRecoveryForSession(loadedMemory)).then((recoveredPages) => {
         if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
-        const initialPages = canvasPages(recoveredPages ?? loadedMemory.pages);
+        const initialPages = splitOverflowPhotoPages(canvasPages(recoveredPages ?? loadedMemory.pages));
         pagesRef.current = initialPages;
         setPages(initialPages);
         setDidRecover(recoveredPages !== null);
@@ -302,12 +304,13 @@ export default function EditMemoryScreen() {
       || editorSessionToken !== editorSessionGenerationRef.current
       || currentLoadKeyRef.current !== loadKey
       || editorCommitLockedRef.current) {
-      return;
+      return false;
     }
     const stablePages = canvasPages(nextPages);
     pagesRef.current = stablePages;
     setPages(stablePages);
     queueLeaseRef.current?.enqueue(stablePages);
+    return true;
   }, [editorSessionToken, loadKey]);
 
   const changeActivePage = React.useCallback((cursor: { pageId: string; index: number }) => {
@@ -576,6 +579,7 @@ export default function EditMemoryScreen() {
           pages={pages}
           persistSelectedPhoto={(uri) => persistSelectedPhoto(memory.id, uri)}
           ref={editorRef}
+          stageSelectedPhoto={(uri) => stageSelectedPhoto(memory.id, uri)}
         />
       </View>
       {recoveryState.status === "error" ? (

@@ -11,6 +11,7 @@ import {
   persistPhotoUriStrict,
   persistPhotoUris,
   hydrateMemoryPhotoReferences,
+  stagePhotoUriStrict,
 } from "../src/features/memories/photo-persistence";
 import type { Memory } from "../src/types/memory";
 
@@ -18,7 +19,7 @@ jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///data/user/0/com.app/documents/",
   makeDirectoryAsync: jest.fn(async () => undefined),
   copyAsync: jest.fn(async () => undefined),
-  getInfoAsync: jest.fn(async () => ({ exists: true, isDirectory: false })),
+  getInfoAsync: jest.fn(),
   deleteAsync: jest.fn(async () => undefined),
 }));
 
@@ -33,6 +34,14 @@ const makeDirectoryAsyncMock = FileSystem.makeDirectoryAsync as jest.Mock;
 const getAssetInfoAsyncMock = MediaLibrary.getAssetInfoAsync as jest.Mock;
 const deleteAsyncMock = FileSystem.deleteAsync as jest.Mock;
 const getInfoAsyncMock = FileSystem.getInfoAsync as jest.Mock;
+
+function resetPhotoMocks() {
+  jest.clearAllMocks();
+  getInfoAsyncMock.mockImplementation(async (uri: string) => ({
+    exists: copyAsyncMock.mock.calls.some(([input]) => input.to === uri),
+    isDirectory: false,
+  }));
+}
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -77,7 +86,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
 
 describe("persistPhotoUri", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("returns already-persisted documentDirectory URIs untouched", async () => {
@@ -124,7 +133,9 @@ describe("persistPhotoUri", () => {
   });
 
   it("rejects and removes a partial destination when copy succeeds but verification fails", async () => {
-    getInfoAsyncMock.mockResolvedValueOnce({ exists: false, isDirectory: false });
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: false, isDirectory: false })
+      .mockResolvedValueOnce({ exists: false, isDirectory: false });
 
     await expect(persistPhotoUriStrict(
       "file:///var/mobile/temporary.jpg",
@@ -138,7 +149,9 @@ describe("persistPhotoUri", () => {
   });
 
   it("rejects a directory destination even after copy", async () => {
-    getInfoAsyncMock.mockResolvedValueOnce({ exists: true, isDirectory: true });
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: false, isDirectory: false })
+      .mockResolvedValueOnce({ exists: true, isDirectory: true });
 
     await expect(persistPhotoUriStrict(
       "file:///var/mobile/temporary.jpg",
@@ -150,7 +163,7 @@ describe("persistPhotoUri", () => {
 
 describe("photo directory cleanup", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("deletes only the selected account and memory directory", async () => {
@@ -189,9 +202,85 @@ describe("photo directory cleanup", () => {
   });
 });
 
+describe("staged photo persistence", () => {
+  beforeEach(() => {
+    resetPhotoMocks();
+  });
+
+  it("rolls back only the destination created by its own staging handle", async () => {
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+    const destination = copyAsyncMock.mock.calls[0][0].to as string;
+
+    expect(staged.uri).toBe(destination);
+    await staged.rollback();
+    await staged.rollback();
+
+    expect(deleteAsyncMock).toHaveBeenCalledTimes(1);
+    expect(deleteAsyncMock).toHaveBeenCalledWith(destination, { idempotent: true });
+  });
+
+  it("keeps a staged destination after the handle is committed", async () => {
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+
+    staged.commit();
+    await staged.rollback();
+
+    expect(deleteAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("never deletes a pre-existing photo returned by staging", async () => {
+    const existing = "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory-1/existing.jpg";
+    const staged = await stagePhotoUriStrict(existing, "account:owner@example.com", "memory-1");
+
+    await staged.rollback();
+
+    expect(staged.uri).toBe(existing);
+    expect(copyAsyncMock).not.toHaveBeenCalled();
+    expect(deleteAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans its generated destination if the copy itself rejects", async () => {
+    copyAsyncMock.mockRejectedValueOnce(new Error("partial copy"));
+    await expect(stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("partial copy");
+    const destination = copyAsyncMock.mock.calls[0][0].to as string;
+    expect(deleteAsyncMock).toHaveBeenCalledWith(destination, { idempotent: true });
+  });
+
+  it("skips a colliding pre-existing destination and never deletes it", async () => {
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: false });
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+    const collidingPath = getInfoAsyncMock.mock.calls[0][0] as string;
+    expect(copyAsyncMock).toHaveBeenCalledWith({
+      from: "file:///var/mobile/temporary.jpg",
+      to: staged.uri,
+    });
+    expect(staged.uri).not.toBe(collidingPath);
+    await staged.rollback();
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith(collidingPath, expect.anything());
+  });
+});
+
 describe("persistPhotoUris", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("persists multiple URIs preserving order", async () => {
@@ -211,7 +300,7 @@ describe("persistPhotoUris", () => {
 
 describe("ensureMemoryPhotosPersisted", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("returns changed: false when nothing needs persisting", async () => {
@@ -290,7 +379,7 @@ describe("ensureMemoryPhotosPersisted", () => {
 
 describe("hydrateMemoryPhotoReferences", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("rebases an old account-scoped absolute URI to the current Documents root and writes a canonical storage value", async () => {

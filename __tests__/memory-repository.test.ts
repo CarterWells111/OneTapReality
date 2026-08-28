@@ -431,6 +431,35 @@ describe("memory draft lifecycle repository", () => {
     expect(restored?.pages[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 
+  it("repairs legacy collage rotations when loading a formal local album", async () => {
+    const { database } = createMemoryDatabase();
+    await saveMemory(database, {
+      ...draftMemory,
+      id: "legacy-collage-memory",
+      pages: [{
+        id: "legacy-collage-page",
+        position: 0,
+        kind: "photo",
+        headline: "Legacy collage",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          photoTemplateId: "collage-2",
+          elements: [
+            { id: "one", type: "image", uri: "file:///one.jpg", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: -3, zIndex: 1 },
+            { id: "two", type: "image", uri: "file:///two.jpg", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: 3, zIndex: 2 },
+          ],
+        },
+      }],
+    }, accountKey);
+
+    const restored = await getMemory(database, "legacy-collage-memory", accountKey);
+    const rotations = restored?.pages[0].layout?.elements.map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
   it("replaces an owned memory media snapshot atomically", async () => {
     const { database, state } = createMediaSnapshotDatabase();
 

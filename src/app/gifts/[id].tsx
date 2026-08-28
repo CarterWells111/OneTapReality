@@ -7,6 +7,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
+import { collectMemoryImageUris } from "../../features/gifts/page-media";
 import { useMemories } from "../../features/memories/memories-provider";
 import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../../features/memories/local-photo-integrity";
 import { isMissingPhotoToken } from "../../features/memories/photo-references";
@@ -27,9 +28,25 @@ function imageContentType(uri: string) {
   return "image/jpeg";
 }
 
-function sharedPage(page: Memory["pages"][number]) {
+function sharedPage(page: Memory["pages"][number], positions: Map<string, { position: number; mediaId?: string }>) {
   const { photoUri: _photoUri, coverImage: _coverImage, ...safePage } = page;
-  return safePage;
+  const legacyRef = page.photoUri ? positions.get(page.photoUri) : undefined;
+  const withLegacy = legacyRef
+    ? { ...safePage, photoUri: `shared-position:${legacyRef.position}` }
+    : safePage;
+  if (!safePage.layout) return withLegacy;
+  const { photoPlanVersion: _photoPlanVersion, ...sharedLayout } = safePage.layout;
+  return {
+    ...withLegacy,
+    layout: {
+      ...sharedLayout,
+      elements: sharedLayout.elements.map((element) => {
+        if (element.type !== "image") return element;
+        const ref = positions.get(element.uri);
+        return { ...element, uri: "", ...(ref ? { mediaPosition: ref.position } : {}) };
+      }),
+    },
+  };
 }
 
 type CoverCandidate = { label: string; uri: string };
@@ -146,13 +163,14 @@ export default function GiftManagementScreen() {
     const operation = beginOwnerOperation();
     if (!operation) return;
     try {
-      const photoPages = selectedMemory.pages.filter((page) => Boolean(page.photoUri));
-      const media = await Promise.all(photoPages.map(async (page, position) => {
-        const info = await FileSystem.getInfoAsync(page.photoUri!);
+      const imageUris = collectMemoryImageUris(selectedMemory.pages);
+      const media = await Promise.all(imageUris.map(async (uri, position) => {
+        const info = await FileSystem.getInfoAsync(uri);
         if (!info.exists || typeof info.size !== "number" || info.size < 1) throw new UserActionRequiredError("有照片无法读取，请在本机重新选择后再发布。");
-        return { position, contentType: imageContentType(page.photoUri!), byteSize: info.size, uri: page.photoUri! };
+        return { position, contentType: imageContentType(uri), byteSize: info.size, uri };
       }));
       if (!operationIsCurrent(operation)) return;
+      const refs = new Map(media.map((source) => [source.uri, { position: source.position }]));
       let coverSize: number | null = null;
       let coverContentType: string | null = null;
       if (selectedCoverUri) {
@@ -169,7 +187,7 @@ export default function GiftManagementScreen() {
         sourceMemoryId: selectedMemory.id,
         title: selectedMemory.title,
         travelDate: selectedMemory.travelDate,
-        pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page) })),
+        pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page, refs) })),
         media: media.map(({ position, contentType, byteSize }) => ({ position, contentType, byteSize })),
         cover: coverSize && coverContentType ? { contentType: coverContentType, byteSize: coverSize } : null,
       });
