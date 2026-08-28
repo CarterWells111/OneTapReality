@@ -46,6 +46,12 @@ export type CanvasStickerId = string;
 export type CanvasFrameId = string;
 export type CanvasBackgroundId = string;
 
+export type PhotoCropState = {
+  focusX: number;
+  focusY: number;
+  zoom: number;
+};
+
 type CanvasElementBase = {
   id: string;
   x: number;
@@ -59,6 +65,7 @@ type CanvasElementBase = {
 export type CanvasImageElement = CanvasElementBase & {
   type: "image";
   uri: string;
+  crop?: PhotoCropState;
 };
 
 export type CanvasTextElement = CanvasElementBase & {
@@ -97,6 +104,8 @@ export type CanvasLayout = {
   coverColor?: string;
   /** 封面专用：自定义背景图 URI */
   coverImage?: string;
+  /** 封面背景图的无损取景参数。 */
+  coverCrop?: PhotoCropState;
   elements: CanvasElement[];
 };
 

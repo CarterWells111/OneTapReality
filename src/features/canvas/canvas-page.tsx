@@ -7,6 +7,7 @@ import { CanvasElement, type CanvasElementStylePreview } from "./canvas-element"
 import { colors } from "../../components/ui";
 import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { isMissingPhotoToken } from "../memories/photo-references";
+import { CroppedImage } from "./cropped-image";
 import type { CanvasLayout } from "../../types/memory";
 
 type ElementPatch = {
@@ -118,12 +119,13 @@ export function CanvasPage({
       {!background && coverImageUri && isMissingPhotoToken(coverImageUri) ? (
         <LocalMissingPhotoPlaceholder style={StyleSheet.absoluteFill} testID="canvas-missing-cover-placeholder" />
       ) : !background && coverImageUri ? (
-        <Image
-          contentFit="cover"
+        <CroppedImage
+          crop={layout.coverCrop}
+          imageTestID="canvas-cover-image"
           pointerEvents="none"
-          source={{ uri: coverImageUri }}
           style={StyleSheet.absoluteFill}
-          testID="canvas-cover-image"
+          testID="canvas-cover-image-viewport"
+          uri={coverImageUri}
         />
       ) : null}
       {elements.map((element) => (

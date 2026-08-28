@@ -14,7 +14,8 @@ import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-el
 import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
 import { isMissingPhotoToken } from "../memories/photo-references";
-import type { CanvasElement as CanvasElementModel } from "../../types/memory";
+import { CroppedImage } from "./cropped-image";
+import type { CanvasElement as CanvasElementModel, CanvasImageElement } from "../../types/memory";
 
 type ElementPatch = {
   x: number;
@@ -498,7 +499,7 @@ function ElementContent({
     element.type === "text" ? element.fontStyle : undefined,
   );
   if (element.type === "image") {
-    return <ImageElement testID={`canvas-image-${element.id}`} uri={element.uri} />;
+    return <ImageElement crop={element.crop} testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
@@ -532,7 +533,7 @@ function ElementContent({
  * 照片元素：加载失败（文件已丢失/URI 失效）时显示占位，而不是静默空白。
  * 成功后不再重复检查，避免同一 URI 反复触发 onError。
  */
-function ImageElement({ testID, uri }: { testID: string; uri: string }) {
+function ImageElement({ crop, testID, uri }: { crop?: CanvasImageElement["crop"]; testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
   if (isMissingPhotoToken(uri) || failed) {
     return (
@@ -543,12 +544,13 @@ function ImageElement({ testID, uri }: { testID: string; uri: string }) {
     );
   }
   return (
-    <Image
-      contentFit="cover"
+    <CroppedImage
+      crop={crop}
+      imageTestID={testID}
       onError={() => setFailed(true)}
-      source={uri}
       style={styles.image}
-      testID={testID}
+      testID={`${testID}-viewport`}
+      uri={uri}
     />
   );
 }

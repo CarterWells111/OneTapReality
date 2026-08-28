@@ -4,7 +4,7 @@ import type { SharedValue } from "react-native-reanimated";
 
 import { CanvasPage } from "../src/features/canvas/canvas-page";
 import { CanvasToolbar } from "../src/features/canvas/canvas-toolbar";
-import type { CanvasLayout, CanvasTextElement } from "../src/types/memory";
+import type { CanvasImageElement, CanvasLayout, CanvasTextElement } from "../src/types/memory";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -31,6 +31,36 @@ const layout: CanvasLayout = {
 };
 
 describe("CanvasPage", () => {
+  it("renders saved crop metadata for page photos and cover backgrounds", () => {
+    const croppedLayout: CanvasLayout = {
+      ...layout,
+      backgroundId: undefined,
+      coverImage: "file://cover.jpg",
+      coverCrop: { focusX: 0, focusY: 0.5, zoom: 1 },
+      elements: [{
+        ...(layout.elements[0] as CanvasImageElement),
+        crop: { focusX: 1, focusY: 0.5, zoom: 1 },
+      }],
+    };
+    const screen = render(<CanvasPage interactive={false} layout={croppedLayout} width={300} />);
+
+    fireEvent(screen.getByTestId("canvas-image-photo-1-viewport"), "layout", {
+      nativeEvent: { layout: { height: 100, width: 100 } },
+    });
+    fireEvent(screen.getByTestId("canvas-image-photo-1"), "load", {
+      nativeEvent: { source: { height: 200, width: 400 } },
+    });
+    fireEvent(screen.getByTestId("canvas-cover-image-viewport"), "layout", {
+      nativeEvent: { layout: { height: 100, width: 100 } },
+    });
+    fireEvent(screen.getByTestId("canvas-cover-image"), "load", {
+      nativeEvent: { source: { height: 200, width: 400 } },
+    });
+
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-image-photo-1").props.style)).toEqual(expect.objectContaining({ left: -100 }));
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-cover-image").props.style)).toEqual(expect.objectContaining({ left: 0 }));
+  });
+
   it("renders a local missing-photo placeholder instead of mounting a layout cover image", () => {
     const screen = render(<CanvasPage interactive={false} layout={{ aspectRatio: 0.75, coverImage: "missing-local-photo://layout-cover", elements: [] }} width={300} />);
 

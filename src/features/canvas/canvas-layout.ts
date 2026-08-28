@@ -1,6 +1,7 @@
 import type { CanvasElement, CanvasImageElement, CanvasLayout, StoryPage } from "../../types/memory";
 import { radiansToDegrees, resolvePhotoTemplate, type PhotoTemplateDefinition } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
+import { normalizePhotoCropState } from "./photo-crop";
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
@@ -38,13 +39,14 @@ export const MAX_NORMALIZED_ELEMENT_SIZE = 1;
 
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
-  const { photoPlanVersion, photoTemplateId, elements, ...metadata } = layout;
+  const { coverCrop, photoPlanVersion, photoTemplateId, elements, ...metadata } = layout;
   const template = resolvePhotoTemplate(photoTemplateId);
   const imageCount = elements.filter((element) => element.type === "image").length;
   const rotationRepairs = repairedTemplateRotations(elements, template);
   return {
     ...metadata,
     aspectRatio: 3 / 4,
+    ...(coverCrop ? { coverCrop: normalizePhotoCropState(coverCrop) } : {}),
     ...(photoPlanVersion === 1 ? { photoPlanVersion: 1 } : {}),
     ...(template?.photoCount === imageCount ? { photoTemplateId: template.id } : {}),
     elements: elements.map((element, index) => {
@@ -59,6 +61,11 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
         height: clamp(element.height, 0.03, MAX_NORMALIZED_ELEMENT_SIZE),
         rotation: rotationRepairs.get(index) ?? element.rotation,
       } as CanvasElement;
+      if (normalized.type === "image") {
+        return element.type === "image" && element.crop !== undefined
+          ? { ...normalized, crop: normalizePhotoCropState(element.crop) }
+          : normalized;
+      }
       return normalized.type === "text"
         ? {
             ...normalized,

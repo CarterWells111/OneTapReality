@@ -45,6 +45,33 @@ describe("canvas layout", () => {
     expect(layout.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 
+  it("normalizes optional image and cover crop metadata without changing legacy images", () => {
+    const legacy = normalizeLayout({
+      aspectRatio: 0.75,
+      elements: [{ id: "legacy", type: "image", uri: "file:///legacy.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 }],
+    });
+    const cropped = normalizeLayout({
+      aspectRatio: 0.75,
+      coverCrop: { focusX: -1, focusY: 2, zoom: 6 },
+      elements: [{
+        id: "cropped",
+        type: "image",
+        uri: "file:///cropped.jpg",
+        crop: { focusX: Number.NaN, focusY: 0.3, zoom: 2 },
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        rotation: 0,
+        zIndex: 1,
+      }],
+    });
+
+    expect(legacy.elements[0]).not.toHaveProperty("crop");
+    expect(cropped.coverCrop).toEqual({ focusX: 0, focusY: 1, zoom: 4 });
+    expect(cropped.elements[0]).toHaveProperty("crop", { focusX: 0.5, focusY: 0.5, zoom: 1 });
+  });
+
   it("preserves known template IDs and drops unknown serialized IDs", () => {
     const image = { id: "image-1", type: "image" as const, uri: "file:///one.jpg", x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 };
     expect(normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "classic-1", elements: [image] })).toMatchObject({ photoTemplateId: "classic-1" });
