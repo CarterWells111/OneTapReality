@@ -273,4 +273,44 @@ describe("shared album snapshot mapper", () => {
       }),
     ]);
   });
+
+  it("repairs legacy collage rotations only when preparing a shared album for editing", () => {
+    const album = {
+      role: "editor" as const,
+      title: "Legacy shared collage",
+      travelDate: null,
+      pages: [{ position: 0, page: {
+        id: "collage-page",
+        kind: "photo",
+        layout: {
+          aspectRatio: 0.75,
+          photoTemplateId: "collage-2",
+          elements: [
+            { id: "one", type: "image", uri: "", mediaId: "first", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: -3, zIndex: 1 },
+            { id: "two", type: "image", uri: "", mediaId: "second", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: 3, zIndex: 2 },
+          ],
+        },
+      } }],
+      media: [
+        { id: "first", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/first.jpg" },
+        { id: "second", position: 1, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/second.jpg" },
+      ],
+      publishedAt: "2026-08-16T00:00:00Z",
+      version: 1,
+      cover: null,
+    };
+
+    const snapshotImages = mapSharedAlbumToStoryPages(album)[0].layout?.elements
+      .filter((element) => element.type === "image") ?? [];
+    const editableImages = mapSharedAlbumToEditablePages(album)[0].layout?.elements
+      .filter((element) => element.type === "image") ?? [];
+
+    expect(snapshotImages.map((image) => image.rotation)).toEqual([-3, 3]);
+    expect(editableImages[0].rotation).toBeCloseTo(-Math.PI / 60);
+    expect(editableImages[1].rotation).toBeCloseTo(Math.PI / 60);
+    expect(editableImages.map((image) => image.uri)).toEqual([
+      "https://cdn.test/first.jpg",
+      "https://cdn.test/second.jpg",
+    ]);
+  });
 });

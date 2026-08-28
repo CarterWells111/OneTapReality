@@ -183,10 +183,9 @@ git add src/features/canvas/canvas-layout.ts __tests__/canvas-layout.test.ts __t
 git commit -m "fix: repair legacy template rotations safely"
 ```
 
-### Task 3: Normalize shared album template layouts
+### Task 3: Verify shared album edit normalization
 
 **Files:**
-- Modify: `src/features/gifts/shared-album-mapper.ts`
 - Test: `__tests__/shared-album-mapper.test.ts`
 
 - [ ] **Step 1: Add a failing shared snapshot regression**
@@ -201,29 +200,25 @@ expect(images[1].rotation).toBeCloseTo(Math.PI / 60);
 expect(images.map((image) => image.uri)).toEqual([firstReadUrl, secondReadUrl]);
 ```
 
-- [ ] **Step 2: Run the shared mapper test and verify RED**
+- [ ] **Step 2: Run the shared mapper test**
 
 ```powershell
 npx jest __tests__/shared-album-mapper.test.ts --runInBand
 ```
 
-Expected: rotations remain degree-valued.
+Expected after Task 2: PASS because `mapSharedAlbumToEditablePages` already delegates to `canvasPages`, which calls the repaired `normalizeLayout`; the raw snapshot mapper continues to preserve published geometry.
 
-- [ ] **Step 3: Normalize after stable media resolution**
+- [ ] **Step 3: Preserve the raw snapshot boundary**
 
-Import `normalizeLayout` in `shared-album-mapper.ts`. After stripping snapshot-only media fields and replacing image URIs, wrap the constructed `CanvasLayout` with:
+Do not call `normalizeLayout` from `mapSharedAlbumToStoryPages`; previews intentionally preserve the published snapshot. Confirm the existing editable boundary remains:
 
 ```ts
-const layout = rawLayout
-  ? normalizeLayout({
-      ...layoutWithoutCover,
-      ...(resolvedCoverImage ? { coverImage: resolvedCoverImage } : {}),
-      elements: resolvedElements,
-    })
-  : undefined;
+export function mapSharedAlbumToEditablePages(album: InvitedGiftAlbum): StoryPage[] {
+  return canvasPages(mapSharedAlbumToStoryPages(album));
+}
 ```
 
-Resolve the cover URL and elements into local constants first so URL mapping still happens before normalization.
+The integration test must assert raw snapshot rotations stay `[-3, 3]`, while editable rotations become radians after stable media URLs are resolved.
 
 - [ ] **Step 4: Run the mapper test and verify GREEN**
 
@@ -234,8 +229,8 @@ Expected: PASS, including existing stable-media and invalid-template cases.
 - [ ] **Step 5: Commit the shared compatibility path**
 
 ```powershell
-git add src/features/gifts/shared-album-mapper.ts __tests__/shared-album-mapper.test.ts
-git commit -m "fix: normalize shared album template layouts"
+git add __tests__/shared-album-mapper.test.ts
+git commit -m "test: cover shared album rotation compatibility"
 ```
 
 ### Task 4: Show photo/template editing on every page
