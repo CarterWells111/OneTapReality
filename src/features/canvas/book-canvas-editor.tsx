@@ -688,6 +688,7 @@ export function BookCanvasEditor({
       initializeCoverPreview(pagesRef.current[targetIndex]);
       discardPendingText();
       setSelectedElementId(undefined);
+      setSelectedCoverPageId(undefined);
       activePageIdRef.current = targetPageId;
       currentIndexRef.current = targetIndex;
       editingElementIdRef.current = undefined;
@@ -910,18 +911,12 @@ export function BookCanvasEditor({
     }
   };
 
-  const requestAddPhotoPage = async () => {
-    const batch = await pickAndStagePhotos();
-    if (!batch) return;
-    try {
-      setOwnedPendingPhotoLayout({
-        action: "add",
-        photos: batch.photos,
-        stagedPhotos: batch.stagedPhotos,
-      });
-    } finally {
-      finishPhotoOperation(batch.generation);
-    }
+  const requestAddPhotoPage = () => {
+    setOwnedPendingPhotoLayout({
+      action: "add",
+      photos: [],
+      stagedPhotos: [],
+    });
   };
 
   const openElementCrop = (elementId: string) => {
@@ -1059,6 +1054,7 @@ export function BookCanvasEditor({
         translateX.value = 0;
         turnDir.value = 0;
         setSelectedElementId(undefined);
+        setSelectedCoverPageId(undefined);
         activePageIdRef.current = addedPageId;
         setCurrentIndex(addedIndex);
       }
@@ -1152,6 +1148,7 @@ export function BookCanvasEditor({
             initializeCoverPreview(targetPage);
             discardPendingText();
             setSelectedElementId(undefined);
+            setSelectedCoverPageId(undefined);
             activePageIdRef.current = targetPage?.id;
             currentIndexRef.current = index;
             editingElementIdRef.current = undefined;

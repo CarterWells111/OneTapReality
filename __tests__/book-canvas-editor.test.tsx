@@ -148,6 +148,13 @@ async function dismissPageManagerForAdd(screen: ReturnType<typeof render>) {
   await Promise.resolve();
 }
 
+async function addOnePhoto(screen: ReturnType<typeof render>) {
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    await Promise.resolve();
+  });
+}
+
 const photoPages: StoryPage[] = [
   pages[0],
   {
@@ -210,6 +217,19 @@ describe("BookCanvasEditor", () => {
     });
     mockContextMenuProps = undefined;
     mockCurrentCanvasPageProps = undefined;
+  });
+
+  it("opens an empty new-photo-page draft before invoking the one-photo picker", async () => {
+    const screen = render(<EditorHarness stageSelectedPhoto={jest.fn()} />);
+
+    fireEvent.press(screen.getByLabelText("打开页面管理"));
+    await act(async () => {
+      await dismissPageManagerForAdd(screen);
+    });
+
+    expect(screen.getByText("新建照片页面")).toBeTruthy();
+    expect(screen.getByText("当前页暂无照片，可点击＋添加。")).toBeTruthy();
+    expect(launchImageLibraryMock).not.toHaveBeenCalled();
   });
 
   it("adds photos and a template from an empty cover page", async () => {
@@ -842,20 +862,21 @@ describe("BookCanvasEditor", () => {
   it("stages a two-photo page from page management and commits it only after template confirmation", async () => {
     const onChange = jest.fn();
     const stageSelectedPhoto = jest.fn(async (uri: string) => stagedPhoto(uri.replace("temporary", "permanent")));
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
-    });
+    launchImageLibraryMock
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-one.jpg" }] })
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-two.jpg" }] });
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
+    await addOnePhoto(screen);
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
 
     expect(launchImageLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
-      allowsMultipleSelection: true,
-      selectionLimit: 8,
+      allowsMultipleSelection: false,
+      selectionLimit: 1,
     }));
     expect(stageSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
       "file:///temporary-one.jpg",
@@ -879,7 +900,7 @@ describe("BookCanvasEditor", () => {
     expect(screen.getByText("第 2 / 3 页")).toBeTruthy();
   });
 
-  it("does not open a layout sheet or create a page when the system picker is cancelled", async () => {
+  it("keeps the empty layout sheet open when the system picker is cancelled", async () => {
     const onChange = jest.fn();
     launchImageLibraryMock.mockResolvedValueOnce({ canceled: true, assets: [] });
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={jest.fn()} />);
@@ -888,8 +909,10 @@ describe("BookCanvasEditor", () => {
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
+    await addOnePhoto(screen);
 
-    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(screen.getByText("新建照片页面")).toBeTruthy();
+    expect(screen.getByText("当前页暂无照片，可点击＋添加。")).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -901,6 +924,7 @@ describe("BookCanvasEditor", () => {
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
+    await addOnePhoto(screen);
     await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
 
     expect(screen.queryByText("新建照片页面")).toBeNull();
@@ -909,16 +933,22 @@ describe("BookCanvasEditor", () => {
 
   it("creates a freeform page after staging four persisted photos", async () => {
     const onChange = jest.fn();
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [1, 2, 3, 4].map((index) => ({ uri: `file:///temporary-${index}.jpg` })),
-    });
+    for (const index of [1, 2, 3, 4]) {
+      launchImageLibraryMock.mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ uri: `file:///temporary-${index}.jpg` }],
+      });
+    }
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={async (uri) => stagedPhoto(uri.replace("temporary", "permanent"))} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
+    await addOnePhoto(screen);
+    for (let index = 0; index < 3; index += 1) {
+      await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    }
 
     expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
     fireEvent.press(screen.getByLabelText("创建自由排版页面"));
@@ -934,43 +964,48 @@ describe("BookCanvasEditor", () => {
     const stageSelectedPhoto = jest.fn()
       .mockResolvedValueOnce(stagedPhoto("file:///permanent-one.jpg"))
       .mockRejectedValueOnce(new Error("iCloud unavailable"));
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{ uri: "file:///temporary-one.jpg" }, { uri: "file:///temporary-two.jpg" }],
-    });
+    launchImageLibraryMock
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-one.jpg" }] })
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temporary-two.jpg" }] });
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => {
       await dismissPageManagerForAdd(screen);
     });
+    await addOnePhoto(screen);
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
 
     expect(stageSelectedPhoto).toHaveBeenCalledTimes(2);
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(screen.getByText("新建照片页面")).toBeTruthy();
   });
 
-  it("rolls back earlier staged copies when a later copy fails", async () => {
+  it("keeps an earlier staged photo when a later single-photo addition fails", async () => {
     const onChange = jest.fn();
     const first = stagedPhoto("file:///owned-one.jpg");
     const stageSelectedPhoto = jest.fn()
       .mockResolvedValueOnce(first)
       .mockRejectedValueOnce(new Error("storage full"));
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{ uri: "file:///temp-one.jpg" }, { uri: "file:///temp-two.jpg" }],
-    });
+    launchImageLibraryMock
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temp-one.jpg" }] })
+      .mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///temp-two.jpg" }] });
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
 
-    expect(first.rollback).toHaveBeenCalledTimes(1);
+    expect(first.rollback).not.toHaveBeenCalled();
     expect(first.commit).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
     expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("1 / 8 张照片")).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
+    expect(first.rollback).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a staged layout flow when only permanent photo persistence is available", async () => {
@@ -980,10 +1015,11 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
 
     expect(persistSelectedPhoto).not.toHaveBeenCalled();
     expect(launchImageLibraryMock).not.toHaveBeenCalled();
-    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(screen.getByText("新建照片页面")).toBeTruthy();
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("暂存"));
   });
 
@@ -997,11 +1033,13 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
     await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
     expect(cancelHandle.rollback).toHaveBeenCalledTimes(1);
 
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
     fireEvent.press(screen.getByLabelText("创建页面"));
     expect(commitHandle.commit).toHaveBeenCalledTimes(1);
     expect(commitHandle.rollback).not.toHaveBeenCalled();
@@ -1024,6 +1062,7 @@ describe("BookCanvasEditor", () => {
     );
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
     expect(onPendingChange).toHaveBeenLastCalledWith(true);
 
     await act(async () => { fireEvent.press(screen.getByLabelText("创建页面")); });
@@ -1061,6 +1100,7 @@ describe("BookCanvasEditor", () => {
     const screen = render(<EditorHarness stageSelectedPhoto={jest.fn().mockResolvedValue(staged)} />);
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
     screen.unmount();
     await act(async () => undefined);
     expect(staged.rollback).toHaveBeenCalledTimes(1);
@@ -1076,15 +1116,17 @@ describe("BookCanvasEditor", () => {
     expect(stageSelectedPhoto).not.toHaveBeenCalled();
   });
 
-  it("alerts when the picker rejects and leaves the page flow closed", async () => {
+  it("alerts when the picker rejects and leaves the empty page draft open", async () => {
     const onChange = jest.fn();
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     launchImageLibraryMock.mockRejectedValueOnce(new Error("native"));
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={jest.fn()} />);
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
+    await addOnePhoto(screen);
     expect(alert).toHaveBeenCalledWith("照片选择失败", expect.any(String));
-    expect(screen.queryByText("新建照片页面")).toBeNull();
+    expect(screen.getByText("新建照片页面")).toBeTruthy();
+    expect(screen.getByText("当前页暂无照片，可点击＋添加。")).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
   });
 

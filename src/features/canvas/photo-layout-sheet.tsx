@@ -156,20 +156,28 @@ export function PhotoLayoutSheet({
   );
   const photoCount = resolvedPhotos.length;
   const familyRef = React.useRef<PhotoTemplateFamilyId | undefined>(resolvePhotoTemplate(selectedTemplateId)?.familyId);
+  const selectedTemplatePropRef = React.useRef(selectedTemplateId);
   const [selection, setSelection] = React.useState<PhotoTemplateId | undefined>(() => matchingTemplate(selectedTemplateId, photoCount));
   const [cropPhotoId, setCropPhotoId] = React.useState<string>();
   const [draggingPhotoId, setDraggingPhotoId] = React.useState<string>();
 
   React.useEffect(() => {
     const selected = resolvePhotoTemplate(selectedTemplateId);
-    if (selected) familyRef.current = selected.familyId;
-    setSelection((current) => selected?.photoCount === photoCount
-      ? selected.id
-      : resolveTemplateAfterPhotoCountChange(
-        current ?? selectedTemplateId,
+    if (selectedTemplatePropRef.current !== selectedTemplateId) {
+      selectedTemplatePropRef.current = selectedTemplateId;
+      familyRef.current = selected?.familyId;
+    }
+    setSelection((current) => {
+      if (selected?.photoCount === photoCount && selected.familyId === familyRef.current) return selected.id;
+      const currentInPreferredFamily = resolvePhotoTemplate(current)?.familyId === familyRef.current
+        ? current
+        : undefined;
+      return resolveTemplateAfterPhotoCountChange(
+        currentInPreferredFamily,
         photoCount,
-        selected?.familyId ?? familyRef.current,
-      ));
+        familyRef.current ?? selected?.familyId,
+      );
+    });
   }, [photoCount, selectedTemplateId]);
 
   const updateSelection = (templateId: PhotoTemplateId) => {

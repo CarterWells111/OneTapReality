@@ -226,6 +226,21 @@ describe("editor photo templates", () => {
     expect(duplicateCanvasElement(base, "page-1", "caption", "caption-copy")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
   });
 
+  it("clears stale cover crop whenever the cover image changes or is removed", () => {
+    const source = pageWithPhotos(2, "classic-2");
+    source.layout = {
+      ...source.layout!,
+      coverCrop: { focusX: 0.1, focusY: 0.9, zoom: 4 },
+      coverImage: "file:///old-cover.jpg",
+    };
+
+    const replaced = setCanvasCoverImage([source], "page-1", "file:///new-cover.jpg")[0];
+    expect(replaced.layout).not.toHaveProperty("coverCrop");
+
+    const removed = setCanvasCoverImage([source], "page-1", undefined)[0];
+    expect(removed.layout).not.toHaveProperty("coverCrop");
+  });
+
   it("omits cleared background and cover values while preserving the template", () => {
     const base = [pageWithPhotos(2, "classic-2")];
     const backgroundCleared = setCanvasBackground(base, "page-1", undefined)[0];

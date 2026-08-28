@@ -78,7 +78,7 @@ export function toggleCanvasPhotoSelection(selectedPhotoUris: string[], uri: str
     : [...selectedPhotoUris, uri];
 }
 
-export function addCanvasPage(pages: StoryPage[], inputPhotos: Array<string | CanvasPagePhoto>, id: string, templateId?: string) {
+export function addCanvasPage(pages: StoryPage[], inputPhotos: (string | CanvasPagePhoto)[], id: string, templateId?: string) {
   const limitedPhotos = inputPhotos.slice(0, MAX_PHOTOS_PER_CANVAS_PAGE).map((photo, index) => typeof photo === "string"
     ? { id: `image-${index + 1}`, uri: photo }
     : photo);
@@ -292,10 +292,17 @@ export function setCanvasCoverImage(
   pageId: string,
   coverImage: string | undefined,
 ) {
-  return updatePage(pages, pageId, (page) => ({
-    ...withoutOrSetPageValue(page, "coverImage", coverImage),
-    layout: preserveLayoutMeta(withoutOrSetLayoutValue(page.layout!, "coverImage", coverImage), page.layout!.elements, "preserve"),
-  }));
+  return updatePage(pages, pageId, (page) => {
+    const previousCoverImage = page.layout?.coverImage ?? page.coverImage;
+    const layoutWithImage = withoutOrSetLayoutValue(page.layout!, "coverImage", coverImage);
+    const nextLayout = previousCoverImage === coverImage
+      ? layoutWithImage
+      : withoutOrSetLayoutValue(layoutWithImage, "coverCrop", undefined);
+    return {
+      ...withoutOrSetPageValue(page, "coverImage", coverImage),
+      layout: preserveLayoutMeta(nextLayout, page.layout!.elements, "preserve"),
+    };
+  });
 }
 
 export function setCanvasCoverCrop(

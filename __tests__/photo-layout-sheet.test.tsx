@@ -273,6 +273,26 @@ describe("PhotoLayoutSheet", () => {
     expect(onConfirm).toHaveBeenCalledWith("columns-2");
   });
 
+  it("keeps the last explicitly selected template family across 3 to 4 to 3 photos", () => {
+    const onConfirm = jest.fn();
+    const props = {
+      action: "edit" as const,
+      onCancel: () => undefined,
+      onConfirm,
+      onPhotosChange: () => undefined,
+      selectedTemplateId: "classic-3" as const,
+    };
+    const threePhotos = [1, 2, 3].map((index) => ({ id: `${index}`, uri: `${index}` }));
+    const view = render(<PhotoLayoutSheet {...props} photos={threePhotos} />);
+
+    fireEvent.press(view.getByLabelText("杂志侧栏三图模板"));
+    view.rerender(<PhotoLayoutSheet {...props} photos={[...threePhotos, { id: "4", uri: "4" }]} />);
+    view.rerender(<PhotoLayoutSheet {...props} photos={threePhotos} />);
+    fireEvent.press(view.getByLabelText("应用照片与模板"));
+
+    expect(onConfirm).toHaveBeenCalledWith("magazine-3");
+  });
+
   it("delegates replacement and cancellation without confirming", () => {
     const onCancel = jest.fn();
     const onConfirm = jest.fn();
