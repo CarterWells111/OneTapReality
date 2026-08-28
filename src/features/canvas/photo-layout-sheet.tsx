@@ -7,7 +7,7 @@ import { bodyFont, colors, serifFont } from "../../components/ui";
 import type { PhotoTemplateId } from "../../types/memory";
 import { createPhotoLayout } from "./auto-layout";
 import { PhotoTemplatePicker } from "./photo-template-picker";
-import { resolvePhotoTemplate } from "./photo-templates";
+import { createPhotoTemplateLayout, resolvePhotoTemplate } from "./photo-templates";
 
 export type PhotoLayoutSheetProps = {
   action: "add" | "edit";
@@ -49,9 +49,13 @@ export function PhotoLayoutSheet({
       ? "创建自由排版页面"
       : "创建页面";
   const canUseTemplate = photoCount >= 1 && photoCount <= 3;
-  const freeformLayout = React.useMemo(
-    () => (photoCount > 3 ? createPhotoLayout(photoUris) : undefined),
-    [photoCount, photoUris],
+  const previewLayout = React.useMemo(
+    () => (selection
+      ? createPhotoTemplateLayout(photoUris, selection)
+      : photoCount > 0
+        ? createPhotoLayout(photoUris)
+        : null),
+    [photoCount, photoUris, selection],
   );
   const percent = (value: number) => `${Math.round(value * 10_000) / 100}%` as const;
 
@@ -77,29 +81,36 @@ export function PhotoLayoutSheet({
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.thumbnailRow}>
-            {photoUris.map((uri, index) => (
-              <Image
-                accessibilityLabel={`照片 ${index + 1}`}
-                contentFit="cover"
-                key={`${uri}-${index}`}
-                source={{ uri }}
-                style={styles.thumbnail}
-              />
-            ))}
-          </View>
+        <ScrollView contentContainerStyle={styles.content} testID="photo-layout-content">
+          <View style={styles.photoSelectionControls} testID="photo-selection-controls">
+            {photoCount > 0 ? (
+              <View style={styles.selectedPhotoSection} testID="selected-photo-section">
+                <Text selectable style={styles.sectionTitle}>已选择图片</Text>
+                <View style={styles.thumbnailRow}>
+                  {photoUris.map((uri, index) => (
+                    <Image
+                      accessibilityLabel={`照片 ${index + 1}`}
+                      contentFit="cover"
+                      key={`${uri}-${index}`}
+                      source={{ uri }}
+                      style={styles.thumbnail}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
 
-          <Pressable
-            accessibilityLabel="重新选择照片"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
-            disabled={busy}
-            onPress={onReplacePhotos}
-            style={styles.replaceButton}
-          >
-            <Text selectable style={styles.replaceText}>重新选择照片</Text>
-          </Pressable>
+            <Pressable
+              accessibilityLabel="重新选择照片"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              onPress={onReplacePhotos}
+              style={styles.replaceButton}
+            >
+              <Text selectable style={styles.replaceText}>重新选择照片</Text>
+            </Pressable>
+          </View>
 
           {busy ? <Text accessibilityLiveRegion="polite" selectable style={styles.progress}>正在保存照片…</Text> : null}
 
@@ -112,17 +123,23 @@ export function PhotoLayoutSheet({
                 selectedTemplateId={selection}
               />
             </View>
-          ) : photoCount > 3 && freeformLayout ? (
-            <View style={styles.freeformSection}>
-              <Text selectable style={styles.warning}>模板仅支持 3 张及以内照片，仍可自行排版</Text>
+          ) : photoCount > 3 ? (
+            <Text selectable style={styles.warning}>模板仅支持 3 张及以内照片，仍可自行排版</Text>
+          ) : (
+            <Text selectable style={styles.hint}>请先选择照片</Text>
+          )}
+
+          {previewLayout ? (
+            <View style={styles.previewSection}>
+              <Text selectable style={styles.sectionTitle}>布局效果预览</Text>
               <View
-                accessibilityLabel="自由排版预览"
+                accessibilityLabel="布局效果预览"
                 accessibilityRole="image"
-                style={[styles.freeformPreview, { aspectRatio: freeformLayout.aspectRatio }]}
+                style={[styles.layoutPreview, { aspectRatio: previewLayout.aspectRatio }]}
               >
-                {freeformLayout.elements.map((element, index) => element.type === "image" ? (
+                {previewLayout.elements.map((element, index) => element.type === "image" ? (
                   <Image
-                    accessibilityLabel={`自由排版预览照片 ${index + 1}`}
+                    accessibilityLabel={`布局效果预览照片 ${index + 1}`}
                     contentFit="cover"
                     key={element.id}
                     source={{ uri: element.uri }}
@@ -131,15 +148,15 @@ export function PhotoLayoutSheet({
                       left: percent(element.x),
                       position: "absolute",
                       top: percent(element.y),
+                      transform: [{ rotate: `${element.rotation}rad` }],
                       width: percent(element.width),
                     }}
+                    testID={`photo-layout-preview-${element.id}`}
                   />
                 ) : null)}
               </View>
             </View>
-          ) : (
-            <Text selectable style={styles.hint}>请先选择照片</Text>
-          )}
+          ) : null}
         </ScrollView>
 
         <Pressable
@@ -166,6 +183,8 @@ const styles = StyleSheet.create({
   cancelButton: { justifyContent: "center", minHeight: 44, minWidth: 44, paddingHorizontal: 8 },
   cancelText: { color: colors.accent, fontFamily: bodyFont, fontSize: 15, fontWeight: "700", textAlign: "center" },
   content: { gap: 18, paddingBottom: 18 },
+  photoSelectionControls: { gap: 18 },
+  selectedPhotoSection: { gap: 10 },
   thumbnailRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   thumbnail: { aspectRatio: 1, backgroundColor: colors.surface, borderRadius: 12, width: 72 },
   replaceButton: { alignItems: "center", borderColor: colors.accent, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
@@ -173,8 +192,8 @@ const styles = StyleSheet.create({
   templateSection: { gap: 10 },
   sectionTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   warning: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
-  freeformSection: { gap: 12 },
-  freeformPreview: { alignSelf: "center", backgroundColor: colors.paper, borderColor: colors.line, borderRadius: 12, borderWidth: 1, overflow: "hidden", width: "72%" },
+  previewSection: { gap: 12 },
+  layoutPreview: { alignSelf: "center", backgroundColor: colors.paper, borderColor: colors.line, borderRadius: 12, borderWidth: 1, overflow: "hidden", width: "72%" },
   hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14 },
   progress: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, textAlign: "center" },
   confirmButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, justifyContent: "center", minHeight: 48, paddingHorizontal: 16 },
