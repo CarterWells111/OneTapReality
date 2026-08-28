@@ -15,6 +15,7 @@ import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
 import { isMissingPhotoToken } from "../memories/photo-references";
 import { CroppedImage } from "./cropped-image";
+import { CropIcon } from "./crop-icon";
 import type { CanvasElement as CanvasElementModel, CanvasImageElement } from "../../types/memory";
 
 type ElementPatch = {
@@ -463,7 +464,7 @@ export function CanvasElement({
               element.y + element.height > 0.88 ? styles.cropButtonAbove : styles.cropButtonBelow,
             ]}
           >
-            <Text style={styles.cropButtonGlyph}>⌗</Text>
+            <CropIcon color="#FFFFFF" size={20} />
           </Pressable>
         ) : null}
         {/* 选中时显示四角拖拽手柄 */}
@@ -661,5 +662,4 @@ const styles = StyleSheet.create({
   },
   cropButtonAbove: { bottom: "100%", marginBottom: 6 },
   cropButtonBelow: { marginTop: 6, top: "100%" },
-  cropButtonGlyph: { color: "#FFFFFF", fontSize: 20, lineHeight: 22 },
 });

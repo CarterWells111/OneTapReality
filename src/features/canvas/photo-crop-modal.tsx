@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
@@ -6,12 +7,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { PhotoCropState } from "../../types/memory";
 import { bodyFont } from "../../components/ui";
-import { CroppedImage } from "./cropped-image";
 import {
   DEFAULT_PHOTO_CROP,
   normalizePhotoCropState,
   panPhotoCrop,
-  zoomPhotoCrop,
 } from "./photo-crop";
 
 type FrameSize = { height: number; width: number };
@@ -24,63 +23,94 @@ export type PhotoCropModalProps = {
   uri: string;
 };
 
+const clamp = (value: number, minimum: number, maximum: number) => {
+  "worklet";
+  return Math.min(Math.max(value, minimum), maximum);
+};
+
 export function PhotoCropModal({ aspectRatio, crop, onCancel, onConfirm, uri }: PhotoCropModalProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const safeRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
-  const [draft, setDraft] = React.useState(() => normalizePhotoCropState(crop));
-  const frameSizeRef = React.useRef<FrameSize>({ height: 0, width: 0 });
+  const initialCrop = normalizePhotoCropState(crop);
+  const [draft, setDraft] = React.useState(initialCrop);
+  const [frameSize, setFrameSize] = React.useState<FrameSize>({ height: 0, width: 0 });
+  const [sourceSize, setSourceSize] = React.useState<FrameSize | null>(null);
   const [failed, setFailed] = React.useState(false);
-  const panX = useSharedValue(0);
-  const panY = useSharedValue(0);
-  const pinchScale = useSharedValue(1);
+  const focusX = useSharedValue(draft.focusX);
+  const focusY = useSharedValue(draft.focusY);
+  const zoom = useSharedValue(draft.zoom);
+  const panStartFocusX = useSharedValue(draft.focusX);
+  const panStartFocusY = useSharedValue(draft.focusY);
+  const pinchStartZoom = useSharedValue(draft.zoom);
+  const frameHeight = useSharedValue(frameSize.height);
+  const frameWidth = useSharedValue(frameSize.width);
+  const sourceHeight = useSharedValue(sourceSize?.height ?? 0);
+  const sourceWidth = useSharedValue(sourceSize?.width ?? 0);
 
-  React.useEffect(() => setDraft(normalizePhotoCropState(crop)), [crop]);
-
-  const commitPan = React.useCallback((translationX: number, translationY: number) => {
-    setDraft((current) => panPhotoCrop(current, {
-      translationX,
-      translationY,
-      viewportHeight: frameSizeRef.current.height,
-      viewportWidth: frameSizeRef.current.width,
-    }));
-  }, []);
-  const commitZoom = React.useCallback((scale: number) => {
-    setDraft((current) => zoomPhotoCrop(current, scale));
+  const commitGestureSnapshot = React.useCallback((nextFocusX: number, nextFocusY: number, nextZoom: number) => {
+    setDraft(normalizePhotoCropState({ focusX: nextFocusX, focusY: nextFocusY, zoom: nextZoom }));
   }, []);
 
   const pan = Gesture.Pan()
     .withTestId("photo-crop-pan")
-    .onUpdate((event) => {
-      panX.value = event.translationX;
-      panY.value = event.translationY;
+    .onStart(() => {
+      panStartFocusX.value = focusX.value;
+      panStartFocusY.value = focusY.value;
     })
-    .onEnd((event) => {
-      runOnJS(commitPan)(event.translationX, event.translationY);
-      panX.value = 0;
-      panY.value = 0;
-    });
+    .onUpdate((event) => {
+      if (sourceWidth.value <= 0 || sourceHeight.value <= 0 || frameWidth.value <= 0 || frameHeight.value <= 0) return;
+      const next = panPhotoCrop({
+        focusX: panStartFocusX.value,
+        focusY: panStartFocusY.value,
+        zoom: zoom.value,
+      }, {
+        sourceHeight: sourceHeight.value,
+        sourceWidth: sourceWidth.value,
+        translationX: event.translationX,
+        translationY: event.translationY,
+        viewportHeight: frameHeight.value,
+        viewportWidth: frameWidth.value,
+      });
+      focusX.value = next.focusX;
+      focusY.value = next.focusY;
+    })
+    .onFinalize(() => runOnJS(commitGestureSnapshot)(focusX.value, focusY.value, zoom.value));
   const pinch = Gesture.Pinch()
     .withTestId("photo-crop-pinch")
-    .onUpdate((event) => {
-      pinchScale.value = event.scale;
+    .onStart(() => {
+      pinchStartZoom.value = zoom.value;
     })
-    .onEnd((event) => {
-      runOnJS(commitZoom)(event.scale);
-      pinchScale.value = 1;
-    });
-  const liveStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: panX.value },
-      { translateY: panY.value },
-      { scale: pinchScale.value },
-    ],
-  }));
+    .onUpdate((event) => {
+      zoom.value = clamp(pinchStartZoom.value * event.scale, 1, 4);
+    })
+    .onEnd((event) => runOnJS(commitGestureSnapshot)(
+      focusX.value,
+      focusY.value,
+      clamp(pinchStartZoom.value * event.scale, 1, 4),
+    ));
+  const imageLayerStyle = useAnimatedStyle(() => {
+    if (!sourceSize || frameSize.width <= 0 || frameSize.height <= 0) {
+      return { height: frameSize.height, left: 0, top: 0, width: frameSize.width };
+    }
+    const baseScale = Math.max(
+      frameSize.width / sourceSize.width,
+      frameSize.height / sourceSize.height,
+    );
+    const width = sourceSize.width * baseScale * zoom.value;
+    const height = sourceSize.height * baseScale * zoom.value;
+    return {
+      height,
+      left: clamp((frameSize.width / 2) - (focusX.value * width), frameSize.width - width, 0),
+      top: clamp((frameSize.height / 2) - (focusY.value * height), frameSize.height - height, 0),
+      width,
+    };
+  }, [frameSize.height, frameSize.width, sourceSize?.height, sourceSize?.width]);
 
   const horizontalPadding = 28;
   const maxWidth = Math.max(1, windowWidth - (horizontalPadding * 2));
   const maxHeight = Math.max(1, windowHeight - insets.top - insets.bottom - 190);
-  const frameWidth = Math.min(maxWidth, maxHeight * safeRatio);
+  const displayFrameWidth = Math.min(maxWidth, maxHeight * safeRatio);
 
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent={false} visible>
@@ -95,7 +125,11 @@ export function PhotoCropModal({ aspectRatio, crop, onCancel, onConfirm, uri }: 
             accessibilityRole="button"
             accessibilityState={{ disabled: failed }}
             disabled={failed}
-            onPress={() => onConfirm(normalizePhotoCropState(draft))}
+            onPress={() => onConfirm(normalizePhotoCropState({
+              focusX: focusX.value,
+              focusY: focusY.value,
+              zoom: zoom.value,
+            }))}
             style={[styles.doneButton, failed && styles.disabled]}
           >
             <Text selectable style={styles.doneText}>完成</Text>
@@ -106,16 +140,31 @@ export function PhotoCropModal({ aspectRatio, crop, onCancel, onConfirm, uri }: 
           <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
             <View
               onLayout={(event) => {
-                frameSizeRef.current = {
+                const nextFrameSize = {
                   height: event.nativeEvent.layout.height,
                   width: event.nativeEvent.layout.width,
                 };
+                frameHeight.value = nextFrameSize.height;
+                frameWidth.value = nextFrameSize.width;
+                setFrameSize(nextFrameSize);
               }}
-              style={[styles.frame, { aspectRatio: safeRatio, width: frameWidth }]}
+              style={[styles.frame, { aspectRatio: safeRatio, width: displayFrameWidth }]}
               testID="photo-crop-frame"
             >
-              <Animated.View style={[StyleSheet.absoluteFill, liveStyle]}>
-                <CroppedImage crop={draft} onError={() => setFailed(true)} style={StyleSheet.absoluteFill} uri={uri} />
+              <Animated.View pointerEvents="none" style={[styles.imageLayer, imageLayerStyle]} testID="photo-crop-image-layer">
+                <Image
+                  contentFit={sourceSize ? "fill" : "cover"}
+                  onError={() => setFailed(true)}
+                  onLoad={(event) => {
+                    const nextSourceSize = { height: event.source.height, width: event.source.width };
+                    sourceHeight.value = nextSourceSize.height;
+                    sourceWidth.value = nextSourceSize.width;
+                    setSourceSize(nextSourceSize);
+                  }}
+                  source={{ uri }}
+                  style={StyleSheet.absoluteFill}
+                  testID="photo-crop-image"
+                />
               </Animated.View>
               <View pointerEvents="none" style={styles.verticalGuideOne} />
               <View pointerEvents="none" style={styles.verticalGuideTwo} />
@@ -133,6 +182,9 @@ export function PhotoCropModal({ aspectRatio, crop, onCancel, onConfirm, uri }: 
             accessibilityRole="button"
             onPress={() => {
               setFailed(false);
+              focusX.value = DEFAULT_PHOTO_CROP.focusX;
+              focusY.value = DEFAULT_PHOTO_CROP.focusY;
+              zoom.value = DEFAULT_PHOTO_CROP.zoom;
               setDraft({ ...DEFAULT_PHOTO_CROP });
             }}
             style={styles.resetButton}
@@ -157,6 +209,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   stage: { alignItems: "center", flex: 1, gap: 14, justifyContent: "center" },
   frame: { backgroundColor: "#222222", overflow: "hidden" },
+  imageLayer: { position: "absolute" },
   verticalGuideOne: { backgroundColor: guideColor, bottom: 0, left: "33.333%", position: "absolute", top: 0, width: StyleSheet.hairlineWidth },
   verticalGuideTwo: { backgroundColor: guideColor, bottom: 0, left: "66.666%", position: "absolute", top: 0, width: StyleSheet.hairlineWidth },
   horizontalGuideOne: { backgroundColor: guideColor, height: StyleSheet.hairlineWidth, left: 0, position: "absolute", right: 0, top: "33.333%" },

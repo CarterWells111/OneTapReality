@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pressable, StyleSheet, Text, useWindowDimensions } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 
@@ -9,6 +9,7 @@ import { colors } from "../../components/ui";
 import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { isMissingPhotoToken } from "../memories/photo-references";
 import { CroppedImage } from "./cropped-image";
+import { CropIcon } from "./crop-icon";
 import type { CanvasLayout } from "../../types/memory";
 
 type ElementPatch = {
@@ -155,7 +156,7 @@ export function CanvasPage({
           onPress={onCropCover}
           style={styles.coverCropButton}
         >
-          <Text style={styles.coverCropGlyph}>⌗</Text>
+          <CropIcon color="#FFFFFF" size={20} />
         </Pressable>
       ) : null}
       {elements.map((element) => (
@@ -228,9 +229,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     bottom: 10,
     height: 36,
+    justifyContent: "center",
     position: "absolute",
     width: 36,
     zIndex: 40,
   },
-  coverCropGlyph: { color: "#FFFFFF", fontSize: 20, lineHeight: 22 },
 });

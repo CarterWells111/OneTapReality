@@ -1,7 +1,6 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
-import { State } from "react-native-gesture-handler";
-import { fireGestureHandler, getByGestureTestId } from "react-native-gesture-handler/jest-utils";
+import { getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 import { StyleSheet } from "react-native";
 
 import { PhotoCropModal } from "../src/features/canvas/photo-crop-modal";
@@ -26,33 +25,18 @@ describe("PhotoCropModal", () => {
     expect(onConfirm).toHaveBeenCalledWith({ focusX: 0.5, focusY: 0.5, zoom: 1 });
   });
 
-  it("applies bounded pan and pinch gestures before confirmation", async () => {
-    const onConfirm = jest.fn();
+  it("keeps UI-thread crop geometry instead of resetting a temporary transform on release", () => {
     const screen = render(
-      <PhotoCropModal aspectRatio={3 / 4} onCancel={() => undefined} onConfirm={onConfirm} uri="file:///photo.jpg" />,
+      <PhotoCropModal aspectRatio={3 / 4} onCancel={() => undefined} onConfirm={() => undefined} uri="file:///photo.jpg" />,
     );
-    fireEvent(screen.getByTestId("photo-crop-frame"), "layout", {
-      nativeEvent: { layout: { height: 400, width: 300 } },
-    });
-    await act(async () => {
-      fireGestureHandler(getByGestureTestId("photo-crop-pan"), [
-        { state: State.BEGAN, translationX: 0, translationY: 0 },
-        { state: State.ACTIVE, translationX: 60, translationY: -100 },
-        { state: State.END, translationX: 60, translationY: -100 },
-      ]);
-      await Promise.resolve();
-    });
-    await act(async () => {
-      fireGestureHandler(getByGestureTestId("photo-crop-pinch"), [
-        { scale: 1, state: State.BEGAN },
-        { scale: 3, state: State.ACTIVE },
-        { scale: 3, state: State.END },
-      ]);
-      await Promise.resolve();
-    });
-    fireEvent.press(screen.getByLabelText("完成裁剪"));
+    const pan = getByGestureTestId("photo-crop-pan") as unknown as {
+      handlers: { onEnd?: unknown; onFinalize?: unknown; onUpdate?: unknown };
+    };
 
-    expect(onConfirm).toHaveBeenCalledWith({ focusX: 0.3, focusY: 0.75, zoom: 3 });
+    expect(pan.handlers.onUpdate).toEqual(expect.any(Function));
+    expect(pan.handlers.onEnd).toBeUndefined();
+    expect(pan.handlers.onFinalize).toEqual(expect.any(Function));
+    expect(StyleSheet.flatten(screen.getByTestId("photo-crop-image-layer").props.style)).not.toHaveProperty("transform");
   });
 
   it("delegates cancellation without changing the crop", () => {

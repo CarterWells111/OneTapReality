@@ -91,6 +91,9 @@ describe("CanvasPage", () => {
     );
 
     expect(StyleSheet.flatten(screen.getByLabelText("裁剪照片").props.style)).toEqual(expect.objectContaining({ bottom: "100%" }));
+    expect(screen.getByTestId("crop-icon-line-a")).toBeTruthy();
+    expect(screen.getByTestId("crop-icon-line-b")).toBeTruthy();
+    expect(screen.queryByText("⌗")).toBeNull();
     fireEvent.press(screen.getByLabelText("裁剪照片"));
     expect(onCropElement).toHaveBeenCalledWith("photo-1");
   });
@@ -108,6 +111,9 @@ describe("CanvasPage", () => {
     expect(onSelectCover).toHaveBeenCalledTimes(1);
     fireEvent.press(screen.getByLabelText("裁剪封面照片"));
     expect(onCropCover).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("crop-icon-line-a")).toBeTruthy();
+    expect(screen.getByTestId("crop-icon-line-b")).toBeTruthy();
+    expect(screen.queryByText("⌗")).toBeNull();
     expect(StyleSheet.flatten(screen.getByLabelText("裁剪封面照片").props.style)).toEqual(expect.objectContaining({ bottom: 10 }));
   });
 

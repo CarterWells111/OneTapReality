@@ -93,7 +93,7 @@ function DraggablePhotoTile({
     .activateAfterLongPress(260)
     .enabled(!disabled)
     .withTestId(`photo-layout-drag-${photo.id}`)
-    .onBegin(() => runOnJS(onDragStart)())
+    .onStart(() => runOnJS(onDragStart)())
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
@@ -225,7 +225,10 @@ export function PhotoLayoutSheet({
                   disabled={busy}
                   index={index}
                   key={photo.id}
-                  onCrop={() => setCropPhotoId(photo.id)}
+                  onCrop={() => {
+                    setDraggingPhotoId(undefined);
+                    setCropPhotoId(photo.id);
+                  }}
                   onDragEnd={() => setDraggingPhotoId(undefined)}
                   onDragStart={() => setDraggingPhotoId(photo.id)}
                   onMove={(targetIndex) => onPhotosChange?.(movePhotoLayoutDraftItem(resolvedPhotos, photo.id, targetIndex))}

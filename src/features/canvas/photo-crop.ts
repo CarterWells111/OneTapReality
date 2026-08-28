@@ -6,14 +6,18 @@ export const DEFAULT_PHOTO_CROP: PhotoCropState = Object.freeze({
   zoom: 1,
 });
 
-const clamp = (value: number, minimum: number, maximum: number) =>
-  Math.min(Math.max(value, minimum), maximum);
+const clamp = (value: number, minimum: number, maximum: number) => {
+  "worklet";
+  return Math.min(Math.max(value, minimum), maximum);
+};
 
 function isFiniteNumber(value: unknown): value is number {
+  "worklet";
   return typeof value === "number" && Number.isFinite(value);
 }
 
 export function normalizePhotoCropState(value: unknown): PhotoCropState {
+  "worklet";
   if (!value || typeof value !== "object") return { ...DEFAULT_PHOTO_CROP };
   const candidate = value as Partial<PhotoCropState>;
   if (!isFiniteNumber(candidate.focusX) || !isFiniteNumber(candidate.focusY) || !isFiniteNumber(candidate.zoom)) {
@@ -42,6 +46,8 @@ export type PhotoCropGeometry = {
 };
 
 export type PhotoCropPan = {
+  sourceHeight?: number;
+  sourceWidth?: number;
   translationX: number;
   translationY: number;
   viewportHeight: number;
@@ -49,8 +55,39 @@ export type PhotoCropPan = {
 };
 
 export function panPhotoCrop(crop: PhotoCropState, pan: PhotoCropPan): PhotoCropState {
+  "worklet";
   const normalized = normalizePhotoCropState(crop);
   if (pan.viewportWidth <= 0 || pan.viewportHeight <= 0) return normalized;
+  if (
+    isFiniteNumber(pan.sourceWidth)
+    && pan.sourceWidth > 0
+    && isFiniteNumber(pan.sourceHeight)
+    && pan.sourceHeight > 0
+  ) {
+    const baseScale = Math.max(
+      pan.viewportWidth / pan.sourceWidth,
+      pan.viewportHeight / pan.sourceHeight,
+    );
+    const renderedWidth = pan.sourceWidth * baseScale * normalized.zoom;
+    const renderedHeight = pan.sourceHeight * baseScale * normalized.zoom;
+    const startLeft = clamp(
+      (pan.viewportWidth / 2) - (normalized.focusX * renderedWidth),
+      pan.viewportWidth - renderedWidth,
+      0,
+    );
+    const startTop = clamp(
+      (pan.viewportHeight / 2) - (normalized.focusY * renderedHeight),
+      pan.viewportHeight - renderedHeight,
+      0,
+    );
+    const nextLeft = clamp(startLeft + pan.translationX, pan.viewportWidth - renderedWidth, 0);
+    const nextTop = clamp(startTop + pan.translationY, pan.viewportHeight - renderedHeight, 0);
+    return normalizePhotoCropState({
+      focusX: ((pan.viewportWidth / 2) - nextLeft) / renderedWidth,
+      focusY: ((pan.viewportHeight / 2) - nextTop) / renderedHeight,
+      zoom: normalized.zoom,
+    });
+  }
   return normalizePhotoCropState({
     focusX: normalized.focusX - (pan.translationX / (pan.viewportWidth * normalized.zoom)),
     focusY: normalized.focusY - (pan.translationY / (pan.viewportHeight * normalized.zoom)),

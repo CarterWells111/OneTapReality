@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
+import { getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 import { StyleSheet } from "react-native";
 
 import { PhotoLayoutSheet } from "../src/features/canvas/photo-layout-sheet";
@@ -66,6 +67,30 @@ describe("PhotoLayoutSheet", () => {
     expect(onPhotosChange).toHaveBeenCalledWith([
       { id: "one", uri: "file:///one.jpg", crop: { focusX: 0.5, focusY: 0.5, zoom: 1 } },
     ]);
+  });
+
+  it("only activates the delete target after the long-press drag is recognized", () => {
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={() => undefined}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        onPhotosChange={() => undefined}
+        photos={[{ id: "one", uri: "file:///one.jpg" }]}
+      />,
+    );
+
+    const drag = getByGestureTestId("photo-layout-drag-one") as unknown as {
+      handlers: { onBegin?: unknown; onStart?: unknown };
+    };
+
+    expect(drag.handlers.onBegin).toBeUndefined();
+    expect(drag.handlers.onStart).toEqual(expect.any(Function));
+    fireEvent.press(screen.getByLabelText("照片 1，点击裁剪"));
+    fireEvent.press(screen.getByLabelText("取消裁剪"));
+
+    expect(screen.queryByTestId("photo-layout-trash-zone")).toBeNull();
   });
 
   it("offers accessible reorder and delete equivalents for drag gestures", () => {

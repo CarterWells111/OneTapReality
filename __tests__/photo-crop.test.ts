@@ -54,4 +54,27 @@ describe("photo crop geometry", () => {
       zoom: 4,
     });
   });
+
+  it("maps a pan through the rendered cover size so release does not jump", () => {
+    expect(panPhotoCrop({ focusX: 0.5, focusY: 0.5, zoom: 1 }, {
+      sourceHeight: 400,
+      sourceWidth: 600,
+      translationX: 60,
+      translationY: 0,
+      viewportHeight: 400,
+      viewportWidth: 300,
+    })).toEqual({ focusX: 0.4, focusY: 0.5, zoom: 1 });
+
+    const zoomed = panPhotoCrop({ focusX: 0.5, focusY: 0.5, zoom: 3 }, {
+      sourceHeight: 800,
+      sourceWidth: 600,
+      translationX: 60,
+      translationY: -100,
+      viewportHeight: 400,
+      viewportWidth: 300,
+    });
+    expect(zoomed.focusX).toBeCloseTo(0.433333, 5);
+    expect(zoomed.focusY).toBeCloseTo(0.583333, 5);
+    expect(zoomed.zoom).toBe(3);
+  });
 });
