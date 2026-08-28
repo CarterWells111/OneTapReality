@@ -287,16 +287,16 @@ describe("memory edit draft repository", () => {
       ...secondPage,
       layout: { ...secondPage.layout!, photoTemplateId: "classic-1", elements: [image("one", "file:///one.jpg", 0.1)] },
     };
-    await saveMemoryEditDraft(database, baseMemory, [validPage], "owner@example.com");
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "account:owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
       .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoTemplateId: "classic-1" }) })]);
 
     const invalidPage: StoryPage = {
       ...secondPage,
       layout: { ...secondPage.layout!, photoTemplateId: "forged-template" as PhotoTemplateId },
     };
-    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "owner@example.com");
-    const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
     expect(restored?.[0].layout).not.toHaveProperty("photoTemplateId");
 
     const mismatchedElements = [image("one", "file:///one.jpg", 0.13), image("two", "file:///two.jpg", 0.57)];
@@ -304,8 +304,8 @@ describe("memory edit draft repository", () => {
       ...secondPage,
       layout: { ...secondPage.layout!, photoTemplateId: "classic-3", elements: mismatchedElements },
     };
-    await saveMemoryEditDraft(database, baseMemory, [mismatchedPage], "owner@example.com");
-    const mismatchedRestored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [mismatchedPage], "account:owner@example.com");
+    const mismatchedRestored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
     expect(mismatchedRestored?.[0].layout).not.toHaveProperty("photoTemplateId");
     expect(mismatchedRestored?.[0].layout?.elements).toEqual(mismatchedElements);
   });
@@ -316,16 +316,16 @@ describe("memory edit draft repository", () => {
       ...secondPage,
       layout: { ...secondPage.layout!, photoPlanVersion: 1 },
     };
-    await saveMemoryEditDraft(database, baseMemory, [validPage], "owner@example.com");
-    await expect(getMemoryEditDraft(database, baseMemory, "owner@example.com"))
+    await saveMemoryEditDraft(database, baseMemory, [validPage], "account:owner@example.com");
+    await expect(getMemoryEditDraft(database, baseMemory, "account:owner@example.com"))
       .resolves.toEqual([expect.objectContaining({ layout: expect.objectContaining({ photoPlanVersion: 1 }) })]);
 
     const invalidPage: StoryPage = {
       ...secondPage,
       layout: { ...secondPage.layout!, photoPlanVersion: 2 as unknown as 1 },
     };
-    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "owner@example.com");
-    const restored = await getMemoryEditDraft(database, baseMemory, "owner@example.com");
+    await saveMemoryEditDraft(database, baseMemory, [invalidPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
     expect(restored?.[0].layout).not.toHaveProperty("photoPlanVersion");
   });
 

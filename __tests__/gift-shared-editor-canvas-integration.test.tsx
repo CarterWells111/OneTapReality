@@ -5,6 +5,15 @@ jest.mock("../src/services/backend/api-client", () => ({
   BackendApiError: class BackendApiError extends Error {},
 }));
 
+jest.mock("expo-file-system/legacy", () => ({
+  cacheDirectory: "file:///shared-cache/",
+  documentDirectory: "file:///shared-documents/",
+  copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined),
+  getInfoAsync: jest.fn(async () => ({ exists: false, isDirectory: false })),
+  makeDirectoryAsync: jest.fn(async () => undefined),
+}));
+
 import { SharedAlbumEditor } from "../src/features/gifts/shared-album-editor";
 
 describe("SharedAlbumEditor real Canvas chain", () => {

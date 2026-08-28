@@ -104,9 +104,9 @@ export default function NewMemoryScreen() {
       setPhotoUris(nextPhotoUris);
       try {
         setPagePlans(createBalancedPhotoPagePlans(nextPhotoUris));
-      } catch (caughtError) {
+      } catch {
         setPagePlans([]);
-        setError(caughtError instanceof Error ? caughtError.message : "无法安排照片，请重试。");
+        setError("无法安排照片，请减少选择数量后重试。");
       }
       void Haptics.selectionAsync();
     }

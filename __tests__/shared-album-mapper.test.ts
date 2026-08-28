@@ -67,6 +67,7 @@ describe("shared album snapshot mapper", () => {
     const base = {
       role: "viewer" as const,
       title: "Template",
+      travelDate: null,
       pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "story-1", elements: [
         { id: "image", type: "image", uri: "", mediaPosition: 0, x: 0.1, y: 0.1, width: 0.8, height: 0.8, rotation: 0, zIndex: 1 },
       ] } } }],
@@ -90,6 +91,7 @@ describe("shared album snapshot mapper", () => {
     const pages = mapSharedAlbumToStoryPages({
       role: "viewer",
       title: "Mismatched template",
+      travelDate: null,
       pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, photoTemplateId: "classic-3", elements } } }],
       media: [
         { id: "first-media", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://cdn.test/first.jpg" },
@@ -111,6 +113,7 @@ describe("shared album snapshot mapper", () => {
     const base = {
       role: "viewer" as const,
       title: "Marker",
+      travelDate: null,
       pages: [{ position: 0, page: { layout: { aspectRatio: 0.75, elements: [] } } }],
       media: [],
       publishedAt: "2026-08-16T00:00:00Z",

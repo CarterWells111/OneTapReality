@@ -73,7 +73,7 @@ describe("FullscreenCityMapScreen", () => {
       });
 
       if (getCityCheckinMapImage(city.id)) {
-        expect(mockPush).toHaveBeenCalledWith(`/city-map/${city.id}`);
+        expect(mockPush).toHaveBeenCalledWith({ pathname: "/city-map/[city]", params: { city: city.id } });
       } else {
         expect(mockPush).toHaveBeenCalledWith({ pathname: "/city/[city]", params: { city: city.id } });
       }

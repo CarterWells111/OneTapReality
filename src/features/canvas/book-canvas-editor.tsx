@@ -572,19 +572,6 @@ export function BookCanvasEditor({
     let handedOff = false;
     const isCurrent = () => mountedRef.current && pickerGenerationRef.current === generation;
     try {
-      let permission: Awaited<ReturnType<typeof ImagePicker.requestMediaLibraryPermissionsAsync>>;
-      try {
-        permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      } catch {
-        if (isCurrent()) Alert.alert("照片选择失败", "无法检查照片权限，请稍后重试。");
-        return null;
-      }
-      if (!isCurrent()) return null;
-      if (!permission.granted) {
-        Alert.alert("无法访问照片", "请在系统设置中允许访问照片后重试。");
-        return null;
-      }
-
       let result: Awaited<ReturnType<typeof ImagePicker.launchImageLibraryAsync>>;
       try {
         result = await ImagePicker.launchImageLibraryAsync({
@@ -866,10 +853,6 @@ export function BookCanvasEditor({
       Alert.alert("无法添加照片", `每页最多支持 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片，请先移除一张后重试。`);
       return;
     }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      return;
-    }
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
@@ -922,8 +905,6 @@ export function BookCanvasEditor({
 
   const uploadCoverPhoto = async () => {
     const pageId = currentPage.id;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],

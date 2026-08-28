@@ -1,11 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
-jest.mock("expo-file-system/legacy", () => ({
-  FileSystemUploadType: { BINARY_CONTENT: "binary" },
-  getInfoAsync: jest.fn(async () => ({ exists: true, size: 12 })),
-  uploadAsync: jest.fn(async () => ({ status: 200 })),
-}));
-
 const mockGetOwnedGiftManagement = jest.fn();
 const mockAddOwnedGiftMember = jest.fn();
 const mockUpdateOwnedGiftMemberRole = jest.fn();
@@ -26,7 +20,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => mockRouter,
 }));
 jest.mock("expo-image", () => ({ Image: () => null }));
-jest.mock("expo-file-system/legacy", () => ({ getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args) }));
+jest.mock("expo-file-system/legacy", () => ({
+  FileSystemUploadType: { BINARY_CONTENT: "binary" },
+  getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args),
+  uploadAsync: jest.fn(async () => ({ status: 200 })),
+}));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/memories/memories-provider", () => ({ useMemories: () => ({ memories: mockMemories() }) }));
 jest.mock("../src/services/backend/api-client", () => ({
@@ -64,6 +62,7 @@ function management(members: Management["members"] = [owner, viewer, editor]): M
 describe("gift owner member management", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 12 });
     mockUseLocalSearchParams.mockReturnValue({ id: "gift-1" });
     mockUseAuth.mockReturnValue({ session: { accessToken: "account-token", user: { id: "owner-1", email: owner.email, isAdmin: false } } });
     mockMemories.mockReturnValue([]);
@@ -228,7 +227,7 @@ describe("gift owner member management", () => {
     ]);
 
     const restored = mapSharedAlbumToStoryPages({
-      role: "viewer", title: "Layout trip", pages: payload.pages,
+      role: "viewer", title: "Layout trip", travelDate: null, pages: payload.pages,
       media: [
         { id: "one", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
         { id: "two", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
@@ -281,7 +280,7 @@ describe("gift owner member management", () => {
     expect(imageSnapshots.find((element: { mediaPosition?: number }) => element.mediaPosition === 1)).toBeDefined();
 
     const restored = mapSharedAlbumToStoryPages({
-      role: "viewer", title: "Repeated", pages: payload.pages,
+      role: "viewer", title: "Repeated", travelDate: null, pages: payload.pages,
       media: [
         { id: "same", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/same.jpg" },
         { id: "other", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/other.jpg" },

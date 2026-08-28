@@ -20,7 +20,7 @@ export default function CitiesScreen() {
   const goToCity = (city: City) => router.push({ pathname: "/city/[city]", params: { city } });
   // 地图上的城市标记：有打卡地图的城市进全屏大图，其余进城市记忆页
   const handleMapCityPress = (city: City) => {
-    if (getCityCheckinMapImage(city)) router.push(`/city-map/${city}`);
+    if (getCityCheckinMapImage(city)) router.push({ pathname: "/city-map/[city]", params: { city } });
     else router.push({ pathname: "/city/[city]", params: { city } });
   };
 

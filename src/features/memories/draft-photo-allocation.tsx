@@ -102,8 +102,8 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
       onChange(result.plans);
       setMessage(result.skippedPageNumbers.length ? skippedMessage(result.skippedPageNumbers) : "");
       setError("");
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "无法调整内容页数");
+    } catch {
+      setError("无法调整内容页数，请减少每页照片数量后重试。");
     }
   };
 

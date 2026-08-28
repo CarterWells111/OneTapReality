@@ -78,7 +78,6 @@ jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
 
-const requestPermissionMock = ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock;
 const launchImageLibraryMock = ImagePicker.launchImageLibraryAsync as jest.Mock;
 
 const pages: StoryPage[] = [
@@ -230,7 +229,6 @@ describe("BookCanvasEditor", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    requestPermissionMock.mockResolvedValue({ granted: true });
     launchImageLibraryMock.mockResolvedValue({
       canceled: false,
       assets: [{ uri: "file:///temporary.jpg" }],
@@ -851,7 +849,7 @@ describe("BookCanvasEditor", () => {
     expect(accepted[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(12);
 
     await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
-    expect(requestPermissionMock).toHaveBeenCalledTimes(1);
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
     expect(launchImageLibraryMock).toHaveBeenCalledTimes(1);
     expect(stageSelectedPhoto).toHaveBeenCalledTimes(1);
     expect(alert).toHaveBeenCalledWith("无法添加照片", expect.stringContaining("12 张"));
@@ -1291,18 +1289,14 @@ describe("BookCanvasEditor", () => {
     expect(stageSelectedPhoto).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["denied", () => requestPermissionMock.mockResolvedValueOnce({ granted: false }), "无法访问照片"],
-    ["permission rejection", () => requestPermissionMock.mockRejectedValueOnce(new Error("native")), "照片选择失败"],
-    ["picker rejection", () => launchImageLibraryMock.mockRejectedValueOnce(new Error("native")), "照片选择失败"],
-  ])("alerts on %s and leaves the page flow closed", async (_name, arrange, title) => {
+  it("alerts when the picker rejects and leaves the page flow closed", async () => {
     const onChange = jest.fn();
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    arrange();
+    launchImageLibraryMock.mockRejectedValueOnce(new Error("native"));
     const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={jest.fn()} />);
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
-    expect(alert).toHaveBeenCalledWith(title, expect.any(String));
+    expect(alert).toHaveBeenCalledWith("照片选择失败", expect.any(String));
     expect(screen.queryByText("新建照片页面")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });

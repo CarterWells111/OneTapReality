@@ -45,7 +45,7 @@ export default function FullscreenCityMapScreen() {
 
   const handleCityPress = React.useCallback((city: City) => {
     if (getCityCheckinMapImage(city)) {
-      router.push(`/city-map/${city}`);
+      router.push({ pathname: "/city-map/[city]", params: { city } });
     } else {
       router.push({ pathname: "/city/[city]", params: { city } });
     }

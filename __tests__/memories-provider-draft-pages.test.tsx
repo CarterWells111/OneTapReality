@@ -401,7 +401,7 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(mockStagePhotoUriStrict).toHaveBeenNthCalledWith(
       2,
       "file:///temporary-cover.jpg",
-      "owner@example.com",
+      "account:owner@example.com",
       expect.any(String),
     );
     expect(photo.rollback).toHaveBeenCalledTimes(1);
@@ -433,7 +433,7 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(mockCreateDraft).toHaveBeenCalledWith(
       mockDatabase,
       expect.objectContaining({ photoUris: [photo.uri], coverImage: cover.uri }),
-      "owner@example.com",
+      "account:owner@example.com",
     );
     expect(created.coverImage).toBe(cover.uri);
     expect(photo.commit).toHaveBeenCalledTimes(1);
