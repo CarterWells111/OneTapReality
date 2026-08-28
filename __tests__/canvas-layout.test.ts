@@ -1,6 +1,11 @@
 import { createLegacyLayout, normalizeLayout } from "../src/features/canvas/canvas-layout";
 import type { CanvasLayout } from "../src/types/memory";
 
+const legacyCollageElements = (rotations: readonly [number, number] = [-3, 3]): CanvasLayout["elements"] => [
+  { id: "one", type: "image", uri: "file:///one.jpg", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: rotations[0], zIndex: 1 },
+  { id: "two", type: "image", uri: "file:///two.jpg", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: rotations[1], zIndex: 2 },
+];
+
 describe("canvas layout", () => {
   it("creates a square legacy layout with image and text elements", () => {
     const layout = createLegacyLayout({
@@ -61,5 +66,52 @@ describe("canvas layout", () => {
   it("preserves only the valid planned-photo marker", () => {
     expect(normalizeLayout({ aspectRatio: 0.75, photoPlanVersion: 1, elements: [] })).toHaveProperty("photoPlanVersion", 1);
     expect(normalizeLayout({ aspectRatio: 0.75, photoPlanVersion: 2 as unknown as 1, elements: [] })).not.toHaveProperty("photoPlanVersion");
+  });
+
+  it("repairs exact legacy degree rotations for a known template", () => {
+    const normalized = normalizeLayout({
+      aspectRatio: 0.75,
+      photoTemplateId: "collage-2",
+      elements: legacyCollageElements(),
+    });
+
+    expect(normalized.elements[0].rotation).toBeCloseTo(-Math.PI / 60);
+    expect(normalized.elements[1].rotation).toBeCloseTo(Math.PI / 60);
+  });
+
+  it("preserves already-radian template rotations", () => {
+    const rotations = [-Math.PI / 60, Math.PI / 60] as const;
+    const normalized = normalizeLayout({
+      aspectRatio: 0.75,
+      photoTemplateId: "collage-2",
+      elements: legacyCollageElements(rotations),
+    });
+
+    expect(normalized.elements.map((element) => element.rotation)).toEqual(rotations);
+  });
+
+  it("does not partially repair a manually rotated template page", () => {
+    const normalized = normalizeLayout({
+      aspectRatio: 0.75,
+      photoTemplateId: "collage-2",
+      elements: legacyCollageElements([-3, 0.7]),
+    });
+
+    expect(normalized.elements.map((element) => element.rotation)).toEqual([-3, 0.7]);
+  });
+
+  it("does not repair legacy rotations when template geometry changed", () => {
+    const elements = legacyCollageElements().map((element, index) => index === 0
+      ? { ...element, x: element.x + 0.01 }
+      : element);
+    const normalized = normalizeLayout({ aspectRatio: 0.75, photoTemplateId: "collage-2", elements });
+
+    expect(normalized.elements.map((element) => element.rotation)).toEqual([-3, 3]);
+  });
+
+  it("does not repair freeform rotations without a template ID", () => {
+    const normalized = normalizeLayout({ aspectRatio: 0.75, elements: legacyCollageElements() });
+
+    expect(normalized.elements.map((element) => element.rotation)).toEqual([-3, 3]);
   });
 });

@@ -239,6 +239,28 @@ describe("memory edit draft repository", () => {
     expect(restored?.[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
   });
 
+  it("repairs legacy collage rotations when restoring a saved edit draft", async () => {
+    const { database } = createDraftDatabase();
+    const page: StoryPage = {
+      ...firstPage,
+      layout: {
+        aspectRatio: 0.75,
+        photoTemplateId: "collage-2",
+        elements: [
+          { id: "one", type: "image", uri: "file:///one.jpg", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: -3, zIndex: 1 },
+          { id: "two", type: "image", uri: "file:///two.jpg", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: 3, zIndex: 2 },
+        ],
+      },
+    };
+
+    await saveMemoryEditDraft(database, baseMemory, [page], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+    const rotations = restored?.[0].layout?.elements.map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
   it.each([48, 99])("round trips a legitimately scaled %i point canvas font", async (fontSize) => {
     const { database } = createDraftDatabase();
     const scaledPage: StoryPage = {
