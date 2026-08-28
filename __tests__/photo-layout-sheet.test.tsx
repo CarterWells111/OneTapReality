@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import * as React from "react";
 import { getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 import { StyleSheet } from "react-native";
@@ -69,7 +69,7 @@ describe("PhotoLayoutSheet", () => {
     ]);
   });
 
-  it("only activates the delete target after the long-press drag is recognized", () => {
+  it("only activates the delete target after the long-press drag is recognized", async () => {
     const screen = render(
       <PhotoLayoutSheet
         action="edit"
@@ -82,11 +82,25 @@ describe("PhotoLayoutSheet", () => {
     );
 
     const drag = getByGestureTestId("photo-layout-drag-one") as unknown as {
-      handlers: { onBegin?: unknown; onStart?: unknown };
+      handlers: {
+        onBegin?: unknown;
+        onFinalize?: (event: never, success: boolean) => void;
+        onStart?: (event: never) => void;
+      };
     };
 
     expect(drag.handlers.onBegin).toBeUndefined();
     expect(drag.handlers.onStart).toEqual(expect.any(Function));
+    await act(async () => {
+      drag.handlers.onStart?.({} as never);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("photo-layout-trash-zone")).toBeTruthy();
+    await act(async () => {
+      drag.handlers.onFinalize?.({} as never, false);
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId("photo-layout-trash-zone")).toBeNull();
     fireEvent.press(screen.getByLabelText("照片 1，点击裁剪"));
     fireEvent.press(screen.getByLabelText("取消裁剪"));
 
