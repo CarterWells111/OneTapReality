@@ -292,9 +292,9 @@ describe("DraftReviewScreen", () => {
     const screen = render(<DraftReviewScreen />);
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
-    await act(async () => {
-      fireEvent.press(screen.getByText("📷 添加照片"));
-    });
+    fireEvent.press(screen.getByText("照片与模板"));
+    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
 
     expect(mockStageSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
     expect(mockPersistSelectedPhoto).not.toHaveBeenCalled();
@@ -314,7 +314,9 @@ describe("DraftReviewScreen", () => {
     const screen = render(<DraftReviewScreen />);
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
-    fireEvent.press(screen.getByText("📷 添加照片"));
+    fireEvent.press(screen.getByText("照片与模板"));
+    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
     await act(async () => undefined);
 
     expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);
@@ -323,6 +325,8 @@ describe("DraftReviewScreen", () => {
 
     await act(async () => { finishStage(staged); await pendingStage; });
 
+    expect(staged.commit).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
     expect(staged.commit).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(false);
     expect(screen.getByLabelText("重新生成草稿").props.accessibilityState.disabled).toBe(false);

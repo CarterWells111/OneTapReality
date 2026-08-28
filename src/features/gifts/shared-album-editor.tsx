@@ -17,6 +17,7 @@ import {
   BookCanvasEditor,
   type BookCanvasEditorHandle,
 } from "../canvas/book-canvas-editor";
+import { splitOverflowPhotoPages } from "../canvas/photo-page-limit";
 import {
   AlbumMetadataEditor,
   type AlbumMetadataValue,
@@ -99,7 +100,7 @@ export function SharedAlbumEditor({
   onReload,
 }: Props) {
   const client = React.useMemo(() => new BackendApiClient(), []);
-  const initialPages = React.useMemo(() => mapSharedAlbumToEditablePages(album), [album]);
+  const initialPages = React.useMemo(() => splitOverflowPhotoPages(mapSharedAlbumToEditablePages(album)), [album]);
   const [pages, setPages] = React.useState(initialPages);
   const [metadata, setMetadata] = React.useState<AlbumMetadataValue>({
     title: album.title,

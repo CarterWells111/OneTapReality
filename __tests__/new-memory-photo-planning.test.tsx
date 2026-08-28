@@ -32,9 +32,9 @@ describe("new memory photo planning", () => {
     });
   });
 
-  it("rejects a draft plan with more than twelve photos on one page", () => {
-    const thirteen = Array.from({ length: 13 }, (_, index) => `file://photo-${index + 1}.jpg`);
-    expect(areDraftPhotoPlansValid(thirteen, [{ photoUris: thirteen }])).toBe(false);
+  it("rejects a draft plan with more than eight photos on one page", () => {
+    const nine = Array.from({ length: 9 }, (_, index) => `file://photo-${index + 1}.jpg`);
+    expect(areDraftPhotoPlansValid(nine, [{ photoUris: nine }])).toBe(false);
   });
 
   it("sends two balanced plans with the magazine template when generating", async () => {

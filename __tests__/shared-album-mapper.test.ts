@@ -25,8 +25,9 @@ describe("shared album snapshot mapper", () => {
             backgroundId: "paper-grid",
             coverColor: "#abcdef",
             coverImage: "shared-media:media-1",
+            coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
             elements: [
-              { id: "second", type: "image", uri: "file:///old.jpg", mediaId: "media-2", x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotation: 5, zIndex: 2 },
+              { id: "second", type: "image", uri: "file:///old.jpg", mediaId: "media-2", crop: { focusX: 0.8, focusY: 0.2, zoom: 3 }, x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotation: 5, zIndex: 2 },
               { id: "caption", type: "text", text: "Keep me", fontStyle: "georgia", color: "#fedcba", fontSize: 18, x: 0, y: 0.7, width: 1, height: 0.2, rotation: 0, zIndex: 3 },
             ],
           },
@@ -54,8 +55,9 @@ describe("shared album snapshot mapper", () => {
         backgroundId: "paper-grid",
         coverColor: "#abcdef",
         coverImage: "https://cdn.test/first.jpg",
+        coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
         elements: [
-          expect.objectContaining({ id: "second", uri: "https://cdn.test/second.jpg", rotation: 5, zIndex: 2 }),
+          expect.objectContaining({ id: "second", uri: "https://cdn.test/second.jpg", crop: { focusX: 0.8, focusY: 0.2, zoom: 3 }, rotation: 5, zIndex: 2 }),
           expect.objectContaining({ id: "caption", text: "Keep me", color: "#fedcba", fontSize: 18 }),
         ],
       }),

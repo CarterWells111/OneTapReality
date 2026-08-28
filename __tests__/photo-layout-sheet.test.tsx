@@ -27,6 +27,25 @@ describe("PhotoLayoutSheet", () => {
     expect(onAddPhoto).toHaveBeenCalledTimes(1);
   });
 
+  it("disables the trailing plus tile at eight photos", () => {
+    const onAddPhoto = jest.fn();
+    const screen = render(
+      <PhotoLayoutSheet
+        action="edit"
+        onAddPhoto={onAddPhoto}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+        onPhotosChange={() => undefined}
+        photos={Array.from({ length: 8 }, (_, index) => ({ id: `${index}`, uri: `file:///${index}.jpg` }))}
+      />,
+    );
+
+    const add = screen.getByLabelText("添加一张照片");
+    expect(add.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    fireEvent.press(add);
+    expect(onAddPhoto).not.toHaveBeenCalled();
+  });
+
   it("opens the shared crop modal when a selected thumbnail is pressed", () => {
     const onPhotosChange = jest.fn();
     const screen = render(

@@ -1,6 +1,7 @@
 import type { InvitedGiftAlbum } from "../../services/backend/api-client";
 import type { CanvasElement, CanvasLayout, StoryPage } from "../../types/memory";
 import { canvasPages } from "../canvas/editor-pages";
+import { normalizePhotoCropState } from "../canvas/photo-crop";
 import { resolvePhotoTemplate } from "../canvas/photo-templates";
 
 type SnapshotImageElement = Extract<CanvasElement, { type: "image" }> & {
@@ -32,6 +33,7 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
     ...base,
     type: "image",
     uri: value.uri,
+    ...(value.crop !== undefined ? { crop: normalizePhotoCropState(value.crop) } : {}),
     ...(typeof value.mediaId === "string" ? { mediaId: value.mediaId } : {}),
     ...(typeof value.mediaRef === "string" ? { mediaRef: value.mediaRef } : {}),
     ...(isFiniteNumber(value.photoSlot) ? { photoSlot: value.photoSlot } : {}),
@@ -61,6 +63,7 @@ function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elemen
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" ? { coverImage: value.coverImage } : {}),
+    ...(value.coverCrop !== undefined ? { coverCrop: normalizePhotoCropState(value.coverCrop) } : {}),
     elements,
   };
 }

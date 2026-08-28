@@ -83,6 +83,34 @@ describe("CanvasPage", () => {
     expect(onSelect).toHaveBeenCalledWith("sticker-1");
   });
 
+  it("shows a crop control beside a selected photo and flips it above near the page edge", () => {
+    const onCropElement = jest.fn();
+    const bottomPhoto = { ...(layout.elements[0] as CanvasImageElement), y: 0.82, height: 0.16 };
+    const screen = render(
+      <CanvasPage layout={{ ...layout, elements: [bottomPhoto] }} onCropElement={onCropElement} selectedElementId="photo-1" />,
+    );
+
+    expect(StyleSheet.flatten(screen.getByLabelText("裁剪照片").props.style)).toEqual(expect.objectContaining({ bottom: "100%" }));
+    fireEvent.press(screen.getByLabelText("裁剪照片"));
+    expect(onCropElement).toHaveBeenCalledWith("photo-1");
+  });
+
+  it("selects a cover on double press and exposes its crop control inside the lower edge", () => {
+    const onSelectCover = jest.fn();
+    const onCropCover = jest.fn();
+    const coverLayout = { ...layout, backgroundId: undefined, coverImage: "file:///cover.jpg", elements: [] };
+    const screen = render(
+      <CanvasPage coverSelected layout={coverLayout} onCropCover={onCropCover} onSelectCover={onSelectCover} />,
+    );
+
+    fireEvent.press(screen.getByTestId("album-canvas"));
+    fireEvent.press(screen.getByTestId("album-canvas"));
+    expect(onSelectCover).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByLabelText("裁剪封面照片"));
+    expect(onCropCover).toHaveBeenCalledTimes(1);
+    expect(StyleSheet.flatten(screen.getByLabelText("裁剪封面照片").props.style)).toEqual(expect.objectContaining({ bottom: 10 }));
+  });
+
   it("keeps saved geometry in a read-only 3:4 preview", () => {
     const transformed: CanvasLayout = { ...layout, elements: [{ ...layout.elements[0], x: 0.2, y: 0.25, width: 0.5, height: 0.3, rotation: 0.42 }] };
     const screen = render(<CanvasPage displayAspectRatio={3 / 4} interactive={false} layout={transformed} width={300} />);

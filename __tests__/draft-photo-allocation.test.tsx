@@ -139,7 +139,7 @@ describe("DraftPhotoAllocation", () => {
       <DraftPhotoAllocation
         onChange={onChange}
         photoUris={thirteenPhotos}
-        value={[{ photoUris: thirteenPhotos.slice(0, 12) }, { photoUris: thirteenPhotos.slice(12) }]}
+        value={[{ photoUris: thirteenPhotos.slice(0, 8) }, { photoUris: thirteenPhotos.slice(8) }]}
       />,
     );
 
@@ -149,22 +149,22 @@ describe("DraftPhotoAllocation", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("disables moving a photo into a page that already has twelve photos", () => {
+  it("disables moving a photo into a page that already has eight photos", () => {
     const onChange = jest.fn();
     const fourteenPhotos = thirteenPhotos.concat("file://photo-14.jpg");
     const screen = render(
       <DraftPhotoAllocation
         onChange={onChange}
         photoUris={fourteenPhotos}
-        value={[{ photoUris: fourteenPhotos.slice(0, 12) }, { photoUris: fourteenPhotos.slice(12) }]}
+        value={[{ photoUris: fourteenPhotos.slice(0, 8) }, { photoUris: fourteenPhotos.slice(8) }]}
       />,
     );
 
     fireEvent.press(screen.getByText("逐页配置", { exact: true }));
     const photoList = screen.UNSAFE_getByType(FlatList);
-    const move = photoList.props.renderItem({ item: fourteenPhotos[12], index: 12 });
+    const move = photoList.props.renderItem({ item: fourteenPhotos[8], index: 8 });
     expect(move.props.accessibilityState).toMatchObject({ disabled: true });
-    expect(screen.getByText("每页最多 12 张照片")).toBeTruthy();
+    expect(screen.getByText("每页最多 8 张照片")).toBeTruthy();
     act(() => move.props.onPress());
     expect(onChange).not.toHaveBeenCalled();
   });

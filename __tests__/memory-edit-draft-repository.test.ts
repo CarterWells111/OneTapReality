@@ -300,6 +300,37 @@ describe("memory edit draft repository", () => {
       })]);
   });
 
+  it("round trips normalized photo and cover crop metadata", async () => {
+    const { database } = createDraftDatabase();
+    const croppedPage: StoryPage = {
+      ...secondPage,
+      layout: {
+        ...secondPage.layout!,
+        coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
+        elements: [{
+          id: "cropped",
+          type: "image",
+          uri: "file:///cropped.jpg",
+          crop: { focusX: 0.8, focusY: 0.2, zoom: 3 },
+          x: 0.1,
+          y: 0.1,
+          width: 0.8,
+          height: 0.8,
+          rotation: 0,
+          zIndex: 1,
+        }],
+      },
+    };
+
+    await saveMemoryEditDraft(database, baseMemory, [croppedPage], "account:owner@example.com");
+    const restored = await getMemoryEditDraft(database, baseMemory, "account:owner@example.com");
+
+    expect(restored?.[0].layout).toMatchObject({
+      coverCrop: { focusX: 0.25, focusY: 0.75, zoom: 2 },
+      elements: [expect.objectContaining({ crop: { focusX: 0.8, focusY: 0.2, zoom: 3 } })],
+    });
+  });
+
   it("round trips known photo templates and omits forged template IDs", async () => {
     const { database } = createDraftDatabase();
     const image = (id: string, uri: string, x: number): CanvasImageElement => (

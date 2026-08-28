@@ -10,6 +10,7 @@ import {
   replacePagePhotos,
   setCanvasBackground,
   setCanvasCoverColor,
+  setCanvasCoverCrop,
   setCanvasCoverImage,
   updateCanvasElement,
 } from "../src/features/canvas/editor-pages";
@@ -73,12 +74,31 @@ describe("editor photo templates", () => {
     expect(pages).toEqual(original);
   });
 
-  it("caps new pages at twelve photos and falls back to freeform for mismatched or large templates", () => {
+  it("keeps stable photo ids and independent crops when creating and replacing pages", () => {
+    const photos = [
+      { id: "duplicate-a", uri: "file:///same.jpg", crop: { focusX: 0.2, focusY: 0.8, zoom: 2 } },
+      { id: "duplicate-b", uri: "file:///same.jpg", crop: { focusX: 0.7, focusY: 0.3, zoom: 1.5 } },
+    ];
+
+    const created = addCanvasPage([], photos, "new-page", "columns-2");
+    expect(created[0].layout?.elements.filter((element) => element.type === "image")).toEqual([
+      expect.objectContaining({ id: "duplicate-a", uri: "file:///same.jpg", crop: photos[0].crop }),
+      expect.objectContaining({ id: "duplicate-b", uri: "file:///same.jpg", crop: photos[1].crop }),
+    ]);
+
+    const replaced = replacePagePhotos([pageWithPhotos(1)], "page-1", photos, "columns-2");
+    expect(replaced[0].layout?.elements.filter((element) => element.type === "image")).toEqual([
+      expect.objectContaining({ id: "duplicate-a", crop: photos[0].crop }),
+      expect.objectContaining({ id: "duplicate-b", crop: photos[1].crop }),
+    ]);
+  });
+
+  it("caps new pages at eight photos and falls back to freeform for mismatched or large templates", () => {
     const photoUris = Array.from({ length: 13 }, (_, index) => `file:///${index + 1}.jpg`);
     const next = addCanvasPage([], photoUris, "new-page", "classic-3");
 
     expect(next).toHaveLength(1);
-    expect(next[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(12);
+    expect(next[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(8);
     expect(next[0].layout).toMatchObject({ aspectRatio: 3 / 4 });
     expect(next[0].layout).not.toHaveProperty("photoTemplateId");
     expect(next[0].photoUri).toBe("file:///1.jpg");
@@ -157,8 +177,8 @@ describe("editor photo templates", () => {
     const next = replacePagePhotos(pages, "page-1", photos, "classic-2");
     const actualPhotos = next[0].layout!.elements.filter((element) => element.type === "image");
 
-    expect(actualPhotos).toHaveLength(12);
-    expect(actualPhotos.map((photo) => photo.id)).toEqual(Array.from({ length: 12 }, (_, index) => `new-${index + 1}`));
+    expect(actualPhotos).toHaveLength(8);
+    expect(actualPhotos.map((photo) => photo.id)).toEqual(Array.from({ length: 8 }, (_, index) => `new-${index + 1}`));
     expect(next[0].layout).not.toHaveProperty("photoTemplateId");
 
     const invalid = replacePagePhotos(pages, "page-1", [{ id: "new", uri: "file:///new.jpg" }], "unknown-template");
@@ -194,6 +214,14 @@ describe("editor photo templates", () => {
     expect(setCanvasBackground(base, "page-1", "linen")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(setCanvasCoverColor(base, "page-1", "#FFFFFF")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(setCanvasCoverImage(base, "page-1", "file:///new-cover.jpg")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
+    expect(setCanvasCoverCrop(base, "page-1", { focusX: 0.2, focusY: 0.8, zoom: 2 })[0].layout).toMatchObject({
+      coverCrop: { focusX: 0.2, focusY: 0.8, zoom: 2 },
+      photoTemplateId: "classic-2",
+    });
+    expect(updateCanvasElement(base, "page-1", "old-1", { crop: { focusX: 0.1, focusY: 0.9, zoom: 3 } })[0].layout).toMatchObject({
+      photoTemplateId: "classic-2",
+      elements: expect.arrayContaining([expect.objectContaining({ id: "old-1", crop: { focusX: 0.1, focusY: 0.9, zoom: 3 } })]),
+    });
     expect(deleteCanvasElement(base, "page-1", "caption")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
     expect(duplicateCanvasElement(base, "page-1", "caption", "caption-copy")[0].layout).toHaveProperty("photoTemplateId", "classic-2");
   });

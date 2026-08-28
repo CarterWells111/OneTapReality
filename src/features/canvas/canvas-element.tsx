@@ -42,6 +42,7 @@ type CanvasElementProps = {
   selectionContext: string | undefined;
   stylePreview?: CanvasElementStylePreview;
   onInteract?: (id: string) => void;
+  onCrop?: (id: string) => void;
   onSelect: (id: string) => void;
   onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
@@ -170,6 +171,7 @@ export function CanvasElement({
   selectionContext,
   stylePreview,
   onInteract,
+  onCrop,
   onSelect,
   onTransformStart,
   onTransformEnd,
@@ -450,6 +452,20 @@ export function CanvasElement({
             testID={`canvas-element-selection-${element.id}`}
           />
         ) : null}
+        {interactive && isSelected && element.type === "image" && onCrop ? (
+          <Pressable
+            accessibilityLabel="裁剪照片"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => onCrop(element.id)}
+            style={[
+              styles.cropButton,
+              element.y + element.height > 0.88 ? styles.cropButtonAbove : styles.cropButtonBelow,
+            ]}
+          >
+            <Text style={styles.cropButtonGlyph}>⌗</Text>
+          </Pressable>
+        ) : null}
         {/* 选中时显示四角拖拽手柄 */}
         {isSelected && element.type !== "image" ? (
           <SelectionHandles
@@ -630,4 +646,20 @@ const styles = StyleSheet.create({
   },
   imagePlaceholderGlyph: { fontSize: 18 },
   imagePlaceholderText: { color: "rgba(0,0,0,0.35)", fontSize: 11, fontWeight: "600" },
+  cropButton: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(28,44,40,0.92)",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -18,
+    position: "absolute",
+    width: 36,
+    zIndex: 30,
+  },
+  cropButtonAbove: { bottom: "100%", marginBottom: 6 },
+  cropButtonBelow: { marginTop: 6, top: "100%" },
+  cropButtonGlyph: { color: "#FFFFFF", fontSize: 20, lineHeight: 22 },
 });

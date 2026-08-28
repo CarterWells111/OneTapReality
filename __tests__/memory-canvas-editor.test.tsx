@@ -233,10 +233,10 @@ describe("canvas page editing model", () => {
     );
   });
 
-  it("does not allow more than twelve source photos on one canvas page", () => {
-    const selected = Array.from({ length: 12 }, (_, index) => `file://photo-${index}.jpg`);
+  it("does not allow more than eight source photos on one canvas page", () => {
+    const selected = Array.from({ length: 8 }, (_, index) => `file://photo-${index}.jpg`);
 
-    expect(toggleCanvasPhotoSelection(selected, "file://photo-12.jpg")).toEqual(selected);
+    expect(toggleCanvasPhotoSelection(selected, "file://photo-8.jpg")).toEqual(selected);
   });
 
   it("normalizes the formal canvas snapshot before it can be written and reloaded", () => {

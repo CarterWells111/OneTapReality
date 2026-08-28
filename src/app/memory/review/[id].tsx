@@ -10,6 +10,7 @@ import {
   type BookEditorChangeReason,
 } from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
+import { splitOverflowPhotoPages } from "../../../features/canvas/photo-page-limit";
 import { cityContent } from "../../../features/cities/city-content";
 import {
   AutosaveQueue,
@@ -52,7 +53,7 @@ export default function DraftReviewScreen() {
   const draftId = draft?.id;
 
   const installDraft = React.useCallback((nextDraft: Memory) => {
-    const preparedDraft = { ...nextDraft, pages: canvasPages(nextDraft.pages) };
+    const preparedDraft = { ...nextDraft, pages: splitOverflowPhotoPages(canvasPages(nextDraft.pages)) };
     draftRef.current = preparedDraft;
     setDraft(preparedDraft);
   }, []);

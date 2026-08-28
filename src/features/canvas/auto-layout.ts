@@ -1,6 +1,6 @@
 import type { CanvasImageElement, CanvasLayout } from "../../types/memory";
 
-export const MAX_PHOTOS_PER_CANVAS_PAGE = 12;
+export const MAX_PHOTOS_PER_CANVAS_PAGE = 8;
 
 const slots = {
   1: [[0.08, 0.08, 0.84, 0.84]],

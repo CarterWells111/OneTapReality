@@ -106,31 +106,6 @@ function stagedPhoto(uri: string) {
   return { uri, commit: jest.fn(), rollback: jest.fn(async () => undefined) } satisfies StagedPhotoFile;
 }
 
-function photoPageWithImageCount(count: number): StoryPage {
-  return {
-    id: "photo-cap-page",
-    position: 0,
-    kind: "photo",
-    headline: "照片上限",
-    body: "",
-    photoUri: count > 0 ? "file:///cap-1.jpg" : undefined,
-    layout: {
-      aspectRatio: 0.75,
-      elements: Array.from({ length: count }, (_, index) => ({
-        id: `cap-${index + 1}`,
-        type: "image" as const,
-        uri: `file:///cap-${index + 1}.jpg`,
-        x: 0.05,
-        y: 0.05,
-        width: 0.2,
-        height: 0.2,
-        rotation: 0,
-        zIndex: index + 1,
-      })),
-    },
-  };
-}
-
 function CursorHarness({ onActivePageChange }: {
   onActivePageChange: jest.Mock;
 }) {
@@ -246,12 +221,12 @@ describe("BookCanvasEditor", () => {
     );
 
     fireEvent.press(screen.getByText("照片与模板"));
-    expect(screen.getByText("请先选择照片")).toBeTruthy();
+    expect(screen.getByText("当前页暂无照片，可点击＋添加。")).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("重新选择照片"));
+      fireEvent.press(screen.getByLabelText("添加一张照片"));
     });
     fireEvent.press(screen.getByLabelText("竖向切片单图模板"));
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
 
     const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "page-1")!;
     expect(updated.photoUri).toBe("file:///permanent-cover.jpg");
@@ -270,6 +245,79 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByText("照片与模板"));
     expect(screen.getByLabelText("经典留白单图模板")).toBeTruthy();
+  });
+
+  it("uses only the unified photo entry and appends one staged photo without replacing existing photos", async () => {
+    const onChange = jest.fn();
+    const added = stagedPhoto("file:///permanent-added.jpg");
+    const screen = render(
+      <EditorHarness
+        initialPageId="photo-page"
+        initialPages={photoPages}
+        onChange={onChange}
+        stageSelectedPhoto={jest.fn().mockResolvedValue(added)}
+      />,
+    );
+
+    expect(screen.queryByText("📷 添加照片")).toBeNull();
+    fireEvent.press(screen.getByText("照片与模板"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+
+    expect(screen.getByLabelText("照片 3，点击裁剪")).toBeTruthy();
+    expect(screen.getByLabelText("经典留白三图模板").props.accessibilityState).toEqual(
+      expect.objectContaining({ selected: true }),
+    );
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
+
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+    expect(updated.layout?.elements.filter((element) => element.type === "image").map((element) => element.uri)).toEqual([
+      "file:///old-one.jpg",
+      "file:///old-two.jpg",
+      "file:///permanent-added.jpg",
+    ]);
+    expect(added.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a canvas photo crop through the floating control as one structural change", () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} />,
+    );
+
+    const photo = screen.getByTestId("canvas-element-old-one");
+    fireEvent.press(photo);
+    fireEvent.press(photo);
+    fireEvent.press(screen.getByLabelText("裁剪照片"));
+    fireEvent.press(screen.getByLabelText("重置裁剪"));
+    fireEvent.press(screen.getByLabelText("完成裁剪"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(expect.any(Array), "structure");
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+    expect(updated.layout?.elements.find((element) => element.id === "old-one")).toMatchObject({
+      crop: { focusX: 0.5, focusY: 0.5, zoom: 1 },
+    });
+  });
+
+  it("can remove every page photo in the unified sheet while preserving non-photo content", () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} />,
+    );
+
+    fireEvent.press(screen.getByText("照片与模板"));
+    fireEvent(screen.getByLabelText("照片 1，点击裁剪"), "accessibilityAction", {
+      nativeEvent: { actionName: "delete" },
+    });
+    fireEvent(screen.getByLabelText("照片 1，点击裁剪"), "accessibilityAction", {
+      nativeEvent: { actionName: "delete" },
+    });
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
+
+    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+    expect(updated).not.toHaveProperty("photoUri");
+    expect(updated.layout?.elements.filter((element) => element.type === "image")).toEqual([]);
+    expect(updated.layout?.elements.find((element) => element.id === "caption")).toMatchObject({ text: "保留文字" });
   });
 
   function openStyleMenu(screen: ReturnType<typeof render>, label: "颜色" | "字号") {
@@ -740,78 +788,6 @@ describe("BookCanvasEditor", () => {
     expect(latestCallback).toHaveBeenCalledWith({ pageId: "page-2", index: 1 });
   });
 
-  it("adds a selected photo only after it is copied to permanent storage", async () => {
-    const onChange = jest.fn();
-    const persistSelectedPhoto = jest.fn().mockResolvedValue("file:///Documents/account/memory/photo.jpg");
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={persistSelectedPhoto} />);
-
-    await act(async () => {
-      fireEvent.press(screen.getByText("📷 添加照片"));
-    });
-
-    expect(persistSelectedPhoto).toHaveBeenCalledWith("file:///temporary.jpg");
-    const latestPages = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
-    expect(latestPages[0].layout?.elements).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "image", uri: "file:///Documents/account/memory/photo.jpg" }),
-    ]));
-  });
-
-  it("commits staged quick-add and cover photos only after the page changes are accepted", async () => {
-    const quick = stagedPhoto("file:///session/quick.jpg");
-    const cover = stagedPhoto("file:///session/cover.jpg");
-    const stageSelectedPhoto = jest.fn().mockResolvedValueOnce(quick).mockResolvedValueOnce(cover);
-    const screen = render(<EditorHarness stageSelectedPhoto={stageSelectedPhoto} />);
-
-    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
-    expect(quick.commit).toHaveBeenCalledTimes(1);
-    expect(quick.rollback).not.toHaveBeenCalled();
-
-    fireEvent.press(screen.getByText("封面"));
-    await act(async () => { fireEvent.press(screen.getByLabelText("上传封面背景图")); });
-    expect(cover.commit).toHaveBeenCalledTimes(1);
-    expect(cover.rollback).not.toHaveBeenCalled();
-    expect(stageSelectedPhoto).toHaveBeenNthCalledWith(1, "file:///temporary.jpg");
-    expect(stageSelectedPhoto).toHaveBeenNthCalledWith(2, "file:///temporary.jpg");
-  });
-
-  it("rolls back staged quick-add and cover photos when the parent rejects their mutations", async () => {
-    const quick = stagedPhoto("file:///session/rejected-quick.jpg");
-    const cover = stagedPhoto("file:///session/rejected-cover.jpg");
-    const stageSelectedPhoto = jest.fn().mockResolvedValueOnce(quick).mockResolvedValueOnce(cover);
-    const onChange = jest.fn(() => false);
-    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
-
-    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
-    expect(quick.commit).not.toHaveBeenCalled();
-    expect(quick.rollback).toHaveBeenCalledTimes(1);
-
-    fireEvent.press(screen.getByText("封面"));
-    await act(async () => { fireEvent.press(screen.getByLabelText("上传封面背景图")); });
-    expect(cover.commit).not.toHaveBeenCalled();
-    expect(cover.rollback).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the composed pending signal true while delayed quick-add staging commits", async () => {
-    let resolveStage!: (photo: StagedPhotoFile) => void;
-    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
-    const quick = stagedPhoto("file:///session/delayed-quick.jpg");
-    const onPendingChange = jest.fn();
-    const screen = render(
-      <EditorHarness onPendingChange={onPendingChange} stageSelectedPhoto={jest.fn(() => pendingStage)} />,
-    );
-
-    fireEvent.press(screen.getByText("📷 添加照片"));
-    await act(async () => undefined);
-    expect(onPendingChange).toHaveBeenLastCalledWith(true);
-    expect(quick.commit).not.toHaveBeenCalled();
-
-    await act(async () => { resolveStage(quick); await pendingStage; });
-
-    expect(quick.commit).toHaveBeenCalledTimes(1);
-    expect(quick.rollback).not.toHaveBeenCalled();
-    expect(onPendingChange).toHaveBeenLastCalledWith(false);
-  });
-
   it("keeps the composed pending signal true through delayed cover rollback", async () => {
     let resolveStage!: (photo: StagedPhotoFile) => void;
     let finishRollback!: () => void;
@@ -840,88 +816,6 @@ describe("BookCanvasEditor", () => {
     await act(async () => { finishRollback(); await pendingRollback; });
     expect(cover.commit).not.toHaveBeenCalled();
     expect(onPendingChange).toHaveBeenLastCalledWith(false);
-  });
-
-  it("rolls back a delayed quick-add stage that completes after unmount", async () => {
-    let resolveStage!: (photo: StagedPhotoFile) => void;
-    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
-    const quick = stagedPhoto("file:///session/unmounted-quick.jpg");
-    const onChange = jest.fn();
-    const onPendingChange = jest.fn();
-    const screen = render(
-      <EditorHarness onChange={onChange} onPendingChange={onPendingChange} stageSelectedPhoto={jest.fn(() => pendingStage)} />,
-    );
-    fireEvent.press(screen.getByText("📷 添加照片"));
-    await act(async () => undefined);
-    expect(onPendingChange).toHaveBeenLastCalledWith(true);
-
-    screen.unmount();
-    expect(onPendingChange).toHaveBeenLastCalledWith(false);
-    await act(async () => { resolveStage(quick); await pendingStage; });
-
-    expect(quick.rollback).toHaveBeenCalledTimes(1);
-    expect(quick.commit).not.toHaveBeenCalled();
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("commits the twelfth quick photo but preflights the thirteenth without opening the picker", async () => {
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const twelfth = stagedPhoto("file:///session/twelfth.jpg");
-    const stageSelectedPhoto = jest.fn().mockResolvedValue(twelfth);
-    const onChange = jest.fn();
-    const screen = render(
-      <EditorHarness
-        initialPageId="photo-cap-page"
-        initialPages={[photoPageWithImageCount(11), pages[1]]}
-        onChange={onChange}
-        stageSelectedPhoto={stageSelectedPhoto}
-      />,
-    );
-
-    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
-    expect(twelfth.commit).toHaveBeenCalledTimes(1);
-    const accepted = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
-    expect(accepted[0].layout?.elements.filter((element) => element.type === "image")).toHaveLength(12);
-
-    await act(async () => { fireEvent.press(screen.getByText("📷 添加照片")); });
-    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
-    expect(launchImageLibraryMock).toHaveBeenCalledTimes(1);
-    expect(stageSelectedPhoto).toHaveBeenCalledTimes(1);
-    expect(alert).toHaveBeenCalledWith("无法添加照片", expect.stringContaining("12 张"));
-  });
-
-  it("rolls back a staged quick photo when a concurrent page update reaches the cap", async () => {
-    let resolveStage!: (photo: StagedPhotoFile) => void;
-    const pendingStage = new Promise<StagedPhotoFile>((resolve) => { resolveStage = resolve; });
-    const staged = stagedPhoto("file:///session/raced-thirteenth.jpg");
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const onChange = jest.fn();
-    const initialPages = canvasPages([photoPageWithImageCount(11), pages[1]]);
-    const screen = render(
-      <BookCanvasEditor
-        initialPageId="photo-cap-page"
-        onPagesChange={onChange}
-        pages={initialPages}
-        stageSelectedPhoto={jest.fn(() => pendingStage)}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("📷 添加照片"));
-    await act(async () => undefined);
-    screen.rerender(
-      <BookCanvasEditor
-        initialPageId="photo-cap-page"
-        onPagesChange={onChange}
-        pages={canvasPages([photoPageWithImageCount(12), pages[1]])}
-        stageSelectedPhoto={jest.fn(() => pendingStage)}
-      />,
-    );
-    await act(async () => { resolveStage(staged); await pendingStage; });
-
-    expect(onChange).not.toHaveBeenCalled();
-    expect(staged.commit).not.toHaveBeenCalled();
-    expect(staged.rollback).toHaveBeenCalledTimes(1);
-    expect(alert).toHaveBeenCalledWith("无法添加照片", expect.stringContaining("12 张"));
   });
 
   it.each(["false", "throw"])("keeps undo history when the parent %s-rejects a restore", (mode) => {
@@ -961,7 +855,7 @@ describe("BookCanvasEditor", () => {
 
     expect(launchImageLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
       allowsMultipleSelection: true,
-      selectionLimit: 12,
+      selectionLimit: 8,
     }));
     expect(stageSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
       "file:///temporary-one.jpg",
@@ -1055,74 +949,6 @@ describe("BookCanvasEditor", () => {
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("新建照片页面")).toBeNull();
-  });
-
-  it("replaces an existing photo page when reselecting changes the photo count and template", async () => {
-    const onChange = jest.fn();
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{ uri: "file:///temporary-new-one.jpg" }],
-    });
-    const screen = render(
-      <EditorHarness
-        initialPageId="photo-page"
-        initialPages={photoPages}
-        onChange={onChange}
-        stageSelectedPhoto={async (uri) => stagedPhoto(uri.replace("temporary", "permanent"))}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("照片与模板"));
-    expect(launchImageLibraryMock).not.toHaveBeenCalled();
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText("重新选择照片"));
-    });
-    expect(onChange).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByLabelText("竖向切片单图模板"));
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
-
-    expect(onChange).toHaveBeenCalledTimes(1);
-    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
-    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-1" });
-    expect(updated.layout?.elements.find((element) => element.id === "caption")).toMatchObject({ text: "保留文字" });
-    const images = updated.layout?.elements.filter((element) => element.type === "image") ?? [];
-    expect(images.map((element) => element.uri)).toEqual(["file:///permanent-new-one.jpg"]);
-    expect(images.map((element) => element.id)).not.toEqual(["old-one", "old-two"]);
-  });
-
-  it("replaces photo membership after any successful reselect even when the source URI sequence matches", async () => {
-    const onChange = jest.fn();
-    const originalPage = photoPages[1];
-    const originalImages = originalPage.layout!.elements.filter((element) => element.type === "image");
-    const originalCaption = originalPage.layout!.elements.find((element) => element.id === "caption");
-    launchImageLibraryMock.mockResolvedValueOnce({
-      canceled: false,
-      assets: [{ uri: "file:///old-one.jpg" }, { uri: "file:///old-two.jpg" }],
-    });
-    const screen = render(
-      <EditorHarness
-        initialPageId="photo-page"
-        initialPages={photoPages}
-        onChange={onChange}
-        stageSelectedPhoto={async (uri) => stagedPhoto(uri)}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("照片与模板"));
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText("重新选择照片"));
-    });
-    expect(onChange).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByLabelText("竖向切片双图模板"));
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
-
-    expect(onChange).toHaveBeenCalledTimes(1);
-    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
-    const updatedImages = updated.layout!.elements.filter((element) => element.type === "image");
-    expect(updatedImages.map((element) => element.id)).not.toEqual(originalImages.map((element) => element.id));
-    expect(updatedImages.map((element) => element.uri)).toEqual(originalImages.map((element) => element.uri));
-    expect(updated.layout).toMatchObject({ backgroundId: "paper", photoTemplateId: "columns-2", schemaVersion: 7 });
-    expect(updated.layout!.elements.find((element) => element.id === "caption")).toEqual(originalCaption);
   });
 
   it("rolls back earlier staged copies when a later copy fails", async () => {
@@ -1230,49 +1056,6 @@ describe("BookCanvasEditor", () => {
     expect(onPendingChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("rolls back superseded staged files and only commits the current replacement", async () => {
-    const original = stagedPhoto("file:///owned-original.jpg");
-    const replacement = stagedPhoto("file:///owned-replacement.jpg");
-    const stageSelectedPhoto = jest.fn()
-      .mockResolvedValueOnce(original)
-      .mockResolvedValueOnce(replacement);
-    const screen = render(<EditorHarness stageSelectedPhoto={stageSelectedPhoto} />);
-    fireEvent.press(screen.getByLabelText("打开页面管理"));
-    await act(async () => { await dismissPageManagerForAdd(screen); });
-    await act(async () => { fireEvent.press(screen.getByLabelText("重新选择照片")); });
-    expect(original.rollback).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByLabelText("创建页面"));
-    expect(replacement.commit).toHaveBeenCalledTimes(1);
-    expect(replacement.rollback).not.toHaveBeenCalled();
-  });
-
-  it("stays busy until superseded staged files finish rolling back", async () => {
-    let finishRollback!: () => void;
-    const rollbackPending = new Promise<undefined>((resolve) => {
-      finishRollback = () => resolve(undefined);
-    });
-    const original = stagedPhoto("file:///owned-original.jpg");
-    original.rollback.mockReturnValueOnce(rollbackPending);
-    const replacement = stagedPhoto("file:///owned-replacement.jpg");
-    const stageSelectedPhoto = jest.fn()
-      .mockResolvedValueOnce(original)
-      .mockResolvedValueOnce(replacement);
-    const onChange = jest.fn();
-    const screen = render(<EditorHarness onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
-    fireEvent.press(screen.getByLabelText("打开页面管理"));
-    await act(async () => { await dismissPageManagerForAdd(screen); });
-
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
-    await act(async () => undefined);
-    expect(screen.getByText("正在保存照片…")).toBeTruthy();
-    fireEvent.press(screen.getByLabelText("创建页面"));
-    expect(onChange).not.toHaveBeenCalled();
-    await act(async () => { finishRollback(); await rollbackPending; });
-    expect(screen.queryByText("正在保存照片…")).toBeNull();
-    fireEvent.press(screen.getByLabelText("创建页面"));
-    expect(onChange).toHaveBeenCalledTimes(1);
-  });
-
   it("rolls back an uncommitted staged file when the editor unmounts", async () => {
     const staged = stagedPhoto("file:///owned-unmounted.jpg");
     const screen = render(<EditorHarness stageSelectedPhoto={jest.fn().mockResolvedValue(staged)} />);
@@ -1281,37 +1064,6 @@ describe("BookCanvasEditor", () => {
     screen.unmount();
     await act(async () => undefined);
     expect(staged.rollback).toHaveBeenCalledTimes(1);
-  });
-
-  it("rolls back a stale out-of-order replacement without overwriting the newer flow", async () => {
-    let resolveOld!: (value: StagedPhotoFile) => void;
-    let resolveNew!: (value: StagedPhotoFile) => void;
-    const oldPromise = new Promise<StagedPhotoFile>((resolve) => { resolveOld = resolve; });
-    const newPromise = new Promise<StagedPhotoFile>((resolve) => { resolveNew = resolve; });
-    const oldHandle = stagedPhoto("file:///owned-old-request.jpg");
-    const newHandle = stagedPhoto("file:///owned-new-request.jpg");
-    const stageSelectedPhoto = jest.fn()
-      .mockReturnValueOnce(oldPromise)
-      .mockReturnValueOnce(newPromise);
-    const onChange = jest.fn();
-    const screen = render(
-      <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
-    );
-
-    fireEvent.press(screen.getByText("照片与模板"));
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
-    await act(async () => undefined);
-    await act(async () => { fireEvent.press(screen.getByLabelText("取消照片布局")); });
-    fireEvent.press(screen.getByText("照片与模板"));
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
-    await act(async () => { resolveNew(newHandle); await newPromise; });
-    expect(screen.getByLabelText("照片 1").props.source).toEqual([{ uri: newHandle.uri }]);
-    await act(async () => { resolveOld(oldHandle); await oldPromise; });
-    expect(oldHandle.rollback).toHaveBeenCalledTimes(1);
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
-    const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
-    expect(updated.photoUri).toBe(newHandle.uri);
-    expect(newHandle.commit).toHaveBeenCalledTimes(1);
   });
 
   it("never rolls back pre-existing page files when cancelling an edit", async () => {
@@ -1345,13 +1097,13 @@ describe("BookCanvasEditor", () => {
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
     fireEvent.press(screen.getByText("照片与模板"));
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
     await act(async () => undefined);
     expect(screen.getByText("正在保存照片…")).toBeTruthy();
-    expect(screen.getByLabelText("应用照片布局").props.accessibilityState.disabled).toBe(true);
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
+    expect(screen.getByLabelText("应用照片与模板").props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByLabelText("重新选择照片"));
+    fireEvent.press(screen.getByLabelText("添加一张照片"));
     expect(launchImageLibraryMock).toHaveBeenCalledTimes(1);
     await act(async () => { resolveStage(stagedPhoto("file:///owned-new.jpg")); await pendingStage; });
   });
@@ -1365,7 +1117,7 @@ describe("BookCanvasEditor", () => {
     expect(mockCurrentCanvasPageProps?.layout).not.toHaveProperty("photoTemplateId");
     expect((mockCurrentCanvasPageProps?.layout as StoryPage["layout"])?.elements).toEqual(originalElements);
     fireEvent.press(screen.getByText("照片与模板"));
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -1378,7 +1130,7 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByText("照片与模板"));
     expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
-    fireEvent.press(screen.getByLabelText("应用照片布局"));
+    fireEvent.press(screen.getByLabelText("应用照片与模板"));
 
     expect(onChange).not.toHaveBeenCalled();
     expect(fourPhotoFreeformPages[1]).toEqual(original);
@@ -1397,13 +1149,13 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByText("照片与模板"));
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("重新选择照片"));
+      fireEvent.press(screen.getByLabelText("添加一张照片"));
     });
     expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
     expect(onChange).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("重新选择照片"));
+      fireEvent.press(screen.getByLabelText("添加一张照片"));
     });
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("存储空间"));
     expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
@@ -1420,19 +1172,6 @@ describe("BookCanvasEditor", () => {
 
     const transformed = onChange.mock.calls.at(-1)?.[0] as StoryPage[];
     expect(transformed.find((page) => page.id === "photo-page")?.layout).not.toHaveProperty("photoTemplateId");
-  });
-
-  it("shows an alert and leaves the canvas unchanged when a selected photo cannot be copied", async () => {
-    const onChange = jest.fn();
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const screen = render(<EditorHarness onChange={onChange} persistSelectedPhoto={jest.fn().mockRejectedValue(new Error("no space"))} />);
-
-    await act(async () => {
-      fireEvent.press(screen.getByText("📷 添加照片"));
-    });
-
-    expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
-    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("persists a cover before applying it and keeps the existing cover on failure", async () => {
