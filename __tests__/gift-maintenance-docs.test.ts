@@ -21,12 +21,15 @@ describe("gift maintenance operations documentation", () => {
     expect(runbook).toContain("npm run worker:check");
   });
 
-  it("keeps the generated phase-two migration behind explicit production approval", () => {
+  it("records the completed phase-two rollout and ongoing approval boundaries", () => {
     const runbook = read("docs/operations/GIFT-MAINTENANCE.md");
     const coordination = read("docs/NFC-API-COORDINATION.md");
 
     expect(runbook).toContain("0014_database_phase2.sql");
-    expect(runbook).toContain("尚未部署");
+    expect(runbook).toContain("Schema 14");
+    expect(runbook).toContain("已完成");
+    expect(runbook).toContain("首次维护");
+    expect(runbook).not.toContain("但尚未部署");
     expect(runbook).toContain("生产 migration");
     expect(runbook).toContain("Railway 部署");
     expect(coordination).toContain("0014_database_phase2.sql");

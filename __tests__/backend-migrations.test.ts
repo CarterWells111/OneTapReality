@@ -7,6 +7,20 @@ import {
 } from "../src/server/db/test-database";
 
 describe("backend PostgreSQL migrations", () => {
+  it("adapts the phase-two PL/pgSQL guard when migrations use Windows line endings", async () => {
+    const observedQueries: string[] = [];
+    const { db, close } = createBackendTestDatabase({
+      onQuery: (query) => observedQueries.push(query),
+    });
+
+    try {
+      await expect(migrateBackendDatabase(db)).resolves.toBeUndefined();
+      expect(observedQueries.some((query) => query.includes("Legacy gift authentication tables must be empty"))).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
   it("preserves a legacy shared album with a null travel date when applying migration 0011", async () => {
     const { db, close } = createBackendTestDatabase();
 
