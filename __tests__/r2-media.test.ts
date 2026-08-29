@@ -4,6 +4,7 @@ jest.mock("@aws-sdk/client-s3", () => ({
   GetObjectCommand: jest.fn((input) => input),
   HeadObjectCommand: jest.fn((input) => input),
   DeleteObjectsCommand: jest.fn((input) => input),
+  CopyObjectCommand: jest.fn((input) => input),
 }));
 jest.mock("@aws-sdk/s3-request-presigner", () => ({ getSignedUrl: jest.fn(async (_client, command) => `https://signed.example/${command.Key}`) }));
 
@@ -41,5 +42,29 @@ describe("private R2 media store", () => {
     const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
 
     await expect(store.deleteObjects(["secret-object-key"])).rejects.toThrow("R2 deletion failed for 1 object");
+  });
+
+  it("promotes a verified temporary object with a server-side copy", async () => {
+    const { S3Client } = jest.requireMock("@aws-sdk/client-s3") as { S3Client: jest.Mock };
+    const send = jest.fn(async () => ({}));
+    S3Client.mockImplementation(() => ({ send }));
+    const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+    await store.copyObject("gifts/gift/temp/photo", "gifts/gift/final/photo");
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ CopySource: "gift-private/gifts/gift/temp/photo", Key: "gifts/gift/final/photo" }));
+  });
+
+  it("passes the caller abort signal to the R2 copy request", async () => {
+    const { S3Client } = jest.requireMock("@aws-sdk/client-s3") as { S3Client: jest.Mock };
+    const send = jest.fn(async () => ({}));
+    S3Client.mockImplementation(() => ({ send }));
+    const store = createR2MediaStore({ accountId: "account", bucket: "gift-private", accessKeyId: "key", secretAccessKey: "secret" });
+    const controller = new AbortController();
+
+    await store.copyObject("gifts/gift/temp/photo", "gifts/gift/final/photo", { abortSignal: controller.signal });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ Key: "gifts/gift/final/photo" }),
+      { abortSignal: controller.signal },
+    );
   });
 });

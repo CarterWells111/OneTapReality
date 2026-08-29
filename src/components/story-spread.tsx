@@ -1,6 +1,8 @@
 import { Image } from "expo-image";
 import { Text, View } from "react-native";
 
+import { LocalMissingPhotoPlaceholder } from "./local-missing-photo-placeholder";
+import { isMissingPhotoToken } from "../features/memories/photo-references";
 import type { StoryPage } from "../types/memory";
 import { colors } from "./ui";
 
@@ -9,7 +11,9 @@ export function StorySpread({ page }: { page: StoryPage }) {
 
   return (
     <View style={{ backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 18, borderWidth: 1, gap: 12, overflow: "hidden", padding: 18 }}>
-      {hasPhoto ? (
+      {hasPhoto && isMissingPhotoToken(page.photoUri!) ? (
+        <LocalMissingPhotoPlaceholder style={{ borderRadius: 12, height: page.kind === "cover" ? 240 : 180, width: "100%" }} />
+      ) : hasPhoto ? (
         <Image contentFit="cover" source={{ uri: page.photoUri }} style={{ backgroundColor: colors.accentSoft, borderRadius: 12, height: page.kind === "cover" ? 240 : 180, width: "100%" }} testID="story-photo" />
       ) : page.kind !== "closing" ? (
         <View style={{ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 12, height: page.kind === "cover" ? 240 : 180, justifyContent: "center", width: "100%" }}>

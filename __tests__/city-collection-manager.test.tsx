@@ -13,8 +13,8 @@ describe("CityCollectionManager", () => {
     const onSave = jest.fn();
     const screen = await render(<CityCollectionManager featuredMemoryId="one" memories={memories} onCancel={() => {}} onSave={onSave} />);
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Set Two as representative")); });
-    await act(async () => { fireEvent.press(screen.getByLabelText("Save collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("将Two设为精选旅行册")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("保存城市旅行册更改")); });
 
     expect(onSave).toHaveBeenCalledWith(["one", "two"], "two");
   });
@@ -24,7 +24,7 @@ describe("CityCollectionManager", () => {
     const onSave = jest.fn();
     const screen = await render(<CityCollectionManager featuredMemoryId="one" memories={memories} onCancel={onCancel} onSave={onSave} />);
 
-    await act(async () => { fireEvent.press(screen.getByLabelText("Cancel collection changes")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("取消城市旅行册更改")); });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSave).not.toHaveBeenCalled();

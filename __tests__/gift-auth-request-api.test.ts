@@ -2,13 +2,23 @@ jest.mock("../src/server/gifts/email-auth", () => ({
   createGiftEmailCode: jest.fn(async () => ({ email: "owner@example.com", code: "123456", codeHash: "code-hash", expiresAt: "2026-07-24T00:05:00.000Z" })),
   normalizeGiftEmail: jest.fn((email: string) => email.trim().toLowerCase()),
 }));
-jest.mock("../src/server/auth/repository", () => ({ createAuthEmailCode: jest.fn(async () => undefined), isAuthEmailCodeRateLimited: jest.fn(async () => false) }));
+jest.mock("../src/server/auth/repository", () => ({
+  createAuthEmailCodeIfAllowed: jest.fn(async () => "created"),
+  deleteAuthEmailCodeById: jest.fn(async () => undefined),
+  isAccountActiveByEmail: jest.fn(async () => true),
+}));
 jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificationEmail: jest.fn(async () => undefined) }));
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 
 import { POST } from "../src/app/api/gift-auth/request+api";
 
 describe("gift email request API", () => {
+  afterEach(() => {
+    delete process.env.GIFT_AUTH_PEPPER;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.GIFT_EMAIL_FROM;
+  });
+
   it("accepts an email without returning its verification code", async () => {
     process.env.GIFT_AUTH_PEPPER = "pepper";
     process.env.RESEND_API_KEY = "resend";

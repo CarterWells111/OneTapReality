@@ -8,7 +8,7 @@ describe("city card visuals", () => {
     }
   });
 
-  it("uses the shared line-drawing placeholder for non-featured cities", () => {
-    expect(getCityCardVisual("chengdu")).toEqual({ kind: "placeholder" });
+  it("uses the shared formal illustration for non-featured cities", () => {
+    expect(getCityCardVisual("chengdu")).toEqual({ kind: "generic" });
   });
 });

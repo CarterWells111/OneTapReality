@@ -1,5 +1,5 @@
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { newDb } from "pg-mem";
+import { DataType, newDb } from "pg-mem";
 import type { Pool } from "pg";
 
 import { createBackendDatabase, type BackendDatabase } from "./client";
@@ -21,6 +21,12 @@ export type BackendTestDatabase = {
 
 export function createBackendTestDatabase(options: { onQuery?: (query: string) => void } = {}): BackendTestDatabase {
   const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
+  memoryDatabase.public.registerFunction({
+    name: "char_length",
+    args: [DataType.text],
+    returns: DataType.integer,
+    implementation: (value: string) => value.length,
+  });
   const adapter = memoryDatabase.adapters.createPg();
   const pool = new adapter.Pool() as unknown as Pool;
   const query = pool.query.bind(pool);

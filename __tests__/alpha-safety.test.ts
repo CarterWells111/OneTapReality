@@ -36,6 +36,30 @@ describe("Alpha gift safety controls", () => {
     expect(() => requireAlphaEmailAllowed("outside@example.com")).not.toThrow();
   });
 
+  it("allows the fail-closed external-Beta review identity without duplicating it in the Alpha allowlist", () => {
+    const reviewEnvironment = {
+      ALPHA_ALLOWED_EMAILS: "invited@example.com",
+      APPLE_REVIEW_ACCESS_ENABLED: "true",
+      APPLE_REVIEW_EMAIL: "reviewer@example.test",
+      APPLE_REVIEW_CODE: "654321",
+      APPLE_REVIEW_FIXTURE_SECRET: "B".repeat(43),
+      APPLE_REVIEW_CLAIM_TOKEN: "A".repeat(43),
+      GIFT_TOKEN_PEPPER: "gift-token-pepper",
+      GIFT_URL_ORIGIN: "https://staging.onetapreality.com",
+      RELEASE_AUDIENCE: "external-beta",
+    };
+
+    expect(() => requireAlphaEmailAllowed(" Reviewer@Example.Test ", reviewEnvironment)).not.toThrow();
+    for (const override of [
+      { APPLE_REVIEW_ACCESS_ENABLED: "false" },
+      { RELEASE_AUDIENCE: "public" },
+      { GIFT_URL_ORIGIN: "https://onetapreality.com" },
+    ]) {
+      expect(thrownBy(() => requireAlphaEmailAllowed("reviewer@example.test", { ...reviewEnvironment, ...override })))
+        .toMatchObject({ status: 403, code: "beta_invite_required" });
+    }
+  });
+
   it("stops public gift sharing when the incident switch is disabled", () => {
     process.env.GIFT_SHARING_ENABLED = "false";
 

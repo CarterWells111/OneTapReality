@@ -25,11 +25,11 @@ describe("gift maintenance operations documentation", () => {
     const runbook = read("docs/operations/GIFT-MAINTENANCE.md");
     const coordination = read("docs/NFC-API-COORDINATION.md");
 
-    expect(runbook).toContain("0008_database_phase2.sql");
+    expect(runbook).toContain("0014_database_phase2.sql");
     expect(runbook).toContain("尚未部署");
     expect(runbook).toContain("生产 migration");
     expect(runbook).toContain("Railway 部署");
-    expect(coordination).toContain("0008_database_phase2.sql");
+    expect(coordination).toContain("0014_database_phase2.sql");
     expect(coordination).not.toContain("旧表 `gift_email_codes` / `gift_sessions` 是否清理？ | **暂时保留**");
   });
 });

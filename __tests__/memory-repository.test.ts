@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import type { Memory } from "../src/types/memory";
 
 import {
   createDraft,
@@ -7,9 +8,11 @@ import {
   getMemory,
   getDraft,
   listDiscardedMemories,
+  listAllMemories,
   listMemories,
   migrateDbIfNeeded,
   restoreDiscardedMemory,
+  replaceMemoryMediaSnapshot,
   saveMemory,
   saveDraft,
 } from "../src/storage/memory-repository";
@@ -22,6 +25,17 @@ type MemoryRow = {
   status?: "draft" | "saved" | "discarded";
   createdAt: string;
   updatedAt: string;
+};
+
+type StoryPageRow = {
+  id: string;
+  memory_id: string;
+  position: number;
+  kind: "cover" | "photo" | "closing";
+  headline: string;
+  body: string;
+  photo_uri: string | null;
+  layout_json: string | null;
 };
 
 type FakeMemoryDatabase = {
@@ -41,6 +55,81 @@ const draftMemory = {
   createdAt: "2026-07-22T10:00:00.000Z",
   updatedAt: "2026-07-22T10:00:00.000Z",
 };
+const accountKey = "account:owner@example.com";
+
+const mediaSnapshotMemory: Memory = {
+  ...draftMemory,
+  id: "media-memory",
+  updatedAt: "2026-08-17T12:00:00.000Z",
+  coverImage: "documents://photos/accounts/owner%40example.com/media-memory/cover.jpg",
+  photoUris: ["documents://photos/accounts/owner%40example.com/media-memory/photo.jpg"],
+  pages: [{
+    id: "media-page",
+    position: 0,
+    kind: "cover" as const,
+    headline: "New headline",
+    body: "New body",
+    photoUri: "documents://photos/accounts/owner%40example.com/media-memory/page.jpg",
+    layout: { aspectRatio: 1, elements: [{ id: "image", type: "image", uri: "documents://photos/accounts/owner%40example.com/media-memory/layout.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }] },
+  }],
+};
+
+function createMediaSnapshotDatabase(options?: { ownerAccountKey?: string; failStatement?: string }) {
+  const state: {
+    memory: { id: string; ownerAccountKey: string; title: string; travelDate: string; updatedAt: string; coverImage?: string };
+    photos: string[];
+    pages: Array<{ id: string; photoUri?: string; layoutJson: string }>;
+  } = {
+    memory: {
+      id: mediaSnapshotMemory.id,
+      ownerAccountKey: options?.ownerAccountKey ?? accountKey,
+      title: "Old album name",
+      travelDate: "2025-01-02",
+      updatedAt: "old-updated-at",
+      coverImage: "old-cover.jpg",
+    },
+    photos: ["old-photo.jpg"],
+    pages: [{ id: "old-page", photoUri: "old-page.jpg", layoutJson: '{"old":true}' }],
+  };
+  const database = {
+    async withTransactionAsync(callback: () => Promise<void>) {
+      const before = structuredClone(state);
+      try {
+        await callback();
+      } catch (error) {
+        Object.assign(state, before);
+        throw error;
+      }
+    },
+    async runAsync(statement: string, ...parameters: unknown[]) {
+      if (options?.failStatement && statement.startsWith(options.failStatement)) {
+        throw new Error("injected statement failure");
+      }
+      if (statement.startsWith("UPDATE memories SET title")) {
+        if (state.memory.id !== parameters[4] || state.memory.ownerAccountKey !== parameters[5]) return { changes: 0 };
+        state.memory.title = String(parameters[0]);
+        state.memory.travelDate = String(parameters[1]);
+        state.memory.updatedAt = String(parameters[2]);
+        state.memory.coverImage = parameters[3] == null ? undefined : String(parameters[3]);
+      } else if (statement.startsWith("UPDATE memories SET updatedAt")) {
+        if (state.memory.id !== parameters[2] || state.memory.ownerAccountKey !== parameters[3]) return { changes: 0 };
+        state.memory.updatedAt = String(parameters[0]);
+        state.memory.coverImage = parameters[1] == null ? undefined : String(parameters[1]);
+      } else if (statement.startsWith("DELETE FROM memory_photos")) {
+        state.photos = [];
+      } else if (statement.startsWith("INSERT INTO memory_photos")) {
+        state.photos.push(String(parameters[1]));
+      } else if (statement.startsWith("DELETE FROM story_pages")) {
+        state.pages = [];
+      } else if (statement.startsWith("INSERT INTO story_pages")) {
+        state.pages.push({ id: String(parameters[0]), photoUri: parameters[6] == null ? undefined : String(parameters[6]), layoutJson: String(parameters[7]) });
+      }
+      return { changes: 1 };
+    },
+  } as unknown as SQLiteDatabase;
+
+  return { database, state };
+}
 
 function createMemoryDatabase(options?: {
   columns?: string[];
@@ -58,6 +147,7 @@ function createMemoryDatabase(options?: {
   ];
   const execStatements: string[] = [];
   const runCalls: Array<{ statement: string; parameters: unknown[] }> = [];
+  const storyPages: StoryPageRow[] = [];
 
   const selectMemories = (statement: string, parameters: unknown[]) => {
     const id = statement.includes("WHERE id = ?")
@@ -85,6 +175,11 @@ function createMemoryDatabase(options?: {
     if (statement.includes("FROM memories")) {
       return selectMemories(statement, parameters) as T[];
     }
+    if (statement.includes("FROM story_pages")) {
+      return storyPages
+        .filter((page) => page.memory_id === parameters[0])
+        .sort((left, right) => left.position - right.position) as T[];
+    }
     return [] as T[];
   };
 
@@ -109,6 +204,19 @@ function createMemoryDatabase(options?: {
           status: parameters[4] as MemoryRow["status"],
           createdAt: String(parameters[5]),
           updatedAt: String(parameters[6]),
+        });
+      }
+
+      if (statement.startsWith("INSERT INTO story_pages")) {
+        storyPages.push({
+          id: String(parameters[0]),
+          memory_id: String(parameters[1]),
+          position: Number(parameters[2]),
+          kind: parameters[3] as StoryPageRow["kind"],
+          headline: String(parameters[4]),
+          body: String(parameters[5]),
+          photo_uri: parameters[6] === null ? null : String(parameters[6]),
+          layout_json: parameters[7] === null ? null : String(parameters[7]),
         });
       }
 
@@ -142,10 +250,10 @@ describe("memory draft lifecycle repository", () => {
   it("keeps a newly created draft out of the saved memory list", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
+    await createDraft(database, draftMemory, accountKey);
 
-    await expect(listMemories(database)).resolves.toEqual([]);
-    await expect(getDraft(database, draftMemory.id)).resolves.toMatchObject({
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(getDraft(database, draftMemory.id, accountKey)).resolves.toMatchObject({
       id: draftMemory.id,
       status: "draft",
     });
@@ -163,7 +271,7 @@ describe("memory draft lifecycle repository", () => {
       }],
     });
 
-    await expect(getMemory(database, "legacy-1")).resolves.toMatchObject({ id: "legacy-1" });
+    await expect(getMemory(database, "legacy-1", accountKey)).resolves.toMatchObject({ id: "legacy-1" });
   });
 
   it("does not read draft or discarded memories as valid memory details", async () => {
@@ -174,24 +282,24 @@ describe("memory draft lifecycle repository", () => {
       ],
     });
 
-    await expect(getMemory(database, "draft-detail")).resolves.toBeNull();
-    await expect(getMemory(database, "discarded-detail")).resolves.toBeNull();
+    await expect(getMemory(database, "draft-detail", accountKey)).resolves.toBeNull();
+    await expect(getMemory(database, "discarded-detail", accountKey)).resolves.toBeNull();
   });
 
   it("confirms a draft as saved and marks an unconfirmed draft as discarded", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
-    await saveDraft(database, draftMemory.id, "2026-07-22T10:01:00.000Z");
+    await createDraft(database, draftMemory, accountKey);
+    await saveDraft(database, draftMemory.id, "2026-07-22T10:01:00.000Z", accountKey);
 
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "saved" },
     ]);
 
-    await createDraft(database, { ...draftMemory, id: "discard-me" });
-    await discardDraft(database, "discard-me", "2026-07-22T10:02:00.000Z");
+    await createDraft(database, { ...draftMemory, id: "discard-me" }, accountKey);
+    await discardDraft(database, "discard-me", "2026-07-22T10:02:00.000Z", accountKey);
 
-    await expect(getDraft(database, "discard-me")).resolves.toBeNull();
+    await expect(getDraft(database, "discard-me", accountKey)).resolves.toBeNull();
   });
 
   it("migrates legacy rows to saved without interpolating lifecycle values", async () => {
@@ -211,13 +319,16 @@ describe("memory draft lifecycle repository", () => {
 
     await migrateDbIfNeeded(database);
 
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: "legacy-memory", status: "saved" },
     ]);
     expect(execStatements.join(" ")).toContain(
       "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'saved'"
     );
-    expect(runCalls).toEqual([]);
+    expect(runCalls).toContainEqual({
+      statement: "UPDATE memories SET ownerAccountKey = ? WHERE id = ?",
+      parameters: ["guest", "legacy-memory"],
+    });
   });
 
   it("creates the local city collection arrangements table with cascading memory cleanup", async () => {
@@ -227,40 +338,53 @@ describe("memory draft lifecycle repository", () => {
 
     expect(execStatements.join(" ")).toContain("CREATE TABLE IF NOT EXISTS city_collection_arrangements");
     expect(execStatements.join(" ")).toContain("FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE");
+    expect(execStatements.join(" ")).toContain("DROP INDEX IF EXISTS city_collection_arrangements_one_featured_city");
   });
 
   it("lists discarded memories in the recycle bin and restores one to saved", async () => {
     const { database } = createMemoryDatabase();
 
-    await createDraft(database, draftMemory);
-    await discardDraft(database, draftMemory.id, "2026-07-22T10:02:00.000Z");
+    await createDraft(database, draftMemory, accountKey);
+    await discardDraft(database, draftMemory.id, "2026-07-22T10:02:00.000Z", accountKey);
 
-    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "discarded" },
     ]);
-    await expect(listMemories(database)).resolves.toEqual([]);
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
 
-    await restoreDiscardedMemory(database, draftMemory.id, "2026-07-22T10:03:00.000Z");
+    await restoreDiscardedMemory(database, draftMemory.id, "2026-07-22T10:03:00.000Z", accountKey);
 
-    await expect(listDiscardedMemories(database)).resolves.toEqual([]);
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: draftMemory.id, status: "saved", updatedAt: "2026-07-22T10:03:00.000Z" },
     ]);
+  });
+
+  it("can inspect every current-account status for safe internal photo cleanup", async () => {
+    const { database } = createMemoryDatabase();
+    await createDraft(database, draftMemory, accountKey);
+    await createDraft(database, { ...draftMemory, id: "discarded" }, accountKey);
+    await discardDraft(database, "discarded", "2026-07-22T10:02:00.000Z", accountKey);
+
+    await expect(listAllMemories(database, accountKey)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: draftMemory.id, status: "draft" }),
+      expect.objectContaining({ id: "discarded", status: "discarded" }),
+    ]));
   });
 
   it("moves a saved memory into the recycle bin instead of deleting it", async () => {
     const { database } = createMemoryDatabase();
 
-    await saveMemory(database, { ...draftMemory, id: "saved-1" });
-    await discardMemory(database, "saved-1", "2026-07-22T10:05:00.000Z");
+    await saveMemory(database, { ...draftMemory, id: "saved-1" }, accountKey);
+    await discardMemory(database, "saved-1", "2026-07-22T10:05:00.000Z", accountKey);
 
-    await expect(listMemories(database)).resolves.toEqual([]);
-    await expect(listDiscardedMemories(database)).resolves.toMatchObject([
+    await expect(listMemories(database, accountKey)).resolves.toEqual([]);
+    await expect(listDiscardedMemories(database, accountKey)).resolves.toMatchObject([
       { id: "saved-1", status: "discarded", updatedAt: "2026-07-22T10:05:00.000Z" },
     ]);
 
-    await restoreDiscardedMemory(database, "saved-1", "2026-07-22T10:06:00.000Z");
-    await expect(listMemories(database)).resolves.toMatchObject([
+    await restoreDiscardedMemory(database, "saved-1", "2026-07-22T10:06:00.000Z", accountKey);
+    await expect(listMemories(database, accountKey)).resolves.toMatchObject([
       { id: "saved-1", status: "saved" },
     ]);
   });
@@ -278,9 +402,100 @@ describe("memory draft lifecycle repository", () => {
         body: "Body",
         layout: { aspectRatio: 1, elements: [] },
       }],
-    });
+    }, accountKey);
 
     const pageInsert = runCalls.find((call) => call.statement.startsWith("INSERT INTO story_pages"));
     expect(pageInsert?.parameters).toContain('{"aspectRatio":1,"elements":[]}');
+  });
+
+  it("round trips a formal full-bleed canvas element without shrinking it", async () => {
+    const { database } = createMemoryDatabase();
+    await saveMemory(database, {
+      ...draftMemory,
+      id: "full-bleed-memory",
+      pages: [{
+        id: "full-bleed-page",
+        position: 0,
+        kind: "photo",
+        headline: "Full bleed",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          elements: [{ id: "hero", type: "image", uri: "file:///hero.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 }],
+        },
+      }],
+    }, accountKey);
+
+    const restored = await getMemory(database, "full-bleed-memory", accountKey);
+
+    expect(restored?.pages[0].layout?.elements[0]).toMatchObject({ width: 1, height: 1 });
+  });
+
+  it("repairs legacy collage rotations when loading a formal local album", async () => {
+    const { database } = createMemoryDatabase();
+    await saveMemory(database, {
+      ...draftMemory,
+      id: "legacy-collage-memory",
+      pages: [{
+        id: "legacy-collage-page",
+        position: 0,
+        kind: "photo",
+        headline: "Legacy collage",
+        body: "",
+        layout: {
+          aspectRatio: 0.75,
+          photoTemplateId: "collage-2",
+          elements: [
+            { id: "one", type: "image", uri: "file:///one.jpg", x: 0.08, y: 0.11, width: 0.56, height: 0.48, rotation: -3, zIndex: 1 },
+            { id: "two", type: "image", uri: "file:///two.jpg", x: 0.38, y: 0.44, width: 0.54, height: 0.45, rotation: 3, zIndex: 2 },
+          ],
+        },
+      }],
+    }, accountKey);
+
+    const restored = await getMemory(database, "legacy-collage-memory", accountKey);
+    const rotations = restored?.pages[0].layout?.elements.map((element) => element.rotation);
+
+    expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
+    expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
+  it("replaces an owned memory media snapshot atomically", async () => {
+    const { database, state } = createMediaSnapshotDatabase();
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).resolves.toBe(true);
+
+    expect(state).toEqual({
+      memory: expect.objectContaining({
+        title: mediaSnapshotMemory.title,
+        travelDate: mediaSnapshotMemory.travelDate,
+        updatedAt: mediaSnapshotMemory.updatedAt,
+        coverImage: mediaSnapshotMemory.coverImage,
+      }),
+      photos: mediaSnapshotMemory.photoUris,
+      pages: [expect.objectContaining({
+        id: "media-page",
+        photoUri: "documents://photos/accounts/owner%40example.com/media-memory/page.jpg",
+        layoutJson: JSON.stringify(mediaSnapshotMemory.pages[0].layout),
+      })],
+    });
+  });
+
+  it("rolls back every media field when a snapshot statement fails", async () => {
+    const { database, state } = createMediaSnapshotDatabase({ failStatement: "INSERT INTO story_pages" });
+    const before = structuredClone(state);
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).rejects.toThrow("injected statement failure");
+
+    expect(state).toEqual(before);
+  });
+
+  it("does not replace media owned by another account", async () => {
+    const { database, state } = createMediaSnapshotDatabase({ ownerAccountKey: "other@example.com" });
+    const before = structuredClone(state);
+
+    await expect(replaceMemoryMediaSnapshot(database, mediaSnapshotMemory, accountKey)).resolves.toBe(false);
+
+    expect(state).toEqual(before);
   });
 });

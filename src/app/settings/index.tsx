@@ -6,6 +6,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { ProfileAvatar } from "../../components/profile-avatar";
 import { AppButton, bodyFont, colors, Section } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
+import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import {
   maxBioLength,
   normalizeBio,
@@ -24,6 +25,15 @@ export default function SettingsScreen() {
     session,
     signOut,
   } = useAuth();
+  const {
+    accountOwner,
+    continueWithGuest,
+    isMigrating,
+    migrateToAccount,
+    needsMigrationChoice,
+    owner: localLibraryOwner,
+    switchToAccount,
+  } = useLocalLibrary();
   const [draft, setDraft] = React.useState<LocalProfile | null>(null);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -37,12 +47,6 @@ export default function SettingsScreen() {
     setError("");
 
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError("未获得照片权限。你可以在系统设置中允许访问后再选择头像。");
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -125,8 +129,38 @@ export default function SettingsScreen() {
 
       <Section title="数据与隐私">
         <View style={styles.privacyCard}>
-          <Text selectable style={styles.privacyTitle}>资料不会同步到云端</Text>
-          <Text selectable style={styles.helper}>昵称与头像用于个人展示；选择照片不会上传或分享。</Text>
+          <Text selectable style={styles.privacyTitle}>
+            {localLibraryOwner === "guest" ? "本机访客旅行册" : "当前账户的本机旅行册"}
+          </Text>
+          <Text selectable style={styles.helper}>
+            昵称、旅行册与未发布照片保存在本机；只有你主动发布礼品时，所选内容才会上传给受邀成员。
+          </Text>
+          {needsMigrationChoice ? (
+            <Text selectable style={styles.helper}>请回到首页选择继续使用访客库或迁移到当前账户。</Text>
+          ) : null}
+          {accountOwner && !needsMigrationChoice && localLibraryOwner === "guest" ? (
+            <>
+              <AppButton
+                disabled={isMigrating}
+                label="切换到当前账户旅行册"
+                tone="secondary"
+                onPress={() => void switchToAccount().catch(() => setError("无法切换本机旅行册，请重试。"))}
+              />
+              <AppButton
+                disabled={isMigrating}
+                label="迁移访客旅行册到当前账户"
+                onPress={() => void migrateToAccount().catch(() => setError("迁移未完成，访客旅行册仍保留在本机。"))}
+              />
+            </>
+          ) : null}
+          {accountOwner && !needsMigrationChoice && localLibraryOwner !== "guest" ? (
+            <AppButton
+              disabled={isMigrating}
+              label="切换到访客旅行册"
+              tone="secondary"
+              onPress={() => void continueWithGuest().catch(() => setError("无法切换本机旅行册，请重试。"))}
+            />
+          ) : null}
         </View>
       </Section>
 
@@ -144,11 +178,6 @@ export default function SettingsScreen() {
             />
           ) : null}
         </View>
-      </Section>
-
-      <Section title="后端状态">
-        <Text selectable style={styles.helper}>手动检查后端服务连接状态。</Text>
-        <AppButton label="打开后端状态" onPress={() => router.push("/backend")} tone="secondary" />
       </Section>
 
       {session ? (

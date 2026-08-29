@@ -1,47 +1,79 @@
 {
   "cli": {
     "version": ">=16.0.1",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "requireCommit": true
   },
   "build": {
-    "development-android": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
-      }
-    },
     "development": {
       "autoIncrement": true,
       "developmentClient": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     },
     "alpha": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
+      }
+    },
+    "staging-testflight": {
+      "distribution": "store",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
+      }
+    },
+    "beta-external": {
+      "distribution": "store",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "external-beta"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com"
+        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
+        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
+        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
       }
     }
   },
   "submit": {
     "development": {
+      "ios": {
+        "ascAppId": "6794186067"
+      }
+    },
+    "staging-testflight": {
+      "ios": {
+        "ascAppId": "6794186067",
+        "groups": [
+          "OneTapReality开发员测试"
+        ]
+      }
+    },
+    "beta-external": {
       "ios": {
         "ascAppId": "6794186067"
       }

@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import type { LocalLibraryOwner } from "../features/auth/local-library-owner";
 
 import { listMemories } from "./memory-repository";
 import type { City, Memory } from "../types/memory";
@@ -39,11 +40,13 @@ function toArrangement(row: CityCollectionArrangementRow): CityCollectionArrange
 
 export async function fetchCityCollectionArrangements(
   db: SQLiteDatabase,
-  city: City
+  city: City,
+  accountKey: LocalLibraryOwner,
 ): Promise<CityCollectionArrangement[]> {
   const rows = await db.getAllAsync<CityCollectionArrangementRow>(
-    "SELECT memory_id, city, position, is_featured, updated_at FROM city_collection_arrangements WHERE city = ? ORDER BY position ASC",
-    city
+    "SELECT arrangements.memory_id, arrangements.city, arrangements.position, arrangements.is_featured, arrangements.updated_at FROM city_collection_arrangements AS arrangements INNER JOIN memories ON memories.id = arrangements.memory_id WHERE arrangements.city = ? AND memories.ownerAccountKey = ? ORDER BY arrangements.position ASC",
+    city,
+    accountKey,
   );
   return rows.map(toArrangement);
 }
@@ -52,12 +55,13 @@ export async function persistCityCollectionOrder(
   db: SQLiteDatabase,
   city: City,
   memoryIds: readonly string[],
-  updatedAt: string
+  updatedAt: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const [memories, existingArrangements] = await Promise.all([
-      listMemories(transaction),
-      fetchCityCollectionArrangements(transaction, city),
+      listMemories(transaction, accountKey),
+      fetchCityCollectionArrangements(transaction, city, accountKey),
     ]);
     const savedCityMemoryIds = new Set(
       memories
@@ -75,8 +79,9 @@ export async function persistCityCollectionOrder(
     )?.memoryId;
 
     await transaction.runAsync(
-      "DELETE FROM city_collection_arrangements WHERE city = ?",
-      city
+      "DELETE FROM city_collection_arrangements WHERE city = ? AND memory_id IN (SELECT id FROM memories WHERE ownerAccountKey = ?)",
+      city,
+      accountKey,
     );
     for (const [position, memoryId] of orderedMemoryIds.entries()) {
       await transaction.runAsync(
@@ -96,10 +101,11 @@ export async function saveCityCollection(
   city: City,
   memoryIds: readonly string[],
   featuredMemoryId: string | null,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
-    const memories = await listMemories(transaction);
+    const memories = await listMemories(transaction, accountKey);
     const savedCityMemoryIds = new Set(
       memories
         .filter((memory) => memory.city === city && memory.status !== "draft" && memory.status !== "discarded")
@@ -113,8 +119,9 @@ export async function saveCityCollection(
       : null;
 
     await transaction.runAsync(
-      "DELETE FROM city_collection_arrangements WHERE city = ?",
-      city
+      "DELETE FROM city_collection_arrangements WHERE city = ? AND memory_id IN (SELECT id FROM memories WHERE ownerAccountKey = ?)",
+      city,
+      accountKey,
     );
     for (const [position, memoryId] of orderedMemoryIds.entries()) {
       await transaction.runAsync(
@@ -133,22 +140,26 @@ export async function setFeaturedCityMemory(
   db: SQLiteDatabase,
   city: City,
   memoryId: string,
-  updatedAt: string
+  updatedAt: string,
+  accountKey: LocalLibraryOwner,
 ) {
   await db.withExclusiveTransactionAsync(async (transaction) => {
     await transaction.runAsync(
-      `UPDATE city_collection_arrangements SET is_featured = 0 WHERE city = ? AND EXISTS (SELECT 1 FROM memories WHERE id = ? AND city = ? AND (${savedOrLegacyStatusSql}))`,
+      `UPDATE city_collection_arrangements SET is_featured = 0 WHERE city = ? AND memory_id IN (SELECT id FROM memories WHERE ownerAccountKey = ?) AND EXISTS (SELECT 1 FROM memories WHERE id = ? AND city = ? AND ownerAccountKey = ? AND (${savedOrLegacyStatusSql}))`,
       city,
+      accountKey,
       memoryId,
       city,
+      accountKey,
       "saved"
     );
     await transaction.runAsync(
-      `INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) SELECT memories.id, memories.city, COALESCE((SELECT MAX(position) + 1 FROM city_collection_arrangements WHERE city = ?), 0), 1, ? FROM memories WHERE id = ? AND city = ? AND (${savedOrLegacyStatusSql}) ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, is_featured = excluded.is_featured, updated_at = excluded.updated_at`,
+      `INSERT INTO city_collection_arrangements (memory_id, city, position, is_featured, updated_at) SELECT memories.id, memories.city, COALESCE((SELECT MAX(position) + 1 FROM city_collection_arrangements WHERE city = ?), 0), 1, ? FROM memories WHERE id = ? AND city = ? AND ownerAccountKey = ? AND (${savedOrLegacyStatusSql}) ON CONFLICT(memory_id) DO UPDATE SET city = excluded.city, is_featured = excluded.is_featured, updated_at = excluded.updated_at`,
       city,
       updatedAt,
       memoryId,
       city,
+      accountKey,
       "saved"
     );
   });
@@ -156,11 +167,12 @@ export async function setFeaturedCityMemory(
 
 export async function resolveCityCollection(
   db: SQLiteDatabase,
-  city: City
+  city: City,
+  accountKey: LocalLibraryOwner,
 ): Promise<ResolvedCityCollection> {
   const [memories, arrangements] = await Promise.all([
-    listMemories(db),
-    fetchCityCollectionArrangements(db, city),
+    listMemories(db, accountKey),
+    fetchCityCollectionArrangements(db, city, accountKey),
   ]);
   const cityMemories = memories.filter((memory) => memory.city === city && memory.status !== "draft" && memory.status !== "discarded");
   const memoryById = new Map(cityMemories.map((memory) => [memory.id, memory]));

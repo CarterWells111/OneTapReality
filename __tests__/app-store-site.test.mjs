@@ -32,7 +32,10 @@ test("provides the marketing, support, and privacy routes Apple requires", () =>
   assert.match(support, /App 版本号/);
   assert.match(privacy, /登录并明确发布 NFC 礼品/);
   assert.match(privacy, /私有 R2/);
-  assert.match(privacy, /本地“删除所有数据”只删除设备本地内容/);
+  assert.match(privacy, /“删除本机旅行册”只删除当前本地库/);
+  assert.match(privacy, /“永久删除账号及云端数据”/);
+  assert.match(privacy, /Railway PostgreSQL/);
+  assert.match(privacy, /Resend/);
   assert.match(support, /主动发布 NFC 礼品/);
   assert.match(support, /停用礼品/);
 });
@@ -127,21 +130,12 @@ test("bundles the carousel script and local product images into worker-served st
   }
 });
 
-test("serves Android Digital Asset Links for the production package", () => {
-  const assetLinks = JSON.parse(readWebsiteFile(".well-known/assetlinks.json"));
-  assert.deepEqual(assetLinks, [{
-    relation: ["delegate_permission/common.handle_all_urls"],
-    target: {
-      namespace: "android_app",
-      package_name: "com.onetapreality.app",
-      sha256_cert_fingerprints: ["66:85:7A:70:92:A4:29:EA:1A:4E:DA:E5:BD:34:90:E6:3C:68:C1:8F:F2:14:DD:24:F0:CE:40:DB:A5:C8:49:47"],
-    },
-  }]);
-
+test("does not publish Android Digital Asset Links", () => {
+  assert.equal(existsSync(join(websiteRoot, ".well-known", "assetlinks.json")), false);
   const worker = readWebsiteFile("worker/index.js");
   const buildScript = readWebsiteFile("scripts/build-static-site.ps1");
-  assert.match(worker, /__ANDROID_ASSET_LINKS__/);
-  assert.match(buildScript, /__ANDROID_ASSET_LINKS__/);
+  assert.doesNotMatch(worker, /ANDROID_ASSET_LINKS|assetlinks\.json/);
+  assert.doesNotMatch(buildScript, /ANDROID_ASSET_LINKS|assetlinks\.json/);
 });
 
 test("serves the matching iOS universal-link association for gift and activation routes", () => {

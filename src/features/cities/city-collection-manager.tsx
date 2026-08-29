@@ -31,12 +31,12 @@ export function CityCollectionManager({ featuredMemoryId, memories, onCancel, on
   }, []);
 
   if (memoryIds.length === 0) {
-    return <Text selectable style={{ color: colors.muted }}>No saved memories to manage.</Text>;
+    return <Text selectable style={{ color: colors.muted }}>这座城市还没有可管理的旅行册。</Text>;
   }
 
   return (
     <View style={{ gap: 12 }}>
-      <Text selectable style={{ color: colors.muted, lineHeight: 21 }}>Long press and drag a memory to reorder it. Choose one representative before saving.</Text>
+      <Text selectable style={{ color: colors.muted, lineHeight: 21 }}>长按并拖动旅行册可调整顺序；保存前请选择一本作为精选旅行册。</Text>
       {memoryIds.map((memoryId, index) => {
         const memory = memoryById.get(memoryId);
         if (!memory) return null;
@@ -58,27 +58,27 @@ export function CityCollectionManager({ featuredMemoryId, memories, onCancel, on
             <View testID={`city-collection-row-${memoryId}`} style={{ backgroundColor: colors.surface, borderColor: isDragging ? colors.accent : colors.line, borderRadius: 16, borderWidth: isDragging ? 2 : 1, gap: 8, minHeight: 76, opacity: isDragging ? 0.86 : 1, padding: 14, transform: isDragging ? [{ translateY: dragOffset }] : [] }}>
               <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "space-between" }}>
                 <Text selectable style={{ color: colors.ink, flex: 1, fontSize: 17, fontWeight: "700" }}>{memory.title}</Text>
-                <Text selectable style={{ color: colors.muted, fontSize: 13 }}>Long press to drag</Text>
+                <Text selectable style={{ color: colors.muted, fontSize: 13 }}>长按拖动</Text>
               </View>
               <Pressable
-                accessibilityLabel={`Set ${memory.title} as representative`}
+                accessibilityLabel={`将${memory.title}设为精选旅行册`}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: selectedId === memoryId }}
                 onPress={() => setSelectedId(memoryId)}
                 style={({ pressed }) => ({ alignItems: "center", alignSelf: "flex-start", backgroundColor: selectedId === memoryId ? colors.accentSoft : colors.background, borderColor: selectedId === memoryId ? colors.accent : colors.line, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 44, opacity: pressed ? 0.82 : 1, paddingHorizontal: 12 })}
               >
-                <Text selectable style={{ color: colors.ink, fontWeight: "700" }}>{selectedId === memoryId ? "Representative" : "Set representative"}</Text>
+                <Text selectable style={{ color: colors.ink, fontWeight: "700" }}>{selectedId === memoryId ? "已设为精选" : "设为精选"}</Text>
               </Pressable>
             </View>
           </GestureDetector>
         );
       })}
       <View style={{ flexDirection: "row", gap: 10 }}>
-        <Pressable accessibilityLabel="Cancel collection changes" accessibilityRole="button" onPress={onCancel} style={({ pressed }) => ({ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 14, flex: 1, justifyContent: "center", minHeight: 48, opacity: pressed ? 0.82 : 1 })}>
-          <Text selectable style={{ color: colors.accent, fontSize: 16, fontWeight: "700" }}>Cancel</Text>
+        <Pressable accessibilityLabel="取消城市旅行册更改" accessibilityRole="button" onPress={onCancel} style={({ pressed }) => ({ alignItems: "center", backgroundColor: colors.accentSoft, borderRadius: 14, flex: 1, justifyContent: "center", minHeight: 48, opacity: pressed ? 0.82 : 1 })}>
+          <Text selectable style={{ color: colors.accent, fontSize: 16, fontWeight: "700" }}>取消</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Save collection changes" accessibilityRole="button" onPress={() => onSave(memoryIds, selectedId)} style={({ pressed }) => ({ alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, flex: 1, justifyContent: "center", minHeight: 48, opacity: pressed ? 0.82 : 1 })}>
-          <Text selectable style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>Save</Text>
+        <Pressable accessibilityLabel="保存城市旅行册更改" accessibilityRole="button" onPress={() => onSave(memoryIds, selectedId)} style={({ pressed }) => ({ alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, flex: 1, justifyContent: "center", minHeight: 48, opacity: pressed ? 0.82 : 1 })}>
+          <Text selectable style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>保存</Text>
         </Pressable>
       </View>
     </View>

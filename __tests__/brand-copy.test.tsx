@@ -23,6 +23,12 @@ jest.mock("../src/features/auth/auth-provider", () => ({
     user: null,
   }),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => ({
+    continueWithGuest: jest.fn(), isMigrating: false, migrateToAccount: jest.fn(),
+    needsMigrationChoice: false, owner: "guest",
+  }),
+}));
 
 import MemoriesHomeScreen from "../src/app/(tabs)/index";
 import ProfileScreen from "../src/app/(tabs)/profile";
@@ -51,12 +57,12 @@ describe("OneTapReality brand copy", () => {
     const expo = require("../app.json").expo;
 
     expect(expo.name).toBe("OneTapReality");
-    expect(expo.version).toBe("1.1.0");
+    expect(expo.version).toBe("1.1.2");
     expect(expo.slug).toBe("onetapreality");
     expect(expo.scheme).toBe("onetapreality");
-    expect(expo.android.adaptiveIcon.backgroundColor).toBe("#F7F2EA");
+    expect(expo.android).toBeUndefined();
     const imagePickerPlugin = expo.plugins.find((plugin: unknown) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
-    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Allow OneTapReality to access your selected photos to create albums.");
+    expect(imagePickerPlugin?.[1]?.photosPermission).toBe("Choose specific photos to create or edit a travel album.");
     expect(expo.plugins).toContainEqual(
       expect.arrayContaining([
         "expo-splash-screen",

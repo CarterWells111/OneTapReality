@@ -2,10 +2,14 @@
   "expo": {
     "name": "OneTapReality",
     "slug": "onetapreality",
-    "version": "1.1.0",
+    "version": "1.1.2",
     "orientation": "portrait",
     "icon": "./assets/images/onetapreality-icon.png",
     "scheme": "onetapreality",
+    "locales": {
+      "en": "./locales/en.json",
+      "zh-Hans": "./locales/zh-Hans.json"
+    },
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
@@ -15,50 +19,9 @@
         "applinks:staging.onetapreality.com"
       ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "MinimumOSVersion": "15.1"
       }
-    },
-    "android": {
-      "package": "com.onetapreality.app",
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "onetapreality.com",
-              "pathPrefix": "/gift"
-            },
-            {
-              "scheme": "https",
-              "host": "onetapreality.com",
-              "pathPrefix": "/activate"
-            },
-            {
-              "scheme": "https",
-              "host": "staging.onetapreality.com",
-              "pathPrefix": "/gift"
-            },
-            {
-              "scheme": "https",
-              "host": "staging.onetapreality.com",
-              "pathPrefix": "/activate"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
-      ],
-      "adaptiveIcon": {
-        "backgroundColor": "#F7F2EA",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "server",
@@ -69,14 +32,16 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow OneTapReality to access your selected photos to create albums."
+          "cameraPermission": false,
+          "microphonePermission": false,
+          "photosPermission": "Choose specific photos to create or edit a travel album."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow OneTapReality to access your photos when selecting album images.",
-          "savePhotosPermission": "Allow OneTapReality to save exported album images to your photo library."
+          "photosPermission": "Choose specific photos to create or edit a travel album.",
+          "savePhotosPermission": "Save an exported travel album to your photo library when you choose to do so."
         }
       ],
       "expo-sqlite",
@@ -92,7 +57,7 @@
       [
         "react-native-nfc-manager",
         {
-          "nfcPermission": "Allow OneTapReality to read and write NFC gift cards.",
+          "nfcPermission": "Scan a OneTapReality gift card to open its invitation link.",
           "includeNdefEntitlement": false
         }
       ]

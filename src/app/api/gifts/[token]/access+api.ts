@@ -11,7 +11,7 @@ export async function GET(request: Request, { token }: { token: string }): Promi
     const email = await requireGiftSessionEmail(request, db);
     const access = await getGiftAccessByTokenHash(db, await hashGiftToken(token), email);
     if (!access || access.status !== "bound") throw new ApiError(403, "gift_access_denied", "This email does not have access to this gift");
-    return Response.json(access);
+    return Response.json({ ...access, travelDate: access.travelDate ?? null });
   } catch (error) {
     return errorResponse(error);
   }

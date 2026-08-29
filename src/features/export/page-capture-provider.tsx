@@ -54,8 +54,10 @@ export function capturePagesAsImages(
 }
 
 // ── 截图缩放倍率 ──
-// 3x → 360x480 逻辑像素 → 1080x1440 输出 → ≈174 DPI（A4 纸张）
-const CAPTURE_SCALE = 3;
+// 1x → 360x480 logical pixels → 360x480 output.
+// Keep Expo Go and TestFlight exports at the original 360x480 canvas size.
+// This avoids iOS PDF memory limits for multipage albums.
+const CAPTURE_SCALE = 1;
 
 // ── Provider 组件 ──
 

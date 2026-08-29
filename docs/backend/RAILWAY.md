@@ -79,7 +79,25 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 Alpha 必须使用独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单。staging Service 使用 `GIFT_URL_ORIGIN=https://staging.onetapreality.com`、独立 `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET`、受邀测试者的 `ALPHA_ALLOWED_EMAILS` 和 `GIFT_SHARING_ENABLED=true`。EAS `alpha` profile 只注入 `https://api-staging.onetapreality.com`。
 
-staging 域还必须部署同一发布签名对应的 `/.well-known/apple-app-site-association` 与 `/.well-known/assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
+staging 域还必须部署同一 iOS 发布标识对应的 `/.well-known/apple-app-site-association`；当前不部署 Android `assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
+
+## External Beta staging
+
+外部 Beta 复用同一个隔离 staging Service，但必须在取得单独云端配置批准后增加以下服务端变量：
+
+```env
+GIFT_URL_ORIGIN=https://staging.onetapreality.com
+RELEASE_AUDIENCE=external-beta
+APPLE_REVIEW_ACCESS_ENABLED=true
+APPLE_REVIEW_EMAIL=<受保护变量>
+APPLE_REVIEW_CODE=<受保护变量>
+APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
+APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
+```
+
+`APPLE_REVIEW_EMAIL`、`APPLE_REVIEW_CODE`、`APPLE_REVIEW_FIXTURE_SECRET` 和 `APPLE_REVIEW_CLAIM_TOKEN` 只存 Railway staging Secret 与 App Store Connect Review Notes，不得读取或复制到 Git、聊天、Issue、命令参数、截图或日志。production 的审核开关必须未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并保持其他 `APPLE_REVIEW_*` 凭据未配置。
+
+配置重部署且 health 达到 schema 13 后，按 [外部 Beta 放行清单](../release/EXTERNAL-BETA-1.1.2.md) 完成审核登录 smoke 与账号删除挑战 smoke；未完成时不得构建或上传外测候选。
 
 ## 常见失败
 

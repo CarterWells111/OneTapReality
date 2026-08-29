@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   BackendApiClient,
   BackendApiError,
+  isBackendSessionInvalidError,
   resolveBackendRequestUrl,
 } from "../src/services/backend/api-client";
 
@@ -55,43 +59,38 @@ describe("backend client", () => {
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/auth/request", "/api/auth/verify", "/api/auth/me"]);
   });
 
-  it("reserves a developer gift card with the gift session bearer token", async () => {
-    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({
-      cardId: "card-1",
-      cardCode: "CARD-001",
-      giftUrl: "https://onetapreality.com/gift/unique-token",
-      expiresAt: "2026-07-24T00:15:00.000Z",
-    }), { status: 201 }));
+  it("does not classify a wrong deletion code as an expired account session", () => {
+    expect(isBackendSessionInvalidError(new BackendApiError(401, "invalid_deletion_code", "Wrong code"))).toBe(false);
+    expect(isBackendSessionInvalidError(new BackendApiError(401, "unauthorized", "Expired"))).toBe(true);
+  });
 
-    await expect(new BackendApiClient(request).reserveGiftCard("gift-session", "July batch")).resolves.toEqual(
-      expect.objectContaining({ cardId: "card-1", cardCode: "CARD-001" }),
-    );
-    expect(request).toHaveBeenCalledWith("/api/admin/gift-cards", expect.objectContaining({
-      method: "POST",
-      headers: expect.objectContaining({ Authorization: "Bearer gift-session" }),
+  it("requests and confirms permanent account deletion with the bearer session", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" }), { status: 202 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.requestAccountDeletionChallenge("session")).resolves.toEqual({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" });
+    await expect(client.deleteAccount("session", { challengeId: "challenge-1", code: "123456", confirmation: "DELETE" }))
+      .resolves.toEqual({ receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" });
+    expect(request).toHaveBeenNthCalledWith(1, "/api/account/deletion-challenge", expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer session" } }));
+    expect(request).toHaveBeenNthCalledWith(2, "/api/account", expect.objectContaining({
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer session" },
+      body: JSON.stringify({ challengeId: "challenge-1", code: "123456", confirmation: "DELETE" }),
     }));
   });
 
-  it("lists, inspects, activates, and retires cards with the developer session", async () => {
-    const request = jest.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "card-1", code: "CARD-001", state: "active" }] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ card: { id: "card-1", code: "CARD-001", state: "active" }, events: [] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ activated: true })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ retired: true })));
-    const client = new BackendApiClient(request);
+  it("keeps all admin gift-card contracts and endpoints out of the public client", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/services/backend/api-client.ts"),
+      "utf8",
+    );
 
-    await expect(client.listAdminGiftCards("gift-session", { state: "active", code: "CARD" })).resolves.toEqual([
-      expect.objectContaining({ id: "card-1" }),
-    ]);
-    await expect(client.getAdminGiftCard("gift-session", "card-1")).resolves.toEqual(expect.objectContaining({ card: expect.objectContaining({ code: "CARD-001" }) }));
-    await expect(client.activateAdminGiftCard("gift-session", "card-1")).resolves.toEqual({ activated: true });
-    await expect(client.retireAdminGiftCard("gift-session", "card-1")).resolves.toEqual({ retired: true });
-    expect(request.mock.calls.map(([url]) => url)).toEqual([
-      "/api/admin/gift-cards?state=active&code=CARD",
-      "/api/admin/gift-cards/card-1",
-      "/api/admin/gift-cards/card-1/activate",
-      "/api/admin/gift-cards/card-1/retire",
-    ]);
+    expect(source).not.toMatch(/AdminGiftCard|\/api\/admin\/gift-cards/u);
+    expect(source).not.toMatch(
+      /reserveGiftCard|listAdminGiftCards|getAdminGiftCard|activateAdminGiftCard|retireAdminGiftCard/u,
+    );
   });
 
   it("uses internal gift ids for owner management rather than NFC tokens", async () => {
@@ -100,5 +99,60 @@ describe("backend client", () => {
 
     await expect(client.getOwnedGiftManagement("session", "gift-1")).resolves.toEqual(expect.objectContaining({ gift: expect.objectContaining({ id: "gift-1" }) }));
     expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
+  });
+
+  it("lists invited gifts and reads an invited album from the real endpoints", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", travelDate: "2026-07-24", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ title: "A shared trip", travelDate: null, pages: [], media: [], publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: null }), { status: 200 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.listInvitedGifts("session")).resolves.toEqual([
+      expect.objectContaining({ giftId: "gift-1", album: expect.objectContaining({ travelDate: "2026-07-24", cover: expect.objectContaining({ readUrl: "https://cdn.test/cover.jpg" }) }) }),
+    ]);
+    await expect(client.getInvitedGiftAlbum("gift-1", "session")).resolves.toEqual(expect.objectContaining({ title: "A shared trip", travelDate: null, cover: null }));
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      "/api/gifts/invited",
+      "/api/gifts/invited/gift-1/album",
+    ]);
+  });
+
+  it("uses authenticated internal gift-id endpoints for report, block and leave", async () => {
+    const request = jest.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", report: { id: "report-1", snapshotVersion: 4 } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", block: { id: "block-1" } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = new BackendApiClient(request);
+
+    await expect(client.reportGiftContent("gift-1", "session", "harassment", "说明")).resolves.toEqual({ status: "created", report: { id: "report-1", snapshotVersion: 4 } });
+    await expect(client.blockGiftUser("gift-1", "session", { targetEmail: "owner@example.com" })).resolves.toEqual({ status: "created", block: { id: "block-1" } });
+    await expect(client.leaveGiftMembership("gift-1", "session")).resolves.toBeUndefined();
+
+    expect(request).toHaveBeenNthCalledWith(1, "/api/gifts/gift-1/reports", expect.objectContaining({
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer session" },
+      body: JSON.stringify({ reason: "harassment", details: "说明" }),
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, "/api/gifts/gift-1/blocks", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ targetEmail: "owner@example.com" }),
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, "/api/gifts/gift-1/membership", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("serializes the shared album title and travel date for every publish endpoint", async () => {
+    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ publicationId: "publish-1", uploads: [], coverUpload: null, expiresAt: "2026-07-24T00:10:00.000Z" }), { status: 201 }));
+    const client = new BackendApiClient(request);
+    const payload = { baseVersion: 0, sourceMemoryId: "memory-1", title: "A shared trip", travelDate: "2026-07-24", pages: [], media: [] };
+
+    await client.startGiftPublish("tag", "session", payload);
+    await client.startOwnedGiftPublish("session", "gift-1", payload);
+    await client.startInvitedGiftPublish("gift-1", "session", { ...payload, travelDate: null });
+
+    expect(request.mock.calls.map(([, options]) => JSON.parse(String(options?.body)))).toEqual([
+      expect.objectContaining({ title: "A shared trip", travelDate: "2026-07-24" }),
+      expect.objectContaining({ title: "A shared trip", travelDate: "2026-07-24" }),
+      expect.objectContaining({ title: "A shared trip", travelDate: null }),
+    ]);
   });
 });

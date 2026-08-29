@@ -5,6 +5,7 @@ import { bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont, Tag } fro
 import { CityMap } from "../../features/cities/city-map";
 import { getCityArchiveCities } from "../../features/cities/city-archive";
 import { CityCard } from "../../features/cities/city-card";
+import { getCityCheckinMapImage } from "../../features/cities/city-checkin-map-images";
 import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
 import type { City } from "../../types/memory";
@@ -15,7 +16,13 @@ export default function CitiesScreen() {
   const cityStats = getCityStats(memories);
   const cityStatsByCity = new Map(cityStats.map((stat) => [stat.city, stat]));
   const archiveCities = getCityArchiveCities(memories);
+  // 城市档案卡片/入口始终进入城市记忆页
   const goToCity = (city: City) => router.push({ pathname: "/city/[city]", params: { city } });
+  // 地图上的城市标记：有打卡地图的城市进全屏大图，其余进城市记忆页
+  const handleMapCityPress = (city: City) => {
+    if (getCityCheckinMapImage(city)) router.push({ pathname: "/city-map/[city]", params: { city } });
+    else router.push({ pathname: "/city/[city]", params: { city } });
+  };
 
   return (
     <ScrollView
@@ -35,7 +42,7 @@ export default function CitiesScreen() {
             stats={cityStats}
             variant="overview"
             interactive
-            onCityPress={goToCity}
+            onCityPress={handleMapCityPress}
             onMapPress={() => router.push("/city-map")}
           />
         </PaperCard>
@@ -77,7 +84,7 @@ const styles = StyleSheet.create({
   list: { gap: 12 },
   moreCitiesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   moreCitiesChevron: { color: colors.accent, fontSize: 22, opacity: 0.7 },
-  moreCitiesCard: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderRadius: 18, borderStyle: "dashed", borderWidth: 1, gap: 8, minHeight: 84, padding: 18 },
+  moreCitiesCard: { backgroundColor: colors.accentSoft, borderColor: colors.accent, borderRadius: 18, borderWidth: 1, gap: 8, minHeight: 84, padding: 18 },
   moreCitiesTitle: { color: colors.accent, fontFamily: serifFont, fontSize: 19, fontWeight: "800" },
   moreCitiesSubtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 20 },
   pressed: { opacity: 0.85 },

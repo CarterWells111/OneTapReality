@@ -137,7 +137,7 @@ describe("CityWorkspaceContent", () => {
     expect(onCreate).toHaveBeenCalledWith("hangzhou");
   });
 
-  it("uses a line-art hero for cities without a featured watercolor asset", async () => {
+  it("uses a formal generic hero for cities without a featured watercolor asset", async () => {
     const screen = await render(
       <CityWorkspaceContent
         city="tianjin"
@@ -150,6 +150,6 @@ describe("CityWorkspaceContent", () => {
       />
     );
 
-    expect(screen.getByTestId("city-archive-hero-placeholder-tianjin")).toBeTruthy();
+    expect(screen.getByTestId("city-archive-hero-generic-tianjin")).toBeTruthy();
   });
 });

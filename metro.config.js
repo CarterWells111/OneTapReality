@@ -1,26 +1,51 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("node:path");
+const {
+  createActivateEntryResolver,
+  normalizeReleaseAudience,
+} = require("./scripts/metro-activate-entry-resolver.cjs");
 
 const config = getDefaultConfig(__dirname);
 
-// expo-sqlite Web 端通过 Worker 使用 wa-sqlite (WASM)，
-// Metro 默认不识别 .wasm 扩展名，需手动加入 sourceExts
-config.resolver.sourceExts = [...config.resolver.sourceExts, 'wasm'];
+// expo-sqlite Web 端通过 Worker 加载 wa-sqlite (WASM)。WASM 是静态二进制资源，
+// 而不是 Metro 应尝试解析的 JavaScript 源文件。
+config.resolver.assetExts = [...config.resolver.assetExts, 'wasm'];
 
-const escapedWorktreePath = path
-  .join(__dirname, ".worktrees")
-  .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const ignoredDirectoryNames = [
+  ".pnpm-store",
+  ".runtime",
+  ".tmp",
+  ".tmp-mapdata",
+  "app-store-previews",
+  "dist",
+  "output",
+];
+const ignoredDirectoryBlockList = new RegExp(
+  `^(?:${ignoredDirectoryNames
+    .map((directory) => escapeRegExp(path.join(__dirname, directory)))
+    .join("|")})[\\\\/].*`,
+);
+const escapedWorktreePath = escapeRegExp(path.join(__dirname, ".worktrees"));
 const worktreeBlockList = new RegExp(`^${escapedWorktreePath}[\\\\/].*`);
+const blockListSources = [
+  config.resolver.blockList instanceof RegExp
+    ? config.resolver.blockList.source
+    : /$^/u.source,
+  ignoredDirectoryBlockList.source,
+];
 
 // The primary checkout must ignore linked worktrees, but a linked worktree must
 // remain resolvable when it is the active project root (as in isolated CI work).
 if (!__dirname.split(path.sep).includes(".worktrees")) {
-  config.resolver.blockList = new RegExp(
-    `${config.resolver.blockList.source}|${worktreeBlockList.source}`,
-    config.resolver.blockList.flags,
-  );
-} else if (!(config.resolver.blockList instanceof RegExp)) {
-  config.resolver.blockList = /$^/u;
+  blockListSources.push(worktreeBlockList.source);
 }
+config.resolver.blockList = new RegExp(blockListSources.join("|"), "u");
+config.resolver.resolveRequest = createActivateEntryResolver({
+  projectRoot: __dirname,
+  releaseAudience: normalizeReleaseAudience(
+    process.env.EXPO_PUBLIC_RELEASE_AUDIENCE,
+  ),
+});
 
 module.exports = config;

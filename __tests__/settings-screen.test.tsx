@@ -1,17 +1,16 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
-const mockRequestPermission = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
 const mockUpdateProfile = jest.fn();
 const mockProfile = jest.fn();
 const mockIsProfileReady = jest.fn();
 const mockForgetRememberedEmail = jest.fn();
 const mockUseAuth = jest.fn();
+const mockUseLocalLibrary = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn() }) }));
 jest.mock("expo-image-picker", () => ({
-  requestMediaLibraryPermissionsAsync: (...args: unknown[]) => mockRequestPermission(...args),
   launchImageLibraryAsync: (...args: unknown[]) => mockLaunchImageLibrary(...args),
 }));
 jest.mock("../src/features/profile/profile-provider", () => ({
@@ -24,6 +23,9 @@ jest.mock("../src/features/profile/profile-provider", () => ({
 jest.mock("../src/features/auth/auth-provider", () => ({
   useAuth: () => mockUseAuth(),
 }));
+jest.mock("../src/features/auth/local-library-provider", () => ({
+  useLocalLibrary: () => mockUseLocalLibrary(),
+}));
 
 import SettingsScreen from "../src/app/settings";
 import { DEFAULT_BIO } from "../src/features/profile/local-profile";
@@ -34,7 +36,6 @@ describe("SettingsScreen", () => {
     mockProfile.mockReturnValue({ nickname: "一触如初用户", avatarUri: null });
     mockIsProfileReady.mockReturnValue(true);
     mockUpdateProfile.mockResolvedValue(undefined);
-    mockRequestPermission.mockResolvedValue({ granted: true });
     mockLaunchImageLibrary.mockResolvedValue({ canceled: true, assets: null });
     mockForgetRememberedEmail.mockResolvedValue(undefined);
     mockUseAuth.mockReturnValue({
@@ -42,12 +43,11 @@ describe("SettingsScreen", () => {
       rememberedEmail: "owner@example.com",
       forgetRememberedEmail: mockForgetRememberedEmail,
     });
+    mockUseLocalLibrary.mockReturnValue({ owner: "guest", needsMigrationChoice: false });
   });
 
-  it("requests photo permission when tapping the avatar", async () => {
+  it("opens the system photo picker without requesting full-library permission", async () => {
     const screen = await render(<SettingsScreen />);
-
-    expect(mockRequestPermission).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.press(screen.getByLabelText("点击更换头像"));
@@ -55,7 +55,6 @@ describe("SettingsScreen", () => {
     });
 
     await waitFor(() => {
-      expect(mockRequestPermission).toHaveBeenCalledTimes(1);
       expect(mockLaunchImageLibrary).toHaveBeenCalledWith({
         allowsEditing: true,
         aspect: [1, 1],
@@ -83,8 +82,8 @@ describe("SettingsScreen", () => {
     expect(screen.getByLabelText("已保存昵称的头像").props.source).toEqual({ uri: "file://saved-avatar.jpg" });
   });
 
-  it("shows the exact permission guidance when photo access is denied", async () => {
-    mockRequestPermission.mockResolvedValue({ granted: false });
+  it("shows a stable message when the system picker cannot open", async () => {
+    mockLaunchImageLibrary.mockRejectedValue(new Error("picker unavailable"));
     const screen = await render(<SettingsScreen />);
 
     await act(async () => {
@@ -93,9 +92,8 @@ describe("SettingsScreen", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("未获得照片权限。你可以在系统设置中允许访问后再选择头像。")).toBeTruthy(),
+      expect(screen.getByText("无法选择头像，请重试。")).toBeTruthy(),
     );
-    expect(mockLaunchImageLibrary).not.toHaveBeenCalled();
   });
 
   it("saves a normalized nickname then returns to the profile page", async () => {
@@ -186,5 +184,34 @@ describe("SettingsScreen", () => {
 
     expect(mockForgetRememberedEmail).toHaveBeenCalledTimes(1);
     expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("accurately identifies the active local library without implying cloud sync", () => {
+    const screen = render(<SettingsScreen />);
+    expect(screen.getByText("本机访客旅行册")).toBeTruthy();
+
+    mockUseLocalLibrary.mockReturnValue({ owner: "account:owner@example.com", needsMigrationChoice: false });
+    screen.rerender(<SettingsScreen />);
+    expect(screen.getByText("当前账户的本机旅行册")).toBeTruthy();
+  });
+
+  it("lets a signed-in guest-library user switch or migrate later from settings", async () => {
+    const switchToAccount = jest.fn().mockResolvedValue(undefined);
+    const migrateToAccount = jest.fn().mockResolvedValue(undefined);
+    mockUseLocalLibrary.mockReturnValue({
+      accountOwner: "account:owner@example.com",
+      isMigrating: false,
+      migrateToAccount,
+      needsMigrationChoice: false,
+      owner: "guest",
+      switchToAccount,
+    });
+    const screen = render(<SettingsScreen />);
+
+    await act(async () => fireEvent.press(screen.getByText("切换到当前账户旅行册")));
+    await act(async () => fireEvent.press(screen.getByText("迁移访客旅行册到当前账户")));
+
+    expect(switchToAccount).toHaveBeenCalledTimes(1);
+    expect(migrateToAccount).toHaveBeenCalledTimes(1);
   });
 });

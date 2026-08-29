@@ -1,6 +1,7 @@
+import { getAppleReviewAccess, type AppleReviewEnvironment } from "../auth/apple-review-access";
 import { ApiError } from "../http/errors";
 
-type AlphaSafetyEnvironment = {
+type AlphaSafetyEnvironment = AppleReviewEnvironment & {
   ALPHA_ALLOWED_EMAILS?: string;
   GIFT_SHARING_ENABLED?: string;
   GIFT_URL_ORIGIN?: string;
@@ -29,6 +30,7 @@ export function requireAlphaEmailAllowed(email: string, environment: AlphaSafety
     .map(normalizeEmail)
     .filter(Boolean) ?? [];
   if (allowlist.length > 0 && !allowlist.includes(normalizeEmail(email))) {
+    if (getAppleReviewAccess(email, environment)) return;
     throw new ApiError(403, "beta_invite_required", "This email is not invited to the Alpha");
   }
 }

@@ -7,42 +7,53 @@ import type {
   HealthResponse,
 } from "./contracts";
 
-export type AdminGiftCardState = "initializing" | "active" | "retired";
-export type AdminGiftCard = {
-  id: string;
-  code: string;
-  state: AdminGiftCardState;
-  note: string | null;
-  giftId: string | null;
-  giftStatus: string | null;
-  createdAt: string;
-  activatedAt: string | null;
-  retiredAt: string | null;
-};
-export type AdminGiftCardDetail = {
-  card: AdminGiftCard & { expiresAt: string | null };
-  events: { id: string; kind: string; actorEmail: string; metadata: unknown; createdAt: string }[];
-};
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
+export type AccountDeletionChallenge = { challengeId: string; expiresAt: string };
+export type AccountDeletionReceipt = { receiptId: string; completeBy: string };
+export type GiftMemberRole = "owner" | "viewer" | "editor";
+export type GiftContentReportReason = "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
+export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
+export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
+
+export type SharedAlbumPublishPayload = {
+  baseVersion: number;
+  sourceMemoryId: string;
+  title: string;
+  travelDate: string | null;
+  pages: { position: number; page: unknown }[];
+  media: ({ position: number; mediaId: string } | { position: number; contentType: string; byteSize: number })[];
+  cover?: { contentType: string; byteSize: number } | null;
+};
 
 export type InvitedGift = {
   giftId: string;
-  role: "viewer";
+  role: "viewer" | "editor";
   album: {
     title: string;
+    travelDate: string | null;
     albumId: string;
     publishedAt: string;
     version: number;
+    cover: SharedAlbumCover | null;
   } | null;
 };
 
+export type SharedAlbumCover = {
+  readUrl: string;
+  contentType: string;
+  byteSize: number;
+};
+
 export type InvitedGiftAlbum = {
+  role: GiftMemberRole;
   title: string;
+  travelDate: string | null;
   pages: { position: number; page: unknown }[];
   media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[];
   publishedAt: string;
   version: number;
+  cover: SharedAlbumCover | null;
 };
 
 export class BackendApiError extends Error {
@@ -56,6 +67,9 @@ export class BackendApiError extends Error {
   }
 }
 
+export function isBackendSessionInvalidError(error: unknown): boolean {
+  return error instanceof BackendApiError && error.status === 401 && error.code === "unauthorized";
+}
 export function resolveBackendRequestUrl(
   path: string,
   origin = process.env.EXPO_PUBLIC_API_ORIGIN,
@@ -67,7 +81,7 @@ export function resolveBackendRequestUrl(
 export class BackendApiClient {
   constructor(private readonly request: typeof fetch = fetch) {}
 
-  private async send<T>(path: string, options?: RequestInit): Promise<T> {
+  protected async send<T>(path: string, options?: RequestInit): Promise<T> {
     let response: Response;
     try {
       response = await this.request(resolveBackendRequestUrl(path), options);
@@ -107,6 +121,21 @@ export class BackendApiClient {
     await this.send<null>("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
+  requestAccountDeletionChallenge(accessToken: string): Promise<AccountDeletionChallenge> {
+    return this.send("/api/account/deletion-challenge", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  deleteAccount(
+    accessToken: string,
+    input: { challengeId: string; code: string; confirmation: "DELETE" },
+  ): Promise<AccountDeletionReceipt> {
+    return this.send("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(input),
+    });
+  }
+
   claimGift(token: string, accessToken: string): Promise<{ id: string; status: "bound"; ownerEmail: string }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/claim`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
@@ -115,44 +144,56 @@ export class BackendApiClient {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/entry`);
   }
 
-  getGiftAccess(token: string, accessToken: string): Promise<{ id: string; status: "bound"; role: "owner" | "viewer"; albumId: string | null; albumTitle: string | null; publishedAt: string | null; version: number | null }> {
+  getGiftAccess(token: string, accessToken: string): Promise<{ id: string; status: "bound"; role: GiftMemberRole; albumId: string | null; albumTitle: string | null; travelDate: string | null; publishedAt: string | null; version: number | null }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/access`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  getGiftAlbum(token: string, accessToken: string): Promise<{ title: string; pages: { position: number; page: unknown }[]; media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[] }> {
+  getGiftAlbum(token: string, accessToken: string): Promise<{ title: string; travelDate: string | null; pages: { position: number; page: unknown }[]; media: { id: string; position: number; contentType: string; byteSize: number; readUrl: string }[]; publishedAt: string; version: number; cover: SharedAlbumCover | null }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  startGiftPublish(token: string, accessToken: string, payload: { sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: { position: number; contentType: string; byteSize: number }[] }) {
-    return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[] }>(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
+  activateGiftViewer(token: string, accessToken: string): Promise<{ giftId: string; role: "viewer" | "editor"; albumPublished: boolean }> {
+    return this.send(`/api/gifts/${encodeURIComponent(token)}/activate-viewer`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  startGiftPublish(token: string, accessToken: string, payload: SharedAlbumPublishPayload) {
+    return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
   finishGiftPublish(token: string, accessToken: string, publicationId: string): Promise<{ albumId: string }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 
-  listOwnedGifts(accessToken: string): Promise<{ id: string; status: string; claimedAt: string | null }[]> {
-    return this.send<{ items: { id: string; status: string; claimedAt: string | null }[] }>("/api/gifts/owned", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
+  listOwnedGifts(accessToken: string): Promise<{ id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[]> {
+    return this.send<{ items: { id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[] }>("/api/gifts/owned", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
   }
 
-  getOwnedGiftManagement(accessToken: string, id: string): Promise<{ gift: { id: string; status: string; claimedAt: string | null; disabledAt: string | null }; members: { email: string; role: "owner" | "viewer"; createdAt: string }[]; album: { id: string; title: string; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null }> {
+  getOwnedGiftManagement(accessToken: string, id: string): Promise<{ gift: { id: string; status: string; claimedAt: string | null; disabledAt: string | null }; members: { email: string; role: GiftMemberRole; createdAt: string }[]; album: { id: string; title: string; travelDate: string | null; sourceMemoryId: string; publishedAt: string; version: number; mediaCount: number } | null }> {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/manage`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  listOwnedGiftMembers(accessToken: string, id: string) {
-    return this.send<{ members: { email: string; role: "owner" | "viewer"; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  getOwnedGiftAlbum(id: string, accessToken: string): Promise<InvitedGiftAlbum> {
+    return this.send<InvitedGiftAlbum>(`/api/my-gifts/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  addOwnedGiftMember(accessToken: string, id: string, email: string) {
-    return this.send<{ members: { email: string; role: "owner" | "viewer"; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email }) });
+  listOwnedGiftMembers(accessToken: string, id: string) {
+    return this.send<{ members: { email: string; role: GiftMemberRole; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  }
+
+  addOwnedGiftMember(accessToken: string, id: string, email: string, role: "viewer" | "editor" = "viewer") {
+    return this.send<{ members: { email: string; role: GiftMemberRole; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, role }) });
+  }
+
+  updateOwnedGiftMemberRole(accessToken: string, id: string, email: string, role: "viewer" | "editor") {
+    return this.send<{ members: { email: string; role: GiftMemberRole; createdAt: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, role }) });
   }
 
   async removeOwnedGiftMember(accessToken: string, id: string, email: string): Promise<void> {
     await this.send<null>(`/api/my-gifts/${encodeURIComponent(id)}/members`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email }) });
   }
 
-  startOwnedGiftPublish(accessToken: string, id: string, payload: { sourceMemoryId: string; title: string; pages: { position: number; page: unknown }[]; media: { position: number; contentType: string; byteSize: number }[] }) {
-    return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[] }>(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
+  startOwnedGiftPublish(accessToken: string, id: string, payload: SharedAlbumPublishPayload) {
+    return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
   finishOwnedGiftPublish(accessToken: string, id: string, publicationId: string): Promise<{ albumId: string }> {
@@ -163,12 +204,16 @@ export class BackendApiClient {
     await this.send<null>(`/api/my-gifts/${encodeURIComponent(id)}/disable`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  listGiftMembers(token: string, accessToken: string): Promise<{ members: { email: string; role: "owner" | "viewer"; createdAt: string }[]; maximumMembers: 3 }> {
+  listGiftMembers(token: string, accessToken: string): Promise<{ members: { email: string; role: GiftMemberRole; createdAt: string }[]; maximumMembers: 3 }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/members`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  addGiftMember(token: string, accessToken: string, email: string) {
-    return this.send(`/api/gifts/${encodeURIComponent(token)}/members`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email }) });
+  addGiftMember(token: string, accessToken: string, email: string, role: "viewer" | "editor" = "viewer") {
+    return this.send(`/api/gifts/${encodeURIComponent(token)}/members`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, role }) });
+  }
+
+  updateGiftMemberRole(token: string, accessToken: string, email: string, role: "viewer" | "editor") {
+    return this.send(`/api/gifts/${encodeURIComponent(token)}/members`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ email, role }) });
   }
 
   removeGiftMember(token: string, accessToken: string, email: string) {
@@ -181,51 +226,59 @@ export class BackendApiClient {
 
   // ── viewer: gifts shared with me ──────────────────────────────────
 
-  /** Gifts where the current account is a viewer (not owner).
-   *  Backend will implement GET /api/gifts/invited — the mock is a
-   *  stand-in until that endpoint ships. */
-  listInvitedGifts(_accessToken: string): Promise<InvitedGift[]> {
-    // TODO: switch to real endpoint when available:
-    // return this.send<{ items: InvitedGift[] }>("/api/gifts/invited", { headers: { Authorization: `Bearer ${_accessToken}` } }).then((r) => r.items);
-    return Promise.resolve(MOCK_INVITED_GIFTS);
+  listInvitedGifts(accessToken: string): Promise<InvitedGift[]> {
+    return this.send<{ items: InvitedGift[] }>("/api/gifts/invited", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
   }
 
-  /** Read-only album snapshot for a viewer.
-   *  Backend will implement GET /api/gifts/invited/:id/album. */
-  getInvitedGiftAlbum(_id: string, _accessToken: string): Promise<InvitedGiftAlbum> {
-    // TODO: switch to real endpoint:
-    // return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(_id)}/album`, { headers: { Authorization: `Bearer ${_accessToken}` } });
-    return Promise.resolve(MOCK_INVITED_ALBUM);
+  getInvitedGiftAlbum(id: string, accessToken: string): Promise<InvitedGiftAlbum> {
+    return this.send<InvitedGiftAlbum>(`/api/gifts/invited/${encodeURIComponent(id)}/album`, { headers: { Authorization: `Bearer ${accessToken}` } });
   }
 
-  reserveGiftCard(accessToken: string, note?: string): Promise<{ cardId: string; cardCode: string; giftUrl: string; expiresAt: string }> {
-    return this.send("/api/admin/gift-cards", {
+  reportGiftContent(id: string, accessToken: string, reason: GiftContentReportReason, details?: string): Promise<{ status: "created" | "existing"; report: { id: string; snapshotVersion: number } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/reports`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
+      body: JSON.stringify({ reason, ...(details ? { details } : {}) }),
     });
   }
 
-  listAdminGiftCards(accessToken: string, filters: Partial<Pick<AdminGiftCard, "state" | "code" | "note">> = {}): Promise<AdminGiftCard[]> {
-    const query = new URLSearchParams();
-    if (filters.state) query.set("state", filters.state);
-    if (filters.code) query.set("code", filters.code);
-    if (filters.note) query.set("note", filters.note);
-    const queryString = query.toString();
-    const suffix = queryString ? `?${queryString}` : "";
-    return this.send<{ items: AdminGiftCard[] }>(`/api/admin/gift-cards${suffix}`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
+  blockGiftUser(id: string, accessToken: string, target: { targetUserId?: string; targetEmail?: string } = {}): Promise<{ status: "created" | "existing"; block: { id: string } }> {
+    return this.send(`/api/gifts/${encodeURIComponent(id)}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(target),
+    });
   }
 
-  getAdminGiftCard(accessToken: string, cardId: string): Promise<AdminGiftCardDetail> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  async leaveGiftMembership(id: string, accessToken: string): Promise<void> {
+    await this.send<null>(`/api/gifts/${encodeURIComponent(id)}/membership`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
   }
 
-  activateAdminGiftCard(accessToken: string, cardId: string): Promise<{ activated: true }> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}/activate`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  startInvitedGiftPublish(id: string, accessToken: string, payload: SharedAlbumPublishPayload) {
+    return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
-  retireAdminGiftCard(accessToken: string, cardId: string): Promise<{ retired: true }> {
-    return this.send(`/api/admin/gift-cards/${encodeURIComponent(cardId)}/retire`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+  finishInvitedGiftPublish(id: string, accessToken: string, publicationId: string): Promise<{ albumId: string }> {
+    return this.send(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
+  }
+
+  createInvitedGiftManagementRequest(id: string, accessToken: string, input: { action: GiftManagementAction; targetEmail?: string; targetRole?: "viewer" | "editor" }): Promise<GiftManagementRequest> {
+    return this.send<{ request: GiftManagementRequest }>(`/api/gifts/invited/${encodeURIComponent(id)}/management-requests`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(input) }).then(response => response.request);
+  }
+
+  listInvitedGiftManagementTargets(id: string, accessToken: string): Promise<{ email: string; role: "viewer" | "editor" }[]> {
+    return this.send<{ members: { email: string; role: "viewer" | "editor" }[] }>(`/api/gifts/invited/${encodeURIComponent(id)}/management-requests`, { headers: { Authorization: `Bearer ${accessToken}` } }).then(response => response.members);
+  }
+
+  listOwnedGiftManagementRequests(accessToken: string, id: string): Promise<GiftManagementRequest[]> {
+    return this.send<{ requests: GiftManagementRequest[] }>(`/api/my-gifts/${encodeURIComponent(id)}/management-requests`, { headers: { Authorization: `Bearer ${accessToken}` } }).then(response => response.requests);
+  }
+
+  decideOwnedGiftManagementRequest(accessToken: string, id: string, requestId: string, decision: "approved" | "rejected"): Promise<{ status: "approved" | "rejected" }> {
+    return this.send(`/api/my-gifts/${encodeURIComponent(id)}/management-requests`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ requestId, decision }) });
   }
 
   registerDevice(installationId: string): Promise<DeviceRegistrationResponse> {
@@ -271,26 +324,3 @@ export class BackendApiClient {
     });
   }
 }
-
-// ── stage-2 viewer mock data (remove when real endpoints ship) ─────
-
-const MOCK_INVITED_GIFTS: InvitedGift[] = [
-  {
-    giftId: "mock-gift-1",
-    role: "viewer",
-    album: { title: "我们的杭州之旅", albumId: "mock-album-1", publishedAt: "2026-07-20T10:00:00.000Z", version: 1 },
-  },
-  {
-    giftId: "mock-gift-2",
-    role: "viewer",
-    album: null,
-  },
-];
-
-const MOCK_INVITED_ALBUM: InvitedGiftAlbum = {
-  title: "我们的杭州之旅",
-  pages: [{ position: 0, page: { kind: "cover", headline: "杭州", body: "西湖边的记忆" } }, { position: 1, page: { kind: "photo", headline: "断桥残雪", body: "那天下了小雪" } }],
-  media: [],
-  publishedAt: "2026-07-20T10:00:00.000Z",
-  version: 1,
-};

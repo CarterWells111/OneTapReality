@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as ImagePicker from "expo-image-picker";
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,71 +28,414 @@ import {
   type CanvasStickerCategory,
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
+import { resolveCanvasPageWidth } from "./canvas-display-metrics";
 import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
-  addImageToPage,
+  addCanvasPage,
   addStickerToPage,
   addTextToPage,
   addFrameToPage,
+  applyPhotoTemplateToPage,
+  clearPhotoTemplateFromPage,
   changeCanvasElementLayer,
   deleteCanvasElement,
   duplicateCanvasElement,
+  replacePagePhotos,
   setCanvasBackground,
   setCanvasCoverColor,
+  setCanvasCoverCrop,
   setCanvasCoverImage,
   updateCanvasElement,
+  type CanvasElementPatch,
+  type CanvasPagePhoto,
 } from "./editor-pages";
+import {
+  createEditorSaveSnapshot,
+  createTransformSettleGate,
+  type CanvasEditorSaveSnapshot,
+  type CanvasTextStyleDraft,
+} from "./editor-save-transaction";
 import { PageManagerSheet } from "./page-manager-sheet";
+import { PhotoLayoutSheet } from "./photo-layout-sheet";
+import type { PhotoLayoutDraftItem } from "./photo-layout-draft";
+import { PhotoCropModal } from "./photo-crop-modal";
+import { MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
+import { resolvePhotoTemplate } from "./photo-templates";
 import { resolvePageTurn, shouldCanvasPageHandlePan } from "./page-turn";
 import { useUndoHistory } from "./undo-history";
 import { ColorPicker } from "../../components/ColorPicker";
 import { colors } from "../../components/ui";
-import { persistPhotoUri } from "../memories/photo-persistence";
-import type { StoryPage } from "../../types/memory";
+import { localDiagnostics } from "../diagnostics/local-diagnostics";
+import type { CanvasImageElement, PhotoCropState, PhotoTemplateId, StoryPage } from "../../types/memory";
+import type { StagedPhotoFile } from "../memories/photo-persistence";
 
 export type BookEditorChangeReason = "structure" | "text" | "transform";
 
-type BookCanvasEditorProps = {
-  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => void;
-  pages: StoryPage[];
+export type BookCanvasEditorHandle = {
+  prepareSave: () => Promise<CanvasEditorSaveSnapshot | null>;
+  releaseSaveLock: () => void;
 };
+
+export type { CanvasEditorSaveSnapshot } from "./editor-save-transaction";
+
+type BookCanvasEditorProps = {
+  fallbackIndex?: number;
+  initialPageId?: string;
+  onActivePageChange?: (cursor: { pageId: string; index: number }) => void;
+  onPagesChange: (pages: StoryPage[], reason: BookEditorChangeReason) => boolean | void;
+  onTransformPendingChange?: (pending: boolean) => void;
+  pages: StoryPage[];
+  persistSelectedPhoto?: (uri: string) => Promise<string>;
+  ref?: React.Ref<BookCanvasEditorHandle>;
+  stageSelectedPhoto?: (uri: string) => Promise<StagedPhotoFile>;
+};
+
+type PendingStagedPhoto = {
+  file: StagedPhotoFile;
+  photoId: string;
+};
+
+type PendingPhotoLayout =
+  | {
+      action: "add";
+      photos: PhotoLayoutDraftItem[];
+      stagedPhotos: PendingStagedPhoto[];
+      selectedTemplateId?: PhotoTemplateId;
+    }
+  | {
+      action: "edit";
+      pageId: string;
+      photos: PhotoLayoutDraftItem[];
+      photosChanged: boolean;
+      stagedPhotos: PendingStagedPhoto[];
+      selectedTemplateId?: PhotoTemplateId;
+    };
+
+type DirectCropTarget = {
+  aspectRatio: number;
+  crop?: PhotoCropState;
+  elementId?: string;
+  kind: "cover" | "element";
+  pageId: string;
+  uri: string;
+};
+
+const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
+const MIN_FONT_SIZE = 2;
+const MAX_FONT_SIZE = 40;
+const DEFAULT_COVER_COLOR = "#EFE2CF";
+
+function resolveCoverColor(page: StoryPage | undefined) {
+  return page?.layout?.coverColor ?? page?.coverColor ?? DEFAULT_COVER_COLOR;
+}
+
+function isValidFontSize(value: number) {
+  return Number.isFinite(value) && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE;
+}
+
+function resolveInitialPageIndex(pages: StoryPage[], initialPageId?: string, fallbackIndex = 0) {
+  const idIndex = initialPageId ? pages.findIndex((page) => page.id === initialPageId) : -1;
+  if (idIndex >= 0) return idIndex;
+  return Math.max(0, Math.min(fallbackIndex, Math.max(0, pages.length - 1)));
+}
+
+function resolveValidOpenMenuDraft({
+  editingElementId,
+  menuMode,
+  pages,
+  previewColor,
+  previewFontSize,
+  staged,
+}: {
+  editingElementId?: string;
+  menuMode: "font" | "size" | "color" | null;
+  pages: StoryPage[];
+  previewColor: string;
+  previewFontSize: number;
+  staged?: CanvasTextStyleDraft;
+}): CanvasTextStyleDraft | undefined {
+  const elementId = staged?.elementId ?? editingElementId;
+  if (!elementId) return undefined;
+  const page = pages.find((candidate) => candidate.layout?.elements.some((element) => element.id === elementId));
+  const element = page?.layout?.elements.find((candidate) => candidate.id === elementId);
+  if (!page || element?.type !== "text") return undefined;
+
+  const stagedMatches = staged?.pageId === page.id && staged.elementId === element.id;
+  const draft: CanvasTextStyleDraft = { elementId: element.id, pageId: page.id };
+  if (stagedMatches && staged?.color) {
+    const color = staged.color.toUpperCase();
+    if (VALID_HEX_COLOR.test(color) && color !== element.color.toUpperCase()) {
+      draft.color = color;
+    }
+  }
+  if (stagedMatches && staged?.fontSize !== undefined) {
+    if (isValidFontSize(staged.fontSize) && staged.fontSize !== element.fontSize) {
+      draft.fontSize = staged.fontSize;
+    }
+  }
+  if (editingElementId === element.id && menuMode === "color" && draft.color === undefined) {
+    const color = previewColor.toUpperCase();
+    if (VALID_HEX_COLOR.test(color) && color !== element.color.toUpperCase()) {
+      draft.color = color;
+    }
+  }
+  if (editingElementId === element.id && menuMode === "size" && draft.fontSize === undefined) {
+    if (isValidFontSize(previewFontSize) && previewFontSize !== element.fontSize) {
+      draft.fontSize = previewFontSize;
+    }
+  }
+  return draft.color !== undefined || draft.fontSize !== undefined ? draft : undefined;
+}
+
+type BookCanvasEditorLayerBufferProps = {
+  current: StoryPage;
+  currentCanvasProps: React.ComponentProps<typeof CanvasPage>;
+  currentIsRight: boolean;
+  currentStyle: React.ComponentProps<typeof Animated.View>["style"];
+  incoming?: StoryPage;
+  incomingIsRight?: boolean;
+  incomingStyle: React.ComponentProps<typeof Animated.View>["style"];
+  pageHeight: number;
+  pageWidth: number;
+};
+
+export function BookCanvasEditorLayerBuffer({
+  current,
+  currentCanvasProps,
+  currentIsRight,
+  currentStyle,
+  incoming,
+  incomingIsRight = false,
+  incomingStyle,
+  pageHeight,
+  pageWidth,
+}: BookCanvasEditorLayerBufferProps) {
+  const layers = [
+    { isCurrent: true, isRight: currentIsRight, page: current, style: currentStyle },
+    ...(incoming ? [{ isCurrent: false, isRight: incomingIsRight, page: incoming, style: incomingStyle }] : []),
+  ];
+
+  return layers.map(({ isCurrent, isRight, page, style }) => (
+    <Animated.View
+      key={page.id}
+      pointerEvents={isCurrent ? "auto" : "none"}
+      style={[
+        styles.pageShadow,
+        styles.pageLayer,
+        isRight ? styles.rightPageShadow : styles.leftPageShadow,
+        style,
+      ]}
+      testID={isCurrent ? "book-page" : "book-page-incoming"}>
+      <CanvasPage
+        {...(isCurrent ? currentCanvasProps : {})}
+        height={pageHeight}
+        interactive={isCurrent}
+        layout={isCurrent ? currentCanvasProps.layout : page.layout!}
+        pageSide={isRight ? "right" : "left"}
+        width={pageWidth}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.spine, isRight ? styles.spineLeft : styles.spineRight]}
+      />
+    </Animated.View>
+  ));
+}
 
 function buildCanvasId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+async function rollbackStagedPhotos(stagedPhotos: readonly (StagedPhotoFile | PendingStagedPhoto)[]) {
+  for (const staged of stagedPhotos) {
+    try {
+      await ("file" in staged ? staged.file : staged).rollback();
+    } catch (error) {
+      console.warn("[BookCanvasEditor] 无法清理未提交照片：", error);
+    }
+  }
+}
+
+function matchingPhotoTemplateId(templateId: PhotoTemplateId | undefined, photoCount: number) {
+  const template = resolvePhotoTemplate(templateId);
+  return template?.photoCount === photoCount ? template.id : undefined;
+}
+
+function pagePhotoDraftItems(page: StoryPage): PhotoLayoutDraftItem[] {
+  return (page.layout?.elements ?? [])
+    .filter((element): element is CanvasImageElement => element.type === "image")
+    .sort((left, right) => left.zIndex - right.zIndex)
+    .map((element) => ({ id: element.id, uri: element.uri, ...(element.crop ? { crop: element.crop } : {}) }));
+}
+
 export function BookCanvasEditor({
+  fallbackIndex = 0,
+  initialPageId,
+  onActivePageChange,
   onPagesChange,
+  onTransformPendingChange,
   pages,
+  persistSelectedPhoto,
+  ref,
+  stageSelectedPhoto,
 }: BookCanvasEditorProps) {
   const { width: windowWidth } = useWindowDimensions();
-  const pageWidth = Math.min(Math.max(windowWidth - 40, 280), 360);
+  const pageWidth = resolveCanvasPageWidth(windowWidth);
   const pageHeight = (pageWidth * 4) / 3;
   const translateX = useSharedValue(0);
   const turnDir = useSharedValue(0);
+  const turnGeneration = useSharedValue(0);
+  const turnGenerationRef = React.useRef(turnGeneration);
+  const stableTurnGeneration = turnGenerationRef.current;
   const pagePanBlocked = useSharedValue(false);
-  const [currentIndex, setCurrentIndex] = React.useState(0);
-  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; targetIndex: number } | null>(null);
+  const colorPreviewValue = useSharedValue("#000000");
+  const fontSizePreviewValue = useSharedValue(16);
+  const coverColorPreviewValue = useSharedValue(DEFAULT_COVER_COLOR);
+  const colorPreviewRef = React.useRef(colorPreviewValue);
+  const fontSizePreviewRef = React.useRef(fontSizePreviewValue);
+  const coverColorPreviewRef = React.useRef(coverColorPreviewValue);
+  const stableColorPreview = colorPreviewRef.current;
+  const stableFontSizePreview = fontSizePreviewRef.current;
+  const stableCoverColorPreview = coverColorPreviewRef.current;
+  const initialPageIndex = resolveInitialPageIndex(pages, initialPageId, fallbackIndex);
+  const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
+  const currentIndexRef = React.useRef(initialPageIndex);
+  const activePageIdRef = React.useRef(pages[initialPageIndex]?.id);
+  const activePageChangeRef = React.useRef(onActivePageChange);
+  const lastReportedCursorRef = React.useRef<{ pageId: string; index: number } | undefined>(undefined);
+  const pagesRef = React.useRef(pages);
+  pagesRef.current = pages;
+  activePageChangeRef.current = onActivePageChange;
+  const [pendingTurn, setPendingTurn] = React.useState<{ direction: 1 | -1; generation: number; targetPageId: string } | null>(null);
   const [selectedElementId, setSelectedElementId] = React.useState<string>();
+  const [selectedCoverPageId, setSelectedCoverPageId] = React.useState<string>();
+  const [directCropTarget, setDirectCropTarget] = React.useState<DirectCropTarget>();
   const [editingElementId, setEditingElementId] = React.useState<string>(); // 编辑模式（显示上下文菜单或文字输入框）
+  const editingElementIdRef = React.useRef<string | undefined>(undefined);
   const [menuMode, setMenuMode] = React.useState<"font" | "size" | "color" | null>(null); // 打开的面板；null = 文字编辑态
+  const menuModeRef = React.useRef<"font" | "size" | "color" | null>(null);
   const [pendingTextId, setPendingTextId] = React.useState<string>();
+  const pendingTextIdRef = React.useRef<string | undefined>(undefined);
+  const pendingStyleDraftRef = React.useRef<CanvasTextStyleDraft | undefined>(undefined);
+  const saveBoundaryLockedRef = React.useRef(false);
+  const transformSettleGateRef = React.useRef(createTransformSettleGate());
   const [stickerCategory, setStickerCategory] = React.useState<CanvasStickerCategory>("all");
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
-  const [managerOpen, setManagerOpen] = React.useState(false);
+  const [managerMounted, setManagerMounted] = React.useState(false);
+  const [managerVisible, setManagerVisible] = React.useState(false);
+  const [pendingPhotoLayout, setPendingPhotoLayout] = React.useState<PendingPhotoLayout | null>(null);
+  const pendingPhotoLayoutRef = React.useRef<PendingPhotoLayout | null>(null);
+  const [photoLayoutBusy, setPhotoLayoutBusy] = React.useState(false);
+  const photoLayoutBusyRef = React.useRef(false);
+  const [gestureTransformPending, setGestureTransformPending] = React.useState(false);
+  const [photoOperationCount, setPhotoOperationCount] = React.useState(0);
+  const photoOperationGenerationsRef = React.useRef(new Set<number>());
+  const transientPhotoOperationIdRef = React.useRef(0);
+  const pickerGenerationRef = React.useRef(0);
+  const activePickerRef = React.useRef<number | null>(null);
+  const mountedRef = React.useRef(true);
+  const pendingChangeCallbackRef = React.useRef(onTransformPendingChange);
+  pendingChangeCallbackRef.current = onTransformPendingChange;
   const { canUndo, canRedo, pushState, undo, redo } = useUndoHistory((restoredPages) => {
-    onPagesChange(restoredPages, "structure");
+    if (saveBoundaryLockedRef.current) return false;
+    try {
+      if (onPagesChange(restoredPages, "structure") === false) return false;
+      pagesRef.current = restoredPages;
+      return true;
+    } catch {
+      return false;
+    }
   });
 
-  React.useEffect(() => {
-    if (currentIndex >= pages.length) {
-      setCurrentIndex(Math.max(0, pages.length - 1));
-      setSelectedElementId(undefined);
-    }
-  }, [currentIndex, pages.length]);
+  const setOwnedPendingPhotoLayout = React.useCallback((next: PendingPhotoLayout | null) => {
+    pendingPhotoLayoutRef.current = next;
+    setPendingPhotoLayout(next);
+  }, []);
+  const photoLayoutTransactionPending = pendingPhotoLayout !== null || photoOperationCount > 0;
+  const editorChangePending = gestureTransformPending || photoLayoutTransactionPending;
 
-  const currentPage = pages[currentIndex] ?? pages[0];
+  React.useEffect(() => {
+    onTransformPendingChange?.(editorChangePending);
+  }, [editorChangePending, onTransformPendingChange]);
+
+  const activePageIndex = activePageIdRef.current
+    ? pages.findIndex((page) => page.id === activePageIdRef.current)
+    : -1;
+  const validCurrentIndex = activePageIndex >= 0
+    ? activePageIndex
+    : Math.min(currentIndex, Math.max(0, pages.length - 1));
+  const currentPage = pages[validCurrentIndex];
+  currentIndexRef.current = validCurrentIndex;
+  editingElementIdRef.current = editingElementId;
+  menuModeRef.current = menuMode;
+  pendingTextIdRef.current = pendingTextId;
+  const currentPageId = currentPage?.id;
+  if (currentPage && activePageIndex < 0) {
+    activePageIdRef.current = currentPage.id;
+  }
+
+  const initializeCoverPreview = React.useCallback((page: StoryPage | undefined) => {
+    stableCoverColorPreview.value = resolveCoverColor(page);
+  }, [stableCoverColorPreview]);
+
+  React.useEffect(() => {
+    if (currentIndex !== validCurrentIndex) {
+      setCurrentIndex(validCurrentIndex);
+      setSelectedElementId(undefined);
+      setSelectedCoverPageId(undefined);
+    }
+  }, [currentIndex, validCurrentIndex]);
+
+  React.useEffect(() => {
+    initializeCoverPreview(currentPage);
+  }, [currentPage, currentPageId, initializeCoverPreview]);
+
+  React.useEffect(() => {
+    if (!currentPageId) {
+      return;
+    }
+    const cursor = { pageId: currentPageId, index: validCurrentIndex };
+    const lastCursor = lastReportedCursorRef.current;
+    if (lastCursor?.pageId === cursor.pageId && lastCursor.index === cursor.index) {
+      return;
+    }
+    lastReportedCursorRef.current = cursor;
+    activePageChangeRef.current?.(cursor);
+  }, [currentPageId, validCurrentIndex]);
+
+  React.useEffect(() => {
+    if (pendingTurn && !pages.some((page) => page.id === pendingTurn.targetPageId)) {
+      stableTurnGeneration.value += 1;
+      setPendingTurn(null);
+      translateX.value = 0;
+      turnDir.value = 0;
+    }
+  }, [pages, pendingTurn, stableTurnGeneration, translateX, turnDir]);
+
+  React.useEffect(() => () => {
+    mountedRef.current = false;
+    pendingChangeCallbackRef.current?.(false);
+    photoOperationGenerationsRef.current.clear();
+    pickerGenerationRef.current += 1;
+    stableTurnGeneration.value += 1;
+    const pending = pendingPhotoLayoutRef.current;
+    pendingPhotoLayoutRef.current = null;
+    if (pending) void rollbackStagedPhotos(pending.stagedPhotos);
+  }, [stableTurnGeneration]);
+
+  React.useEffect(() => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (pending?.action !== "edit" || pages.some((page) => page.id === pending.pageId)) return;
+    pickerGenerationRef.current += 1;
+    activePickerRef.current = null;
+    photoLayoutBusyRef.current = false;
+    setPhotoLayoutBusy(false);
+    void rollbackStagedPhotos(pending.stagedPhotos).then(() => {
+      if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    });
+  }, [pages, setOwnedPendingPhotoLayout]);
+
   const selectedElement = currentPage?.layout?.elements.find(
     (element) => element.id === selectedElementId,
   );
@@ -99,48 +443,264 @@ export function BookCanvasEditor({
     ? currentPage?.layout?.elements.find((el) => el.id === editingElementId)
     : undefined;
 
-  const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
-    if (reason === "structure" || reason === "transform") {
-      pushState(pages);
+  const stageTextStyleDraft = React.useCallback((
+    pageId: string,
+    elementId: string,
+    property: "color" | "fontSize",
+    value: string | number | undefined,
+  ) => {
+    const current = pendingStyleDraftRef.current;
+    const next: CanvasTextStyleDraft = current?.pageId === pageId && current.elementId === elementId
+      ? { ...current }
+      : { elementId, pageId };
+    if (property === "color") {
+      if (typeof value === "string") next.color = value;
+      else delete next.color;
+    } else if (typeof value === "number") {
+      next.fontSize = value;
+    } else {
+      delete next.fontSize;
     }
-    onPagesChange(nextPages, reason);
-  }, [onPagesChange, pages, pushState]);
+    pendingStyleDraftRef.current = next.color !== undefined || next.fontSize !== undefined
+      ? next
+      : undefined;
+  }, []);
 
-  const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pages) => {
-    if (!pendingTextId || !currentPage) {
+  const markPendingTextEdited = React.useCallback((elementId: string) => {
+    if (pendingTextIdRef.current === elementId) {
+      pendingTextIdRef.current = undefined;
+      setPendingTextId(undefined);
+    }
+  }, []);
+
+  const changePages = React.useCallback((nextPages: StoryPage[], reason: BookEditorChangeReason) => {
+    if (saveBoundaryLockedRef.current && reason !== "transform") return false;
+    const previousPages = pagesRef.current;
+    try {
+      if (onPagesChange(nextPages, reason) === false) return false;
+    } catch {
+      return false;
+    }
+    if (reason === "structure" || reason === "transform") {
+      pushState(previousPages);
+    }
+    pagesRef.current = nextPages;
+    return true;
+  }, [onPagesChange, pushState]);
+
+  React.useImperativeHandle(ref, () => ({
+    async prepareSave() {
+      if (saveBoundaryLockedRef.current) return null;
+      saveBoundaryLockedRef.current = true;
+      const settled = await transformSettleGateRef.current.wait();
+      if (!settled) {
+        saveBoundaryLockedRef.current = false;
+        return null;
+      }
+      const menuDraft = resolveValidOpenMenuDraft({
+        editingElementId: editingElementIdRef.current,
+        menuMode: menuModeRef.current,
+        pages: pagesRef.current,
+        previewColor: stableColorPreview.value,
+        previewFontSize: stableFontSizePreview.value,
+        staged: pendingStyleDraftRef.current,
+      });
+      const snapshot = createEditorSaveSnapshot({
+        activePageId: activePageIdRef.current,
+        fallbackIndex: currentIndexRef.current,
+        pages: pagesRef.current,
+        styleDraft: menuDraft,
+      });
+      pagesRef.current = snapshot.pages;
+      pendingStyleDraftRef.current = undefined;
+      if (menuDraft) {
+        markPendingTextEdited(menuDraft.elementId);
+      }
+      return snapshot;
+    },
+    releaseSaveLock() {
+      saveBoundaryLockedRef.current = false;
+    },
+  }), [markPendingTextEdited, stableColorPreview, stableFontSizePreview]);
+
+  const persistPickedPhoto = React.useCallback(async (uri: string) => {
+    if (!persistSelectedPhoto) return uri;
+    try {
+      return await persistSelectedPhoto(uri);
+    } catch {
+      Alert.alert(
+        "照片保存失败",
+        "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+      );
+      return null;
+    }
+  }, [persistSelectedPhoto]);
+
+  const preparePickedPhoto = React.useCallback(async (uri: string): Promise<StagedPhotoFile | null> => {
+    if (stageSelectedPhoto) {
+      try {
+        return await stageSelectedPhoto(uri);
+      } catch {
+        Alert.alert(
+          "照片保存失败",
+          "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+        );
+        return null;
+      }
+    }
+    const persistedUri = await persistPickedPhoto(uri);
+    return persistedUri
+      ? { uri: persistedUri, commit: () => undefined, rollback: async () => undefined }
+      : null;
+  }, [persistPickedPhoto, stageSelectedPhoto]);
+
+  const rollbackRejectedPhoto = React.useCallback(async (photo: StagedPhotoFile) => {
+    try {
+      await photo.rollback();
+    } catch (error) {
+      console.warn("[book-canvas-editor] 无法回滚未应用的照片：", error);
+    }
+  }, []);
+
+  const beginTransientPhotoOperation = React.useCallback(() => {
+    const operationId = --transientPhotoOperationIdRef.current;
+    photoOperationGenerationsRef.current.add(operationId);
+    if (mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    return operationId;
+  }, []);
+
+  const finishPhotoOperation = React.useCallback((generation: number) => {
+    if (photoOperationGenerationsRef.current.delete(generation) && mountedRef.current) {
+      setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    }
+    if (activePickerRef.current === generation) {
+      activePickerRef.current = null;
+      photoLayoutBusyRef.current = false;
+      if (mountedRef.current) setPhotoLayoutBusy(false);
+    }
+  }, []);
+
+  const pickAndStagePhotos = React.useCallback(async ({
+    selectionLimit = MAX_PHOTOS_PER_CANVAS_PAGE,
+    multiple = true,
+  }: { selectionLimit?: number; multiple?: boolean } = {}) => {
+    if (activePickerRef.current !== null) return null;
+    if (!stageSelectedPhoto) {
+      Alert.alert("照片保存失败", "当前编辑器无法安全暂存照片，请稍后重试。");
+      return null;
+    }
+    const generation = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(generation);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    activePickerRef.current = generation;
+    photoLayoutBusyRef.current = true;
+    setPhotoLayoutBusy(true);
+    const stagedPhotos: PendingStagedPhoto[] = [];
+    let handedOff = false;
+    const isCurrent = () => mountedRef.current && pickerGenerationRef.current === generation;
+    try {
+      let result: Awaited<ReturnType<typeof ImagePicker.launchImageLibraryAsync>>;
+      try {
+        result = await ImagePicker.launchImageLibraryAsync({
+          allowsMultipleSelection: multiple,
+          mediaTypes: ["images"],
+          quality: 0.8,
+          selectionLimit,
+        });
+      } catch {
+        if (isCurrent()) Alert.alert("照片选择失败", "无法打开照片选择器，请稍后重试。");
+        return null;
+      }
+      if (!isCurrent() || result.canceled) return null;
+
+      const selectedAssets = result.assets.slice(0, selectionLimit);
+      if (selectedAssets.length === 0) return null;
+      for (const asset of selectedAssets) {
+        let staged: StagedPhotoFile;
+        try {
+          staged = await stageSelectedPhoto(asset.uri);
+        } catch {
+          await rollbackStagedPhotos(stagedPhotos);
+          if (isCurrent()) {
+            Alert.alert(
+              "照片保存失败",
+              "请确认照片已从 iCloud 下载，并检查照片权限和设备存储空间后重试。",
+            );
+          }
+          return null;
+        }
+        stagedPhotos.push({ file: staged, photoId: buildCanvasId("image") });
+        if (!isCurrent()) {
+          await rollbackStagedPhotos(stagedPhotos);
+          return null;
+        }
+      }
+      handedOff = true;
+      return {
+        generation,
+        photos: stagedPhotos.map(({ file, photoId }) => ({ id: photoId, uri: file.uri })),
+        stagedPhotos,
+      };
+    } finally {
+      if (!handedOff) finishPhotoOperation(generation);
+    }
+  }, [finishPhotoOperation, stageSelectedPhoto]);
+
+  const clearPendingTextFrom = React.useCallback((sourcePages: StoryPage[] = pagesRef.current) => {
+    const pendingId = pendingTextIdRef.current;
+    const activePageId = activePageIdRef.current;
+    if (!pendingId || !activePageId) {
       return sourcePages;
     }
+    pendingTextIdRef.current = undefined;
     setPendingTextId(undefined);
-    if (selectedElementId === pendingTextId) {
+    if (selectedElementId === pendingId) {
       setSelectedElementId(undefined);
     }
-    return deleteCanvasElement(sourcePages, currentPage.id, pendingTextId);
-  }, [currentPage, pages, pendingTextId, selectedElementId]);
+    return deleteCanvasElement(sourcePages, activePageId, pendingId);
+  }, [selectedElementId]);
 
   const discardPendingText = React.useCallback(() => {
     const nextPages = clearPendingTextFrom();
-    if (nextPages !== pages) {
+    if (nextPages !== pagesRef.current) {
       changePages(nextPages, "structure");
     }
     return nextPages;
-  }, [changePages, clearPendingTextFrom, pages]);
+  }, [changePages, clearPendingTextFrom]);
 
   const handleElementInteraction = React.useCallback((elementId: string) => {
-    if (pendingTextId === elementId) {
-      setPendingTextId(undefined);
+    if (pendingTextIdRef.current === elementId) {
+      markPendingTextEdited(elementId);
       return;
     }
     discardPendingText();
-  }, [discardPendingText, pendingTextId]);
+  }, [discardPendingText, markPendingTextEdited]);
 
-  const commitTurn = React.useCallback((targetIndex: number) => {
-    discardPendingText();
-    setSelectedElementId(undefined);
-    setCurrentIndex(targetIndex);
+  const commitTurn = React.useCallback((targetPageId: string, generation: number) => {
+    if (generation !== stableTurnGeneration.value) {
+      return;
+    }
+    stableTurnGeneration.value += 1;
+    const targetIndex = pagesRef.current.findIndex((page) => page.id === targetPageId);
+    if (targetIndex >= 0) {
+      initializeCoverPreview(pagesRef.current[targetIndex]);
+      discardPendingText();
+      setSelectedElementId(undefined);
+      setSelectedCoverPageId(undefined);
+      activePageIdRef.current = targetPageId;
+      currentIndexRef.current = targetIndex;
+      editingElementIdRef.current = undefined;
+      menuModeRef.current = null;
+      setEditingElementId(undefined);
+      setMenuMode(null);
+      setCurrentIndex(targetIndex);
+    }
     setPendingTurn(null);
     translateX.value = 0;
     turnDir.value = 0;
-  }, [discardPendingText, translateX, turnDir]);
+  }, [discardPendingText, initializeCoverPreview, stableTurnGeneration, translateX, turnDir]);
 
   const pagePan = React.useMemo(() => Gesture.Pan()
     .enabled(pendingTurn === null)
@@ -159,8 +719,8 @@ export function BookCanvasEditor({
       if (pagePanBlocked.value) {
         return;
       }
-      const outsideStart = (currentIndex === 0 && event.translationX > 0)
-        || (currentIndex === pages.length - 1 && event.translationX < 0);
+      const outsideStart = (validCurrentIndex === 0 && event.translationX > 0)
+        || (validCurrentIndex === pages.length - 1 && event.translationX < 0);
       translateX.value = outsideStart ? event.translationX * 0.22 : event.translationX;
     })
     .onFinalize((event) => {
@@ -170,21 +730,27 @@ export function BookCanvasEditor({
         return;
       }
       const decision = resolvePageTurn({
-        currentIndex,
+        currentIndex: validCurrentIndex,
         pageCount: pages.length,
         pageWidth,
         translationX: event.translationX,
         velocityX: event.velocityX,
       });
       if (decision.shouldTurn && decision.direction !== 0) {
+        const targetPageId = pages[decision.targetIndex]?.id;
+        if (!targetPageId) {
+          return;
+        }
+        stableTurnGeneration.value += 1;
+        const generation = stableTurnGeneration.value;
         turnDir.value = decision.direction;
-        runOnJS(setPendingTurn)({ direction: decision.direction, targetIndex: decision.targetIndex });
+        runOnJS(setPendingTurn)({ direction: decision.direction, generation, targetPageId });
         translateX.value = withTiming(
           -decision.direction * pageWidth,
           { duration: 260 },
           (finished) => {
             if (finished) {
-              runOnJS(commitTurn)(decision.targetIndex);
+              runOnJS(commitTurn)(targetPageId, generation);
             }
           },
         );
@@ -193,13 +759,14 @@ export function BookCanvasEditor({
       }
     }), [
       commitTurn,
-      currentIndex,
+      validCurrentIndex,
       pageHeight,
       pagePanBlocked,
       pageWidth,
-      pages.length,
+      pages,
       pendingTurn,
       selectedElement,
+      stableTurnGeneration,
       translateX,
       turnDir,
     ]);
@@ -218,10 +785,84 @@ export function BookCanvasEditor({
 
   const updateElement = (
     elementId: string,
-    patch: { x?: number; y?: number; width?: number; height?: number; rotation?: number; text?: string; color?: string; fontSize?: number; fontStyle?: string },
+    patch: CanvasElementPatch,
     reason: BookEditorChangeReason,
   ) => {
-    changePages(updateCanvasElement(pages, currentPage.id, elementId, patch), reason);
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    return changePages(updateCanvasElement(pagesRef.current, activeId, elementId, patch), reason);
+  };
+
+  const commitElementColor = (elementId: string, color: string) => {
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    const activePage = pagesRef.current.find((page) => page.id === activeId);
+    const element = activePage?.layout?.elements.find((candidate) => candidate.id === elementId);
+    const normalizedColor = color.toUpperCase();
+    if (VALID_HEX_COLOR.test(normalizedColor) && element?.type === "text") {
+      if (normalizedColor === element.color.toUpperCase()) {
+        stageTextStyleDraft(activeId, elementId, "color", undefined);
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: activeId,
+          property: "color",
+        });
+        return;
+      }
+      markPendingTextEdited(elementId);
+      if (!updateElement(elementId, { color: normalizedColor }, "structure")) return;
+      stageTextStyleDraft(activeId, elementId, "color", undefined);
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: activeId,
+        property: "color",
+      });
+      return;
+    }
+    stageTextStyleDraft(activeId, elementId, "color", undefined);
+    stableColorPreview.value = element?.type === "text" ? element.color : "#000000";
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: activeId,
+      property: "color",
+    });
+  };
+
+  const commitElementFontSize = (elementId: string, fontSize: number) => {
+    const activeId = activePageIdRef.current ?? currentPage.id;
+    const activePage = pagesRef.current.find((page) => page.id === activeId);
+    const element = activePage?.layout?.elements.find((candidate) => candidate.id === elementId);
+    if (isValidFontSize(fontSize) && element?.type === "text") {
+      if (fontSize === element.fontSize) {
+        stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
+        localDiagnostics.emit("style_transaction_finalized", {
+          elementId,
+          outcome: "no_op",
+          pageId: activeId,
+          property: "fontSize",
+        });
+        return;
+      }
+      markPendingTextEdited(elementId);
+      if (!updateElement(elementId, { fontSize }, "structure")) return;
+      stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
+      localDiagnostics.emit("style_transaction_finalized", {
+        elementId,
+        outcome: "commit",
+        pageId: activeId,
+        property: "fontSize",
+      });
+      return;
+    }
+    stageTextStyleDraft(activeId, elementId, "fontSize", undefined);
+    stableFontSizePreview.value = element?.type === "text" ? element.fontSize : MIN_FONT_SIZE;
+    localDiagnostics.emit("style_transaction_finalized", {
+      elementId,
+      outcome: "cancel",
+      pageId: activeId,
+      property: "fontSize",
+    });
   };
 
   const addSticker = (stickerId = getCanvasStickers(stickerCategory)[0]?.id ?? canvasStickers[0].id) => {
@@ -239,23 +880,208 @@ export function BookCanvasEditor({
     setSelectedElementId(nextId);
   };
 
-  const addPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      return;
-    }
+  const uploadCoverPhoto = async () => {
+    const pageId = currentPage.id;
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      // 复制进沙盒，避免重启后 URI 失效
-      const uri = await persistPhotoUri(result.assets[0].uri);
-      const nextId = buildCanvasId("image");
-      changePages(addImageToPage(clearPendingTextFrom(), currentPage.id, nextId, uri), "structure");
-      setSelectedElementId(nextId);
+    if (result.canceled || !result.assets[0]) return;
+
+    const operationId = beginTransientPhotoOperation();
+    try {
+      const photo = await preparePickedPhoto(result.assets[0].uri);
+      if (!photo) return;
+      if (!mountedRef.current) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      const nextPages = setCanvasCoverImage(clearPendingTextFrom(pagesRef.current), pageId, photo.uri);
+      const nextPage = nextPages.find((page) => page.id === pageId);
+      const referencesStagedPhoto = nextPage?.coverImage === photo.uri
+        || nextPage?.layout?.coverImage === photo.uri;
+      if (!referencesStagedPhoto || !changePages(nextPages, "structure")) {
+        await rollbackRejectedPhoto(photo);
+        return;
+      }
+      photo.commit();
+    } finally {
+      finishPhotoOperation(operationId);
     }
+  };
+
+  const requestAddPhotoPage = () => {
+    setOwnedPendingPhotoLayout({
+      action: "add",
+      photos: [],
+      stagedPhotos: [],
+    });
+  };
+
+  const openElementCrop = (elementId: string) => {
+    const page = pagesRef.current.find((candidate) => candidate.id === currentPage.id);
+    const element = page?.layout?.elements.find((candidate) => candidate.id === elementId);
+    if (element?.type !== "image" || !page?.layout) return;
+    setDirectCropTarget({
+      aspectRatio: element.height > 0 ? (element.width * page.layout.aspectRatio) / element.height : 1,
+      crop: element.crop,
+      elementId: element.id,
+      kind: "element",
+      pageId: page.id,
+      uri: element.uri,
+    });
+  };
+
+  const openCoverCrop = () => {
+    const page = pagesRef.current.find((candidate) => candidate.id === currentPage.id);
+    const uri = page?.layout?.coverImage ?? page?.coverImage;
+    if (!page?.layout || !uri) return;
+    setDirectCropTarget({
+      aspectRatio: page.layout.aspectRatio,
+      crop: page.layout.coverCrop,
+      kind: "cover",
+      pageId: page.id,
+      uri,
+    });
+  };
+
+  const confirmDirectCrop = (crop: PhotoCropState) => {
+    const target = directCropTarget;
+    if (!target) return;
+    const nextPages = target.kind === "cover"
+      ? setCanvasCoverCrop(pagesRef.current, target.pageId, crop)
+      : updateCanvasElement(pagesRef.current, target.pageId, target.elementId!, { crop });
+    if (changePages(nextPages, "structure")) setDirectCropTarget(undefined);
+  };
+
+  const editPhotoLayout = () => {
+    const photos = pagePhotoDraftItems(currentPage);
+    setOwnedPendingPhotoLayout({
+      action: "edit",
+      pageId: currentPage.id,
+      photos,
+      photosChanged: false,
+      stagedPhotos: [],
+      selectedTemplateId: matchingPhotoTemplateId(currentPage.layout?.photoTemplateId, photos.length),
+    });
+  };
+
+  const addStagedPhoto = async () => {
+    const previous = pendingPhotoLayoutRef.current;
+    if (!previous || previous.photos.length >= MAX_PHOTOS_PER_CANVAS_PAGE) return;
+    const batch = await pickAndStagePhotos({ multiple: false, selectionLimit: 1 });
+    if (!batch) return;
+    try {
+      if (pendingPhotoLayoutRef.current !== previous) {
+        await rollbackStagedPhotos(batch.stagedPhotos);
+        return;
+      }
+      const photos = [...previous.photos, ...batch.photos].slice(0, MAX_PHOTOS_PER_CANVAS_PAGE);
+      const acceptedIds = new Set(photos.map((photo) => photo.id));
+      const rejected = batch.stagedPhotos.filter((photo) => !acceptedIds.has(photo.photoId));
+      if (rejected.length > 0) await rollbackStagedPhotos(rejected);
+      setOwnedPendingPhotoLayout({
+        ...previous,
+        photos,
+        stagedPhotos: [...previous.stagedPhotos, ...batch.stagedPhotos.filter((photo) => acceptedIds.has(photo.photoId))],
+        ...(previous.action === "edit" ? { photosChanged: true } : {}),
+      });
+    } finally {
+      finishPhotoOperation(batch.generation);
+    }
+  };
+
+  const updatePendingPhotos = (photos: PhotoLayoutDraftItem[]) => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (!pending) return;
+    const retainedIds = new Set(photos.map((photo) => photo.id));
+    const removedStaged = pending.stagedPhotos.filter((photo) => !retainedIds.has(photo.photoId));
+    setOwnedPendingPhotoLayout({
+      ...pending,
+      photos,
+      stagedPhotos: pending.stagedPhotos.filter((photo) => retainedIds.has(photo.photoId)),
+      ...(pending.action === "edit" ? { photosChanged: true } : {}),
+    });
+    if (removedStaged.length > 0) void rollbackStagedPhotos(removedStaged);
+  };
+
+  const cancelPhotoLayout = async () => {
+    const cleanupGeneration = ++pickerGenerationRef.current;
+    photoOperationGenerationsRef.current.add(cleanupGeneration);
+    setPhotoOperationCount(photoOperationGenerationsRef.current.size);
+    activePickerRef.current = null;
+    photoLayoutBusyRef.current = false;
+    if (mountedRef.current) setPhotoLayoutBusy(false);
+    const pending = pendingPhotoLayoutRef.current;
+    setOwnedPendingPhotoLayout(null);
+    try {
+      if (pending) await rollbackStagedPhotos(pending.stagedPhotos);
+    } finally {
+      finishPhotoOperation(cleanupGeneration);
+    }
+  };
+
+  const rejectPhotoLayoutCommit = async (pending: PendingPhotoLayout) => {
+    photoLayoutBusyRef.current = true;
+    setPhotoLayoutBusy(true);
+    await rollbackStagedPhotos(pending.stagedPhotos);
+    if (pendingPhotoLayoutRef.current === pending) setOwnedPendingPhotoLayout(null);
+    photoLayoutBusyRef.current = false;
+    if (mountedRef.current) {
+      setPhotoLayoutBusy(false);
+      Alert.alert("照片布局未应用", "当前旅行册正在保存，照片布局未能应用，请稍后重试。");
+    }
+  };
+
+  const confirmPhotoLayout = async (templateId?: PhotoTemplateId) => {
+    const pending = pendingPhotoLayoutRef.current;
+    if (photoLayoutBusyRef.current || !pending || (pending.action === "add" && pending.photos.length === 0)) return;
+    const validTemplateId = matchingPhotoTemplateId(templateId, pending.photos.length);
+
+    if (pending.action === "add") {
+      const addedPageId = buildCanvasId("page");
+      const nextPages = addCanvasPage(pages, pending.photos, addedPageId, validTemplateId);
+      const addedIndex = nextPages.findIndex((page) => page.id === addedPageId);
+      if (!changePages(nextPages, "structure")) {
+        await rejectPhotoLayoutCommit(pending);
+        return;
+      }
+      pending.stagedPhotos.forEach((photo) => photo.file.commit());
+      if (addedIndex >= 0) {
+        stableTurnGeneration.value += 1;
+        setPendingTurn(null);
+        translateX.value = 0;
+        turnDir.value = 0;
+        setSelectedElementId(undefined);
+        setSelectedCoverPageId(undefined);
+        activePageIdRef.current = addedPageId;
+        setCurrentIndex(addedIndex);
+      }
+    } else {
+      const sourcePages = clearPendingTextFrom();
+      if (sourcePages.some((page) => page.id === pending.pageId)) {
+        const nextPages = pending.photosChanged
+          ? replacePagePhotos(
+              sourcePages,
+              pending.pageId,
+              pending.photos as CanvasPagePhoto[],
+              validTemplateId,
+            )
+          : validTemplateId
+            ? applyPhotoTemplateToPage(sourcePages, pending.pageId, validTemplateId)
+            : clearPhotoTemplateFromPage(sourcePages, pending.pageId);
+        if (nextPages !== pages && !changePages(nextPages, "structure")) {
+          await rejectPhotoLayoutCommit(pending);
+          return;
+        }
+        pending.stagedPhotos.forEach((photo) => photo.file.commit());
+        setSelectedElementId(undefined);
+      } else {
+        void rollbackStagedPhotos(pending.stagedPhotos);
+      }
+    }
+    setOwnedPendingPhotoLayout(null);
   };
 
   const addText = () => {
@@ -263,6 +1089,7 @@ export function BookCanvasEditor({
     changePages(addTextToPage(clearPendingTextFrom(), currentPage.id, nextId), "structure");
     setSelectedElementId(nextId);
     // 不再自动打开编辑输入框：用户需点击工具栏「编辑」按钮手动触发
+    pendingTextIdRef.current = nextId;
     setPendingTextId(nextId);
   };
 
@@ -271,9 +1098,12 @@ export function BookCanvasEditor({
     setSelectedElementId(undefined);
   };
 
-  const isRightPage = currentIndex % 2 === 0;
-  const incomingPage = pendingTurn ? pages[pendingTurn.targetIndex] : undefined;
-  const incomingIsRight = pendingTurn ? pendingTurn.targetIndex % 2 === 0 : false;
+  const isRightPage = validCurrentIndex % 2 === 0;
+  const incomingIndex = pendingTurn
+    ? pages.findIndex((page) => page.id === pendingTurn.targetPageId)
+    : -1;
+  const incomingPage = incomingIndex >= 0 ? pages[incomingIndex] : undefined;
+  const incomingIsRight = incomingIndex >= 0 ? incomingIndex % 2 === 0 : false;
 
   return (
     <View style={styles.editor}>
@@ -283,8 +1113,8 @@ export function BookCanvasEditor({
           <UndoRedoButtons
             canRedo={canRedo}
             canUndo={canUndo}
-            onRedo={() => redo(pages)}
-            onUndo={() => undo(pages)}
+            onRedo={() => redo(pagesRef.current)}
+            onUndo={() => undo(pagesRef.current)}
           />
           <View style={styles.topbarSpacer} />
           {/* 右侧：页面指示器 + 页面管理 + 添加文字 */}
@@ -295,7 +1125,8 @@ export function BookCanvasEditor({
             accessibilityRole="button"
             onPress={() => {
               discardPendingText();
-              setManagerOpen(true);
+              setManagerMounted(true);
+              setManagerVisible(true);
             }}
             style={styles.pageMenuButton}>
             <Text style={styles.pageMenuButtonText}>页面管理</Text>
@@ -303,96 +1134,140 @@ export function BookCanvasEditor({
         </View>
       </View>
 
-      {managerOpen ? (
+      {managerMounted ? (
         <PageManagerSheet
           onChange={(nextPages) => changePages(clearPendingTextFrom(nextPages), "structure")}
-          onClose={() => setManagerOpen(false)}
+          onClose={() => setManagerVisible(false)}
+          onDismiss={() => setManagerMounted(false)}
           onJumpToPage={(index) => {
+            stableTurnGeneration.value += 1;
+            setPendingTurn(null);
+            translateX.value = 0;
+            turnDir.value = 0;
+            const targetPage = pagesRef.current[index];
+            initializeCoverPreview(targetPage);
             discardPendingText();
             setSelectedElementId(undefined);
+            setSelectedCoverPageId(undefined);
+            activePageIdRef.current = targetPage?.id;
+            currentIndexRef.current = index;
+            editingElementIdRef.current = undefined;
+            menuModeRef.current = null;
+            setEditingElementId(undefined);
+            setMenuMode(null);
             setCurrentIndex(index);
           }}
+          onRequestAddPage={() => {
+            void requestAddPhotoPage();
+          }}
           pages={pages}
+          visible={managerVisible}
+        />
+      ) : null}
+
+      {pendingPhotoLayout ? (
+        <PhotoLayoutSheet
+          action={pendingPhotoLayout.action}
+          busy={photoLayoutBusy}
+          onCancel={() => { void cancelPhotoLayout(); }}
+          onConfirm={confirmPhotoLayout}
+          onAddPhoto={() => {
+            void addStagedPhoto();
+          }}
+          onPhotosChange={updatePendingPhotos}
+          photos={pendingPhotoLayout.photos}
+          selectedTemplateId={pendingPhotoLayout.selectedTemplateId}
+        />
+      ) : null}
+
+      {directCropTarget ? (
+        <PhotoCropModal
+          aspectRatio={directCropTarget.aspectRatio}
+          crop={directCropTarget.crop}
+          onCancel={() => setDirectCropTarget(undefined)}
+          onConfirm={confirmDirectCrop}
+          uri={directCropTarget.uri}
         />
       ) : null}
 
       <View style={styles.bookStage}>
         <GestureDetector gesture={pagePan}>
           <View style={{ height: pageHeight, width: pageWidth }}>
-            <Animated.View
-              style={[
-                styles.pageShadow,
-                styles.pageLayer,
-                isRightPage ? styles.rightPageShadow : styles.leftPageShadow,
-                currentPageStyle,
-              ]}
-              testID="book-page">
-              <CanvasPage
-                height={pageHeight}
-                layout={currentPage.layout}
-                onInteractElement={handleElementInteraction}
-                onPressBlank={() => {
+            <BookCanvasEditorLayerBuffer
+              current={currentPage}
+              currentCanvasProps={{
+                coverSelected: selectedCoverPageId === currentPage.id,
+                onInteractElement: handleElementInteraction,
+                onCropCover: openCoverCrop,
+                onCropElement: openElementCrop,
+                onPressBlank: () => {
                   discardPendingText();
                   setSelectedElementId(undefined);
+                  setSelectedCoverPageId(undefined);
+                  editingElementIdRef.current = undefined;
+                  menuModeRef.current = null;
                   setEditingElementId(undefined);
                   setMenuMode(null);
-                }}
-                onSelectElement={(id) => {
+                },
+                onSelectElement: (id) => {
                   // 如果选中了不同于 pendingText 的元素，自动确认 pending 文本
                   // （仅清除 pending 标记，不删除元素），避免后续取消选中时误删除。
-                  if (pendingTextId !== undefined && id !== pendingTextId) {
+                  if (pendingTextIdRef.current !== undefined && id !== pendingTextIdRef.current) {
+                    pendingTextIdRef.current = undefined;
                     setPendingTextId(undefined);
                   }
                   // 选中不同元素时，关闭之前的文字编辑状态
                   if (editingElementId !== id) {
+                    editingElementIdRef.current = undefined;
+                    menuModeRef.current = null;
                     setEditingElementId(undefined);
                     setMenuMode(null);
                   }
                   setSelectedElementId(id);
+                  setSelectedCoverPageId(undefined);
                   // 不再自动进入编辑模式：用户需点击工具栏「编辑」按钮手动触发
-                }}
-                onTransformEnd={(elementId, patch) => {
+                },
+                onSelectCover: () => {
+                  discardPendingText();
+                  setSelectedElementId(undefined);
+                  setSelectedCoverPageId(currentPage.id);
+                  editingElementIdRef.current = undefined;
+                  menuModeRef.current = null;
+                  setEditingElementId(undefined);
+                  setMenuMode(null);
+                },
+                onTransformEnd: (elementId, patch) => {
                   handleElementInteraction(elementId);
+                  markPendingTextEdited(elementId);
                   updateElement(elementId, patch, "transform");
-                }}
-                pageSide={isRightPage ? "right" : "left"}
-                selectedElementId={selectedElementId}
-                width={pageWidth}
-              />
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.spine,
-                  isRightPage ? styles.spineLeft : styles.spineRight,
-                ]}
-              />
-            </Animated.View>
-
-            {incomingPage?.layout ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.pageShadow,
-                  styles.pageLayer,
-                  incomingIsRight ? styles.rightPageShadow : styles.leftPageShadow,
-                  incomingPageStyle,
-                ]}>
-                <CanvasPage
-                  height={pageHeight}
-                  interactive={false}
-                  layout={incomingPage.layout}
-                  pageSide={incomingIsRight ? "right" : "left"}
-                  width={pageWidth}
-                />
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.spine,
-                    incomingIsRight ? styles.spineLeft : styles.spineRight,
-                  ]}
-                />
-              </Animated.View>
-            ) : null}
+                },
+                onTransformSettled: () => {
+                  const pending = transformSettleGateRef.current.end();
+                  setGestureTransformPending(pending);
+                },
+                onTransformStart: () => {
+                  transformSettleGateRef.current.begin();
+                  setGestureTransformPending(true);
+                },
+                coverColorPreview: assetTrayMode === "cover" && currentPage.kind === "cover"
+                  ? stableCoverColorPreview
+                  : undefined,
+                selectedElementId,
+                stylePreview: editingElement?.type === "text" && menuMode === "color"
+                  ? { color: stableColorPreview, elementId: editingElement.id }
+                  : editingElement?.type === "text" && menuMode === "size"
+                    ? { elementId: editingElement.id, fontSize: stableFontSizePreview }
+                    : undefined,
+                layout: currentPage.layout,
+              }}
+              currentIsRight={isRightPage}
+              currentStyle={currentPageStyle}
+              incoming={incomingPage?.layout ? incomingPage : undefined}
+              incomingIsRight={incomingIsRight}
+              incomingStyle={incomingPageStyle}
+              pageHeight={pageHeight}
+              pageWidth={pageWidth}
+            />
           </View>
         </GestureDetector>
       </View>
@@ -405,10 +1280,7 @@ export function BookCanvasEditor({
             accessibilityLabel="编辑选中文字"
             multiline
             onChangeText={(text) => {
-              const el = currentPage?.layout?.elements.find((el) => el.id === editingElement.id);
-              if (el?.type === "text" && text !== el.text && pendingTextId === editingElement.id) {
-                setPendingTextId(undefined);
-              }
+              markPendingTextEdited(editingElement.id);
               updateElement(editingElement.id, { text }, "text");
             }}
             style={styles.textInput}
@@ -423,6 +1295,7 @@ export function BookCanvasEditor({
       {/* 上下文菜单：字体/字号/颜色面板，由工具栏按钮触发；关闭后回到文字编辑态 */}
       {menuMode !== null && editingElement?.type === "text" ? (
         <ElementContextMenu
+          colorPreview={stableColorPreview}
           element={editingElement}
           elementFrame={{
             x: editingElement.x * pageWidth,
@@ -430,10 +1303,41 @@ export function BookCanvasEditor({
             width: editingElement.width * pageWidth,
             height: editingElement.height * pageHeight,
           }}
-          onChangeColor={(color) => updateElement(editingElement.id, { color }, "structure")}
-          onChangeFont={(fontStyle) => updateElement(editingElement.id, { fontStyle }, "structure")}
-          onChangeSize={(fontSize) => updateElement(editingElement.id, { fontSize }, "structure")}
-          onClose={() => setMenuMode(null)}
+          onCancelColor={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "color",
+            });
+          }}
+          onColorDraftChange={(color) => {
+            stageTextStyleDraft(currentPage.id, editingElement.id, "color", color);
+          }}
+          onCancelSize={() => {
+            localDiagnostics.emit("style_transaction_finalized", {
+              elementId: editingElement.id,
+              outcome: "cancel",
+              pageId: currentPage.id,
+              property: "fontSize",
+            });
+          }}
+          onChangeColor={(color) => commitElementColor(editingElement.id, color)}
+          onChangeFont={(fontStyle) => {
+            markPendingTextEdited(editingElement.id);
+            updateElement(editingElement.id, { fontStyle }, "structure");
+          }}
+          onChangeSize={(fontSize) => commitElementFontSize(editingElement.id, fontSize)}
+          onFontSizeDraftChange={(fontSize) => {
+            stageTextStyleDraft(currentPage.id, editingElement.id, "fontSize", fontSize);
+          }}
+          onClose={() => {
+            stableColorPreview.value = editingElement.color;
+            stableFontSizePreview.value = editingElement.fontSize;
+            menuModeRef.current = null;
+            setMenuMode(null);
+          }}
+          fontSizePreview={stableFontSizePreview}
           initialMode={menuMode}
           visible={true}
         />
@@ -451,6 +1355,9 @@ export function BookCanvasEditor({
         }}
         onColor={() => {
           if (selectedElement?.type === "text") {
+            stableColorPreview.value = selectedElement.color;
+            menuModeRef.current = "color";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("color");
             setEditingElementId(selectedElement.id);
           }
@@ -462,6 +1369,8 @@ export function BookCanvasEditor({
         onDone={() => {
           discardPendingText();
           setSelectedElementId(undefined);
+          editingElementIdRef.current = undefined;
+          menuModeRef.current = null;
           setEditingElementId(undefined);
           setMenuMode(null);
         }}
@@ -473,12 +1382,16 @@ export function BookCanvasEditor({
         onEdit={() => {
           // 手动触发文字编辑模式：显示 TextInput 输入框（不打开任何面板）
           if (selectedElement?.type === "text") {
+            menuModeRef.current = null;
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode(null);
             setEditingElementId(selectedElement.id);
           }
         }}
         onFont={() => {
           if (selectedElement?.type === "text") {
+            menuModeRef.current = "font";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("font");
             setEditingElementId(selectedElement.id);
           }
@@ -486,6 +1399,9 @@ export function BookCanvasEditor({
         onPickBackground={() => setAssetTrayMode("background")}
         onSize={() => {
           if (selectedElement?.type === "text") {
+            stableFontSizePreview.value = selectedElement.fontSize;
+            menuModeRef.current = "size";
+            editingElementIdRef.current = selectedElement.id;
             setMenuMode("size");
             setEditingElementId(selectedElement.id);
           }
@@ -501,8 +1417,8 @@ export function BookCanvasEditor({
         <View style={styles.assetModeRow}>
           <SmallButton
             active={false}
-            label="📷 添加照片"
-            onPress={addPhoto}
+            label="照片与模板"
+            onPress={editPhotoLayout}
           />
           <SmallButton
             active={assetTrayMode === "sticker"}
@@ -534,6 +1450,7 @@ export function BookCanvasEditor({
               label="封面"
               onPress={() => {
                 discardPendingText();
+                initializeCoverPreview(currentPage);
                 setAssetTrayMode("cover");
               }}
             />
@@ -583,30 +1500,46 @@ export function BookCanvasEditor({
         ) : assetTrayMode === "cover" ? (
           <View style={styles.coverTray}>
             <ColorPicker
-              value={currentPage.coverColor ?? "#EFE2CF"}
-              onChange={(hex) => {
-                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, hex), "structure");
+              value={resolveCoverColor(currentPage)}
+              onCancel={() => {
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "cancel",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
               }}
+              onCommit={(hex) => {
+                const normalizedColor = hex.toUpperCase();
+                if (!VALID_HEX_COLOR.test(normalizedColor)) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "cancel",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                if (normalizedColor === resolveCoverColor(currentPage).toUpperCase()) {
+                  localDiagnostics.emit("style_transaction_finalized", {
+                    outcome: "no_op",
+                    pageId: currentPage.id,
+                    property: "coverColor",
+                  });
+                  return;
+                }
+                changePages(setCanvasCoverColor(clearPendingTextFrom(), currentPage.id, normalizedColor), "structure");
+                localDiagnostics.emit("style_transaction_finalized", {
+                  outcome: "commit",
+                  pageId: currentPage.id,
+                  property: "coverColor",
+                });
+              }}
+              previewValue={stableCoverColorPreview}
             />
             <View style={styles.coverImageRow}>
               <Pressable
                 accessibilityLabel="上传封面背景图"
                 accessibilityRole="button"
-                onPress={async () => {
-                  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (!permission.granted) {
-                    return;
-                  }
-                  const result = await ImagePicker.launchImageLibraryAsync({
-                    allowsMultipleSelection: false,
-                    mediaTypes: ["images"],
-                    quality: 0.8,
-                  });
-                  if (!result.canceled && result.assets[0]) {
-                    const uri = await persistPhotoUri(result.assets[0].uri);
-                    changePages(setCanvasCoverImage(clearPendingTextFrom(), currentPage.id, uri), "structure");
-                  }
-                }}
+                onPress={uploadCoverPhoto}
                 style={styles.coverUploadButton}
               >
                 <Text style={styles.coverUploadText}>{currentPage.coverImage ? "更换背景图" : "上传背景图"}</Text>

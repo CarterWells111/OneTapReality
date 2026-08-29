@@ -9,10 +9,14 @@ import Animated, {
 import * as React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { canvasFonts, canvasFrames, canvasStickers } from "./canvas-assets";
+import { canvasFrames, canvasStickers } from "./canvas-assets";
+import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-element-geometry";
 import { SelectionHandles } from "./selection-handles";
-import { bodyFontFamily } from "../typography/fonts";
-import type { CanvasElement as CanvasElementModel } from "../../types/memory";
+import { useResolvedFontFamily } from "../typography/font-loading-provider";
+import { isMissingPhotoToken } from "../memories/photo-references";
+import { CroppedImage } from "./cropped-image";
+import { CropIcon } from "./crop-icon";
+import type { CanvasElement as CanvasElementModel, CanvasImageElement } from "../../types/memory";
 
 type ElementPatch = {
   x: number;
@@ -23,22 +27,42 @@ type ElementPatch = {
   fontSize?: number;
 };
 
-type CanvasDimensions = { width: number; height: number };
+export type CanvasElementStylePreview = {
+  color?: SharedValue<string>;
+  fontSize?: SharedValue<number>;
+};
 
 type CanvasElementProps = {
   canvasHeight: number;
   canvasWidth: number;
+  contentScale?: number;
   element: CanvasElementModel;
   interactive: boolean;
+  interactionZIndex?: number;
   isSelected: boolean;
   selectionContext: string | undefined;
+  stylePreview?: CanvasElementStylePreview;
   onInteract?: (id: string) => void;
+  onCrop?: (id: string) => void;
   onSelect: (id: string) => void;
+  onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
+  onTransformSettled?: () => void;
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), maximum);
+
+const finiteOr = (value: number, fallback: number) =>
+  Number.isFinite(value) ? value : fallback;
+
+/**
+ * Resolve the interaction layer on the React thread. Reanimated worklets must
+ * only consume the resulting primitive, never call a regular JS helper.
+ */
+export function resolveCanvasInteractionZIndex(isSelected: boolean, interactionZIndex: number | undefined, baseZIndex: number) {
+  return isSelected && Number.isFinite(interactionZIndex) ? interactionZIndex : baseZIndex;
+}
 
 /**
  * 根据手势结束后的绝对位置和尺寸计算元素新状态。
@@ -54,19 +78,39 @@ export function calculateCanvasTransformFromAbsolute(
   absoluteHeight: number,
   absoluteRotation: number,
   canvasDimensions: CanvasDimensions,
-  cornerResize = false,
+  textFontScale?: number,
 ): ElementPatch {
   const { width: canvasWidth, height: canvasHeight } = canvasDimensions;
-  const width = clamp(absoluteWidth / canvasWidth, 0.03, 0.95);
-  const height = clamp(absoluteHeight / canvasHeight, 0.03, 0.95);
-  const x = clamp(absoluteX / canvasWidth, -0.8, 0.8);
-  const y = clamp(absoluteY / canvasHeight, -0.8, 0.8);
-  const patch: ElementPatch = { x, y, width, height, rotation: absoluteRotation };
+  const hasCanvasWidth = Number.isFinite(canvasWidth) && canvasWidth > 0;
+  const hasCanvasHeight = Number.isFinite(canvasHeight) && canvasHeight > 0;
+  const persistedX = clamp(finiteOr(element.x, 0), -0.95, 0.95);
+  const persistedY = clamp(finiteOr(element.y, 0), -0.95, 0.95);
+  const persistedWidth = clamp(finiteOr(element.width, 0.03), 0.03, 1);
+  const persistedHeight = clamp(finiteOr(element.height, 0.03), 0.03, 1);
+  const width = hasCanvasWidth && Number.isFinite(absoluteWidth)
+    ? clamp(absoluteWidth / canvasWidth, 0.03, 1)
+    : persistedWidth;
+  const height = hasCanvasHeight && Number.isFinite(absoluteHeight)
+    ? clamp(absoluteHeight / canvasHeight, 0.03, 1)
+    : persistedHeight;
+  const x = hasCanvasWidth && Number.isFinite(absoluteX)
+    ? clamp(absoluteX / canvasWidth, -0.95, 0.95)
+    : persistedX;
+  const y = hasCanvasHeight && Number.isFinite(absoluteY)
+    ? clamp(absoluteY / canvasHeight, -0.95, 0.95)
+    : persistedY;
+  const patch: ElementPatch = {
+    x,
+    y,
+    width,
+    height,
+    rotation: finiteOr(absoluteRotation, finiteOr(element.rotation, 0)),
+  };
   // 角落拖拽不改变字体大小：只拉伸文本框，文字在框内自然重排
-  if (element.type === "text" && !cornerResize) {
-    const scaleRatio = absoluteWidth / (element.width * canvasWidth);
-    if (Math.abs(scaleRatio - 1) > 0.005) {
-      patch.fontSize = Math.max(8, Math.round((element.fontSize ?? 16) * scaleRatio));
+  if (element.type === "text" && Number.isFinite(textFontScale) && Math.abs((textFontScale ?? 1) - 1) > 0.005) {
+    const scaleRatio = textFontScale as number;
+    if (scaleRatio > 0) {
+      patch.fontSize = Math.max(8, Math.round(finiteOr(element.fontSize, 16) * scaleRatio));
     }
   }
   return patch;
@@ -79,6 +123,26 @@ export function finalizeCanvasGesture(started: boolean, activeGestureCount: numb
   }
   const nextCount = Math.max(0, activeGestureCount - 1);
   return { activeGestureCount: nextCount, shouldCommit: nextCount === 0 };
+}
+
+export function nextCanvasGestureGeneration(activeGestureCount: number, generation: number) {
+  "worklet";
+  return activeGestureCount === 0 ? generation + 1 : generation;
+}
+
+export function shouldApplyCanvasGestureCommit(commitGeneration: number, currentGeneration: number) {
+  "worklet";
+  return commitGeneration === currentGeneration;
+}
+
+export function composeCanvasGestureRotation(startOffset: number, eventRotation: number) {
+  "worklet";
+  return startOffset + eventRotation;
+}
+
+export function composeCanvasGestureScale(startScale: number, eventScale: number) {
+  "worklet";
+  return startScale * eventScale;
 }
 
 export function calculateStickerTextStyle(
@@ -100,34 +164,68 @@ export function calculateStickerTextStyle(
 export function CanvasElement({
   canvasHeight,
   canvasWidth,
+  contentScale = 1,
   element,
   interactive,
+  interactionZIndex,
   isSelected,
   selectionContext,
+  stylePreview,
   onInteract,
+  onCrop,
   onSelect,
+  onTransformStart,
   onTransformEnd,
+  onTransformSettled,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
+  const transformCallbacksRef = React.useRef({ onTransformSettled, onTransformStart });
+  const transformMountedRef = React.useRef(true);
+  const transformOwnershipRef = React.useRef(false);
+  const transformSettledCallbackRef = React.useRef(onTransformSettled);
+  transformCallbacksRef.current = { onTransformSettled, onTransformStart };
+  const baseGeometry = resolveCanvasElementGeometry(element, {
+    width: canvasWidth,
+    height: canvasHeight,
+  });
+  const resolvedZIndex = resolveCanvasInteractionZIndex(isSelected, interactionZIndex, baseGeometry.zIndex);
+  const scaledTextBoxStyle = { borderRadius: 8 * contentScale };
 
   React.useEffect(() => {
     lastPressAt.current = null;
-  }, [selectionContext]);
+  }, [interactive, selectionContext]);
+
+  React.useEffect(() => {
+    transformMountedRef.current = true;
+    return () => {
+      transformMountedRef.current = false;
+      if (transformOwnershipRef.current) {
+        transformOwnershipRef.current = false;
+        const settle = transformSettledCallbackRef.current;
+        transformSettledCallbackRef.current = undefined;
+        settle?.();
+      }
+    };
+  }, []);
 
   // ── 绝对位置共享值 ──
-  const posX = useSharedValue(element.x * canvasWidth);
-  const posY = useSharedValue(element.y * canvasHeight);
-  const elemW = useSharedValue(element.width * canvasWidth);
-  const elemH = useSharedValue(element.height * canvasHeight);
+  const posX = useSharedValue(baseGeometry.left);
+  const posY = useSharedValue(baseGeometry.top);
+  const elemW = useSharedValue(baseGeometry.width);
+  const elemH = useSharedValue(baseGeometry.height);
   // 手势缩放因子（共享值），确保捏合时手柄跟随
   const gestureScale = useSharedValue(1);
+  const pinchStartScale = useSharedValue(1);
   const gestureRotation = useSharedValue(0);
+  const baseRotation = useSharedValue(baseGeometry.rotation);
+  const rotationStartOffset = useSharedValue(0);
+  const gestureGeneration = useSharedValue(0);
+  const pendingTextFontScale = useSharedValue(1);
+  const pinchStartFontScale = useSharedValue(1);
   const activeGestureCount = useSharedValue(0);
   const panStarted = useSharedValue(false);
   const pinchStarted = useSharedValue(false);
   const rotationStarted = useSharedValue(false);
-  // 标记当前是否是角落手柄拖拽（用于区分角落缩放和双指捏合）
-  const cornerResize = useSharedValue(false);
   // 文字实时缩放因子：捏合时同步驱动 fontSize，实现所见即所得
   const fontScale = useSharedValue(1);
 
@@ -139,26 +237,76 @@ export function CanvasElement({
   // 仅在没有活跃手势时同步，避免覆盖手势中的实时位置。
   React.useEffect(() => {
     if (activeGestureCount.value > 0) return;
-    posX.value = element.x * canvasWidth;
-    posY.value = element.y * canvasHeight;
-    elemW.value = element.width * canvasWidth;
-    elemH.value = element.height * canvasHeight;
+    posX.value = baseGeometry.left;
+    posY.value = baseGeometry.top;
+    elemW.value = baseGeometry.width;
+    elemH.value = baseGeometry.height;
     gestureScale.value = 1;
+    pinchStartScale.value = 1;
     gestureRotation.value = 0;
+    baseRotation.value = baseGeometry.rotation;
+    rotationStartOffset.value = 0;
+    pendingTextFontScale.value = 1;
+    pinchStartFontScale.value = 1;
     fontScale.value = 1;
-  }, [element.x, element.y, element.width, element.height, element.rotation,
-      canvasWidth, canvasHeight, posX, posY, elemW, elemH, gestureScale, gestureRotation, fontScale, activeGestureCount]);
+  }, [baseGeometry.left, baseGeometry.top, baseGeometry.width, baseGeometry.height, baseGeometry.rotation,
+      posX, posY, elemW, elemH, gestureScale, pinchStartScale, gestureRotation, baseRotation, rotationStartOffset,
+      pendingTextFontScale, pinchStartFontScale,
+      fontScale, activeGestureCount]);
+
+  const acknowledgeTransformStart = () => {
+    if (!transformMountedRef.current || transformOwnershipRef.current) return;
+    transformOwnershipRef.current = true;
+    transformSettledCallbackRef.current = transformCallbacksRef.current.onTransformSettled;
+    transformCallbacksRef.current.onTransformStart?.();
+  };
+
+  const acknowledgeTransformSettled = () => {
+    if (!transformOwnershipRef.current) return;
+    transformOwnershipRef.current = false;
+    const settle = transformSettledCallbackRef.current;
+    transformSettledCallbackRef.current = undefined;
+    settle?.();
+  };
 
   const commitTransform = (
     absoluteX: number, absoluteY: number,
     absoluteWidth: number, absoluteHeight: number,
     absoluteRotation: number,
+    commitGeneration = gestureGeneration.value,
+    textFontScale = 1,
   ) => {
-    onTransformEnd?.(element.id, calculateCanvasTransformFromAbsolute(
+    if (!transformMountedRef.current) {
+      acknowledgeTransformSettled();
+      return;
+    }
+    if (!shouldApplyCanvasGestureCommit(commitGeneration, gestureGeneration.value)) {
+      acknowledgeTransformSettled();
+      return;
+    }
+    const patch = calculateCanvasTransformFromAbsolute(
       element, absoluteX, absoluteY, absoluteWidth, absoluteHeight, absoluteRotation,
       { width: canvasWidth, height: canvasHeight },
-      cornerResize.value,
-    ));
+      textFontScale,
+    );
+    const committedGeometry = resolveCanvasElementGeometry(
+      { ...element, ...patch },
+      { width: canvasWidth, height: canvasHeight },
+    );
+    posX.value = committedGeometry.left;
+    posY.value = committedGeometry.top;
+    elemW.value = committedGeometry.width;
+    elemH.value = committedGeometry.height;
+    gestureScale.value = 1;
+    pinchStartScale.value = 1;
+    baseRotation.value = committedGeometry.rotation;
+    gestureRotation.value = 0;
+    rotationStartOffset.value = 0;
+    pendingTextFontScale.value = 1;
+    pinchStartFontScale.value = 1;
+    fontScale.value = 1;
+    onTransformEnd?.(element.id, patch);
+    acknowledgeTransformSettled();
   };
 
   const acknowledgeInteraction = () => onInteract?.(element.id);
@@ -166,11 +314,13 @@ export function CanvasElement({
   const beginGesture = (started: typeof panStarted) => {
     "worklet";
     started.value = true;
+    gestureGeneration.value = nextCanvasGestureGeneration(activeGestureCount.value, gestureGeneration.value);
     activeGestureCount.value += 1;
     // 在首次手势开始时保存起始位置
     if (activeGestureCount.value === 1) {
       panStartX.value = posX.value;
       panStartY.value = posY.value;
+      runOnJS(acknowledgeTransformStart)();
     }
     runOnJS(acknowledgeInteraction)();
   };
@@ -191,13 +341,16 @@ export function CanvasElement({
     const finalY = posY.value;
     const finalW = elemW.value * gestureScale.value;
     const finalH = elemH.value * gestureScale.value;
-    const finalRot = element.rotation + gestureRotation.value;
+    const finalRot = baseRotation.value + gestureRotation.value;
+    const commitGeneration = gestureGeneration.value;
+    const textFontScale = pendingTextFontScale.value;
     // 不需要重置共享值 —— React 重渲染时会通过 useEffect 同步
-    runOnJS(commitTransform)(finalX, finalY, finalW, finalH, finalRot);
+    runOnJS(commitTransform)(finalX, finalY, finalW, finalH, finalRot, commitGeneration, textFontScale);
   };
 
   // ── 手势定义 ──
   const pan = Gesture.Pan()
+    .withTestId(`canvas-element-pan-${element.id}`)
     .enabled(interactive && isSelected)
     .onBegin(() => beginGesture(panStarted))
     .onUpdate((event) => {
@@ -207,20 +360,30 @@ export function CanvasElement({
     .onFinalize(() => finalizeGesture(panStarted));
 
   const pinch = Gesture.Pinch()
+    .withTestId(`canvas-element-pinch-${element.id}`)
     .enabled(interactive && isSelected)
-    .onBegin(() => beginGesture(pinchStarted))
+    .onBegin(() => {
+      pinchStartScale.value = gestureScale.value;
+      pinchStartFontScale.value = pendingTextFontScale.value;
+      beginGesture(pinchStarted);
+    })
     .onUpdate((event) => {
-      gestureScale.value = event.scale;
+      gestureScale.value = composeCanvasGestureScale(pinchStartScale.value, event.scale);
+      pendingTextFontScale.value = composeCanvasGestureScale(pinchStartFontScale.value, event.scale);
       // 实时驱动文字缩放，实现所见即所得的预览
-      fontScale.value = event.scale;
+      fontScale.value = pendingTextFontScale.value;
     })
     .onFinalize(() => finalizeGesture(pinchStarted));
 
   const rotate = Gesture.Rotation()
+    .withTestId(`canvas-element-rotation-${element.id}`)
     .enabled(interactive && isSelected)
-    .onBegin(() => beginGesture(rotationStarted))
+    .onBegin(() => {
+      rotationStartOffset.value = gestureRotation.value;
+      beginGesture(rotationStarted);
+    })
     .onUpdate((event) => {
-      gestureRotation.value = event.rotation;
+      gestureRotation.value = composeCanvasGestureRotation(rotationStartOffset.value, event.rotation);
     })
     .onFinalize(() => finalizeGesture(rotationStarted));
 
@@ -230,64 +393,100 @@ export function CanvasElement({
     top: posY.value,
     width: elemW.value * gestureScale.value,
     height: elemH.value * gestureScale.value,
-    transform: [{ rotate: `${element.rotation + gestureRotation.value}rad` }],
+    transform: [{ rotate: `${baseRotation.value + gestureRotation.value}rad` }],
+    zIndex: resolvedZIndex,
   }));
 
-  // ── 非交互模式的静态样式 ──
-  const frameStyle: React.CSSProperties = {
-    left: element.x * canvasWidth,
-    top: element.y * canvasHeight,
-    width: element.width * canvasWidth,
-    height: element.height * canvasHeight,
-    zIndex: element.zIndex,
+  const handlePress = () => {
+    acknowledgeInteraction();
+    const now = Date.now();
+    if (lastPressAt.current !== null && now - lastPressAt.current <= 320) {
+      lastPressAt.current = null;
+      onSelect(element.id);
+      return;
+    }
+    lastPressAt.current = now;
   };
-  const savedRotationStyle = {
-    transform: [{ rotate: `${element.rotation}rad` }],
-  };
-
-  const content = <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} fontScale={fontScale} />;
-
-  if (!interactive) {
-    return (
-      <View
-        style={[styles.positioned, frameStyle as any, savedRotationStyle as any]}
-        testID={`canvas-element-${element.id}`}>
-        {content}
-      </View>
-    );
-  }
 
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, rotate)}>
-      <Animated.View style={[styles.positioned, animatedStyle]}>
+      <Animated.View style={[styles.positioned, animatedStyle]} testID={`canvas-element-frame-${element.id}`}>
         <Pressable
-          accessibilityRole="button"
-          accessibilityHint="双击以选中并编辑"
-          onPress={() => {
-            acknowledgeInteraction();
-            const now = Date.now();
-            if (lastPressAt.current !== null && now - lastPressAt.current <= 320) {
-              lastPressAt.current = null;
-              onSelect(element.id);
-              return;
-            }
-            lastPressAt.current = now;
-          }}
-          style={[styles.element, isSelected && styles.selected]}
+          accessible={interactive}
+          accessibilityRole={interactive ? "button" : undefined}
+          accessibilityHint={interactive ? "双击以选中并编辑" : undefined}
+          disabled={!interactive}
+          importantForAccessibility={interactive ? "auto" : "no"}
+          onPress={interactive ? handlePress : undefined}
+          pointerEvents={interactive ? "auto" : "none"}
+          style={[
+            styles.touchTarget,
+            isSelected && element.type === "image" && styles.selectedPhotoTouchTarget,
+          ]}
           testID={`canvas-element-${element.id}`}>
-          <ElementContent canvasHeight={canvasHeight} canvasWidth={canvasWidth} element={element} fontScale={fontScale} />
+          {element.type === "image" ? (
+            <ElementContent
+              canvasHeight={canvasHeight}
+              canvasWidth={canvasWidth}
+              contentScale={contentScale}
+              element={element}
+              fontScale={fontScale}
+              stylePreview={stylePreview}
+            />
+          ) : (
+            <View style={[styles.contentContainer, scaledTextBoxStyle]} testID={`canvas-element-content-${element.id}`}>
+              <ElementContent
+                canvasHeight={canvasHeight}
+                canvasWidth={canvasWidth}
+                contentScale={contentScale}
+                element={element}
+                fontScale={fontScale}
+                stylePreview={stylePreview}
+              />
+            </View>
+          )}
         </Pressable>
+        {isSelected && element.type !== "image" ? (
+          <View
+            pointerEvents="none"
+            style={styles.selectionOverlay}
+            testID={`canvas-element-selection-${element.id}`}
+          />
+        ) : null}
+        {interactive && isSelected && element.type === "image" && onCrop ? (
+          <Pressable
+            accessibilityLabel="裁剪照片"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => onCrop(element.id)}
+            style={[
+              styles.cropButton,
+              element.y + element.height > 0.88 ? styles.cropButtonAbove : styles.cropButtonBelow,
+            ]}
+          >
+            <CropIcon color="#FFFFFF" size={20} />
+          </Pressable>
+        ) : null}
         {/* 选中时显示四角拖拽手柄 */}
-        {isSelected ? (
+        {isSelected && element.type !== "image" ? (
           <SelectionHandles
+            activeGestureCount={activeGestureCount}
             elemH={elemH}
             elemW={elemW}
+            gestureGeneration={gestureGeneration}
             gestureScale={gestureScale}
-            onHandleDragEnd={() => {
-              // 拖拽结束，提交变换
-              cornerResize.value = true;
-              commitTransform(posX.value, posY.value, elemW.value * gestureScale.value, elemH.value * gestureScale.value, element.rotation + gestureRotation.value);
-              cornerResize.value = false;
+            onHandleDragEnd={(commitGeneration) => commitTransform(
+              posX.value,
+              posY.value,
+              elemW.value * gestureScale.value,
+              elemH.value * gestureScale.value,
+              baseRotation.value + gestureRotation.value,
+              commitGeneration,
+              pendingTextFontScale.value,
+            )}
+            onHandleDragStart={() => {
+              acknowledgeTransformStart();
+              acknowledgeInteraction();
             }}
             posX={posX}
             posY={posY}
@@ -301,16 +500,23 @@ export function CanvasElement({
 function ElementContent({
   canvasHeight,
   canvasWidth,
+  contentScale,
   element,
   fontScale,
+  stylePreview,
 }: {
   canvasHeight: number;
   canvasWidth: number;
+  contentScale: number;
   element: CanvasElementModel;
   fontScale?: SharedValue<number>;
+  stylePreview?: CanvasElementStylePreview;
 }) {
+  const resolvedFontFamily = useResolvedFontFamily(
+    element.type === "text" ? element.fontStyle : undefined,
+  );
   if (element.type === "image") {
-    return <ImageElement testID={`canvas-image-${element.id}`} uri={element.uri} />;
+    return <ImageElement crop={element.crop} testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
@@ -326,13 +532,15 @@ function ElementContent({
       <Image contentFit="contain" source={frame.source} style={styles.image} testID={`canvas-frame-${element.id}`} />
     ) : null;
   }
-  const font = canvasFonts.find((candidate) => candidate.id === element.fontStyle);
   return (
     <AnimatedText
       color={element.color}
-      fontFamily={font?.family ?? bodyFontFamily}
+      contentScale={contentScale}
+      fontFamily={resolvedFontFamily}
       fontScale={fontScale}
       fontSize={element.fontSize}
+      previewColor={stylePreview?.color}
+      previewFontSize={stylePreview?.fontSize}
       text={element.text}
     />
   );
@@ -342,23 +550,24 @@ function ElementContent({
  * 照片元素：加载失败（文件已丢失/URI 失效）时显示占位，而不是静默空白。
  * 成功后不再重复检查，避免同一 URI 反复触发 onError。
  */
-function ImageElement({ testID, uri }: { testID: string; uri: string }) {
+function ImageElement({ crop, testID, uri }: { crop?: CanvasImageElement["crop"]; testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
-  if (failed) {
+  if (isMissingPhotoToken(uri) || failed) {
     return (
-      <View style={styles.imagePlaceholder} testID="canvas-image-placeholder">
+      <View accessibilityLabel="本地照片缺失" accessibilityRole="image" accessible style={styles.imagePlaceholder} testID={isMissingPhotoToken(uri) ? "canvas-missing-image-placeholder" : "canvas-image-placeholder"}>
         <Text style={styles.imagePlaceholderGlyph}>🖼</Text>
         <Text style={styles.imagePlaceholderText}>照片丢失</Text>
       </View>
     );
   }
   return (
-    <Image
-      contentFit="cover"
+    <CroppedImage
+      crop={crop}
+      imageTestID={testID}
       onError={() => setFailed(true)}
-      source={uri}
       style={styles.image}
-      testID={testID}
+      testID={`${testID}-viewport`}
+      uri={uri}
     />
   );
 }
@@ -369,27 +578,40 @@ function ImageElement({ testID, uri }: { testID: string; uri: string }) {
  */
 function AnimatedText({
   color,
+  contentScale,
   fontFamily,
   fontSize,
   fontScale,
+  previewColor,
+  previewFontSize,
   text,
 }: {
   color: string;
+  contentScale: number;
   fontFamily?: string;
   fontSize: number;
   fontScale?: SharedValue<number>;
+  previewColor?: SharedValue<string>;
+  previewFontSize?: SharedValue<number>;
   text: string;
 }) {
-  const animatedTextStyle = useAnimatedStyle(() => ({
-    fontSize: fontSize * (fontScale?.value ?? 1),
-    lineHeight: Math.round(fontSize * (fontScale?.value ?? 1) * 1.28),
-  }));
+  const animatedTextStyle = useAnimatedStyle(() => {
+    const resolvedFontSize = previewFontSize?.value ?? fontSize;
+    const scaledFontSize = resolvedFontSize * (fontScale?.value ?? 1) * contentScale;
+    return {
+      color: previewColor?.value ?? color,
+      fontSize: scaledFontSize,
+      lineHeight: Math.round(scaledFontSize * 1.28),
+      paddingHorizontal: 4 * contentScale,
+      paddingVertical: 2 * contentScale,
+    };
+  });
 
   return (
     <Animated.Text
       style={[
         styles.text,
-        { color, fontFamily },
+        { fontFamily },
         animatedTextStyle,
       ]}>
       {text}
@@ -399,10 +621,21 @@ function AnimatedText({
 
 const styles = StyleSheet.create({
   positioned: { position: "absolute" },
-  element: { flex: 1, borderColor: "transparent", borderRadius: 8, overflow: "hidden" },
-  selected: { borderColor: "#B76545", borderWidth: 2 },
+  touchTarget: { flex: 1 },
+  selectedPhotoTouchTarget: { borderColor: "#B76545", borderRadius: 8, borderWidth: 2, overflow: "hidden" },
+  contentContainer: { borderRadius: 8, flex: 1, overflow: "hidden" },
+  selectionOverlay: {
+    borderColor: "#B76545",
+    borderRadius: 8,
+    borderWidth: 2,
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
   image: { flex: 1, width: "100%" },
-  text: { paddingHorizontal: 4, paddingVertical: 2 },
+  text: {},
   stickerFallback: { fontSize: 34, lineHeight: 40, textAlign: "center" },
   imagePlaceholder: {
     alignItems: "center",
@@ -414,4 +647,19 @@ const styles = StyleSheet.create({
   },
   imagePlaceholderGlyph: { fontSize: 18 },
   imagePlaceholderText: { color: "rgba(0,0,0,0.35)", fontSize: 11, fontWeight: "600" },
+  cropButton: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(28,44,40,0.92)",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -18,
+    position: "absolute",
+    width: 36,
+    zIndex: 30,
+  },
+  cropButtonAbove: { bottom: "100%", marginBottom: 6 },
+  cropButtonBelow: { marginTop: 6, top: "100%" },
 });

@@ -22,4 +22,12 @@ describe("MemoryCard", () => {
     expect(view.getByText("我们的西湖周末")).toBeTruthy();
     expect(view.getByText("杭州 · 2 张照片")).toBeTruthy();
   });
+
+  it("renders a local missing-photo placeholder instead of the card image", async () => {
+    const view = await render(
+      <MemoryCard memory={{ id: "missing", title: "Missing", city: "hangzhou", travelDate: "2026-07-22", photoUris: ["missing-local-photo://card"], pages: [], createdAt: "2026-07-22T00:00:00.000Z", updatedAt: "2026-07-22T00:00:00.000Z" }} />
+    );
+
+    expect(view.getByLabelText("本地照片缺失")).toBeTruthy();
+  });
 });

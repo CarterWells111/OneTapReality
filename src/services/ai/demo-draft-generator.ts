@@ -1,5 +1,8 @@
 import type { MemoryDraftInput, StoryPage } from "../../types/memory";
 import { cityRegistry, type City } from "../../types/city";
+import { createLegacyLayout } from "../../features/canvas/canvas-layout";
+import { createPhotoLayout } from "../../features/canvas/auto-layout";
+import { createPhotoTemplateLayout } from "../../features/canvas/photo-templates";
 
 export interface DraftGenerator {
   generate(input: MemoryDraftInput): Promise<StoryPage[]>;
@@ -19,7 +22,8 @@ const cityPhrases: Record<City, string> = Object.fromEntries(cityRegistry.map((c
 /**
  * 根据用户上传照片数量动态生成旅行册页面。
  *
- * 结构：封面(1) + 每张照片一页(N) + 尾页(1)
+ * 结构：无页面计划时为封面(1) + 每张照片一页(N) + 尾页(1)；
+ * 提供非空页面计划时为封面(1) + 按计划排列的照片页 + 尾页(1)。
  * 封面包含完整 layout，可在编辑器中修改颜色/背景图。
  */
 export class DemoDraftGenerator implements DraftGenerator {
@@ -40,18 +44,50 @@ export class DemoDraftGenerator implements DraftGenerator {
       coverImage: input.coverImage,
     });
 
-    // 每张照片独立一页
-    for (let i = 0; i < photoCount; i += 1) {
-      pages.push({
-        id: `photo-${i + 1}`,
-        position: pages.length,
-        kind: "photo",
-        headline: "把这一刻留住",
-        body: photoCount === 1
-          ? "我们选了 1 张照片，记录这段只属于我们的旅程。"
-          : `我们选了 ${photoCount} 张照片，记录这段只属于我们的旅程。`,
-        photoUri: photos[i],
-      });
+    const pagePlans = input.pagePlans;
+    if (Array.isArray(pagePlans) && pagePlans.length > 0) {
+      for (let i = 0; i < pagePlans.length; i += 1) {
+        const plan = pagePlans[i];
+        const photoPage: StoryPage = {
+          id: `photo-${i + 1}`,
+          position: pages.length,
+          kind: "photo",
+          headline: "把这一刻留住",
+          body: `这一页收录了 ${plan.photoUris.length} 张照片。`,
+          photoUri: plan.photoUris[0],
+        };
+        const imageLayout = (plan.photoTemplateId
+          ? createPhotoTemplateLayout(plan.photoUris, plan.photoTemplateId)
+          : null) ?? createPhotoLayout(plan.photoUris);
+        const legacyTextElements = createLegacyLayout(photoPage).elements
+          .filter((element) => element.type === "text")
+          .map((element, index) => ({
+            ...element,
+            zIndex: imageLayout.elements.length + index + 1,
+          }));
+        pages.push({
+          ...photoPage,
+          layout: {
+            ...imageLayout,
+            photoPlanVersion: 1,
+            elements: [...imageLayout.elements, ...legacyTextElements],
+          },
+        });
+      }
+    } else {
+      // 每张照片独立一页（兼容未提供页面计划的旧调用）
+      for (let i = 0; i < photoCount; i += 1) {
+        pages.push({
+          id: `photo-${i + 1}`,
+          position: pages.length,
+          kind: "photo",
+          headline: "把这一刻留住",
+          body: photoCount === 1
+            ? "我们选了 1 张照片，记录这段只属于我们的旅程。"
+            : `我们选了 ${photoCount} 张照片，记录这段只属于我们的旅程。`,
+          photoUri: photos[i],
+        });
+      }
     }
 
     // 尾页

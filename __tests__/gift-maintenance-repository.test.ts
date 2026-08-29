@@ -4,10 +4,12 @@ import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server
 import { giftMediaCleanupJobs, giftPublishSessions } from "../src/server/db/schema";
 import {
   claimGiftMediaCleanupJobs,
+  claimGiftByTokenHash,
   createGift,
   createGiftPublishSession,
   expireGiftPublishSessions,
   failGiftMediaCleanupJob,
+  listGiftMediaCleanupJobs,
   purgeGiftMaintenanceData,
 } from "../src/server/gifts/repository";
 
@@ -63,7 +65,7 @@ describe("gift maintenance repository", () => {
       await migrateBackendDatabase(db);
       await createGift(db, { id: "gift-1", tokenHash: "token", createdAt: "2026-07-25T00:00:00.000Z" });
       await db.insert(giftPublishSessions).values({
-        id: "old-publish", giftId: "gift-1", ownerEmail: "owner@example.com", payloadJson: { pages: [], media: [] },
+        id: "old-publish", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, payloadJson: { pages: [], media: [] },
         expiresAt: "2026-07-24T00:05:00.000Z", completedAt: "2026-07-24T00:01:00.000Z", createdAt: "2026-07-24T00:00:00.000Z",
       });
       await db.insert(giftMediaCleanupJobs).values({
@@ -86,11 +88,20 @@ describe("gift maintenance repository", () => {
     try {
       await migrateBackendDatabase(db);
       await createGift(db, { id: "gift-1", tokenHash: "token", createdAt: "2026-07-25T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "token", "owner@example.com", "2026-07-25T00:00:01.000Z");
       await createGiftPublishSession(db, {
         id: "publish-1",
         giftId: "gift-1",
         ownerEmail: "owner@example.com",
-        payload: { sourceMemoryId: "memory-1", title: "Album", pages: [], media: [{ position: 0, objectKey: "object-1", contentType: "image/jpeg", byteSize: 1 }] },
+        baseVersion: 0,
+        payload: {
+          sourceMemoryId: "memory-1", title: "Album", pages: [],
+          media: [
+            { position: 0, objectKey: "existing-current-object", contentType: "image/jpeg", byteSize: 1, source: "existing" },
+            { position: 1, objectKey: "object-1", contentType: "image/jpeg", byteSize: 1, source: "upload" },
+          ],
+          cover: { objectKey: "object-cover-1", contentType: "image/jpeg", byteSize: 1 },
+        },
         expiresAt: "2026-07-25T00:05:00.000Z",
         createdAt: "2026-07-25T00:00:00.000Z",
       });
@@ -99,6 +110,12 @@ describe("gift maintenance repository", () => {
       await expireGiftPublishSessions(db, "2026-07-25T00:06:00.000Z", 5);
 
       expect(queries.join("\n")).toMatch(/from gift_publish_sessions[\s\S]*for update skip locked/iu);
+      const cleanup = await listGiftMediaCleanupJobs(db, "2026-07-25T00:06:00.000Z");
+      expect(cleanup).toEqual(expect.arrayContaining([
+        expect.objectContaining({ objectKey: "object-1" }),
+        expect.objectContaining({ objectKey: "object-cover-1" }),
+      ]));
+      expect(cleanup).not.toEqual(expect.arrayContaining([expect.objectContaining({ objectKey: "existing-current-object" })]));
     } finally { await close(); }
   });
 });

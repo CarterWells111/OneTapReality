@@ -1,7 +1,7 @@
 {
   "name": "onetapreality",
   "main": "expo-router/entry",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "engines": {
     "node": ">=20.19.4",
     "npm": ">=10.8.2"
@@ -86,9 +86,10 @@
     "start:server": "node --require dotenv/config server.cjs",
     "verify:backend": "node scripts/verify-backend.cjs",
     "check:lockfile": "node scripts/check-release-lockfile.cjs",
+    "beta:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile beta-external",
+    "alpha:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile alpha",
     "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
@@ -96,10 +97,14 @@
     "test": "jest --watch",
     "test:ci": "jest --runInBand && node --test __tests__/app-store-site.test.mjs __tests__/team-coordination-docs.test.mjs __tests__/active-branding-docs.test.mjs",
     "worker:check": "npx --yes wrangler@4.86.0 deploy --dry-run --config workers/gift-maintenance/wrangler.toml --outdir .wrangler-dist",
-    "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-migrations.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/backend-screen.test.tsx __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
+    "test:backend": "jest --runInBand --runTestsByPath __tests__/backend-validation.test.ts __tests__/backend-auth.test.ts __tests__/backend-migrations.test.ts __tests__/backend-repository.test.ts __tests__/backend-routes.test.ts __tests__/backend-client.test.ts __tests__/backend-db-client.test.ts __tests__/device-credentials.test.ts __tests__/app-config.test.ts __tests__/backend-smoke.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "nfc:test:seed": "node scripts/nfc-staging-test.cjs seed",
+    "nfc:test:inspect": "node scripts/nfc-staging-test.cjs inspect",
+    "nfc:test:prepare-pr": "node scripts/nfc-staging-test.cjs prepare-pr",
+    "nfc:test:guard": "node scripts/nfc-staging-test.cjs guard"
   },
   "jest": {
     "preset": "jest-expo",

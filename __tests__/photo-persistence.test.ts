@@ -3,8 +3,15 @@ import * as MediaLibrary from "expo-media-library";
 
 import {
   ensureMemoryPhotosPersisted,
+  deleteAccountPhotoDirectory,
+  deleteAccountPhotoDirectoryStrict,
+  deleteMemoryPhotoDirectory,
+  cleanupMigratedLegacyPhotoUris,
   persistPhotoUri,
+  persistPhotoUriStrict,
   persistPhotoUris,
+  hydrateMemoryPhotoReferences,
+  stagePhotoUriStrict,
 } from "../src/features/memories/photo-persistence";
 import type { Memory } from "../src/types/memory";
 
@@ -12,6 +19,8 @@ jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///data/user/0/com.app/documents/",
   makeDirectoryAsync: jest.fn(async () => undefined),
   copyAsync: jest.fn(async () => undefined),
+  getInfoAsync: jest.fn(),
+  deleteAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock("expo-media-library", () => ({
@@ -23,6 +32,16 @@ jest.mock("expo-media-library", () => ({
 const copyAsyncMock = FileSystem.copyAsync as jest.Mock;
 const makeDirectoryAsyncMock = FileSystem.makeDirectoryAsync as jest.Mock;
 const getAssetInfoAsyncMock = MediaLibrary.getAssetInfoAsync as jest.Mock;
+const deleteAsyncMock = FileSystem.deleteAsync as jest.Mock;
+const getInfoAsyncMock = FileSystem.getInfoAsync as jest.Mock;
+
+function resetPhotoMocks() {
+  jest.clearAllMocks();
+  getInfoAsyncMock.mockImplementation(async (uri: string) => ({
+    exists: copyAsyncMock.mock.calls.some(([input]) => input.to === uri),
+    isDirectory: false,
+  }));
+}
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -67,46 +86,201 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
 
 describe("persistPhotoUri", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("returns already-persisted documentDirectory URIs untouched", async () => {
     const uri = "file:///data/user/0/com.app/documents/photos/a.jpg";
-    await expect(persistPhotoUri(uri)).resolves.toBe(uri);
-    expect(copyAsyncMock).not.toHaveBeenCalled();
+    await expect(persistPhotoUri(uri, "account:owner@example.com", "memory-1")).resolves.toMatch(/photos\/accounts\/owner%40example\.com\/memory-1\//);
+    expect(copyAsyncMock).toHaveBeenCalledWith(expect.objectContaining({ from: uri }));
   });
 
   it("copies an external file URI into the sandbox photos directory", async () => {
     const uri = "file:///var/mobile/Containers/Shared/AppGroup/photo.jpg";
-    const persisted = await persistPhotoUri(uri);
+    const persisted = await persistPhotoUri(uri, "account:owner@example.com", "memory-1");
     expect(makeDirectoryAsyncMock).toHaveBeenCalled();
     expect(copyAsyncMock).toHaveBeenCalledWith({
       from: uri,
-      to: expect.stringMatching(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/.+\.jpg$/),
+      to: expect.stringMatching(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\/.+\.jpg$/),
     });
-    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
+    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
   it("resolves ph:// URIs via MediaLibrary before copying", async () => {
-    const persisted = await persistPhotoUri("ph://ABC123");
+    const persisted = await persistPhotoUri("ph://ABC123", "account:owner@example.com", "memory-1");
     expect(getAssetInfoAsyncMock).toHaveBeenCalledWith("ABC123");
     expect(copyAsyncMock).toHaveBeenCalledWith({
       from: "file:///tmp/ph-resolved/ABC123.jpg",
       to: expect.stringMatching(/\.jpg$/),
     });
-    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
+    expect(persisted).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
-  it("falls back to the original URI when the copy fails", async () => {
+  it("does not retain the original temporary URI when the copy fails", async () => {
     copyAsyncMock.mockRejectedValueOnce(new Error("no space"));
     const uri = "file:///var/mobile/temp.jpg";
-    await expect(persistPhotoUri(uri)).resolves.toBe(uri);
+    await expect(persistPhotoUri(uri, "account:owner@example.com", "memory-1")).rejects.toThrow("no space");
+  });
+
+  it("rejects instead of retaining a temporary URI when strict persistence fails", async () => {
+    copyAsyncMock.mockRejectedValueOnce(new Error("no space"));
+
+    await expect(persistPhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("no space");
+  });
+
+  it("rejects and removes a partial destination when copy succeeds but verification fails", async () => {
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: false, isDirectory: false })
+      .mockResolvedValueOnce({ exists: false, isDirectory: false });
+
+    await expect(persistPhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("verification");
+    expect(deleteAsyncMock).toHaveBeenCalledWith(
+      expect.stringMatching(/photos\/accounts\/owner%40example\.com\/memory-1\/.+\.jpg$/),
+      { idempotent: true },
+    );
+  });
+
+  it("rejects a directory destination even after copy", async () => {
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: false, isDirectory: false })
+      .mockResolvedValueOnce({ exists: true, isDirectory: true });
+
+    await expect(persistPhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("verification");
+  });
+});
+
+describe("photo directory cleanup", () => {
+  beforeEach(() => {
+    resetPhotoMocks();
+  });
+
+  it("deletes only the selected account and memory directory", async () => {
+    await deleteMemoryPhotoDirectory("account:owner@example.com", "memory/1");
+    expect(deleteAsyncMock).toHaveBeenCalledWith(
+      "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory%2F1/",
+      { idempotent: true },
+    );
+  });
+
+  it("never deletes pre-account legacy sandbox files during account-scoped migration", async () => {
+    const legacyUnused = "file:///data/user/0/com.app/documents/photos/legacy-unused.jpg";
+    const legacyReferenced = "file:///data/user/0/com.app/documents/photos/legacy-referenced.jpg";
+    await cleanupMigratedLegacyPhotoUris([legacyUnused, legacyReferenced, "file:///var/mobile/external.jpg"], [
+      makeMemory({ photoUris: [legacyReferenced] }),
+    ]);
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith(legacyUnused, expect.anything());
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith(legacyReferenced, expect.anything());
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith("file:///var/mobile/external.jpg", expect.anything());
+  });
+
+  it("propagates account-directory deletion failures on the strict account-deletion path", async () => {
+    deleteAsyncMock.mockRejectedValueOnce(new Error("filesystem unavailable"));
+
+    await expect(
+      deleteAccountPhotoDirectoryStrict("account:owner@example.com"),
+    ).rejects.toThrow("filesystem unavailable");
+  });
+
+  it("keeps ordinary album cleanup best-effort", async () => {
+    deleteAsyncMock.mockRejectedValueOnce(new Error("filesystem unavailable"));
+
+    await expect(
+      deleteAccountPhotoDirectory("account:owner@example.com"),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("staged photo persistence", () => {
+  beforeEach(() => {
+    resetPhotoMocks();
+  });
+
+  it("rolls back only the destination created by its own staging handle", async () => {
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+    const destination = copyAsyncMock.mock.calls[0][0].to as string;
+
+    expect(staged.uri).toBe(destination);
+    await staged.rollback();
+    await staged.rollback();
+
+    expect(deleteAsyncMock).toHaveBeenCalledTimes(1);
+    expect(deleteAsyncMock).toHaveBeenCalledWith(destination, { idempotent: true });
+  });
+
+  it("keeps a staged destination after the handle is committed", async () => {
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+
+    staged.commit();
+    await staged.rollback();
+
+    expect(deleteAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("never deletes a pre-existing photo returned by staging", async () => {
+    const existing = "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory-1/existing.jpg";
+    const staged = await stagePhotoUriStrict(existing, "account:owner@example.com", "memory-1");
+
+    await staged.rollback();
+
+    expect(staged.uri).toBe(existing);
+    expect(copyAsyncMock).not.toHaveBeenCalled();
+    expect(deleteAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans its generated destination if the copy itself rejects", async () => {
+    copyAsyncMock.mockRejectedValueOnce(new Error("partial copy"));
+    await expect(stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    )).rejects.toThrow("partial copy");
+    const destination = copyAsyncMock.mock.calls[0][0].to as string;
+    expect(deleteAsyncMock).toHaveBeenCalledWith(destination, { idempotent: true });
+  });
+
+  it("skips a colliding pre-existing destination and never deletes it", async () => {
+    getInfoAsyncMock
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: false });
+    const staged = await stagePhotoUriStrict(
+      "file:///var/mobile/temporary.jpg",
+      "account:owner@example.com",
+      "memory-1",
+    );
+    const collidingPath = getInfoAsyncMock.mock.calls[0][0] as string;
+    expect(copyAsyncMock).toHaveBeenCalledWith({
+      from: "file:///var/mobile/temporary.jpg",
+      to: staged.uri,
+    });
+    expect(staged.uri).not.toBe(collidingPath);
+    await staged.rollback();
+    expect(deleteAsyncMock).not.toHaveBeenCalledWith(collidingPath, expect.anything());
   });
 });
 
 describe("persistPhotoUris", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("persists multiple URIs preserving order", async () => {
@@ -115,9 +289,9 @@ describe("persistPhotoUris", () => {
       "file:///var/mobile/temp/b.jpg",
       "file:///var/mobile/temp/c.jpg",
     ];
-    const persisted = await persistPhotoUris(uris);
-    expect(persisted[0]).toBe(uris[0]);
-    expect(persisted.slice(1)).toEqual([
+    const persisted = await persistPhotoUris(uris, "account:owner@example.com", "memory-1");
+    expect(persisted).toEqual([
+      expect.stringMatching(/photos\/accounts\/owner%40example\.com\/memory-1\//),
       expect.stringMatching(/photos\//),
       expect.stringMatching(/photos\//),
     ]);
@@ -126,14 +300,14 @@ describe("persistPhotoUris", () => {
 
 describe("ensureMemoryPhotosPersisted", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetPhotoMocks();
   });
 
   it("returns changed: false when nothing needs persisting", async () => {
     const memory = makeMemory();
-    const result = await ensureMemoryPhotosPersisted(memory);
-    expect(result.changed).toBe(false);
-    expect(result.memory).toBe(memory);
+    const result = await ensureMemoryPhotosPersisted(memory, "account:owner@example.com");
+    expect(result.changed).toBe(true);
+    expect(result.memory.photoUris[0]).toMatch(/photos\/accounts\/owner%40example\.com\/memory-1\//);
   });
 
   it("replaces image element uris, cover image and photoUris with sandbox copies", async () => {
@@ -183,7 +357,7 @@ describe("ensureMemoryPhotosPersisted", () => {
       ],
     });
 
-    const result = await ensureMemoryPhotosPersisted(memory);
+    const result = await ensureMemoryPhotosPersisted(memory, "account:owner@example.com");
     expect(result.changed).toBe(true);
 
     const page = result.memory.pages[0];
@@ -200,5 +374,85 @@ describe("ensureMemoryPhotosPersisted", () => {
     // 封面图与 photoUris 列表同步替换
     expect(page.layout?.coverImage).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
     expect(result.memory.photoUris[0]).toMatch(/^file:\/\/\/data\/user\/0\/com\.app\/documents\/photos\//);
+  });
+});
+
+describe("hydrateMemoryPhotoReferences", () => {
+  beforeEach(() => {
+    resetPhotoMocks();
+  });
+
+  it("rebases an old account-scoped absolute URI to the current Documents root and writes a canonical storage value", async () => {
+    const oldRoot = "file:///var/mobile/Containers/Data/Application/old/Documents/";
+    const oldUri = `${oldRoot}photos/accounts/owner%40example.com/memory-1/123-photo.jpg`;
+    getInfoAsyncMock.mockResolvedValueOnce({ exists: true, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({ photoUris: [oldUri], pages: [] }),
+      "account:owner@example.com",
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.storageMemory.photoUris).toEqual([
+      "documents://photos/accounts/owner%40example.com/memory-1/123-photo.jpg",
+    ]);
+    expect(result.runtimeMemory.photoUris).toEqual([
+      "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory-1/123-photo.jpg",
+    ]);
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it("retains an unrecoverable storage reference but exposes only a missing token at runtime", async () => {
+    const staleUri = "file:///var/mobile/Containers/Data/Application/old/Documents/photos/accounts/owner%40example.com/memory-1/123-photo.jpg";
+    getInfoAsyncMock.mockResolvedValueOnce({ exists: false, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({ photoUris: [staleUri], pages: [] }),
+      "account:owner@example.com",
+    );
+
+    expect(result.storageMemory.photoUris).toEqual([staleUri]);
+    expect(result.runtimeMemory.photoUris[0]).toMatch(/^missing-local-photo:\/\//);
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({ storedReference: staleUri }),
+    ]);
+  });
+
+  it("assigns a distinct missing token to every unresolved photo occurrence", async () => {
+    const staleUri = "file:///var/mobile/Containers/Data/Application/old/Documents/photos/accounts/owner%40example.com/memory-1/123-photo.jpg";
+    getInfoAsyncMock.mockResolvedValue({ exists: false, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({
+        photoUris: [staleUri, staleUri],
+        pages: [{
+          id: "p1",
+          position: 0,
+          kind: "photo",
+          headline: "title",
+          body: "body",
+          photoUri: staleUri,
+        }],
+      }),
+      "account:owner@example.com",
+    );
+
+    expect(result.runtimeMemory.photoUris[0]).not.toBe(result.runtimeMemory.photoUris[1]);
+    expect(result.runtimeMemory.photoUris).not.toContain(result.runtimeMemory.pages[0].photoUri);
+    expect(new Set(result.unresolved.map(({ token }) => token)).size).toBe(3);
+  });
+
+  it("does not copy another account's app-owned photo into the current album", async () => {
+    const foreignUri = "file:///data/user/0/com.app/documents/photos/accounts/other%40example.com/memory-1/123-photo.jpg";
+    getInfoAsyncMock.mockResolvedValue({ exists: true, isDirectory: false });
+
+    const result = await hydrateMemoryPhotoReferences(
+      makeMemory({ photoUris: [foreignUri], pages: [] }),
+      "account:owner@example.com",
+    );
+
+    expect(copyAsyncMock).not.toHaveBeenCalled();
+    expect(result.runtimeMemory.photoUris[0]).toMatch(/^missing-local-photo:\/\//);
+    expect(result.storageMemory.photoUris).toEqual([foreignUri]);
   });
 });

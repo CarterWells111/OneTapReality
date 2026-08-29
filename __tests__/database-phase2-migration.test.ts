@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const migration = readFileSync(join(process.cwd(), "drizzle/0008_database_phase2.sql"), "utf8");
+const migration = readFileSync(join(process.cwd(), "drizzle/0014_database_phase2.sql"), "utf8");
 
 describe("database phase-two migration", () => {
   it("locks both retired tables and refuses to delete non-empty data", () => {
@@ -24,5 +24,10 @@ describe("database phase-two migration", () => {
       'ALTER TABLE "gift_media_cleanup_jobs" VALIDATE CONSTRAINT "gift_media_cleanup_jobs_attempts_check"',
     ]);
     expect(migration).not.toMatch(/\bCASCADE\b/u);
+  });
+
+  it("advances the application schema version after all destructive statements", () => {
+    expect(migration).toContain("VALUES ('database', 14,");
+    expect(migration.lastIndexOf("VALUES ('database', 14,")).toBeGreaterThan(migration.lastIndexOf('DROP TABLE "gift_sessions"'));
   });
 });

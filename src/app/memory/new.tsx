@@ -9,9 +9,16 @@ import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../com
 import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
-import { persistPhotoUri, persistPhotoUris } from "../../features/memories/photo-persistence";
+import { areDraftPhotoPlansValid, createBalancedPhotoPagePlans } from "../../features/memories/photo-page-planner";
+import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
 import { useMemories } from "../../features/memories/memories-provider";
+import {
+  MIN_TRAVEL_DATE,
+  parseIsoTravelDate,
+  toIsoTravelDate,
+} from "../../features/memories/travel-date";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
+import type { MemoryDraftPagePlan } from "../../types/memory";
 
 const cityGroupLabels: Record<CityKind, string> = {
   "autonomous-region-capital": "自治区首府",
@@ -19,8 +26,6 @@ const cityGroupLabels: Record<CityKind, string> = {
   municipality: "直辖市",
   "province-capital": "省会",
 };
-
-const MIN_TRAVEL_DATE = new Date(2000, 0, 1);
 
 /** 封面预设颜色（十六进制）。 */
 const COVER_COLORS = [
@@ -36,18 +41,6 @@ const COVER_COLORS = [
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function toIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoDate(value: string): Date {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export default function NewMemoryScreen() {
@@ -67,6 +60,7 @@ export default function NewMemoryScreen() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const [pagePlans, setPagePlans] = React.useState<MemoryDraftPagePlan[]>([]);
 
   React.useEffect(() => {
     setCity(presetCity);
@@ -87,7 +81,7 @@ export default function NewMemoryScreen() {
       setShowDatePicker(false);
     }
     if (event.type === "set" && selected) {
-      setTravelDate(toIsoDate(selected));
+      setTravelDate(toIsoTravelDate(selected));
     }
   };
 
@@ -100,51 +94,52 @@ export default function NewMemoryScreen() {
 
   const selectPhotos = async () => {
     setError("");
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("未获得照片权限。你可以在系统设置中允许访问后再选择照片。");
-      return;
-    }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ["images"],
       quality: 0.8,
     });
     if (!result.canceled) {
-      // 复制进沙盒，避免 ph:// / content:// 在重启后失效（照片丢失 bug）
-      setPhotoUris(await persistPhotoUris(result.assets.map((asset) => asset.uri)));
+      const nextPhotoUris = result.assets.map((asset) => asset.uri);
+      setPhotoUris(nextPhotoUris);
+      try {
+        setPagePlans(createBalancedPhotoPagePlans(nextPhotoUris));
+      } catch {
+        setPagePlans([]);
+        setError("无法安排照片，请减少选择数量后重试。");
+      }
       void Haptics.selectionAsync();
     }
   };
 
   const pickCoverImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
       mediaTypes: ["images"],
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setCoverImage(await persistPhotoUri(result.assets[0].uri));
+      setCoverImage(result.assets[0].uri);
       void Haptics.selectionAsync();
     }
   };
 
   const generate = async () => {
+    if (!canGenerate) return;
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createDraft({ title, city, travelDate, photoUris, coverColor, coverImage });
+      const memory = await createDraft({ title, city, travelDate, photoUris, pagePlans, coverColor, coverImage });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "无法创建旅行册，请重试。");
+    } catch {
+      setError("无法创建旅行册，请检查所选照片后重试。");
     } finally {
       setIsSaving(false);
     }
   };
+
+  const canGenerate = areDraftPhotoPlansValid(photoUris, pagePlans);
 
   return (
     <View style={styles.root}>
@@ -258,11 +253,14 @@ export default function NewMemoryScreen() {
             ))}
           </ScrollView>
         ) : null}
+        {photoUris.length > 0 ? (
+          <DraftPhotoAllocation onChange={setPagePlans} photoUris={photoUris} value={pagePlans} />
+        ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
       {photoUris.length > 0 ? (
-        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving} onPress={() => void generate()} />
+        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving || !canGenerate} onPress={() => void generate()} />
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}
@@ -274,7 +272,7 @@ export default function NewMemoryScreen() {
           minimumDate={MIN_TRAVEL_DATE}
           mode="date"
           onChange={handleDateChange}
-          value={parseIsoDate(travelDate)}
+          value={parseIsoTravelDate(travelDate)}
         />
       ) : null}
 
@@ -290,7 +288,7 @@ export default function NewMemoryScreen() {
               onChange={handleDateChange}
               textColor={colors.ink}
               themeVariant="light"
-              value={parseIsoDate(travelDate)}
+              value={parseIsoTravelDate(travelDate)}
             />
             <AppButton label="完成" onPress={() => setShowDatePicker(false)} />
           </View>
@@ -345,7 +343,7 @@ export default function NewMemoryScreen() {
             <Text selectable style={styles.sheetTitle}>自定封面颜色</Text>
             <ColorPicker
               value={coverColor}
-              onChange={(hex) => {
+              onCommit={(hex) => {
                 setCoverColor(hex);
                 setCoverImage(undefined);
               }}

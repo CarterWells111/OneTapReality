@@ -55,3 +55,7 @@ example
 # local helper scripts
 *.bat
 .claude/worktrees/
+
+# generated local NFC staging lab (created and removed by npm scripts)
+/src/app/nfc-lab-local.tsx
+/.data/nfc-staging/active.json

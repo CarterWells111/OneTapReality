@@ -11,11 +11,18 @@ import { StyleSheet, View } from "react-native";
  * 不再使用自身的 translateX/translateY 动画 —— 避免与父容器位置更新产生双重偏移。
  */
 
-export type HandleDragEndCallback = () => void;
+export type HandleDragEndCallback = (generation: number) => void;
+export type HandleDragStartCallback = () => void;
+
+export function nextCanvasHandleGeneration(generation: number) {
+  "worklet";
+  return generation + 1;
+}
 
 type CornerKey = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 type SelectionHandlesProps = {
+  activeGestureCount: SharedValue<number>;
   /** 元素在画布上的绝对像素 X 坐标（共享值） */
   posX: SharedValue<number>;
   /** 元素在画布上的绝对像素 Y 坐标（共享值） */
@@ -26,8 +33,11 @@ type SelectionHandlesProps = {
   elemH: SharedValue<number>;
   /** 手势缩放因子（共享值），确保捏合时手柄跟随 */
   gestureScale: SharedValue<number>;
+  gestureGeneration: SharedValue<number>;
   /** 边角拖拽结束回调 */
   onHandleDragEnd: HandleDragEndCallback;
+  /** 边角拖拽开始回调，在共享几何变更前取得变换所有权 */
+  onHandleDragStart: HandleDragStartCallback;
   /** 是否显示四边中点手柄 */
   showMidpoints?: boolean;
 };
@@ -49,12 +59,15 @@ const cornerPositions: Record<CornerKey, { top: number | string; left: number | 
  * 容器使用共享值驱动尺寸，确保拖拽/缩放时手柄始终跟随元素。
  */
 export function SelectionHandles({
+  activeGestureCount,
   posX,
   posY,
   elemW,
   elemH,
   gestureScale,
+  gestureGeneration,
   onHandleDragEnd,
+  onHandleDragStart,
   showMidpoints = false,
 }: SelectionHandlesProps) {
   // 容器使用共享值驱动尺寸，确保手柄始终跟随元素实时变化
@@ -71,10 +84,13 @@ export function SelectionHandles({
       {(Object.entries(cornerPositions) as [CornerKey, typeof cornerPositions[CornerKey]][]).map(([corner, pos]) => (
         <HandleDot
           corner={corner}
+          activeGestureCount={activeGestureCount}
           elemH={elemH}
           elemW={elemW}
           key={corner}
+          gestureGeneration={gestureGeneration}
           onDragEnd={onHandleDragEnd}
+          onDragStart={onHandleDragStart}
           posX={posX}
           posY={posY}
           style={{
@@ -89,10 +105,13 @@ export function SelectionHandles({
       {showMidpoints ? (
         <HandleDot
           corner="top-left"
+          activeGestureCount={activeGestureCount}
           elemH={elemH}
           elemW={elemW}
           key="mid-top"
+          gestureGeneration={gestureGeneration}
           onDragEnd={onHandleDragEnd}
+          onDragStart={onHandleDragStart}
           posX={posX}
           posY={posY}
           style={{ position: "absolute", top: -HANDLE_SIZE / 2, left: "50%" as any, marginLeft: -HANDLE_SIZE / 2 }}
@@ -108,20 +127,26 @@ export function SelectionHandles({
  * 无 JS 线程往返，无自身平移动画 —— 杜绝双重偏移。
  */
 function HandleDot({
+  activeGestureCount,
   corner,
   posX,
   posY,
   elemW,
   elemH,
   onDragEnd,
+  onDragStart,
+  gestureGeneration,
   style,
 }: {
+  activeGestureCount: SharedValue<number>;
   corner: CornerKey;
   posX: SharedValue<number>;
   posY: SharedValue<number>;
   elemW: SharedValue<number>;
   elemH: SharedValue<number>;
-  onDragEnd: () => void;
+  onDragEnd: (generation: number) => void;
+  onDragStart: () => void;
+  gestureGeneration: SharedValue<number>;
   style: any;
 }) {
   const isActive = useSharedValue(false);
@@ -132,8 +157,15 @@ function HandleDot({
   const initH = useSharedValue(0);
 
   const pan = Gesture.Pan()
+    .withTestId(`canvas-selection-handle-${corner}`)
     .onBegin(() => {
       "worklet";
+      const acquiresTransform = activeGestureCount.value === 0;
+      gestureGeneration.value = nextCanvasHandleGeneration(gestureGeneration.value);
+      activeGestureCount.value += 1;
+      if (acquiresTransform) {
+        runOnJS(onDragStart)();
+      }
       isActive.value = true;
       initX.value = posX.value;
       initY.value = posY.value;
@@ -174,8 +206,12 @@ function HandleDot({
     })
     .onFinalize(() => {
       "worklet";
+      if (!isActive.value) return;
       isActive.value = false;
-      runOnJS(onDragEnd)();
+      activeGestureCount.value = Math.max(0, activeGestureCount.value - 1);
+      if (activeGestureCount.value === 0) {
+        runOnJS(onDragEnd)(gestureGeneration.value);
+      }
     });
 
   // 仅保留缩放动画，不再使用 translateX/translateY

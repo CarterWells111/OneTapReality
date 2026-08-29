@@ -15,11 +15,11 @@ const featuredCityIllustrations: Readonly<Record<(typeof featuredCityIds)[number
 
 export type CityCardVisual =
   | { readonly kind: "illustration"; readonly source: ImageSourcePropType }
-  | { readonly kind: "placeholder" };
+  | { readonly kind: "generic" };
 
 export function getCityCardVisual(city: City): CityCardVisual {
   if (city in featuredCityIllustrations) {
     return { kind: "illustration", source: featuredCityIllustrations[city as (typeof featuredCityIds)[number]] };
   }
-  return { kind: "placeholder" };
+  return { kind: "generic" };
 }
