@@ -4,6 +4,16 @@ import type { Pool } from "pg";
 
 import { createBackendDatabase, type BackendDatabase } from "./client";
 
+const supportedDeferredConstraintValidations = /(?:ALTER TABLE "auth_email_codes" VALIDATE CONSTRAINT "auth_email_codes_failed_attempts_check"|ALTER TABLE "auth_rate_limits" VALIDATE CONSTRAINT "auth_rate_limits_attempts_check"|ALTER TABLE "gifts" VALIDATE CONSTRAINT "gifts_status_check"|ALTER TABLE "gift_cards" VALIDATE CONSTRAINT "gift_cards_state_check"|ALTER TABLE "gift_cards" VALIDATE CONSTRAINT "gift_cards_gift_id_present_check"|ALTER TABLE "gift_members" VALIDATE CONSTRAINT "gift_members_role_check"|ALTER TABLE "gift_media_cleanup_jobs" VALIDATE CONSTRAINT "gift_media_cleanup_jobs_state_check"|ALTER TABLE "gift_media_cleanup_jobs" VALIDATE CONSTRAINT "gift_media_cleanup_jobs_attempts_check")/giu;
+const supportedLegacyTableLock = 'LOCK TABLE "gift_email_codes", "gift_sessions" IN ACCESS EXCLUSIVE MODE;';
+const supportedLegacyTableGuard = `DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "gift_email_codes") OR EXISTS (SELECT 1 FROM "gift_sessions") THEN
+    RAISE EXCEPTION 'Legacy gift authentication tables must be empty';
+  END IF;
+END
+$$;`;
+
 export type BackendTestDatabase = {
   db: BackendDatabase;
   close: () => Promise<void>;
@@ -35,9 +45,13 @@ export function createBackendTestDatabase(options: { onQuery?: (query: string) =
         }
         // pg-mem does not implement PostgreSQL's deferred constraint validation.
         // Remove only that clause at the in-memory adapter boundary.
-        supportedConfig.text = queryText
-          .replace(/\s+NOT VALID/giu, "")
-          .replace(/\s+for update skip locked/giu, "");
+        const normalizedQuery = queryText.trim();
+        supportedConfig.text = normalizedQuery === supportedLegacyTableLock || normalizedQuery === supportedLegacyTableGuard
+          ? "SELECT 1"
+          : queryText
+              .replace(/\s+NOT VALID/giu, "")
+              .replace(supportedDeferredConstraintValidations, "SELECT 1")
+              .replace(/\s+for update skip locked/giu, "");
       }
       const result = await queryForTest(supportedConfig, values) as {
         rows?: Record<string, unknown>[];

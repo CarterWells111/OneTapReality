@@ -68,13 +68,11 @@ describe("backend PostgreSQL migrations", () => {
         "app_schema_meta",
         "auth_rate_limits",
         "devices",
-        "gift_email_codes",
         "gift_media_cleanup_jobs",
         "gift_member_activations",
         "gift_members",
         "gift_publish_sessions",
         "gift_relationship_tombstones",
-        "gift_sessions",
         "gifts",
         "memories",
         "memory_pages",
@@ -124,7 +122,7 @@ describe("backend PostgreSQL migrations", () => {
       expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
 
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 13 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 14 }]);
 
       const deletionMigration = readFileSync("drizzle/0012_external_beta_accounts_and_safety.sql", "utf8");
       expect(deletionMigration).toContain("account_deletion_challenges");

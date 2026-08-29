@@ -9,13 +9,11 @@ import {
   authSessions,
   giftCardEvents,
   giftCards,
-  giftEmailCodes,
   giftManagementRequests,
   giftMediaCleanupJobs,
   giftMembers,
   giftPublishSessions,
   giftRelationshipTombstones,
-  giftSessions,
   gifts,
   sharedAlbumMedia,
   sharedAlbums,
@@ -298,10 +296,6 @@ export async function acceptAccountDeletion(
       eq(authSessions.userId, input.userId),
       isNull(authSessions.revokedAt),
     ));
-    await tx.update(giftSessions).set({ revokedAt: input.now }).where(and(
-      eq(giftSessions.email, email),
-      isNull(giftSessions.revokedAt),
-    ));
     return { status: "accepted" as const, receiptId: input.receiptId, completeBy: input.completeBy };
   });
 }
@@ -364,8 +358,6 @@ async function finalizeAccountDeletionJob(db: BackendDatabase, receiptId: string
     await tx.delete(giftRelationshipTombstones).where(eq(giftRelationshipTombstones.email, email));
     // Email fallback covers blocks created before the blocked party registered and received a user id.
     await tx.delete(userBlocks).where(or(eq(userBlocks.blockerEmail, email), eq(userBlocks.blockedEmail, email)));
-    await tx.delete(giftEmailCodes).where(eq(giftEmailCodes.email, email));
-    await tx.delete(giftSessions).where(eq(giftSessions.email, email));
     await tx.delete(authEmailCodes).where(eq(authEmailCodes.email, email));
     await tx.update(giftCards).set({ createdByEmail: "deleted-account" }).where(eq(giftCards.createdByEmail, email));
     await tx.update(giftCardEvents).set({ actorEmail: "deleted-account" }).where(eq(giftCardEvents.actorEmail, email));

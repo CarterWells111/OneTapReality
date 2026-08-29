@@ -2,7 +2,7 @@ import { and, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "dr
 
 import type { BackendDatabase } from "../db/client";
 import type { GiftMemberRole } from "../db/schema";
-import { giftCardEvents, giftCards, giftContentReports, giftEmailCodes, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, giftSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, userBlocks, users } from "../db/schema";
+import { giftCardEvents, giftCards, giftContentReports, giftManagementRequests, giftMediaCleanupJobs, giftMemberActivations, giftMembers, giftPublishSessions, gifts, sharedAlbumMedia, sharedAlbumPages, sharedAlbums, userBlocks, users } from "../db/schema";
 import { blockedEmailPairCondition, recordGiftRelationshipTombstone } from "./content-safety";
 
 export type GiftPublicationPayload = {
@@ -456,38 +456,6 @@ export async function removeGiftMember(db: BackendDatabase, giftId: string, emai
       .returning({ id: giftMembers.id });
     return result.length === 1;
   });
-}
-
-export async function createGiftEmailCode(db: BackendDatabase, input: { id: string; email: string; codeHash: string; expiresAt: string; createdAt: string }) {
-  await db.insert(giftEmailCodes).values({ ...input, email: normalizeEmail(input.email), consumedAt: null });
-}
-
-export async function isGiftEmailCodeRateLimited(db: BackendDatabase, email: string, since: string): Promise<boolean> {
-  const recent = await db.select({ id: giftEmailCodes.id }).from(giftEmailCodes).where(and(
-    eq(giftEmailCodes.email, normalizeEmail(email)),
-    gt(giftEmailCodes.createdAt, since),
-  )).limit(5);
-  return recent.length >= 5;
-}
-
-export async function consumeGiftEmailCode(db: BackendDatabase, email: string, codeHash: string, now: string): Promise<boolean> {
-  const [code] = await db.select({ id: giftEmailCodes.id }).from(giftEmailCodes).where(and(
-    eq(giftEmailCodes.email, normalizeEmail(email)), eq(giftEmailCodes.codeHash, codeHash), isNull(giftEmailCodes.consumedAt), gt(giftEmailCodes.expiresAt, now),
-  )).limit(1);
-  if (!code) return false;
-  const result = await db.update(giftEmailCodes).set({ consumedAt: now }).where(and(eq(giftEmailCodes.id, code.id), isNull(giftEmailCodes.consumedAt))).returning({ id: giftEmailCodes.id });
-  return result.length === 1;
-}
-
-export async function createGiftSession(db: BackendDatabase, input: { id: string; email: string; tokenHash: string; expiresAt: string; createdAt: string }) {
-  await db.insert(giftSessions).values({ ...input, email: normalizeEmail(input.email), revokedAt: null });
-}
-
-export async function getGiftSessionEmail(db: BackendDatabase, tokenHash: string, now: string): Promise<string | null> {
-  const [session] = await db.select({ email: giftSessions.email }).from(giftSessions).where(and(
-    eq(giftSessions.tokenHash, tokenHash), isNull(giftSessions.revokedAt), gt(giftSessions.expiresAt, now),
-  )).limit(1);
-  return session?.email ?? null;
 }
 
 export async function createGiftPublishSession(
