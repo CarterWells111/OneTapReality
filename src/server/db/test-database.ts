@@ -45,7 +45,7 @@ export function createBackendTestDatabase(options: { onQuery?: (query: string) =
         }
         // pg-mem does not implement PostgreSQL's deferred constraint validation.
         // Remove only that clause at the in-memory adapter boundary.
-        const normalizedQuery = queryText.trim();
+        const normalizedQuery = queryText.trim().replace(/\r\n?/gu, "\n");
         supportedConfig.text = normalizedQuery === supportedLegacyTableLock || normalizedQuery === supportedLegacyTableGuard
           ? "SELECT 1"
           : queryText

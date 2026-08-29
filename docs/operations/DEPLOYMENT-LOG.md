@@ -33,8 +33,8 @@
 | iOS-only 平台边界 | Android 不在当前及可预见产品计划内 | Closed | 发布负责人 | 已移除 Android package、构建入口与 `assetlinks.json`；仅验收 iPhone / iOS |
 | Resend 测试配置 | 独立 key + `staging@onetapreality.com` 已验证 | 已完成 | 发布负责人 | staging 独立 key + `GIFT_EMAIL_FROM=staging@onetapreality.com`；`/api/auth/request` 白名单邮箱 202 且收件箱收到验证码；非白名单邮箱 403 `beta_invite_required`（2026-08-06） |
 | 邮箱白名单 | `ALPHA_ALLOWED_EMAILS` 仅含获准测试邮箱 | 已完成 | 发布负责人 | `ALPHA_ALLOWED_EMAILS` 含测试邮箱，白名单外邮箱统一 403 `beta_invite_required` 且不发信（2026-08-06） |
-| EAS alpha 构建 | `npx eas-cli@latest build -p ios --profile alpha` | Blocked | 发布负责人 | 待填 |
-| 3 张内部样卡 | 使用 `IOS-STG-001` 至 `IOS-STG-003` 完成 staging 演练 | 准备中（实体卡已到手） | 硬件 / 发布负责人 | 待完成数量核对、写入、读回与 iPhone 真机验收 |
+| iOS staging / 外部 Beta 构建 | 仅连接 staging 的已批准 iOS 构建 | 已完成 | 发布负责人 | 外部 TestFlight 已发布；未开放公共链接 |
+| 3 张内部样卡 | 使用 `IOS-STG-001` 至 `IOS-STG-003` 完成 staging 演练 | 已完成 | 硬件 / 发布负责人 | 实体 NFC 验收完成：写入、读回、锁屏、Universal Link 与角色生命周期通过（证据脱敏） |
 
 回滚原则：任何一项变更失败时按 `ALPHA-STAGING.md` 恢复；暂停分享先置 `GIFT_SHARING_ENABLED=false`。
 
@@ -45,3 +45,10 @@
 - 核对结果：`GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，均符合预期。
 - 安全边界：只输出预期/缺失/不匹配状态，未读取或记录 Secret、完整变量集或连接信息。
 - 变更结果：未修改变量、未触发部署；无需回滚。
+
+## 2026-08-29：外部 Beta 进入首月观察
+
+- 状态：三张实体 NFC 卡验收完成，外部 TestFlight 已发布并继续只连接 staging。
+- 规模：未来一个月预计 10–20 位真实用户。
+- 运行手册：[`EXTERNAL-BETA-OBSERVATION.md`](EXTERNAL-BETA-OBSERVATION.md)。
+- 边界：本记录不授权新的构建、上传、部署、migration、维护 POST、只读角色、密码轮换或自动任务变更。

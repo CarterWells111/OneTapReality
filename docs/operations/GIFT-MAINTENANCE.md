@@ -53,13 +53,15 @@ pg_restore --exit-on-error --no-owner --dbname=<本地临时恢复库> <仓库�
 
 `MAINTENANCE_ENDPOINT` 是公开 HTTPS 地址，可保存在配置中；`MAINTENANCE_SECRET` 只能通过 Cloudflare Secret 保存。Worker 异常时先停用 Cron，由成功礼品写请求的兜底继续维护，不新增替代服务器。
 
-## 观察与第二阶段
+## 第二阶段完成状态与持续观察
 
 第一阶段自北京时间 2026-08-09 09:00:58 起完成了至少 168 小时的稳定观察。生产只读复核、本地 `pg_dump`、本地恢复验证与第二阶段本地迁移演练均已通过；演练确认 8 项待验证约束可成功验证、两张遗留表为空且可删除，其余 18 张表行数不变，礼品卡审计事件完整保留。
 
-`drizzle/0014_database_phase2.sql` 已基于包含 `0008`–`0013` 的最新主线生成，但尚未部署。它先对两张遗留表取得排他锁并确认仍为空，再验证 8 项约束，以不带 `CASCADE` 的方式删除 `gift_email_codes` 与 `gift_sessions`，最后把应用 schema 版本更新为 14；出现新数据、外部依赖或历史违规时 migration 必须失败并停止。表自身的索引和触发器会随表删除，因此生产复核仍须确认表上不存在意外对象。新 API 健康检查要求 `schemaVersion >= 14`，防止未迁移实例被标记为就绪。
+`drizzle/0014_database_phase2.sql` 已完成生产 migration 与 Railway 部署。迁移前的本地 `pg_dump`、恢复验证和关键表行数校验均已通过；迁移以排他锁和空表保护验证两张遗留认证表为空，随后验证 8 项约束，以不带 `CASCADE` 的方式删除 `gift_email_codes` 与 `gift_sessions`。当前生产健康契约为 Schema 14，礼品卡审计事件与其他业务表数据保持完整。
 
-生成迁移不代表获得生产发布授权。推送分支、创建 PR、执行生产 migration、Railway 部署与部署后的首次维护调用仍须分别批准；生产 migration 前还要确认最新 `main` 是候选提交的祖先，并再次核对已验证备份仍存在且哈希未变化。禁止修改已应用的历史 migration。
+部署后的首次维护已完成：接口返回 HTTP 200，租约已释放、无维护错误且媒体清理队列为空。`0014_database_phase2.sql` 现为不可修改的已应用历史 migration；未来任何 schema、生产 migration、Railway 部署或维护 POST 仍须重新分别批准。
+
+外部 Beta 首月的 staging 日常检查、production 低频健康检查及 P0/P1/P2 响应统一遵循 [`EXTERNAL-BETA-OBSERVATION.md`](EXTERNAL-BETA-OBSERVATION.md)。持续数据库观察至少包括最近维护时间、租约和错误、到期或死信清理任务、账号删除超期、保留期违规及举报通知失败；自动化只能使用只读聚合 SELECT，发现异常只报告，不自行修改数据。
 
 ## 回滚
 

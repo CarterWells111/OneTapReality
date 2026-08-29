@@ -16,17 +16,22 @@
 - [x] `GIFT_SHARING_ENABLED` 是立即停测开关；关闭后阻止新验证码、认领、发布与礼品读取，管理员停用接口仍可用于处置。
 - [x] 依赖或 Expo/生产构建变更必须同步验证 `npm ci`、`npm run lint`、`npm run typecheck`、`npm run test:ci` 和 `npm run build:server`。
 
-## iOS 独立 staging 准入（外部前置条件）
+## iOS staging 与外部 Beta 已完成门槛
 
 - [x] `staging.onetapreality.com` 与 `api-staging.onetapreality.com` 已解析，iOS AASA 匹配现有 Team ID 与 Bundle ID，并通过 HTTPS 验证。
 - [x] Railway staging 服务、PostgreSQL、私有 R2 bucket 和 Resend 配置均与生产隔离，且使用独立 peppers、清理密钥和管理员测试邮箱。
 - [x] `ALPHA_ALLOWED_EMAILS` 只包含获准内测邮箱；`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，测试卡不含正式礼品 URL 或 token。
-- [ ] 已从干净的最新 `main` 通过本地质量门禁和 `npm run alpha:preflight:ios`，并经单独批准生成指向 staging 的 iOS EAS `alpha` 内部构建或 `staging-testflight` TestFlight 内部构建。
-- [ ] `staging-testflight` 构建前已只读核对 EAS `preview` environment 的变量名称，无 production origin、数据库连接或客户端不应持有的服务端 Secret；提交前已确认内部群组 `OneTapReality开发员测试` 存在且该目标群组已启用自动分发，并确认其他内部群组均未启用自动分发。
-- [ ] 三张 iOS 实体测试卡完成：准确写入、读回、锁屏碰卡、深链、邮箱登录、认领、发布、受邀只读、停用和对象删除；全程未访问生产数据库、bucket 或礼品。
-- [ ] 已演练 P0 处置：关闭 `GIFT_SHARING_ENABLED`、停止发卡/邀请、移除受影响 TestFlight 测试者、停用礼品、保留脱敏证据、修复回归并经负责人批准后恢复。
+- [x] 已从干净的 `main` 完成 `alpha` ad-hoc 构建和 `staging-testflight` TestFlight 内部构建，并通过 iOS staging 原生验证及外部 Beta 放行门禁；云构建与 App Store Connect 提交必须分别批准。
+- [x] 外部 TestFlight 已发布，`beta-external` 仅连接 staging，未开放公共链接且未授予测试者 App Store Connect 权限。
+- [x] 三张 iOS 实体测试卡完成：准确写入、读回、锁屏碰卡、深链、邮箱登录、认领、发布、受邀只读、停用和对象删除；全程未访问 production 数据库、bucket 或礼品。
+- [x] P0 停测与恢复边界已记录；真实事件仍须由负责人批准后执行远端处置。
 
-本地质量门禁、iOS 预检和前三项环境隔离检查通过后，可单独申请生成并安装一个仅用于 staging 演练的 `alpha` ad-hoc 构建，或申请生成、提交并加入明确标记为 `Staging` 的 `staging-testflight` TestFlight 内部构建，供获准人员完成三卡与 P0 验收。两种路径都只连接 staging；TestFlight 路径的云构建与 App Store Connect 提交必须分别批准，且不得添加外部测试者。该内部演练不代表 production 或公开 App Store 放行；只有三卡与 P0 项也完成后，才可申请扩大内部发放。现有指向生产 API 的 TestFlight 构建不能代替这项隔离验收。
+当前产品仅支持 iPhone / iOS；Android 不在当前及可预见产品计划内。外部 Beta 不代表 production 或公开 App Store 放行，后续构建、上传、群组变更及公开发布仍分别审批。
 
-> 2026-08-06 状态：本地 `main` 已同步 `origin/main`；Railway staging Service + PostgreSQL、R2 staging bucket、`staging.onetapreality.com` / `api-staging.onetapreality.com` 域名与深链文件、Resend 邮件测试均已建立并验证（`/api/health` 200、`verify:backend` 全绿、`verify-r2` 通过、AASA 200 `application/json`、`/activate` 与 `/gift/*` 引导页 200 无 token 泄漏、验证码邮件可达、白名单外 403）。其余准入项（EAS alpha 构建、实体卡演练）仍为 Blocked，证据模板与隔离矩阵见 `docs/operations/REHEARSAL-RECORD.md`，阻塞项见 `docs/operations/DEPLOYMENT-LOG.md`。未绿灯前不发放 alpha 构建与 staging 测试卡。
-> 当前产品仅支持 iPhone / iOS。Android 不在当前及可预见产品计划内，仓库不提供 Android package、构建 profile 或 App Links。Railway staging、PostgreSQL、R2、staging 域名、iOS AASA、网页引导、Resend 与白名单已完成；当前开放项只剩获批的 iOS staging 原生构建（`alpha` 或 `staging-testflight`）、三张实体卡全流程和 staging P0 演练。
+## 外部 Beta 首月真实用户观察
+
+- [ ] 按 [`EXTERNAL-BETA-OBSERVATION.md`](operations/EXTERNAL-BETA-OBSERVATION.md) 每天北京时间 09:00 形成 staging 优先的只读简报。
+- [ ] 每周一北京时间 09:15 完成七日趋势复盘；首月累计至少 28 天完整日报和 4 次周报。
+- [ ] 预计 10–20 位真实用户期间保持 0 个 P0、无超过 24 小时未处理的 P1，且无维护中断超过 2 小时、未解决死信、持续积压或账号删除超期。
+- [ ] 外部 Beta 始终只访问 staging；无 production 数据访问、Secret 泄漏或未批准的新费用项目。
+- [ ] 月末覆盖本地相册、登录、NFC、认领、owner/viewer/editor、发布、停用恢复、举报/屏蔽及账号删除，并形成继续、修复后继续或暂停的结论。

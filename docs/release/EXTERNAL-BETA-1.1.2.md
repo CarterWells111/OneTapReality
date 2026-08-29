@@ -1,6 +1,8 @@
 # OneTapReality 1.1.2 外部 Beta 放行清单
 
-状态：未放行。本文是 10 人外部 TestFlight 的人工放行工件，不是构建或云端变更授权。
+状态：已发布并进入首月观察。外部 TestFlight 继续只连接 staging；后续构建、上传、群组调整、公开 App Store 发布或其他云端变更仍需分别批准。
+
+未来一个月预计 10–20 位真实用户，日常与每周证据、分级响应和月末 Go/No-Go 门槛以 [`EXTERNAL-BETA-OBSERVATION.md`](../operations/EXTERNAL-BETA-OBSERVATION.md) 为唯一权威手册。
 
 ## 固定边界
 
@@ -42,7 +44,7 @@ APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
 APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 ```
 
-production 的 `APPLE_REVIEW_ACCESS_ENABLED` 必须保持未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并且不得配置其余 `APPLE_REVIEW_*` 凭据。变量变更后先验收 `/api/health` 为 200、`database=ok`、`schemaVersion>=13`，再由发布负责人在受保护会话中完成：
+production 的 `APPLE_REVIEW_ACCESS_ENABLED` 必须保持未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并且不得配置其余 `APPLE_REVIEW_*` 凭据。变量变更后先验收 `/api/health` 为 200、`database=ok`、`schemaVersion>=14`，再由发布负责人在受保护会话中完成：
 
 1. **审核登录 smoke**：精确审核邮箱使用固定验证码登录，确认 owner、viewer、editor 和可认领 fixture 已重置；错误邮箱不能使用固定验证码。
 2. **账号删除挑战 smoke**：审核账号请求删除挑战应成功且不发送邮件，响应和日志不得包含固定验证码；不要在发布前提交最终 `DELETE`。完整删除使用获准的 disposable staging 账号另测。
@@ -71,7 +73,7 @@ production 的 `APPLE_REVIEW_ACCESS_ENABLED` 必须保持未设置或明确为 `
 
 ## 观察与响应
 
-不新增分析 SDK。每日人工查看 TestFlight crash/session/截图反馈、支持邮箱和 staging health 的脱敏状态。不得在监控、Issue 或聊天中粘贴邮箱、礼品链接、token、验证码、对象 key 或 Secret。
+不新增分析 SDK。每日人工查看 TestFlight crash/session/截图反馈、支持邮箱和 staging health 的脱敏状态；自动观察按权威手册执行。不得在监控、Issue 或聊天中粘贴邮箱、礼品链接、token、验证码、对象 key 或 Secret。
 
 以下任一 stop condition 触发立即停止 Beta 登录，移除或过期受影响构建，并停用测试礼品：
 

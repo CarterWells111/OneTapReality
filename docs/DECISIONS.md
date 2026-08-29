@@ -1,5 +1,14 @@
 ﻿# 决策记录
 
+## 2026-08-29：外部 Beta 首月采用 staging 优先的轻量分层观察
+
+OneTapReality 已完成数据库维护第二阶段、三张 iOS 实体 NFC 卡验收并发布只连接 staging 的外部 TestFlight。未来一个月预计 10–20 位真实用户，运行规则以 [`docs/operations/EXTERNAL-BETA-OBSERVATION.md`](operations/EXTERNAL-BETA-OBSERVATION.md) 为准：每天北京时间 09:00 输出只读简报，每周一北京时间 09:15 汇总七日趋势，月末执行 Go/No-Go 复盘。
+
+- 自动观察只允许公开 GET、GitHub 只读查询及使用独立 staging 只读角色的聚合 SELECT；不得执行 POST、migration、deployment、备份、写 SQL 或任何云端变更。
+- 外部 Beta 用户行为只在 staging 聚合观察；production 仅保留健康与维护状态，不把两个环境的数据合并。
+- 不增加分析 SDK、崩溃 SDK、付费监控或第三方服务。TestFlight、支持邮箱和平台账单继续由负责人人工核对，缺少权限时标记为待人工确认。
+- P0 只报告并申请立即停测，自动化不得自行停服、移除测试者、停用礼品或修改数据。自动任务、只读角色、密码轮换、提交、推送及 PR 继续分别审批。
+
 ## 2026-08-23：共享相册暂存与发布分离
 
 Owner/editor 共享编辑页的两个动作必须具有不同的远程效果。本决策取代同日“保存当前修改会发布新版本并留在编辑页”的旧行为：
