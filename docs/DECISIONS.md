@@ -1,5 +1,17 @@
 ﻿# 决策记录
 
+## 2026-08-30：外部 Beta staging 对所有有效邮箱开放验证码登录
+
+外部 TestFlight 已进入真实用户测试，继续只连接隔离的 staging API。为避免 App Store Connect 邀请名单与 Railway 邮箱白名单形成两套不同步的准入来源，staging 的账号登录改为对所有格式有效且可接收邮件的邮箱开放；`ALPHA_ALLOWED_EMAILS` 在当前 staging 与未来 production 均保持未设置或空值。现有服务端在该变量为空时跳过邀请名单检查，继续执行邮箱规范化、验证码单次使用、发送限流、验证失败限流、账号删除状态检查与 30 天会话规则。
+
+- 登录开放不等于管理权限开放。`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，NFC 初始化、管理员处置及其他管理能力仍由服务端独立授权。
+- 登录开放不等于礼品内容开放。礼品 token、owner/viewer/editor 成员关系、私有 R2 读取签名及停用状态继续决定礼品访问，普通登录账号不能枚举或读取未授权礼品。
+- 不接入 App Store Connect tester API，不保存或同步 TestFlight 测试者邮箱，不新增 Apple API Key、定时任务、Webhook、支付、分析或其他第三方服务。
+- `beta_invite_required` 错误契约与客户端明确文案保留，供将来独立的受限环境显式配置 allowlist 时使用；当前外部 Beta staging 正常流程不再返回该错误。网络、邮件发送、输入校验与频率限制错误继续使用各自的稳定错误码和用户文案。
+- `GIFT_SHARING_ENABLED=false` 仍是立即停测开关。若需回滚准入范围，可由发布负责人恢复受控 `ALPHA_ALLOWED_EMAILS` 并重新部署 staging；真实邮箱、验证码、会话、API Key 和完整名单不得进入 Git、日志、Issue、截图或聊天。
+
+完整设计见 `docs/superpowers/specs/2026-08-30-staging-open-email-auth-design.md`。
+
 ## 2026-08-29：外部 Beta 首月采用 staging 优先的轻量分层观察
 
 OneTapReality 已完成数据库维护第二阶段、三张 iOS 实体 NFC 卡验收并发布只连接 staging 的外部 TestFlight。未来一个月预计 10–20 位真实用户，运行规则以 [`docs/operations/EXTERNAL-BETA-OBSERVATION.md`](operations/EXTERNAL-BETA-OBSERVATION.md) 为准：每天北京时间 09:00 输出只读简报，每周一北京时间 09:15 汇总七日趋势，月末执行 Go/No-Go 复盘。
