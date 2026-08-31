@@ -26,6 +26,7 @@ describe("gift maintenance Worker", () => {
         environment.MAINTENANCE_ENDPOINT,
         {
           method: "POST",
+          redirect: "error",
           headers: { "x-gift-maintenance-secret": environment.MAINTENANCE_SECRET },
         },
       ],
@@ -33,6 +34,7 @@ describe("gift maintenance Worker", () => {
         environment.STAGING_MAINTENANCE_ENDPOINT,
         {
           method: "POST",
+          redirect: "error",
           headers: { "x-gift-maintenance-secret": environment.STAGING_MAINTENANCE_SECRET },
         },
       ],

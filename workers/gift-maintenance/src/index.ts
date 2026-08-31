@@ -63,6 +63,7 @@ async function runMaintenanceTarget(
   try {
     response = await fetcher(endpoint, {
       method: "POST",
+      redirect: "error",
       headers: { "x-gift-maintenance-secret": secret },
     });
   } catch {
