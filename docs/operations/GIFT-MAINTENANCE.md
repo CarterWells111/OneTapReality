@@ -2,7 +2,7 @@
 
 ## 零新增费用边界
 
-维护架构只有现有 Railway API/PostgreSQL、现有私有 R2，以及一个 Workers Free 小时级 Cron。Worker 每小时只发送一次 POST，不保存数据、不内部重试，且不绑定 R2、KV、D1、Durable Objects、Queues 或付费可观测性。仓库内 `wrangler.toml` 关闭持久化观测；约 744 次/月的触发量远低于 Workers Free 的每日请求限额。
+维护架构只有现有 Railway API/PostgreSQL、现有私有 R2，以及一个 Workers Free 小时级 Cron。同一 Worker 每小时两个 POST，分别发往 production 与 external-Beta staging；Worker 不保存数据、不内部重试，且不绑定 R2、KV、D1、Durable Objects、Queues 或付费可观测性。仓库内 `wrangler.toml` 关闭持久化观测；约 744 次/月的 invocation 和 1,488 次/月的维护子请求远低于既有免费边界。
 
 以下任一步骤如果要求启用 Workers Paid、Railway 新服务、付费快照、云备份对象、队列、监控或其他新计费项目，立即停止。不得为了执行本手册把生产 secret 写入仓库、Issue、PR、终端输出或日志。
 
@@ -47,11 +47,14 @@ pg_restore --exit-on-error --no-owner --dbname=<本地临时恢复库> <仓库�
 
 1. 确认 Cloudflare 账户仍为 Workers Free，配置中不存在付费绑定或新计费承诺。
 2. 批准创建/部署 Worker；实际部署命令不得由 CI 自动运行。
-3. 批准写入 Secret `MAINTENANCE_SECRET`，其值与 Railway 的 `GIFT_CARD_CLEANUP_SECRET` 一致。
-4. 批准启用配置中的单个 Cron Trigger。
-5. 批准首次调用会修改生产数据的维护端点，并只记录脱敏计数和 HTTP 状态。
+3. 批准写入 production Secret `MAINTENANCE_SECRET`，其值与 production Railway 的 `GIFT_CARD_CLEANUP_SECRET` 一致。
+4. 另行批准写入 staging Secret `STAGING_MAINTENANCE_SECRET`，其值只与 staging Railway 的独立 `GIFT_CARD_CLEANUP_SECRET` 一致，不得复用 production Secret。
+5. 批准启用配置中的单个 Cron Trigger。
+6. 分别批准首次调用会修改 production 与 staging 数据的维护端点，并只记录脱敏计数和 HTTP 状态。
 
-`MAINTENANCE_ENDPOINT` 是公开 HTTPS 地址，可保存在配置中；`MAINTENANCE_SECRET` 只能通过 Cloudflare Secret 保存。Worker 异常时先停用 Cron，由成功礼品写请求的兜底继续维护，不新增替代服务器。
+`MAINTENANCE_ENDPOINT` 与 `STAGING_MAINTENANCE_ENDPOINT` 是各环境的公开 HTTPS 地址，可保存在配置中；两个 Secret 只能通过 Cloudflare Secret 分别保存。运行时固定先尝试 production、再尝试 staging；即使一端失败也保证两端均尝试，完成后只上报目标标签和固定错误类别。每个目标从请求开始到响应清理结束设单目标 25 秒上限，超时归类为脱敏的网络错误，不读取响应正文，也不触发内部或平台重试。
+
+双环境模式启用前必须同时确认两个端点变量和两个 Secret 均已配置。缺少任一绑定、端点不是 HTTPS、发生网络错误或收到非 2xx 响应时，该目标失败但不阻止另一目标；不得把连接信息、Secret、响应正文或底层异常写入日志。
 
 ## 第二阶段完成状态与持续观察
 
@@ -65,6 +68,6 @@ pg_restore --exit-on-error --no-owner --dbname=<本地临时恢复库> <仓库�
 
 ## 回滚
 
-- Worker 异常：禁用 Cron，不删除 Worker Secret 以外的数据，继续依赖请求兜底。
+- Worker 双环境版本异常：优先回滚到已知正常的 production-only Worker 版本；若无法安全回滚则禁用 Cron。production 继续依赖 production 成功礼品写请求兜底，staging 继续依赖 staging 请求兜底，必要的人工维护必须另行批准；不得删除 Secret、修改数据库或新增替代服务器。
 - API 异常：回滚到已确认不调用遗留礼品认证表的兼容代码；第一阶段 schema 保持向后兼容，不回滚增量列和索引。
 - 迁移异常：停止部署，使用已验证的本地备份按发布负责人指令恢复。破坏性第二阶段没有经过备份验证与单独批准时不得开始。

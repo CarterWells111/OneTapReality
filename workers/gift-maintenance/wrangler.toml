@@ -9,6 +9,7 @@ crons = ["0 * * * *"]
 
 [vars]
 MAINTENANCE_ENDPOINT = "https://api.onetapreality.com/api/internal/gift-maintenance"
+STAGING_MAINTENANCE_ENDPOINT = "https://api-staging.onetapreality.com/api/internal/gift-maintenance"
 
 [observability]
 enabled = false

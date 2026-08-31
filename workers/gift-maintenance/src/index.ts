@@ -1,6 +1,8 @@
 export type MaintenanceWorkerEnvironment = {
-  MAINTENANCE_ENDPOINT: string;
-  MAINTENANCE_SECRET: string;
+  MAINTENANCE_ENDPOINT?: string;
+  MAINTENANCE_SECRET?: string;
+  STAGING_MAINTENANCE_ENDPOINT?: string;
+  STAGING_MAINTENANCE_SECRET?: string;
 };
 
 type WorkerFetch = (
@@ -10,16 +12,119 @@ type WorkerFetch = (
 
 type ScheduledController = { noRetry: () => void };
 
+const DEFAULT_TARGET_TIMEOUT_MS = 25_000;
+
+type MaintenanceTarget = {
+  label: "production" | "staging";
+  endpoint: string | undefined;
+  secret: string | undefined;
+};
+
+class MaintenanceTargetFailure extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+function getMaintenanceTargets(
+  environment: MaintenanceWorkerEnvironment,
+): MaintenanceTarget[] {
+  return [
+    {
+      label: "production",
+      endpoint: environment.MAINTENANCE_ENDPOINT,
+      secret: environment.MAINTENANCE_SECRET,
+    },
+    {
+      label: "staging",
+      endpoint: environment.STAGING_MAINTENANCE_ENDPOINT,
+      secret: environment.STAGING_MAINTENANCE_SECRET,
+    },
+  ];
+}
+
+async function runMaintenanceTarget(
+  target: MaintenanceTarget,
+  fetcher: WorkerFetch,
+  timeoutMs: number,
+): Promise<void> {
+  const endpoint = target.endpoint?.trim();
+  const secret = target.secret?.trim();
+  if (!endpoint) throw new MaintenanceTargetFailure("missing_endpoint");
+  if (!secret) throw new MaintenanceTargetFailure("missing_secret");
+
+  try {
+    if (new URL(endpoint).protocol !== "https:") {
+      throw new MaintenanceTargetFailure("invalid_endpoint");
+    }
+  } catch (error) {
+    if (error instanceof MaintenanceTargetFailure) throw error;
+    throw new MaintenanceTargetFailure("invalid_endpoint");
+  }
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const operation = (async () => {
+    let response: Response;
+    try {
+      response = await fetcher(endpoint, {
+        method: "POST",
+        redirect: "error",
+        signal: controller.signal,
+        headers: { "x-gift-maintenance-secret": secret },
+      });
+    } catch {
+      throw new MaintenanceTargetFailure("network_error");
+    }
+
+    try {
+      if (!response.ok) {
+        throw new MaintenanceTargetFailure(`http_${response.status}`);
+      }
+    } finally {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Response cleanup must not expose or replace the maintenance result.
+      }
+    }
+  })();
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new MaintenanceTargetFailure("network_error"));
+    }, Math.max(1, timeoutMs));
+  });
+
+  try {
+    await Promise.race([operation, deadline]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export async function runScheduledMaintenance(
   environment: MaintenanceWorkerEnvironment,
   fetcher: WorkerFetch = fetch,
+  targetTimeoutMs = DEFAULT_TARGET_TIMEOUT_MS,
 ): Promise<void> {
-  const response = await fetcher(environment.MAINTENANCE_ENDPOINT, {
-    method: "POST",
-    headers: { "x-gift-maintenance-secret": environment.MAINTENANCE_SECRET },
-  });
-  await response.body?.cancel();
-  if (!response.ok) throw new Error(`Maintenance endpoint returned ${response.status}`);
+  const failures: string[] = [];
+
+  for (const target of getMaintenanceTargets(environment)) {
+    try {
+      await runMaintenanceTarget(target, fetcher, targetTimeoutMs);
+    } catch (error) {
+      const code =
+        error instanceof MaintenanceTargetFailure
+          ? error.code
+          : "unexpected_error";
+      failures.push(`${target.label}=${code}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Maintenance targets failed: ${failures.join(", ")}`);
+  }
 }
 
 const worker = {

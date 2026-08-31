@@ -6,18 +6,138 @@ import worker, { runScheduledMaintenance } from "../workers/gift-maintenance/src
 describe("gift maintenance Worker", () => {
   const environment = {
     MAINTENANCE_ENDPOINT: "https://api.example.com/api/internal/gift-maintenance",
-    MAINTENANCE_SECRET: "server-secret",
+    MAINTENANCE_SECRET: "production-secret",
+    STAGING_MAINTENANCE_ENDPOINT: "https://api-staging.example.com/api/internal/gift-maintenance",
+    STAGING_MAINTENANCE_SECRET: "staging-secret",
   };
 
-  it("posts once with the server-only secret and does not retry failures", async () => {
-    const fetcher = jest.fn(async () => new Response(null, { status: 503 }));
+  it("maintains production then staging with isolated secrets", async () => {
+    const cancelProduction = jest.fn();
+    const cancelStaging = jest.fn();
+    const fetcher = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel: cancelProduction }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel: cancelStaging }), { status: 202 }));
 
-    await expect(runScheduledMaintenance(environment, fetcher)).rejects.toThrow("Maintenance endpoint returned 503");
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledWith(environment.MAINTENANCE_ENDPOINT, {
-      method: "POST",
-      headers: { "x-gift-maintenance-secret": environment.MAINTENANCE_SECRET },
+    await runScheduledMaintenance(environment, fetcher);
+
+    expect(fetcher.mock.calls).toEqual([
+      [
+        environment.MAINTENANCE_ENDPOINT,
+        {
+          method: "POST",
+          redirect: "error",
+          signal: expect.any(AbortSignal),
+          headers: { "x-gift-maintenance-secret": environment.MAINTENANCE_SECRET },
+        },
+      ],
+      [
+        environment.STAGING_MAINTENANCE_ENDPOINT,
+        {
+          method: "POST",
+          redirect: "error",
+          signal: expect.any(AbortSignal),
+          headers: { "x-gift-maintenance-secret": environment.STAGING_MAINTENANCE_SECRET },
+        },
+      ],
+    ]);
+    expect(cancelProduction).toHaveBeenCalledTimes(1);
+    expect(cancelStaging).toHaveBeenCalledTimes(1);
+  });
+
+  it("still maintains staging when production returns an HTTP failure", async () => {
+    const fetcher = jest
+      .fn()
+      .mockResolvedValueOnce(new Response("private upstream body", { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    await expect(runScheduledMaintenance(environment, fetcher)).rejects.toThrow(
+      "Maintenance targets failed: production=http_503",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("sanitizes network failures and attempts the second target", async () => {
+    const fetcher = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("secret transport detail"))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    let capturedError: unknown;
+    try {
+      await runScheduledMaintenance(environment, fetcher);
+    } catch (error) {
+      capturedError = error;
+    }
+
+    expect(capturedError).toEqual(
+      new Error("Maintenance targets failed: production=network_error"),
+    );
+    expect(String(capturedError)).not.toContain("secret transport detail");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports both failures only after both targets were attempted", async () => {
+    const fetcher = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 500 }));
+
+    await expect(runScheduledMaintenance(environment, fetcher)).rejects.toThrow(
+      "Maintenance targets failed: production=http_401, staging=http_500",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out a stalled production request and still maintains staging", async () => {
+    const fetcher = jest.fn((input: string | URL | Request) => {
+      if (input === environment.MAINTENANCE_ENDPOINT) {
+        return new Promise<Response>((resolve) => {
+          setTimeout(() => resolve(new Response(null, { status: 200 })), 30);
+        });
+      }
+      return Promise.resolve(new Response(null, { status: 200 }));
     });
+
+    await expect(runScheduledMaintenance(environment, fetcher, 1)).rejects.toThrow(
+      "Maintenance targets failed: production=network_error",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out stalled response cleanup and still maintains staging", async () => {
+    const slowBody = new ReadableStream({
+      cancel: () =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 30);
+        }),
+    });
+    const fetcher = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(slowBody, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    await expect(runScheduledMaintenance(environment, fetcher, 1)).rejects.toThrow(
+      "Maintenance targets failed: production=network_error",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["missing production endpoint", { ...environment, MAINTENANCE_ENDPOINT: "" }, "production=missing_endpoint"],
+    ["missing production secret", { ...environment, MAINTENANCE_SECRET: "" }, "production=missing_secret"],
+    ["missing staging secret", { ...environment, STAGING_MAINTENANCE_SECRET: "" }, "staging=missing_secret"],
+    ["invalid production URL", { ...environment, MAINTENANCE_ENDPOINT: "not-a-url" }, "production=invalid_endpoint"],
+    [
+      "non-HTTPS staging URL",
+      { ...environment, STAGING_MAINTENANCE_ENDPOINT: "http://api-staging.example.com/maintenance" },
+      "staging=invalid_endpoint",
+    ],
+  ])("fails safely for %s while still attempting the other target", async (_name, candidate, reason) => {
+    const fetcher = jest.fn(async () => new Response(null, { status: 200 }));
+
+    await expect(runScheduledMaintenance(candidate, fetcher)).rejects.toThrow(reason);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("exposes only a scheduled handler", () => {
@@ -26,13 +146,18 @@ describe("gift maintenance Worker", () => {
   });
 
   it("disables platform retries before making the hourly request", async () => {
-    const noRetry = jest.fn();
-    const fetcher = jest.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 200 }));
+    const events: string[] = [];
+    const noRetry = jest.fn(() => events.push("noRetry"));
+    const fetcher = jest.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      events.push("fetch");
+      return new Response(null, { status: 200 });
+    });
 
     await worker.scheduled({ noRetry }, environment);
 
     expect(noRetry).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(["noRetry", "fetch", "fetch"]);
     fetcher.mockRestore();
   });
 
@@ -40,8 +165,15 @@ describe("gift maintenance Worker", () => {
     const config = readFileSync(join(process.cwd(), "workers/gift-maintenance/wrangler.toml"), "utf8");
 
     expect(config).toContain('crons = ["0 * * * *"]');
-    expect(config).toContain("MAINTENANCE_ENDPOINT");
-    expect(config).not.toMatch(/MAINTENANCE_SECRET\s*=/u);
+    expect(config).toContain(
+      'MAINTENANCE_ENDPOINT = "https://api.onetapreality.com/api/internal/gift-maintenance"',
+    );
+    expect(config).toContain(
+      'STAGING_MAINTENANCE_ENDPOINT = "https://api-staging.onetapreality.com/api/internal/gift-maintenance"',
+    );
+    expect(config).not.toMatch(
+      /(?:^|\n)\s*(?:MAINTENANCE_SECRET|STAGING_MAINTENANCE_SECRET)\s*=/u,
+    );
     expect(config).not.toMatch(/r2_buckets|kv_namespaces|d1_databases|durable_objects|queues/iu);
   });
 });
