@@ -187,6 +187,8 @@ describe("1.1.2 external Beta release artifacts", () => {
     expect(railway).toContain("ALPHA_ALLOWED_EMAILS=");
     expect(railway).toContain("`GIFT_ADMIN_EMAILS` 保持独立");
     expect(railway).toContain("确认以下配置状态");
+    expect(railway).toContain("schemaVersion>=14");
+    expect(railway).not.toContain("schema 13");
     expect(railway).not.toContain("取得单独云端配置批准后增加以下服务端变量");
     expect(railway).not.toContain("受邀测试者的 `ALPHA_ALLOWED_EMAILS`");
     expect(alpha).toContain("外部 Beta 已取代本手册的邮箱白名单准入规则");

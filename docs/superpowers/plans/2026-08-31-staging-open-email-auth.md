@@ -4,7 +4,7 @@
 
 **Goal:** Open the isolated external-Beta staging API to one-time-code login from every valid email address without widening developer or gift authorization, and remove obsolete Alpha-allowlist operations from current tooling and runbooks.
 
-**Architecture:** The authentication implementation already treats an absent or empty `ALPHA_ALLOWED_EMAILS` as open access, so no runtime auth code or App rebuild is required. Repository changes retire the NFC Lab's allowlist rollback step and make current governance documents describe the open-email staging policy; the only live change removes `ALPHA_ALLOWED_EMAILS` from the Railway staging API service, followed by redacted health and controlled-account verification.
+**Architecture:** The authentication implementation already treats an absent or empty `ALPHA_ALLOWED_EMAILS` as open access, so opening the allowlist does not require changing the admission branch or rebuilding the App. Repository changes retire the NFC Lab's allowlist rollback step, make current governance documents describe the open-email staging policy, and add runtime hashed client-IP issuance limiting with trusted, validated Railway `X-Real-IP` extraction. The separately approved live cloud change removes `ALPHA_ALLOWED_EMAILS` from the Railway staging API service, followed by redacted health and controlled-account verification.
 
 **Tech Stack:** TypeScript/Jest governance tests, Node.js CommonJS staging utilities, Markdown operations documentation, Railway staging, Expo API Routes, Resend email OTP.
 

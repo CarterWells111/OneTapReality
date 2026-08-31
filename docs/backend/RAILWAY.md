@@ -102,7 +102,7 @@ APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 
 `APPLE_REVIEW_EMAIL`、`APPLE_REVIEW_CODE`、`APPLE_REVIEW_FIXTURE_SECRET` 和 `APPLE_REVIEW_CLAIM_TOKEN` 只存 Railway staging Secret 与 App Store Connect Review Notes，不得读取或复制到 Git、聊天、Issue、命令参数、截图或日志。production 的审核开关必须未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并保持其他 `APPLE_REVIEW_*` 凭据未配置。
 
-配置重部署且 health 达到 schema 13 后，按 [外部 Beta 放行清单](../release/EXTERNAL-BETA-1.1.2.md) 完成审核登录 smoke 与账号删除挑战 smoke；未完成时不得构建或上传外测候选。
+配置重部署且 health 验收达到 `schemaVersion>=14` 后，按 [外部 Beta 放行清单](../release/EXTERNAL-BETA-1.1.2.md) 完成审核登录 smoke 与账号删除挑战 smoke；未完成时不得构建或上传外测候选。
 
 ## 常见失败
 
