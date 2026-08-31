@@ -163,6 +163,8 @@ describe("NFC staging test CLI", () => {
     expect(runbook).toContain("对所有格式有效邮箱开放验证码登录");
     expect(runbook).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
     expect(runbook).not.toContain("必须都返回 `403 beta_invite_required`");
+    expect(runbook).toContain("管理员与 owner 的验证码登录仍是执行停用与清理的授权前提");
+    expect(runbook).toContain("清理不得为了白名单回滚再向三个 `+nfc-*` 派生邮箱额外请求验证码");
     expect(runbook).toContain("NDEF");
     for (const boundary of ["自动测试", "staging 模拟", "实体卡", "锁屏唤起"]) {
       expect(status).toContain(boundary);

@@ -38,7 +38,7 @@ $env:EXPO_PUBLIC_API_ORIGIN='https://api-staging.onetapreality.com'
 
 ## 清理与 PR 门禁
 
-测试完成后运行 `npm run nfc:test:prepare-pr`。固定顺序是：停用 bound 礼品、退休 unclaimed 卡、执行并核对 R2 清理、严格按 manifest 中的 card/gift ID 删除本批数据库记录，然后删除本地 Lab 与 manifest 并执行只读 guard。账号登录是 staging 的持续能力，清理不得请求新验证码、修改 `ALPHA_ALLOWED_EMAILS` 或把开放登录误判为残留。
+测试完成后运行 `npm run nfc:test:prepare-pr`。固定顺序是：停用 bound 礼品、退休 unclaimed 卡、执行并核对 R2 清理、严格按 manifest 中的 card/gift ID 删除本批数据库记录，然后删除本地 Lab 与 manifest 并执行只读 guard。管理员与 owner 的验证码登录仍是执行停用与清理的授权前提；清理不得为了白名单回滚再向三个 `+nfc-*` 派生邮箱额外请求验证码、修改 `ALPHA_ALLOWED_EMAILS` 或把开放登录误判为残留。
 
 任何 R2、数据库或本地工件清理失败都会保留 disabled 数据与 manifest；重新运行同一命令继续，不要手工删除 manifest。
 
