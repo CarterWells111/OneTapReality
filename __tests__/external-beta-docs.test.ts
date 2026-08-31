@@ -180,8 +180,8 @@ describe("1.1.2 external Beta release artifacts", () => {
     const plan = read("docs/superpowers/plans/2026-08-31-staging-open-email-auth.md");
 
     expect(envExample).toContain("Keep empty in active external-Beta staging and production");
-    expect(checklist).toContain("- [ ] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
-    expect(checklist).not.toContain("- [x] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
+    expect(checklist).toContain("- [x] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
+    expect(checklist).not.toContain("- [ ] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
     expect(security).toContain("登录开放不授予管理员或礼品访问权限");
     expect(security).toContain("客户端 IP 的固定 15 分钟窗口最多签发 20 封");
     expect(railway).toContain("ALPHA_ALLOWED_EMAILS=");
@@ -198,6 +198,9 @@ describe("1.1.2 external Beta release artifacts", () => {
     expect(nfcLab).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
     expect(rehearsal).toContain("2026-08-06 的白名单结果是历史验收证据");
     expect(qa).toContain("此前不在四人开发者名单的受控邮箱");
+    expect(deploymentLog).toContain("Railway staging API 删除 `ALPHA_ALLOWED_EMAILS` 并成功部署");
+    expect(deploymentLog).toContain("`database=ok`、`schemaVersion=14`");
+    expect(deploymentLog).toContain("此前不在四人开发者名单的受控邮箱成功收取验证码并登录");
     for (const content of [decision, railway, deploymentLog, plan]) {
       expect(content).toContain("GIFT_SHARING_ENABLED=false");
       expect(content).toContain("仍服务 external Beta 的同一 staging");
