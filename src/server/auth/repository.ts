@@ -61,16 +61,45 @@ export async function createAuthEmailCodeIfAllowed(
     createdAt: string;
     expiresAt: string;
     rateLimitSince: string;
+    issueScopeHash?: string;
+    issueWindowStartedAt?: string;
+    issueExpiresAt?: string;
   },
 ): Promise<"created" | "rate_limited"> {
   const email = normalizeAccountEmail(input.email);
-  return withAuthCodeIssueLock(email, () => db.transaction(async (tx) => {
+  const issueRateLimit = input.issueScopeHash && input.issueWindowStartedAt && input.issueExpiresAt
+    ? {
+        scopeHash: input.issueScopeHash,
+        windowStartedAt: input.issueWindowStartedAt,
+        expiresAt: input.issueExpiresAt,
+      }
+    : null;
+  const run = () => withAuthCodeIssueLock(`email:${email}`, () => db.transaction(async (tx) => {
+    if (issueRateLimit) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auth-email-issue-ip'), hashtext(${issueRateLimit.scopeHash}))`);
+    }
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auth-email-code'), hashtext(${email}))`);
     const recent = await tx.select({ id: authEmailCodes.id }).from(authEmailCodes).where(and(
       eq(authEmailCodes.email, email),
       gt(authEmailCodes.createdAt, input.rateLimitSince),
     )).limit(5);
     if (recent.length >= 5) return "rate_limited" as const;
+    if (issueRateLimit) {
+      const [rateLimit] = await tx.select().from(authRateLimits).where(and(
+        eq(authRateLimits.scopeHash, issueRateLimit.scopeHash),
+        gt(authRateLimits.expiresAt, input.createdAt),
+      )).limit(1).for("update");
+      if (rateLimit && rateLimit.attempts >= 20) return "rate_limited" as const;
+      await tx.insert(authRateLimits).values({
+        scopeHash: issueRateLimit.scopeHash,
+        windowStartedAt: issueRateLimit.windowStartedAt,
+        attempts: 1,
+        expiresAt: issueRateLimit.expiresAt,
+      }).onConflictDoUpdate({
+        target: authRateLimits.scopeHash,
+        set: { attempts: sql`${authRateLimits.attempts} + 1` },
+      });
+    }
     await tx.update(authEmailCodes).set({ consumedAt: input.createdAt }).where(and(
       eq(authEmailCodes.email, email),
       isNull(authEmailCodes.consumedAt),
@@ -86,10 +115,28 @@ export async function createAuthEmailCodeIfAllowed(
     });
     return "created" as const;
   }));
+  return issueRateLimit
+    ? withAuthCodeIssueLock(`issue:${issueRateLimit.scopeHash}`, run)
+    : run();
 }
 
-export async function deleteAuthEmailCodeById(db: BackendDatabase, id: string): Promise<void> {
-  await db.delete(authEmailCodes).where(eq(authEmailCodes.id, id));
+export async function deleteAuthEmailCodeById(db: BackendDatabase, id: string, issueScopeHash?: string): Promise<boolean> {
+  const remove = () => db.transaction(async (tx) => {
+    if (issueScopeHash) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auth-email-issue-ip'), hashtext(${issueScopeHash}))`);
+    }
+    const deleted = await tx.delete(authEmailCodes).where(eq(authEmailCodes.id, id)).returning({ id: authEmailCodes.id });
+    if (deleted.length === 1 && issueScopeHash) {
+      await tx.update(authRateLimits).set({ attempts: sql`${authRateLimits.attempts} - 1` }).where(and(
+        eq(authRateLimits.scopeHash, issueScopeHash),
+        gt(authRateLimits.attempts, 0),
+      ));
+    }
+    return deleted.length === 1;
+  });
+  return issueScopeHash
+    ? withAuthCodeIssueLock(`issue:${issueScopeHash}`, remove)
+    : remove();
 }
 
 export async function isAuthEmailCodeRateLimited(db: BackendDatabase, email: string, since: string): Promise<boolean> {

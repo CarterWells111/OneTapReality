@@ -170,18 +170,41 @@ describe("1.1.2 external Beta release artifacts", () => {
     const security = read("docs/SECURITY.md");
     const railway = read("docs/backend/RAILWAY.md");
     const alpha = read("docs/operations/ALPHA-STAGING.md");
+    const cardTest = read("docs/operations/IOS-NFC-CARD-TEST.md");
     const nfcLab = read("docs/operations/NFC-STAGING-LAB.md");
     const rehearsal = read("docs/operations/REHEARSAL-RECORD.md");
+    const deploymentLog = read("docs/operations/DEPLOYMENT-LOG.md");
     const qa = read("docs/release/QA-CHECKLIST.md");
+    const decision = read("docs/DECISIONS.md");
+    const design = read("docs/superpowers/specs/2026-08-30-staging-open-email-auth-design.md");
+    const plan = read("docs/superpowers/plans/2026-08-31-staging-open-email-auth.md");
 
     expect(envExample).toContain("Keep empty in active external-Beta staging and production");
-    expect(checklist).toContain("外部 Beta staging 对所有格式有效邮箱开放验证码登录");
+    expect(checklist).toContain("- [ ] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
+    expect(checklist).not.toContain("- [x] 外部 Beta staging 对所有格式有效邮箱开放验证码登录");
     expect(security).toContain("登录开放不授予管理员或礼品访问权限");
+    expect(security).toContain("客户端 IP 的固定 15 分钟窗口最多签发 20 封");
     expect(railway).toContain("ALPHA_ALLOWED_EMAILS=");
     expect(railway).toContain("GIFT_ADMIN_EMAILS 保持独立");
+    expect(railway).toContain("确认以下配置状态");
+    expect(railway).not.toContain("取得单独云端配置批准后增加以下服务端变量");
+    expect(railway).not.toContain("受邀测试者的 `ALPHA_ALLOWED_EMAILS`");
     expect(alpha).toContain("外部 Beta 已取代本手册的邮箱白名单准入规则");
+    expect(cardTest).toContain("受控只读邮箱只需格式有效");
+    expect(cardTest).toContain("礼品访问继续由成员关系授权");
+    expect(cardTest).not.toContain("管理员测试邮箱与受邀只读邮箱在 staging 白名单内");
     expect(nfcLab).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
     expect(rehearsal).toContain("2026-08-06 的白名单结果是历史验收证据");
     expect(qa).toContain("此前不在四人开发者名单的受控邮箱");
+    for (const content of [decision, railway, deploymentLog, plan]) {
+      expect(content).toContain("GIFT_SHARING_ENABLED=false");
+      expect(content).toContain("仍服务 external Beta 的同一 staging");
+      expect(content).not.toContain("恢复获批邮箱名单并重新部署");
+    }
+    expect(design).toContain("still serves external Beta");
+    expect(design).toContain("twenty issues per hashed client-IP fixed 15-minute window");
+    expect(design).not.toContain("set `ALPHA_ALLOWED_EMAILS` to the approved developer list");
+    expect(plan).toContain("twenty issues per hashed client-IP fixed 15-minute window");
+    expect(plan).toContain("decrement the matching issue scope only if the delete returned that row");
   });
 });

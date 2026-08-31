@@ -20,7 +20,7 @@ The active external-Beta staging service will leave `ALPHA_ALLOWED_EMAILS` unset
 
 | Environment | Account login policy | Required controls |
 | --- | --- | --- |
-| External-Beta staging | `ALPHA_ALLOWED_EMAILS` absent or empty; all valid emails may request codes | `GIFT_SHARING_ENABLED=true`, staging-only database/R2/peppers/origins, verified Resend sender, existing rate limits |
+| External-Beta staging | `ALPHA_ALLOWED_EMAILS` absent or empty; all valid emails may request codes | `GIFT_SHARING_ENABLED=true`, staging-only database/R2/peppers/origins, verified Resend sender, per-email and hashed-IP issuance limits |
 | Production | `ALPHA_ALLOWED_EMAILS` absent or empty; same open-email policy | Production-isolated database/R2/peppers/origins; review access disabled |
 | Future explicitly restricted environment | Non-empty `ALPHA_ALLOWED_EMAILS` only after a new recorded decision | `beta_invite_required` response and client copy remain available |
 
@@ -31,7 +31,7 @@ The current staging service is shared by internal staging builds and the externa
 1. The client submits an email to `POST /api/auth/request`.
 2. The server checks `GIFT_SHARING_ENABLED`, validates and normalizes the email, and checks account-deletion state.
 3. With `ALPHA_ALLOWED_EMAILS` empty, the invitation gate passes without consulting App Store Connect or another remote service.
-4. Existing atomic issuance limits apply before the code is stored and sent through Resend. Failed delivery removes the issued code.
+4. Before a non-review email is stored and sent through Resend, one transaction enforces both five issues per normalized email in 15 minutes and twenty issues per hashed client-IP fixed 15-minute window. The persisted issue scope is a `GIFT_AUTH_PEPPER` hash; raw IP addresses are not stored. Failed delivery atomically removes the issued code and releases that issue count only when the code row was deleted. Apple Review fixed codes do not send email and therefore do not consume this IP issue quota.
 5. Successful verification creates the existing 30-day account session.
 6. Every privileged operation continues to derive authorization independently: developer features use `GIFT_ADMIN_EMAILS`; gift reads and writes use the gift token, membership role, activation state, and server-side ownership checks.
 
@@ -49,7 +49,7 @@ No App Store Connect invitation status is displayed or inferred because the serv
 
 ## Security, privacy, and operations
 
-Opening login increases the number of people who can request email codes and create staging accounts. Existing per-window issuance limits, verification-attempt limits, one-time code hashing, short expiry, session hashing, account deletion, request-log redaction, and `GIFT_SHARING_ENABLED` remain mandatory. No email list, verification code, session token, Apple credential, or Resend credential may enter the client bundle, Git, logs, screenshots, Issues, or chat.
+Opening login increases the number of people who can request email codes and create staging accounts. The five-per-email and twenty-per-hashed-IP fixed-window issuance limits, verification-attempt limits, one-time code hashing, short expiry, session hashing, account deletion, request-log redaction, and `GIFT_SHARING_ENABLED` remain mandatory. Either issue limit returns `email_code_rate_limited` with `Retry-After: 900`. No email list, raw IP, verification code, session token, Apple credential, or Resend credential may enter the client bundle, Git, logs, screenshots, Issues, or chat.
 
 The external change is limited to the Railway staging variable and the resulting service deployment. It must not alter production variables, App Store Connect groups, EAS settings, R2 credentials, database contents, or Resend credentials. Platform configuration changes require the existing operations approval and a redacted deployment record.
 
@@ -74,7 +74,7 @@ The live email request and verification are external writes and require the rele
 
 ## Rollback
 
-For an immediate incident, set `GIFT_SHARING_ENABLED=false` to stop new login codes and gift-sharing operations according to the existing P0 procedure. To restore restricted login after the incident is understood, set `ALPHA_ALLOWED_EMAILS` to the approved developer list, redeploy staging, verify a controlled outside address receives `403 beta_invite_required` without an email being sent, and record only redacted evidence. Rollback must not change production or disclose the list.
+For an immediate incident, set `GIFT_SHARING_ENABLED=false` to stop new login codes and gift-sharing operations according to the existing P0 procedure. A staging service that still serves external Beta must not be changed back to the four-person allowlist. Restricted login may return only after external Beta is paused or moved to another separately approved restricted environment and a new decision is recorded. Rollback must not change production or disclose any allowlist.
 
 ## Out of scope
 

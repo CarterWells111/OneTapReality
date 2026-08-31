@@ -10,7 +10,7 @@ jest.mock("../src/server/gifts/resend-email-sender", () => ({ sendGiftVerificati
 jest.mock("../src/server/auth/repository", () => ({
   createAuthEmailCode: jest.fn(async () => undefined),
   createAuthEmailCodeIfAllowed: jest.fn(async () => "created"),
-  deleteAuthEmailCodeById: jest.fn(async () => undefined),
+  deleteAuthEmailCodeById: jest.fn(async () => true),
   isAuthEmailCodeRateLimited: jest.fn(async () => false),
   isAccountActiveByEmail: jest.fn(async () => true),
   verifyAccountEmailCode: jest.fn(async () => ({ status: "success", user: { id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" } })),
@@ -44,14 +44,25 @@ describe("unified account authentication APIs", () => {
   });
 
   it("sends a code without exposing it", async () => {
-    const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "owner@example.com" }) }));
+    const { hashAccessToken } = jest.requireMock("../src/server/auth/device-auth") as { hashAccessToken: jest.Mock };
+    hashAccessToken.mockResolvedValueOnce("opaque-issue-scope");
+    const response = await request(new Request("http://localhost/api/auth/request", {
+      method: "POST",
+      headers: { "x-forwarded-for": "203.0.113.8, 10.0.0.1" },
+      body: JSON.stringify({ email: "owner@example.com" }),
+    }));
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ email: "owner@example.com" });
     const { createAuthEmailCodeIfAllowed } = jest.requireMock("../src/server/auth/repository") as { createAuthEmailCodeIfAllowed: jest.Mock };
+    expect(hashAccessToken).toHaveBeenCalledWith(expect.stringMatching(/^issue-ip:203\.0\.113\.8:\d+$/u), "pepper");
     expect(createAuthEmailCodeIfAllowed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       email: "owner@example.com",
       rateLimitSince: expect.any(String),
+      issueScopeHash: "opaque-issue-scope",
+      issueWindowStartedAt: expect.any(String),
+      issueExpiresAt: expect.any(String),
     }));
+    expect(JSON.stringify(createAuthEmailCodeIfAllowed.mock.calls[0]?.[1])).not.toContain("203.0.113.8");
   });
 
   it("returns 429 when the atomic login-code issue reaches its window limit", async () => {
@@ -63,6 +74,10 @@ describe("unified account authentication APIs", () => {
     }));
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("900");
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: "email_code_rate_limited" }),
+    }));
     const { sendGiftVerificationEmail } = jest.requireMock("../src/server/gifts/resend-email-sender") as { sendGiftVerificationEmail: jest.Mock };
     expect(sendGiftVerificationEmail).not.toHaveBeenCalled();
   });
@@ -75,7 +90,7 @@ describe("unified account authentication APIs", () => {
     const response = await request(new Request("http://localhost/api/auth/request", { method: "POST", body: JSON.stringify({ email: "owner@example.com" }) }));
 
     expect(response.status).toBe(500);
-    expect(deleteAuthEmailCodeById).toHaveBeenCalledWith(expect.anything(), expect.any(String));
+    expect(deleteAuthEmailCodeById).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.stringMatching(/^hash:issue-ip:/u));
   });
 
   it("rejects an invalid email as a client error", async () => {

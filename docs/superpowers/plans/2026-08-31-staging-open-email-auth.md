@@ -207,7 +207,7 @@ Append this sentence to the first paragraph of the 2026-08-30 entry in `docs/DEC
 Replace the current `ALPHA_ALLOWED_EMAILS` checklist item in `docs/EXECUTION-CHECKLIST.md` with:
 
 ```markdown
-- [x] 外部 Beta staging 对所有格式有效邮箱开放验证码登录，`ALPHA_ALLOWED_EMAILS` 保持未设置或空值；`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，`GIFT_URL_ORIGIN=https://staging.onetapreality.com`。
+- [ ] 外部 Beta staging 对所有格式有效邮箱开放验证码登录，`ALPHA_ALLOWED_EMAILS` 保持未设置或空值；`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，`GIFT_URL_ORIGIN=https://staging.onetapreality.com`。只有 Railway staging 实际完成配置变更，并以受控非管理员邮箱完成收信、登录和权限 smoke 后才可勾选。
 ```
 
 Replace the Alpha allowlist paragraph in `docs/SECURITY.md` with:
@@ -282,7 +282,7 @@ Append this pending entry to `docs/operations/DEPLOYMENT-LOG.md`:
 - 变更：仅移除 `ALPHA_ALLOWED_EMAILS`；不修改 `GIFT_ADMIN_EMAILS`、数据库、R2、Resend、EAS、TestFlight 或 production。
 - 状态：待发布负责人批准并执行。
 - 验证：执行后记录脱敏 health、受控非管理员邮箱登录和未授权礼品拒绝结果。
-- 回滚：恢复获批邮箱名单并重新部署；P0 时优先设置 `GIFT_SHARING_ENABLED=false`。
+- 事件处置：紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移至另一个单独批准的受限环境并记录新决策后，才允许恢复 allowlist。
 ```
 
 In `docs/release/EXTERNAL-BETA-1.1.2.md`, add `ALPHA_ALLOWED_EMAILS=` to the protected staging configuration block and state that empty is the intentional open-email value, while `GIFT_ADMIN_EMAILS` remains unchanged.
@@ -303,6 +303,34 @@ Expected: PASS. This confirms the current documents are consistent, empty allowl
 git add .env.example __tests__/external-beta-docs.test.ts docs/DECISIONS.md docs/EXECUTION-CHECKLIST.md docs/SECURITY.md docs/backend/RAILWAY.md docs/operations/ALPHA-STAGING.md docs/operations/NFC-STAGING-LAB.md docs/operations/REHEARSAL-RECORD.md docs/operations/DEPLOYMENT-LOG.md docs/release/EXTERNAL-BETA-1.1.2.md docs/release/QA-CHECKLIST.md
 git commit -m "docs: open external beta staging login"
 ```
+
+### Task 3A: Add cross-email issuance protection before opening staging
+
+**Files:**
+- Modify: `src/app/api/auth/request+api.ts`
+- Modify: `src/server/auth/repository.ts`
+- Modify: `__tests__/account-auth-api.test.ts`
+- Modify: `__tests__/account-repository.test.ts`
+- Modify: `__tests__/apple-review-auth-api.test.ts`
+- Modify: `docs/DECISIONS.md`
+- Modify: `docs/SECURITY.md`
+- Modify: `docs/superpowers/specs/2026-08-30-staging-open-email-auth-design.md`
+
+- [ ] **Step 1: Record and test the abuse-control boundary**
+
+Record that non-Apple-Review email delivery keeps the existing five issues per normalized email in 15 minutes and adds twenty issues per hashed client-IP fixed 15-minute window. Only the `GIFT_AUTH_PEPPER` hash of `issue-ip:<first-forwarded-ip-or-unknown>:<window-start>` may reach `auth_rate_limits`; raw IP addresses must not be persisted. Add failing repository and route tests for cross-email exhaustion, opaque scope transfer, delivery-failure release, `Retry-After: 900`, and the Apple Review exemption.
+
+- [ ] **Step 2: Implement atomic issue and release accounting**
+
+In one transaction, acquire the hashed issue-scope advisory lock before the normalized-email advisory lock, check the email limit first, then lock/check/increment the existing `auth_rate_limits` row before inserting the code. Do not add a table or migration. When delivery or mail configuration fails, delete the issued code and decrement the matching issue scope only if the delete returned that row. The twenty-first request across different emails returns the existing `email_code_rate_limited` response and sends no email.
+
+- [ ] **Step 3: Verify the focused security tests**
+
+```powershell
+npm.cmd exec -- jest --runInBand --runTestsByPath __tests__/account-repository.test.ts __tests__/account-auth-api.test.ts __tests__/apple-review-auth-api.test.ts __tests__/external-beta-docs.test.ts
+```
+
+Expected: all suites pass; the existing per-email limit remains covered, the cross-email IP limit cannot be bypassed by changing addresses, failed delivery releases exactly one count, and Apple Review fixed codes consume no mail-issuance IP quota.
 
 ### Task 4: Run all local delivery gates
 
@@ -414,7 +442,7 @@ git add docs/operations/DEPLOYMENT-LOG.md
 git commit -m "docs: record open staging login rollout"
 ```
 
-If the Railway change or smoke fails, do not mark success. Restore the former approved allowlist, redeploy, verify a controlled outside address gets `403 beta_invite_required` without email delivery, and record the final state as `已回滚` with redacted evidence. For a P0, use the existing `GIFT_SHARING_ENABLED=false` incident procedure first.
+If the Railway change or smoke fails, do not mark success. Use the existing `GIFT_SHARING_ENABLED=false` incident procedure first and record the final state as `停测` or `待跟进` with redacted evidence. Still serving external Beta on the same staging service must not restore the four-person allowlist. Restricted access requires pausing external Beta or moving it to another separately approved environment and recording a new decision.
 
 ### Task 6: Final verification and branch handoff
 

@@ -60,4 +60,4 @@
 - 变更：仅移除 `ALPHA_ALLOWED_EMAILS`；不修改 `GIFT_ADMIN_EMAILS`、数据库、R2、Resend、EAS、TestFlight 或 production。
 - 状态：待发布负责人批准并执行。
 - 验证：执行后记录脱敏 health、受控非管理员邮箱登录和未授权礼品拒绝结果。
-- 回滚：恢复获批邮箱名单并重新部署；P0 时优先设置 `GIFT_SHARING_ENABLED=false`。
+- 事件处置：紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移至另一个单独批准的受限环境并记录新决策后，才允许恢复 allowlist。

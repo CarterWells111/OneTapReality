@@ -4,12 +4,13 @@ import {
   createAuthEmailCodeIfAllowed,
   createAuthSession,
   createOrGetUserByEmail,
+  deleteAuthEmailCodeById,
   getAuthenticatedUserByTokenHash,
   purgeAuthTechnicalData,
   revokeAuthSessionByTokenHash,
   verifyAccountEmailCode,
 } from "../src/server/auth/repository";
-import { authEmailCodes } from "../src/server/db/schema";
+import { authEmailCodes, authRateLimits } from "../src/server/db/schema";
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
 
 describe("account authentication repository", () => {
@@ -87,6 +88,82 @@ describe("account authentication repository", () => {
       const statements = queries.join("\n");
       expect(statements).toMatch(/pg_advisory_xact_lock/iu);
       expect(statements.indexOf("pg_advisory_xact_lock")).toBeLessThan(statements.indexOf('from "auth_email_codes"'));
+    } finally { await close(); }
+  });
+
+  it("rate limits the twenty-first email issue across different addresses in one IP window", async () => {
+    const queries: string[] = [];
+    const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
+    try {
+      await migrateBackendDatabase(db);
+      queries.length = 0;
+      const issueScope = {
+        issueScopeHash: "opaque-issue-ip-window",
+        issueWindowStartedAt: "2026-08-31T10:00:00.000Z",
+        issueExpiresAt: "2026-08-31T10:15:00.000Z",
+      };
+
+      for (let index = 0; index < 20; index += 1) {
+        await expect(createAuthEmailCodeIfAllowed(db, {
+          id: `issue-${index}`,
+          email: `user-${index}@example.com`,
+          codeHash: `hash-${index}`,
+          createdAt: "2026-08-31T10:01:00.000Z",
+          expiresAt: "2026-08-31T10:06:00.000Z",
+          rateLimitSince: "2026-08-31T09:46:00.000Z",
+          ...issueScope,
+        })).resolves.toBe("created");
+      }
+
+      await expect(createAuthEmailCodeIfAllowed(db, {
+        id: "issue-20",
+        email: "user-20@example.com",
+        codeHash: "hash-20",
+        createdAt: "2026-08-31T10:01:00.000Z",
+        expiresAt: "2026-08-31T10:06:00.000Z",
+        rateLimitSince: "2026-08-31T09:46:00.000Z",
+        ...issueScope,
+      })).resolves.toBe("rate_limited");
+      await expect(db.select().from(authEmailCodes)).resolves.toHaveLength(20);
+      await expect(db.select().from(authRateLimits)).resolves.toEqual([
+        expect.objectContaining({ scopeHash: issueScope.issueScopeHash, attempts: 20 }),
+      ]);
+      const firstIssueLock = queries.findIndex((query) => query.includes("auth-email-issue-ip"));
+      const firstEmailLock = queries.findIndex((query) => query.includes("auth-email-code"));
+      const firstEmailLimitCheck = queries.findIndex((query) => query.includes('from "auth_email_codes"'));
+      const firstIpLimitCheck = queries.findIndex((query) => query.includes('from "auth_rate_limits"'));
+      expect(firstIssueLock).toBeGreaterThanOrEqual(0);
+      expect(firstIssueLock).toBeLessThan(firstEmailLock);
+      expect(firstEmailLock).toBeLessThan(firstEmailLimitCheck);
+      expect(firstEmailLimitCheck).toBeLessThan(firstIpLimitCheck);
+    } finally { await close(); }
+  });
+
+  it("releases an IP issue count only when its issued code is deleted", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      const issueScopeHash = "opaque-delivery-failure-window";
+      await createAuthEmailCodeIfAllowed(db, {
+        id: "delivery-failed-code",
+        email: "delivery@example.com",
+        codeHash: "delivery-hash",
+        createdAt: "2026-08-31T10:01:00.000Z",
+        expiresAt: "2026-08-31T10:06:00.000Z",
+        rateLimitSince: "2026-08-31T09:46:00.000Z",
+        issueScopeHash,
+        issueWindowStartedAt: "2026-08-31T10:00:00.000Z",
+        issueExpiresAt: "2026-08-31T10:15:00.000Z",
+      });
+
+      await expect(deleteAuthEmailCodeById(db, "delivery-failed-code", issueScopeHash)).resolves.toBe(true);
+      await expect(db.select().from(authRateLimits)).resolves.toEqual([
+        expect.objectContaining({ scopeHash: issueScopeHash, attempts: 0 }),
+      ]);
+      await expect(deleteAuthEmailCodeById(db, "delivery-failed-code", issueScopeHash)).resolves.toBe(false);
+      await expect(db.select().from(authRateLimits)).resolves.toEqual([
+        expect.objectContaining({ scopeHash: issueScopeHash, attempts: 0 }),
+      ]);
     } finally { await close(); }
   });
 

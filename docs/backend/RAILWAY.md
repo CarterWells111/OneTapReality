@@ -75,15 +75,15 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 然后重新构建 App。该值会进入客户端 bundle，因此只能是公开 HTTPS origin；它不应出现在 Railway 后端 Service。打开 App 的“设置 → 后端实验”，点击“检查后端连接”，显示“后端连接正常”即完成客户端接入验证。
 
-## Alpha staging
+## Alpha staging（历史）
 
-Alpha 必须使用独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单。staging Service 使用 `GIFT_URL_ORIGIN=https://staging.onetapreality.com`、独立 `GIFT_TOKEN_PEPPER` / `GIFT_AUTH_PEPPER` / `GIFT_CARD_CLEANUP_SECRET`、受邀测试者的 `ALPHA_ALLOWED_EMAILS` 和 `GIFT_SHARING_ENABLED=true`。EAS `alpha` profile 只注入 `https://api-staging.onetapreality.com`。
+内部 Alpha 曾要求独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单；当时使用受邀测试邮箱的非空 allowlist。该段只保留为历史证据，不是当前 external-beta 的操作指令。当前同一个隔离 staging Service 的登录配置以紧接的 External Beta staging 段为准。EAS `alpha` profile 仍只注入 `https://api-staging.onetapreality.com`。
 
 staging 域还必须部署同一 iOS 发布标识对应的 `/.well-known/apple-app-site-association`；当前不部署 Android `assetlinks.json`。P0 时将 `GIFT_SHARING_ENABLED` 设为 `false`，停止发卡和新邀请，停用受影响礼品；恢复前先在 staging 完成回归。
 
 ## External Beta staging
 
-外部 Beta 复用同一个隔离 staging Service，但必须在取得单独云端配置批准后增加以下服务端变量：
+外部 Beta 复用同一个隔离 staging Service；取得单独云端配置批准后，确认以下配置状态：
 
 ```env
 ALPHA_ALLOWED_EMAILS=
@@ -97,6 +97,8 @@ APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 ```
 
 `ALPHA_ALLOWED_EMAILS` 必须未设置或为空，表示任意格式有效邮箱可以请求验证码；`GIFT_ADMIN_EMAILS 保持独立`，不得因开放登录而扩大开发者、NFC 初始化或管理员权限。若未来需要恢复受限环境，必须使用单独批准的环境与新决策，不得在仍服务外部 Beta 的同一 staging API 上恢复四人白名单。
+
+紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移到另一个单独批准的受限环境并记录新决策后，才允许配置非空 `ALPHA_ALLOWED_EMAILS`。
 
 `APPLE_REVIEW_EMAIL`、`APPLE_REVIEW_CODE`、`APPLE_REVIEW_FIXTURE_SECRET` 和 `APPLE_REVIEW_CLAIM_TOKEN` 只存 Railway staging Secret 与 App Store Connect Review Notes，不得读取或复制到 Git、聊天、Issue、命令参数、截图或日志。production 的审核开关必须未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并保持其他 `APPLE_REVIEW_*` 凭据未配置。
 
