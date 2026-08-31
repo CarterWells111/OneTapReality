@@ -80,6 +80,9 @@ describe("Apple review authentication API branch", () => {
       codeHash: "hash:654321",
       rateLimitSince: expect.any(String),
     }));
+    expect(mockCreateAuthCodeIfAllowed.mock.calls[0]?.[1]).not.toEqual(expect.objectContaining({
+      issueScopeHash: expect.any(String),
+    }));
     expect(mockIsRateLimited).not.toHaveBeenCalled();
     expect(mockCreateAuthCode).not.toHaveBeenCalled();
     expect(mockCreateRandomCode).not.toHaveBeenCalled();

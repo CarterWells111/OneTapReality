@@ -35,6 +35,7 @@ npm run beta:preflight:ios -- --profile beta-external
 在取得单独的 staging 配置批准后，API Service 必须具备：
 
 ```env
+ALPHA_ALLOWED_EMAILS=
 GIFT_URL_ORIGIN=https://staging.onetapreality.com
 RELEASE_AUDIENCE=external-beta
 APPLE_REVIEW_ACCESS_ENABLED=true
@@ -43,6 +44,8 @@ APPLE_REVIEW_CODE=<受保护变量>
 APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
 APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 ```
+
+`ALPHA_ALLOWED_EMAILS=` 的空值是有意开放有效邮箱登录的配置；`GIFT_ADMIN_EMAILS` 保持不变，继续独立控制开发者与管理员权限。
 
 production 的 `APPLE_REVIEW_ACCESS_ENABLED` 必须保持未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并且不得配置其余 `APPLE_REVIEW_*` 凭据。变量变更后先验收 `/api/health` 为 200、`database=ok`、`schemaVersion>=14`，再由发布负责人在受保护会话中完成：
 

@@ -146,6 +146,9 @@ describe("NFC staging test CLI", () => {
     expect(packageJson.scripts["nfc:test:inspect"]).toContain("inspect");
     expect(packageJson.scripts["nfc:test:prepare-pr"]).toContain("prepare-pr");
     expect(packageJson.scripts["nfc:test:guard"]).toContain("guard");
+    const runner = require("node:fs").readFileSync(cliPath, "utf8");
+    expect(runner).not.toContain("verifyAllowlistRollback");
+    expect(runner).not.toContain("Remove the three +nfc aliases");
     const ignore = require("node:fs").readFileSync(join(process.cwd(), ".gitignore"), "utf8");
     expect(ignore).toContain("/src/app/nfc-lab-local.tsx");
     expect(ignore).toContain("/.data/nfc-staging/active.json");
@@ -157,8 +160,11 @@ describe("NFC staging test CLI", () => {
     for (const command of ["nfc:test:seed", "nfc:test:inspect", "nfc:test:prepare-pr", "nfc:test:guard"]) {
       expect(runbook).toContain(command);
     }
-    expect(runbook).toContain("beta_invite_required");
-    expect(runbook).toContain("ALPHA_ALLOWED_EMAILS");
+    expect(runbook).toContain("对所有格式有效邮箱开放验证码登录");
+    expect(runbook).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
+    expect(runbook).not.toContain("必须都返回 `403 beta_invite_required`");
+    expect(runbook).toContain("管理员与 owner 的验证码登录仍是执行停用与清理的授权前提");
+    expect(runbook).toContain("清理不得为了白名单回滚再向三个 `+nfc-*` 派生邮箱额外请求验证码");
     expect(runbook).toContain("NDEF");
     for (const boundary of ["自动测试", "staging 模拟", "实体卡", "锁屏唤起"]) {
       expect(status).toContain(boundary);

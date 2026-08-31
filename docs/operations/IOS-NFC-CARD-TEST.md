@@ -18,7 +18,7 @@
 - [ ] EAS `alpha` 或 `staging-testflight` 构建经过对应的单独批准，安装在支持 NFC 的 iPhone 上；TestFlight 路径还需单独批准提交。记录 profile 与构建号，不记录安装链接中的敏感参数。
 - [ ] staging `/api/health` 返回 200、`database=ok`、`schemaVersion>=7`。
 - [ ] staging 的 `GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com` 已只读复核。
-- [ ] 管理员测试邮箱与受邀只读邮箱在 staging 白名单内；测试记录只写角色，不写地址。
+- [ ] 管理员测试邮箱仍由 `GIFT_ADMIN_EMAILS` 授权；受控只读邮箱只需格式有效，礼品访问继续由成员关系授权。测试记录只写角色，不写地址。
 - [ ] production Railway 自动部署保持关闭，本次不访问 production 数据库或 R2 bucket。
 
 ## A. 三张卡逐张写入与读回

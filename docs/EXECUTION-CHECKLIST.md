@@ -16,11 +16,11 @@
 - [x] `GIFT_SHARING_ENABLED` 是立即停测开关；关闭后阻止新验证码、认领、发布与礼品读取，管理员停用接口仍可用于处置。
 - [x] 依赖或 Expo/生产构建变更必须同步验证 `npm ci`、`npm run lint`、`npm run typecheck`、`npm run test:ci` 和 `npm run build:server`。
 
-## iOS staging 与外部 Beta 已完成门槛
+## iOS staging 与外部 Beta 门槛
 
 - [x] `staging.onetapreality.com` 与 `api-staging.onetapreality.com` 已解析，iOS AASA 匹配现有 Team ID 与 Bundle ID，并通过 HTTPS 验证。
 - [x] Railway staging 服务、PostgreSQL、私有 R2 bucket 和 Resend 配置均与生产隔离，且使用独立 peppers、清理密钥和管理员测试邮箱。
-- [x] `ALPHA_ALLOWED_EMAILS` 只包含获准内测邮箱；`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，测试卡不含正式礼品 URL 或 token。
+- [x] 外部 Beta staging 对所有格式有效邮箱开放验证码登录，`ALPHA_ALLOWED_EMAILS` 保持未设置或空值；`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，`GIFT_URL_ORIGIN=https://staging.onetapreality.com`。Railway staging 已完成配置变更，受控非管理员邮箱已完成收信和登录 smoke；服务端权限隔离继续由自动测试覆盖。
 - [x] 已从干净的 `main` 完成 `alpha` ad-hoc 构建和 `staging-testflight` TestFlight 内部构建，并通过 iOS staging 原生验证及外部 Beta 放行门禁；云构建与 App Store Connect 提交必须分别批准。
 - [x] 外部 TestFlight 已发布，`beta-external` 仅连接 staging，未开放公共链接且未授予测试者 App Store Connect 权限。
 - [x] 三张 iOS 实体测试卡完成：准确写入、读回、锁屏碰卡、深链、邮箱登录、认领、发布、受邀只读、停用和对象删除；全程未访问 production 数据库、bucket 或礼品。

@@ -1,5 +1,19 @@
 ﻿# 决策记录
 
+## 2026-08-30：外部 Beta staging 对所有有效邮箱开放验证码登录
+
+外部 TestFlight 已进入真实用户测试，继续只连接隔离的 staging API。为避免 App Store Connect 邀请名单与 Railway 邮箱白名单形成两套不同步的准入来源，staging 的账号登录改为对所有格式有效且可接收邮件的邮箱开放；`ALPHA_ALLOWED_EMAILS` 在当前 staging 与未来 production 均保持未设置或空值。现有服务端在该变量为空时跳过邀请名单检查，继续执行邮箱规范化、验证码单次使用、发送限流、验证失败限流、账号删除状态检查与 30 天会话规则。本决策取代此前 Alpha 阶段“staging 必须保留四人邮箱白名单”及 NFC Lab 临时追加/移除邮箱的当前执行规则；旧条目只保留为历史证据。
+
+- 登录开放不等于管理权限开放。`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，NFC 初始化、管理员处置及其他管理能力仍由服务端独立授权。
+- 登录开放不等于礼品内容开放。礼品 token、owner/viewer/editor 成员关系、私有 R2 读取签名及停用状态继续决定礼品访问，普通登录账号不能枚举或读取未授权礼品。
+- 不接入 App Store Connect tester API，不保存或同步 TestFlight 测试者邮箱，不新增 Apple API Key、定时任务、Webhook、支付、分析或其他第三方服务。
+- `beta_invite_required` 错误契约与客户端明确文案保留，供将来独立的受限环境显式配置 allowlist 时使用；当前外部 Beta staging 正常流程不再返回该错误。网络、邮件发送、输入校验与频率限制错误继续使用各自的稳定错误码和用户文案。
+- 非 Apple Review 的邮件验证码签发除每个规范化邮箱 15 分钟最多 5 次外，再按客户端 IP 的固定 15 分钟窗口限制为最多 20 次。服务端只在既有 `auth_rate_limits` 中保存由 `GIFT_AUTH_PEPPER` 哈希后的窗口 scope，不保存原始 IP；发信失败仅在本次验证码记录确实删除后原子释放一次签发占用。达到任一签发上限均返回现有 `email_code_rate_limited`，并附带 `Retry-After: 900`。Apple Review 固定码不发送邮件，因此不占邮件签发 IP 配额。本安全边界不新增数据库表、migration、第三方服务或客户端秘密。
+- Railway 公网入口只以平台覆盖的 `X-Real-IP` 作为客户端 IP 信任边界；`X-Forwarded-For` 可由客户端伪造，认证接口不得读取或回退到该值。服务端 trim 并规范化合法 IPv4/IPv6；可信头缺失或非法时 fail-closed 到共用 `unknown` 限流桶。原始 IP 只在请求内作为 pepper 哈希输入，绝不写入数据库、日志或响应。
+- `GIFT_SHARING_ENABLED=false` 仍是立即停测开关。仍服务 external Beta 的同一 staging 不得直接恢复四人 `ALPHA_ALLOWED_EMAILS`；只有先暂停 external Beta，或迁移到另一个单独批准的受限环境并记录新决策后，才允许恢复受控 allowlist。真实邮箱、验证码、会话、API Key 和完整名单不得进入 Git、日志、Issue、截图或聊天。
+
+完整设计见 `docs/superpowers/specs/2026-08-30-staging-open-email-auth-design.md`。
+
 ## 2026-08-29：外部 Beta 首月采用 staging 优先的轻量分层观察
 
 OneTapReality 已完成数据库维护第二阶段、三张 iOS 实体 NFC 卡验收并发布只连接 staging 的外部 TestFlight。未来一个月预计 10–20 位真实用户，运行规则以 [`docs/operations/EXTERNAL-BETA-OBSERVATION.md`](operations/EXTERNAL-BETA-OBSERVATION.md) 为准：每天北京时间 09:00 输出只读简报，每周一北京时间 09:15 汇总七日趋势，月末执行 Go/No-Go 复盘。

@@ -28,7 +28,6 @@ function loadHelpers() {
     createStagingApiClient: (input: Record<string, any>) => Record<string, (...args: any[]) => Promise<any>>;
     installLocalLab: (input: { manifest: Record<string, any>; labPath: string }) => void;
     removeLocalArtifacts: (input: { labPath: string; manifestPath: string }) => void;
-    verifyAllowlistRollback: (input: { apiOrigin: string; emails: string[]; request?: typeof fetch }) => Promise<void>;
   };
 }
 
@@ -356,17 +355,8 @@ describe("NFC staging test lab helpers", () => {
     }
   });
 
-  it("confirms all temporary aliases are rejected before local PR artifacts are removed", async () => {
+  it("does not treat open staging accounts as temporary allowlist entries", () => {
     const helpers = loadHelpers()!;
-    const request = jest.fn(async () => new Response(JSON.stringify({ error: { code: "beta_invite_required" } }), { status: 403, headers: { "Content-Type": "application/json" } }));
-    await expect(helpers.verifyAllowlistRollback({
-      apiOrigin: "https://api-staging.onetapreality.com",
-      emails: ["owner@example.com", "viewer@example.com", "editor@example.com"],
-      request,
-    })).resolves.toBeUndefined();
-    expect(request).toHaveBeenCalledTimes(3);
-
-    const allowed = jest.fn(async () => new Response(JSON.stringify({ email: "owner@example.com" }), { status: 202, headers: { "Content-Type": "application/json" } }));
-    await expect(helpers.verifyAllowlistRollback({ apiOrigin: "https://api-staging.onetapreality.com", emails: ["owner@example.com"], request: allowed })).rejects.toThrow(/allowlist/iu);
+    expect(helpers).not.toHaveProperty("verifyAllowlistRollback");
   });
 });

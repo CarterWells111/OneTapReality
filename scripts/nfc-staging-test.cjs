@@ -23,7 +23,6 @@ const {
   removeLocalArtifacts,
   rollbackFailedSeed,
   seedScenarioMatrix,
-  verifyAllowlistRollback,
   writeManifestAtomic,
 } = require("./nfc-staging-test-helpers.cjs");
 
@@ -265,11 +264,9 @@ async function preparePrCommand(prompt) {
   if (["seeding", "seed_failed"].includes(manifest.phase)) await rollbackFailedSeed({ client, manifest, persist });
   else await cleanupScenarioMatrix({ client, manifest, persist });
   await purgeBatchRecords({ manifest, databaseUrl: process.env.DATABASE_URL });
-  await prompt("Remove the three +nfc aliases from staging ALPHA_ALLOWED_EMAILS, then press Enter: ");
-  await verifyAllowlistRollback({ apiOrigin: STAGING_API_ORIGIN, emails: Object.values(manifest.roleEmails) });
   removeLocalArtifacts({ labPath: LAB_PATH, manifestPath: MANIFEST_PATH });
   runGuard();
-  console.log("NFC staging batch, local Lab, manifest, and temporary allowlist access are cleared.");
+  console.log("NFC staging batch, local Lab, and manifest are cleared.");
 }
 
 async function main() {

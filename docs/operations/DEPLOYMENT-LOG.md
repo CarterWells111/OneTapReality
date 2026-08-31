@@ -52,3 +52,14 @@
 - 规模：未来一个月预计 10–20 位真实用户。
 - 运行手册：[`EXTERNAL-BETA-OBSERVATION.md`](EXTERNAL-BETA-OBSERVATION.md)。
 - 边界：本记录不授权新的构建、上传、部署、migration、维护 POST、只读角色、密码轮换或自动任务变更。
+
+## 2026-08-31：staging 开放邮箱验证码登录
+
+- 环境：staging
+- 服务：Railway API
+- 批准：发布负责人在本次 Codex 任务中明确批准删除与部署；未提供关联 Issue 编号，不补写或猜测编号。
+- 执行：2026-08-31 07:41 BST（Europe/London）前完成。Railway staging API 删除 `ALPHA_ALLOWED_EMAILS` 并成功部署；`GIFT_ADMIN_EMAILS` 保持配置，未修改 R2、Resend、EAS、TestFlight 或 production。
+- Railway 伴随行为：项目级应用配置时同时应用 staging PostgreSQL 的 TCP Proxy 应用端口 `5432` 与 Railway 生成的 `DATABASE_PUBLIC_URL`，数据库完成滚动重部署并恢复 Online；未执行 migration、SQL 或数据写入。
+- 验证：`GET /api/health` 返回 HTTP 200、`database=ok`、`schemaVersion=14`；此前不在四人开发者名单的受控邮箱成功收取验证码并登录，未在记录中保存邮箱、验证码或会话。服务端管理员与礼品访问隔离继续由自动测试覆盖，本次未使用真实未授权礼品做额外读取尝试。
+- production：只读核对确认未因本次操作重部署，当前 active deployment 仍为 PR #81；production 原本即未设置 `ALPHA_ALLOWED_EMAILS`，本次未修改其变量或服务。
+- 事件处置：紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移至另一个单独批准的受限环境并记录新决策后，才允许恢复 allowlist。

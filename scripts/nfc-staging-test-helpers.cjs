@@ -429,22 +429,6 @@ function removeLocalArtifacts({ labPath, manifestPath }) {
   rmSync(manifestPath, { force: true });
 }
 
-async function verifyAllowlistRollback({ apiOrigin, emails, request = fetch }) {
-  if (apiOrigin !== STAGING_API_ORIGIN) throw new Error("Allowlist rollback can only be checked against staging");
-  for (const email of emails) {
-    const response = await request(`${apiOrigin}/api/auth/request`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    let payload = null;
-    try { payload = await response.json(); } catch { /* invalid responses fail below */ }
-    if (response.status !== 403 || payload?.error?.code !== "beta_invite_required") {
-      throw new Error("Temporary NFC test email is still present in the staging allowlist");
-    }
-  }
-}
-
 module.exports = {
   CONFIRMATION,
   SCENARIOS,
@@ -464,6 +448,5 @@ module.exports = {
   removeLocalArtifacts,
   rollbackFailedSeed,
   seedScenarioMatrix,
-  verifyAllowlistRollback,
   writeManifestAtomic,
 };

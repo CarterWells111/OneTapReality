@@ -5,6 +5,7 @@ import { createAuthEmailCodeIfAllowed, deleteAuthEmailCodeById, isAccountActiveB
 import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
+import { getTrustedClientIp } from "../../../server/http/client-ip";
 import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
 
 export async function POST(request: Request): Promise<Response> {
@@ -26,6 +27,17 @@ export async function POST(request: Request): Promise<Response> {
     if (!reviewAccess) requireAlphaEmailAllowed(normalizedEmail);
     const nowDate = new Date();
     const now = nowDate.toISOString();
+    const issueWindowStartedMs = Math.floor(nowDate.getTime() / (15 * 60 * 1000)) * 15 * 60 * 1000;
+    const issueRateLimit = reviewAccess
+      ? {}
+      : {
+          issueScopeHash: await hashAccessToken(
+            `issue-ip:${getTrustedClientIp(request.headers)}:${issueWindowStartedMs}`,
+            pepper,
+          ),
+          issueWindowStartedAt: new Date(issueWindowStartedMs).toISOString(),
+          issueExpiresAt: new Date(issueWindowStartedMs + 15 * 60 * 1000).toISOString(),
+        };
     const code = reviewAccess
       ? {
           email: normalizedEmail,
@@ -44,17 +56,18 @@ export async function POST(request: Request): Promise<Response> {
       createdAt: now,
       expiresAt: code.expiresAt,
       rateLimitSince: new Date(nowDate.getTime() - 15 * 60 * 1000).toISOString(),
+      ...issueRateLimit,
     });
-    if (issueStatus === "rate_limited") throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code");
+    if (issueStatus === "rate_limited") throw new ApiError(429, "email_code_rate_limited", "Please wait before requesting another code", undefined, { "Retry-After": "900" });
     if (!reviewAccess) {
       if (!apiKey || !from) {
-        await deleteAuthEmailCodeById(db, codeId);
+        await deleteAuthEmailCodeById(db, codeId, issueRateLimit.issueScopeHash);
         throw new ApiError(500, "server_configuration_missing", "Server configuration is incomplete");
       }
       try {
         await sendGiftVerificationEmail({ apiKey, from, email: code.email, code: code.code });
       } catch (error) {
-        await deleteAuthEmailCodeById(db, codeId);
+        await deleteAuthEmailCodeById(db, codeId, issueRateLimit.issueScopeHash);
         throw error;
       }
     }
