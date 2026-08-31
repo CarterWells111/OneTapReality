@@ -29,7 +29,7 @@ import {
 } from "./canvas-assets";
 import { CanvasPage } from "./canvas-page";
 import { resolveCanvasPageWidth } from "./canvas-display-metrics";
-import { AddTextButton, CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
+import { CanvasToolbar, UndoRedoButtons } from "./canvas-toolbar";
 import { ElementContextMenu } from "./element-context-menu";
 import {
   addCanvasPage,
@@ -1117,8 +1117,7 @@ export function BookCanvasEditor({
             onUndo={() => undo(pagesRef.current)}
           />
           <View style={styles.topbarSpacer} />
-          {/* 右侧：页面指示器 + 页面管理 + 添加文字 */}
-          <AddTextButton onPress={addText} />
+          {/* 右侧：页面指示器 + 页面管理；添加素材位于下方同一组 */}
           <Text style={styles.pageIndicatorText}>第 {currentIndex + 1} / {pages.length} 页</Text>
           <Pressable
             accessibilityLabel="打开页面管理"
@@ -1197,6 +1196,17 @@ export function BookCanvasEditor({
               current={currentPage}
               currentCanvasProps={{
                 coverSelected: selectedCoverPageId === currentPage.id,
+                onEditElement: (id) => {
+                  const element = currentPage.layout?.elements.find((candidate) => candidate.id === id);
+                  if (element?.type === "text") {
+                    setSelectedElementId(id);
+                    setSelectedCoverPageId(undefined);
+                    menuModeRef.current = null;
+                    editingElementIdRef.current = id;
+                    setMenuMode(null);
+                    setEditingElementId(id);
+                  }
+                },
                 onInteractElement: handleElementInteraction,
                 onCropCover: openCoverCrop,
                 onCropElement: openElementCrop,
@@ -1278,6 +1288,7 @@ export function BookCanvasEditor({
           <Text style={styles.sectionLabel}>编辑文字</Text>
           <TextInput
             accessibilityLabel="编辑选中文字"
+            autoFocus
             multiline
             onChangeText={(text) => {
               markPendingTextEdited(editingElement.id);
@@ -1297,12 +1308,6 @@ export function BookCanvasEditor({
         <ElementContextMenu
           colorPreview={stableColorPreview}
           element={editingElement}
-          elementFrame={{
-            x: editingElement.x * pageWidth,
-            y: editingElement.y * pageHeight,
-            width: editingElement.width * pageWidth,
-            height: editingElement.height * pageHeight,
-          }}
           onCancelColor={() => {
             localDiagnostics.emit("style_transaction_finalized", {
               elementId: editingElement.id,
@@ -1414,12 +1419,11 @@ export function BookCanvasEditor({
       />
 
       <View style={styles.stickerTray}>
-        <View style={styles.assetModeRow}>
-          <SmallButton
-            active={false}
-            label="照片与模板"
-            onPress={editPhotoLayout}
-          />
+        <ScrollView contentContainerStyle={styles.assetModeRow} horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.addAssetsGroup} testID="canvas-add-assets">
+            <SmallButton active={false} label="添加文字" onPress={addText} />
+            <SmallButton active={false} label="照片与模板" onPress={editPhotoLayout} />
+          </View>
           <SmallButton
             active={assetTrayMode === "sticker"}
             label="贴纸"
@@ -1455,7 +1459,7 @@ export function BookCanvasEditor({
               }}
             />
           ) : null}
-        </View>
+        </ScrollView>
         {assetTrayMode === "sticker" ? (
           <>
             <ScrollView contentContainerStyle={styles.categoryRow} horizontal showsHorizontalScrollIndicator={false}>
@@ -1694,7 +1698,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   stickerTray: { gap: 8 },
-  assetModeRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20 },
+  assetModeRow: { alignItems: "center", flexDirection: "row", gap: 8, paddingHorizontal: 20 },
+  addAssetsGroup: { flexDirection: "row", gap: 6 },
   categoryRow: { gap: 7, paddingHorizontal: 20 },
   stickerChoices: { gap: 8, paddingHorizontal: 20 },
   stickerChoice: {

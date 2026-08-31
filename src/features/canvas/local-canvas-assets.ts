@@ -1,6 +1,6 @@
 import type { ImageSourcePropType } from "react-native";
 
-export type LocalStickerCategory = "all" | "sticker1" | "sticker2" | "sticker3" | "sticker4";
+export type LocalStickerCategory = "all" | "sticker1" | "sticker2" | "sticker3" | "sticker4" | "travel" | "nature" | "mood";
 export type LocalCanvasImageAsset = {
   id: string;
   label: string;
@@ -16,6 +16,9 @@ export const localStickerCategories: readonly { id: LocalStickerCategory; label:
   { id: "sticker2", label: "\u8d34\u7eb8 2" },
   { id: "sticker3", label: "\u8d34\u7eb8 3" },
   { id: "sticker4", label: "\u8d34\u7eb8 4" },
+  { id: "travel", label: "\u65c5\u884c" },
+  { id: "nature", label: "\u81ea\u7136" },
+  { id: "mood", label: "\u5fc3\u60c5" },
 ];
 
 export const localStickers: readonly LocalCanvasImageAsset[] = [
@@ -99,6 +102,12 @@ export const localStickers: readonly LocalCanvasImageAsset[] = [
   { id: "sticker4-18", label: "\u8d34\u7eb8 4-18", category: "sticker4", source: require("../../../assets/canvas/stickers/sticker4-18.png") },
   { id: "sticker4-19", label: "\u8d34\u7eb8 4-19", category: "sticker4", source: require("../../../assets/canvas/stickers/sticker4-19.png") },
   { id: "sticker4-20", label: "\u8d34\u7eb8 4-20", category: "sticker4", source: require("../../../assets/canvas/stickers/sticker4-20.png") },
+  { id: "travel-pin", label: "\u65c5\u884c\u5730\u56fe\u9488", category: "travel", source: require("../../../assets/canvas/stickers/travel-pin.png") },
+  { id: "travel-camera", label: "\u65c5\u884c\u76f8\u673a", category: "travel", source: require("../../../assets/canvas/stickers/travel-camera.png") },
+  { id: "nature-flower", label: "\u91ce\u82b1", category: "nature", source: require("../../../assets/canvas/stickers/nature-flower.png") },
+  { id: "nature-leaf", label: "\u679d\u53f6", category: "nature", source: require("../../../assets/canvas/stickers/nature-leaf.png") },
+  { id: "mood-sparkles", label: "\u95ea\u95ea\u53d1\u5149", category: "mood", source: require("../../../assets/canvas/stickers/mood-sparkles.png") },
+  { id: "mood-sun", label: "\u597d\u5fc3\u60c5", category: "mood", source: require("../../../assets/canvas/stickers/mood-sun.png") },
 ];
 
 export const localFrames: readonly LocalFrameAsset[] = [

@@ -108,6 +108,10 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/__tests__"
+    ],
     "setupFiles": [
       "<rootDir>/jest.setup.ts"
     ],
@@ -117,10 +121,12 @@
     ],
     "testPathIgnorePatterns": [
       "<rootDir>/node_modules/",
-      "<rootDir>/.worktrees/"
+      "<rootDir>/.worktrees/",
+      "<rootDir>/.claude/worktrees/"
     ],
     "modulePathIgnorePatterns": [
-      "<rootDir>/.worktrees/"
+      "<rootDir>/.worktrees/",
+      "<rootDir>/.claude/worktrees/"
     ]
   },
   "private": true

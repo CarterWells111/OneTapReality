@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render, within } from "@testing-library/react-native";
 import * as React from "react";
 import { Alert, Modal } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -628,26 +628,39 @@ describe("BookCanvasEditor", () => {
     expect(screen.queryByTestId("canvas-element-page-1:headline")).toBeNull();
   });
 
-  it("opens the text editor via the edit button after double press", () => {
+  it("opens the text editor when selected text receives another double press", () => {
     const screen = render(<EditorHarness />);
     const headline = screen.getByTestId("canvas-element-page-1:headline");
     const nowSpy = jest.spyOn(Date, "now");
 
-    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+    nowSpy
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_100)
+      .mockReturnValueOnce(1_600)
+      .mockReturnValueOnce(1_700);
     try {
       fireEvent.press(headline);
       expect(screen.queryByLabelText(editorLabel)).toBeNull();
       // Double-tap selects the element
       fireEvent.press(headline);
-      // The '编辑' button should now be visible in the toolbar
+      // The first double press only selects the element.
       expect(screen.queryByText("编辑")).toBeTruthy();
-      // Text editor only opens after clicking the '编辑' button (Feature #3b)
       expect(screen.queryByLabelText(editorLabel)).toBeNull();
-      fireEvent.press(screen.getByText("编辑"));
+
+      fireEvent.press(headline);
+      fireEvent.press(headline);
       expect(screen.getByLabelText(editorLabel)).toBeTruthy();
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it("keeps text and photo creation together in one add-assets group", () => {
+    const screen = render(<EditorHarness />);
+    const addAssets = screen.getByTestId("canvas-add-assets");
+
+    expect(within(addAssets).getByText("添加文字")).toBeTruthy();
+    expect(within(addAssets).getByText("照片与模板")).toBeTruthy();
   });
 
   it("clears a selected editor on a blank-page press without persisting changes, requires edit button to re-edit", () => {

@@ -39,6 +39,7 @@ type CanvasPageProps = {
   coverSelected?: boolean;
   onCropCover?: () => void;
   onCropElement?: (id: string) => void;
+  onEditElement?: (id: string) => void;
   onPressBlank?: () => void;
   onSelectCover?: () => void;
   onInteractElement?: (id: string) => void;
@@ -63,6 +64,7 @@ export function CanvasPage({
   coverSelected = false,
   onCropCover,
   onCropElement,
+  onEditElement,
   onPressBlank,
   onSelectCover,
   onInteractElement,
@@ -169,6 +171,7 @@ export function CanvasPage({
           interactionZIndex={interactive && element.id === selectedElementId ? interactionZIndex : undefined}
           isSelected={interactive && element.id === selectedElementId}
           key={element.id}
+          onEdit={onEditElement}
           onInteract={onInteractElement}
           onCrop={onCropElement}
           selectionContext={selectedElementId}

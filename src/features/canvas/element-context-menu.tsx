@@ -9,8 +9,6 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, {
-  FadeIn,
-  FadeOut,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -26,7 +24,6 @@ import type { CanvasTextElement } from "../../types/memory";
 type ElementContextMenuProps = {
   visible: boolean;
   element: CanvasTextElement;
-  elementFrame: { x: number; y: number; width: number; height: number } | null;
   onChangeFont: (fontStyle: string) => void;
   onChangeSize: (fontSize: number) => void;
   onFontSizeDraftChange?: (fontSize: number | undefined) => void;
@@ -63,13 +60,11 @@ const presetColors = [
 type MenuMode = "font" | "size" | "color";
 
 /**
- * Apple 风格浮动上下文菜单 — 白底黑字。
- * 显示在选中文字元素上方，提供字体/字号/颜色快速切换。
+ * 稳定的文字样式面板，提供字体、字号和颜色快速切换。
  */
 export function ElementContextMenu({
   visible,
   element,
-  elementFrame,
   onChangeFont,
   onChangeSize,
   onFontSizeDraftChange,
@@ -83,7 +78,6 @@ export function ElementContextMenu({
   initialMode,
 }: ElementContextMenuProps) {
   const { requestFont, resolveFontFamily } = useFontLoading();
-  const { width: windowWidth } = useWindowDimensions();
   const [mode, setMode] = React.useState<MenuMode>(initialMode ?? "font");
   // 颜色面板的滚动容器引用：传给 ColorPicker 使色盘手势与滚动共存
   const colorScrollRef = React.useRef<ScrollView>(null);
@@ -95,17 +89,9 @@ export function ElementContextMenu({
     }
   }, [visible, initialMode]);
 
-  if (!visible || !elementFrame) {
+  if (!visible) {
     return null;
   }
-
-  // 计算菜单位置：优先在元素上方，空间不足时放在下方
-  const menuWidth = Math.min(windowWidth - 40, 340);
-  const menuX = Math.max(20, Math.min(windowWidth - menuWidth - 20, elementFrame.x + elementFrame.width / 2 - menuWidth / 2));
-  const aboveY = elementFrame.y - 12;
-  const belowY = elementFrame.y + elementFrame.height + 12;
-  const estimatedMenuHeight = mode === "color" ? 480 : 260;
-  const menuY = aboveY - estimatedMenuHeight < 60 ? belowY : aboveY;
 
   const renderContent = () => {
     switch (mode) {
@@ -122,7 +108,6 @@ export function ElementContextMenu({
                   onPress={() => {
                     requestFont(font.id, true);
                     onChangeFont(font.id);
-                    onClose();
                   }}
                   style={[styles.listItem, element.fontStyle === font.id && styles.listItemActive]}>
                   <Text style={[styles.listItemText, { fontFamily: resolveFontFamily(font.id) }, element.fontStyle === font.id && styles.listItemTextActive]}>
@@ -165,7 +150,6 @@ export function ElementContextMenu({
                     key={color}
                     onPress={() => {
                       onChangeColor(color);
-                      onClose();
                     }}
                     style={[styles.presetSwatch, { backgroundColor: color }, element.color === color && styles.presetSwatchActive]}>
                     {element.color === color ? <Text style={styles.presetCheck}>✓</Text> : null}
@@ -188,22 +172,18 @@ export function ElementContextMenu({
   };
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* 半透明背景 —— 点击关闭 */}
-      <Pressable
-        onPress={onClose}
-        style={StyleSheet.absoluteFill}
-        testID="context-menu-backdrop"
-      />
-      <Animated.View
-        entering={FadeIn.duration(200).springify().damping(20)}
-        exiting={FadeOut.duration(150)}
-        style={[
-          styles.menuContainer,
-          { left: menuX, top: menuY, width: menuWidth },
-        ]}>
-        {renderContent()}
-      </Animated.View>
+    <View style={styles.menuContainer} testID="text-style-panel">
+      <View style={styles.panelTopbar}>
+        <Text style={styles.panelTitle}>文字样式</Text>
+        <Pressable
+          accessibilityLabel="收起样式面板"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.closeButton}>
+          <Text style={styles.closeButtonText}>完成</Text>
+        </Pressable>
+      </View>
+      {renderContent()}
     </View>
   );
 }
@@ -441,14 +421,40 @@ const sliderStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   menuContainer: {
     backgroundColor: "#FFFFFF",
+    borderColor: "#D9DED7",
     borderRadius: 16,
+    borderWidth: 1,
+    marginHorizontal: 20,
     paddingVertical: 4,
-    position: "absolute",
     shadowColor: "#000",
-    shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    zIndex: 20000,
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  panelTopbar: {
+    alignItems: "center",
+    borderBottomColor: "rgba(0,0,0,0.08)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  panelTitle: {
+    color: "#1C2C28",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  closeButton: {
+    backgroundColor: "#F7E2BF",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  closeButtonText: {
+    color: "#B76545",
+    fontSize: 12,
+    fontWeight: "800",
   },
   // Mode panels
   modePanel: {

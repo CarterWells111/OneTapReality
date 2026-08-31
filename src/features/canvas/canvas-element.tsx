@@ -42,6 +42,7 @@ type CanvasElementProps = {
   isSelected: boolean;
   selectionContext: string | undefined;
   stylePreview?: CanvasElementStylePreview;
+  onEdit?: (id: string) => void;
   onInteract?: (id: string) => void;
   onCrop?: (id: string) => void;
   onSelect: (id: string) => void;
@@ -87,11 +88,17 @@ export function calculateCanvasTransformFromAbsolute(
   const persistedY = clamp(finiteOr(element.y, 0), -0.95, 0.95);
   const persistedWidth = clamp(finiteOr(element.width, 0.03), 0.03, 1);
   const persistedHeight = clamp(finiteOr(element.height, 0.03), 0.03, 1);
+  const rawWidth = hasCanvasWidth && Number.isFinite(absoluteWidth)
+    ? absoluteWidth / canvasWidth
+    : persistedWidth;
+  const rawHeight = hasCanvasHeight && Number.isFinite(absoluteHeight)
+    ? absoluteHeight / canvasHeight
+    : persistedHeight;
   const width = hasCanvasWidth && Number.isFinite(absoluteWidth)
-    ? clamp(absoluteWidth / canvasWidth, 0.03, 1)
+    ? clamp(rawWidth, 0.03, persistedWidth >= 1 && rawWidth >= 1 ? 1 : 0.95)
     : persistedWidth;
   const height = hasCanvasHeight && Number.isFinite(absoluteHeight)
-    ? clamp(absoluteHeight / canvasHeight, 0.03, 1)
+    ? clamp(rawHeight, 0.03, persistedHeight >= 1 && rawHeight >= 1 ? 1 : 0.95)
     : persistedHeight;
   const x = hasCanvasWidth && Number.isFinite(absoluteX)
     ? clamp(absoluteX / canvasWidth, -0.95, 0.95)
@@ -106,10 +113,14 @@ export function calculateCanvasTransformFromAbsolute(
     height,
     rotation: finiteOr(absoluteRotation, finiteOr(element.rotation, 0)),
   };
-  // 角落拖拽不改变字体大小：只拉伸文本框，文字在框内自然重排
-  if (element.type === "text" && Number.isFinite(textFontScale) && Math.abs((textFontScale ?? 1) - 1) > 0.005) {
-    const scaleRatio = textFontScale as number;
-    if (scaleRatio > 0) {
+  // 文字缩放以最终已钳制的文本框计算，避免越界捏合后框体与字号比例跳变。
+  if (element.type === "text") {
+    const frameScale = Math.min(width / persistedWidth, height / persistedHeight);
+    const requestedScale = Number.isFinite(textFontScale) ? textFontScale as number : frameScale;
+    const scaleRatio = Number.isFinite(element.fontSize)
+      ? Math.min(requestedScale, frameScale)
+      : requestedScale;
+    if (scaleRatio > 0 && Math.abs(scaleRatio - 1) > 0.005) {
       patch.fontSize = Math.max(8, Math.round(finiteOr(element.fontSize, 16) * scaleRatio));
     }
   }
@@ -171,6 +182,7 @@ export function CanvasElement({
   isSelected,
   selectionContext,
   stylePreview,
+  onEdit,
   onInteract,
   onCrop,
   onSelect,
@@ -402,6 +414,10 @@ export function CanvasElement({
     const now = Date.now();
     if (lastPressAt.current !== null && now - lastPressAt.current <= 320) {
       lastPressAt.current = null;
+      if (isSelected) {
+        onEdit?.(element.id);
+        return;
+      }
       onSelect(element.id);
       return;
     }

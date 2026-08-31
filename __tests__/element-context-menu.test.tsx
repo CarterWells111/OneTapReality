@@ -68,13 +68,10 @@ const textElement: CanvasTextElement = {
   zIndex: 1,
 };
 
-const frame = { x: 100, y: 200, width: 200, height: 60 };
-
 function renderMenu(props: Partial<React.ComponentProps<typeof ElementContextMenu>> = {}) {
   return render(
     <ElementContextMenu
       element={textElement}
-      elementFrame={frame}
       onChangeColor={jest.fn()}
       onChangeFont={jest.fn()}
       onChangeSize={jest.fn()}
@@ -115,16 +112,24 @@ describe("ElementContextMenu", () => {
     expect(screen.queryByText("返回")).toBeNull();
   });
 
-  it("commits font selection and closes", () => {
+  it("renders as a stable inline panel instead of a canvas-covering modal", () => {
+    const screen = renderMenu({ initialMode: "color" });
+
+    expect(screen.getByTestId("text-style-panel")).toBeTruthy();
+    expect(screen.queryByTestId("context-menu-backdrop")).toBeNull();
+  });
+
+  it("commits font selection without remounting the style panel", () => {
     const onChangeFont = jest.fn();
     const onClose = jest.fn();
     const screen = renderMenu({ initialMode: "font", onChangeFont, onClose });
     fireEvent.press(screen.getByText("喜脉喜欢"));
     expect(onChangeFont).toHaveBeenCalledWith("XiMaiXiHuan");
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("text-style-panel")).toBeTruthy();
   });
 
-  it("commits a preset color once and closes", () => {
+  it("commits a preset color without remounting the style panel", () => {
     const onChangeColor = jest.fn();
     const onClose = jest.fn();
     const screen = renderMenu({ initialMode: "color", onChangeColor, onClose });
@@ -133,7 +138,8 @@ describe("ElementContextMenu", () => {
 
     expect(onChangeColor).toHaveBeenCalledTimes(1);
     expect(onChangeColor).toHaveBeenCalledWith("#1C2C28");
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("text-style-panel")).toBeTruthy();
   });
 
   it("keeps the menu open while typing into the size input (no auto-close)", () => {
@@ -154,7 +160,6 @@ describe("ElementContextMenu", () => {
     const screen = render(
       <ElementContextMenu
         element={textElement}
-        elementFrame={{ x: 20, y: 80, width: 120, height: 60 }}
         initialMode="size"
         onChangeColor={() => undefined}
         onChangeFont={() => undefined}
@@ -245,10 +250,10 @@ describe("ElementContextMenu", () => {
     expect(screen.getByLabelText("输入字号").props.value).toBe("2");
   });
 
-  it("closes via the dimmed backdrop press", () => {
+  it("closes via the inline panel close button", () => {
     const onClose = jest.fn();
     const screen = renderMenu({ initialMode: "font", onClose });
-    fireEvent.press(screen.getByTestId("context-menu-backdrop"));
+    fireEvent.press(screen.getByLabelText("收起样式面板"));
     expect(onClose).toHaveBeenCalled();
   });
 });

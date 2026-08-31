@@ -111,4 +111,25 @@ describe("calculateCanvasTransformFromAbsolute", () => {
     expect(calculateStickerTextStyle({ width: 0.28, height: 0.28 }, { width: 300, height: 400 }))
       .toEqual({ fontSize: 68, lineHeight: 80 });
   });
+
+  it("bases persisted text size on the clamped text frame instead of an out-of-bounds pinch value", () => {
+    const result = calculateCanvasTransformFromAbsolute(
+      {
+        type: "text",
+        x: 0.1,
+        y: 0.1,
+        width: 0.8,
+        height: 0.5,
+        rotation: 0,
+        fontSize: 20,
+      } as any,
+      30, 40, 400, 400, 0,
+      { width: 300, height: 400 },
+      2,
+    );
+
+    expect(result.width).toBe(0.95);
+    expect(result.height).toBe(0.95);
+    expect(result.fontSize).toBe(24);
+  });
 });
