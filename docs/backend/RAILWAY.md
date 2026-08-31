@@ -86,6 +86,7 @@ staging 域还必须部署同一 iOS 发布标识对应的 `/.well-known/apple-a
 外部 Beta 复用同一个隔离 staging Service，但必须在取得单独云端配置批准后增加以下服务端变量：
 
 ```env
+ALPHA_ALLOWED_EMAILS=
 GIFT_URL_ORIGIN=https://staging.onetapreality.com
 RELEASE_AUDIENCE=external-beta
 APPLE_REVIEW_ACCESS_ENABLED=true
@@ -94,6 +95,8 @@ APPLE_REVIEW_CODE=<受保护变量>
 APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
 APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 ```
+
+`ALPHA_ALLOWED_EMAILS` 必须未设置或为空，表示任意格式有效邮箱可以请求验证码；`GIFT_ADMIN_EMAILS 保持独立`，不得因开放登录而扩大开发者、NFC 初始化或管理员权限。若未来需要恢复受限环境，必须使用单独批准的环境与新决策，不得在仍服务外部 Beta 的同一 staging API 上恢复四人白名单。
 
 `APPLE_REVIEW_EMAIL`、`APPLE_REVIEW_CODE`、`APPLE_REVIEW_FIXTURE_SECRET` 和 `APPLE_REVIEW_CLAIM_TOKEN` 只存 Railway staging Secret 与 App Store Connect Review Notes，不得读取或复制到 Git、聊天、Issue、命令参数、截图或日志。production 的审核开关必须未设置或明确为 `APPLE_REVIEW_ACCESS_ENABLED=false`，并保持其他 `APPLE_REVIEW_*` 凭据未配置。
 

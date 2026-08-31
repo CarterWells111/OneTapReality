@@ -163,4 +163,25 @@ describe("1.1.2 external Beta release artifacts", () => {
     expect(qa).toContain("举报后立即对举报者隐藏");
     expect(qa).toContain("永久删除账号及云端数据");
   });
+
+  it("opens external-Beta staging login without widening privileged access", () => {
+    const envExample = read(".env.example");
+    const checklist = read("docs/EXECUTION-CHECKLIST.md");
+    const security = read("docs/SECURITY.md");
+    const railway = read("docs/backend/RAILWAY.md");
+    const alpha = read("docs/operations/ALPHA-STAGING.md");
+    const nfcLab = read("docs/operations/NFC-STAGING-LAB.md");
+    const rehearsal = read("docs/operations/REHEARSAL-RECORD.md");
+    const qa = read("docs/release/QA-CHECKLIST.md");
+
+    expect(envExample).toContain("Keep empty in active external-Beta staging and production");
+    expect(checklist).toContain("外部 Beta staging 对所有格式有效邮箱开放验证码登录");
+    expect(security).toContain("登录开放不授予管理员或礼品访问权限");
+    expect(railway).toContain("ALPHA_ALLOWED_EMAILS=");
+    expect(railway).toContain("GIFT_ADMIN_EMAILS 保持独立");
+    expect(alpha).toContain("外部 Beta 已取代本手册的邮箱白名单准入规则");
+    expect(nfcLab).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
+    expect(rehearsal).toContain("2026-08-06 的白名单结果是历史验收证据");
+    expect(qa).toContain("此前不在四人开发者名单的受控邮箱");
+  });
 });

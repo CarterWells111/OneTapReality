@@ -16,7 +16,7 @@ editor 对整册删除、移除成员或修改权限只能创建管理申请，�
 
 Railway 仅保留服务端变量：`DATABASE_URL`、`GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`RESEND_API_KEY`、`GIFT_EMAIL_FROM`、`GIFT_ADMIN_EMAILS`、`GIFT_CARD_CLEANUP_SECRET` 和 `R2_*`。`EXPO_PUBLIC_API_ORIGIN` 只允许公开 API origin，绝不包含秘密。维护端点仅接受 POST 与 `x-gift-maintenance-secret`；调用方是无存储绑定的 Cloudflare Workers Free 小时级 Cron，Worker Secret 与 Railway 的 `GIFT_CARD_CLEANUP_SECRET` 必须一致且不得提交到仓库。独立 Railway 定时服务已停用，成功的礼品写请求仅在维护逾期时执行受租约和预算限制的兜底维护。
 
-Alpha 环境还须使用独立的 `GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`DEVICE_TOKEN_PEPPER`、R2 凭据、清理密钥和管理员测试邮箱。`ALPHA_ALLOWED_EMAILS` 仅用于 staging 白名单；不在名单内的邮箱统一得到 `beta_invite_required`。`GIFT_SHARING_ENABLED=false` 会停止新验证码、认领、发布和礼品读取，管理员停用接口保持可用。
+外部 Beta staging 继续使用独立的 `GIFT_TOKEN_PEPPER`、`GIFT_AUTH_PEPPER`、`DEVICE_TOKEN_PEPPER`、R2 凭据、清理密钥和管理员测试邮箱，但 `ALPHA_ALLOWED_EMAILS` 保持未设置或空值，对所有格式有效邮箱开放验证码登录。登录开放不授予管理员或礼品访问权限：管理员仍由独立 `GIFT_ADMIN_EMAILS` 判定，礼品仍需 token、成员角色、激活状态与服务端权限检查。非空 `ALPHA_ALLOWED_EMAILS` 只保留给未来单独批准的受限环境；`GIFT_SHARING_ENABLED=false` 会停止新验证码、认领、发布和礼品读取，管理员停用接口保持可用。
 
 生产请求日志不得保留礼品 token 或查询字符串：`/gift/<token>` 与 `/api/gifts/<token>` 均记录为脱敏路径，日志仅保留时间、方法、状态码与延迟。
 

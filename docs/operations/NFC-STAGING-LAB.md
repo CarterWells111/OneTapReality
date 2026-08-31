@@ -6,7 +6,7 @@
 
 1. 确认 staging Railway 的 `GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com`，R2 bucket 为 `onetapreality-staging`。不得复制或改动 production 配置。
 2. 选择一个支持 `+` 别名投递的受控 base 邮箱。工具会派生 `+nfc-owner`、`+nfc-viewer`、`+nfc-editor`。
-3. 只在 staging `ALPHA_ALLOWED_EMAILS` 的现有值末尾追加三个派生地址；不得清空原有四个开发者邮箱，不得修改 production。等待 staging 重新部署并确认健康检查通过。
+3. staging 对所有格式有效邮箱开放验证码登录，三个 `+nfc-*` 派生地址无需追加或移除 `ALPHA_ALLOWED_EMAILS`。确认 `GIFT_ADMIN_EMAILS` 仍只包含获准开发者，不得修改 production。
 4. 在当前 PowerShell 会话设置下列值。不要写入 `.env`、文档、聊天或 shell 历史共享记录：
 
 ```powershell
@@ -38,9 +38,9 @@ $env:EXPO_PUBLIC_API_ORIGIN='https://api-staging.onetapreality.com'
 
 ## 清理与 PR 门禁
 
-测试完成后运行 `npm run nfc:test:prepare-pr`。固定顺序是：停用 bound 礼品、退休 unclaimed 卡、执行并核对 R2 清理、严格按 manifest 中的 card/gift ID 删除本批数据库记录。随后命令会暂停，等待负责人从 staging `ALPHA_ALLOWED_EMAILS` 移除三个 `+nfc-*` 地址。
+测试完成后运行 `npm run nfc:test:prepare-pr`。固定顺序是：停用 bound 礼品、退休 unclaimed 卡、执行并核对 R2 清理、严格按 manifest 中的 card/gift ID 删除本批数据库记录，然后删除本地 Lab 与 manifest 并执行只读 guard。账号登录是 staging 的持续能力，清理不得请求新验证码、修改 `ALPHA_ALLOWED_EMAILS` 或把开放登录误判为残留。
 
-移除并完成 staging 部署后按 Enter。工具会对三个邮箱逐一请求验证码，必须都返回 `403 beta_invite_required`；只有验证通过后才删除本地 Lab 和 manifest。任何 R2、数据库或白名单回滚失败都会保留 disabled 数据与 manifest，重新运行同一命令即可继续，不要手工删除 manifest。
+任何 R2、数据库或本地工件清理失败都会保留 disabled 数据与 manifest；重新运行同一命令继续，不要手工删除 manifest。
 
 最后运行：
 

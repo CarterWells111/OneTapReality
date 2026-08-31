@@ -1,5 +1,7 @@
 # Alpha staging 与 P0 运行手册
 
+> 当前状态：本手册记录已完成的内部 Alpha 隔离验收。2026-08-30 起，外部 Beta 已取代本手册的邮箱白名单准入规则；同一 staging API 的 `ALPHA_ALLOWED_EMAILS` 保持未设置或空值。历史步骤不得用于重新限制正在运行的外部 Beta。
+
 NFC 深链业务矩阵的本地生成、临时邮箱、清理和 PR 门禁见 `NFC-STAGING-LAB.md`；实体卡验收仍见 `IOS-NFC-CARD-TEST.md`。
 
 ## 访问边界
@@ -23,7 +25,7 @@ NFC 深链业务矩阵的本地生成、临时邮箱、清理和 PR 门禁见 `N
 
 - 在干净安装后运行 `npm run lint`、`npm run typecheck`、`npm run test:ci` 和 `npm run build:server`。
 - 在 iPhone 与三张 staging 实体卡上完成：写入、读回、锁屏碰卡、深链、验证码、认领、发布、只读访问、停用、R2 对象删除。
-- 确认 `ALPHA_ALLOWED_EMAILS` 仅含当前测试者，`GIFT_SHARING_ENABLED=true`，并且没有生产 URL、token、照片或数据库数据出现在测试记录中。
+- 历史 Alpha 验收曾确认 `ALPHA_ALLOWED_EMAILS` 仅含当时测试者；当前外部 Beta staging 以 `docs/EXECUTION-CHECKLIST.md` 的开放登录清单为准，`GIFT_SHARING_ENABLED=true`，并且没有生产 URL、token、照片或数据库数据出现在测试记录中。
 
 ## P0：立即停测
 

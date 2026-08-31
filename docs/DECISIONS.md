@@ -2,7 +2,7 @@
 
 ## 2026-08-30：外部 Beta staging 对所有有效邮箱开放验证码登录
 
-外部 TestFlight 已进入真实用户测试，继续只连接隔离的 staging API。为避免 App Store Connect 邀请名单与 Railway 邮箱白名单形成两套不同步的准入来源，staging 的账号登录改为对所有格式有效且可接收邮件的邮箱开放；`ALPHA_ALLOWED_EMAILS` 在当前 staging 与未来 production 均保持未设置或空值。现有服务端在该变量为空时跳过邀请名单检查，继续执行邮箱规范化、验证码单次使用、发送限流、验证失败限流、账号删除状态检查与 30 天会话规则。
+外部 TestFlight 已进入真实用户测试，继续只连接隔离的 staging API。为避免 App Store Connect 邀请名单与 Railway 邮箱白名单形成两套不同步的准入来源，staging 的账号登录改为对所有格式有效且可接收邮件的邮箱开放；`ALPHA_ALLOWED_EMAILS` 在当前 staging 与未来 production 均保持未设置或空值。现有服务端在该变量为空时跳过邀请名单检查，继续执行邮箱规范化、验证码单次使用、发送限流、验证失败限流、账号删除状态检查与 30 天会话规则。本决策取代此前 Alpha 阶段“staging 必须保留四人邮箱白名单”及 NFC Lab 临时追加/移除邮箱的当前执行规则；旧条目只保留为历史证据。
 
 - 登录开放不等于管理权限开放。`GIFT_ADMIN_EMAILS` 继续只包含获准开发者，NFC 初始化、管理员处置及其他管理能力仍由服务端独立授权。
 - 登录开放不等于礼品内容开放。礼品 token、owner/viewer/editor 成员关系、私有 R2 读取签名及停用状态继续决定礼品访问，普通登录账号不能枚举或读取未授权礼品。

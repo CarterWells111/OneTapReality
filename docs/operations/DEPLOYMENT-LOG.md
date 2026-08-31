@@ -52,3 +52,12 @@
 - 规模：未来一个月预计 10–20 位真实用户。
 - 运行手册：[`EXTERNAL-BETA-OBSERVATION.md`](EXTERNAL-BETA-OBSERVATION.md)。
 - 边界：本记录不授权新的构建、上传、部署、migration、维护 POST、只读角色、密码轮换或自动任务变更。
+
+## 2026-08-31：staging 开放邮箱验证码登录
+
+- 环境：staging
+- 服务：Railway API
+- 变更：仅移除 `ALPHA_ALLOWED_EMAILS`；不修改 `GIFT_ADMIN_EMAILS`、数据库、R2、Resend、EAS、TestFlight 或 production。
+- 状态：待发布负责人批准并执行。
+- 验证：执行后记录脱敏 health、受控非管理员邮箱登录和未授权礼品拒绝结果。
+- 回滚：恢复获批邮箱名单并重新部署；P0 时优先设置 `GIFT_SHARING_ENABLED=false`。

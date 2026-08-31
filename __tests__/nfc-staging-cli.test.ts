@@ -160,8 +160,9 @@ describe("NFC staging test CLI", () => {
     for (const command of ["nfc:test:seed", "nfc:test:inspect", "nfc:test:prepare-pr", "nfc:test:guard"]) {
       expect(runbook).toContain(command);
     }
-    expect(runbook).toContain("beta_invite_required");
-    expect(runbook).toContain("ALPHA_ALLOWED_EMAILS");
+    expect(runbook).toContain("对所有格式有效邮箱开放验证码登录");
+    expect(runbook).toContain("无需追加或移除 `ALPHA_ALLOWED_EMAILS`");
+    expect(runbook).not.toContain("必须都返回 `403 beta_invite_required`");
     expect(runbook).toContain("NDEF");
     for (const boundary of ["自动测试", "staging 模拟", "实体卡", "锁屏唤起"]) {
       expect(status).toContain(boundary);
