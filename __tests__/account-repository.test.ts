@@ -91,7 +91,7 @@ describe("account authentication repository", () => {
     } finally { await close(); }
   });
 
-  it("rate limits the twenty-first email issue across different addresses in one IP window", async () => {
+  it("atomically rate limits one of twenty-one concurrent email issues in the same IP window", async () => {
     const queries: string[] = [];
     const { db, close } = createBackendTestDatabase({ onQuery: (query) => queries.push(query) });
     try {
@@ -103,8 +103,8 @@ describe("account authentication repository", () => {
         issueExpiresAt: "2026-08-31T10:15:00.000Z",
       };
 
-      for (let index = 0; index < 20; index += 1) {
-        await expect(createAuthEmailCodeIfAllowed(db, {
+      const results = await Promise.all(Array.from({ length: 21 }, (_, index) => (
+        createAuthEmailCodeIfAllowed(db, {
           id: `issue-${index}`,
           email: `user-${index}@example.com`,
           codeHash: `hash-${index}`,
@@ -112,18 +112,11 @@ describe("account authentication repository", () => {
           expiresAt: "2026-08-31T10:06:00.000Z",
           rateLimitSince: "2026-08-31T09:46:00.000Z",
           ...issueScope,
-        })).resolves.toBe("created");
-      }
+        })
+      )));
 
-      await expect(createAuthEmailCodeIfAllowed(db, {
-        id: "issue-20",
-        email: "user-20@example.com",
-        codeHash: "hash-20",
-        createdAt: "2026-08-31T10:01:00.000Z",
-        expiresAt: "2026-08-31T10:06:00.000Z",
-        rateLimitSince: "2026-08-31T09:46:00.000Z",
-        ...issueScope,
-      })).resolves.toBe("rate_limited");
+      expect(results.filter((result) => result === "created")).toHaveLength(20);
+      expect(results.filter((result) => result === "rate_limited")).toHaveLength(1);
       await expect(db.select().from(authEmailCodes)).resolves.toHaveLength(20);
       await expect(db.select().from(authRateLimits)).resolves.toEqual([
         expect.objectContaining({ scopeHash: issueScope.issueScopeHash, attempts: 20 }),
