@@ -5,6 +5,7 @@ import { createAuthEmailCodeIfAllowed, deleteAuthEmailCodeById, isAccountActiveB
 import { createGiftEmailCode, normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { sendGiftVerificationEmail } from "../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse } from "../../../server/http/errors";
+import { getTrustedClientIp } from "../../../server/http/client-ip";
 import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
 
 export async function POST(request: Request): Promise<Response> {
@@ -31,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
       ? {}
       : {
           issueScopeHash: await hashAccessToken(
-            `issue-ip:${request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() || "unknown"}:${issueWindowStartedMs}`,
+            `issue-ip:${getTrustedClientIp(request.headers)}:${issueWindowStartedMs}`,
             pepper,
           ),
           issueWindowStartedAt: new Date(issueWindowStartedMs).toISOString(),

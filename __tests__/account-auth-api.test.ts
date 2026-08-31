@@ -48,13 +48,13 @@ describe("unified account authentication APIs", () => {
     hashAccessToken.mockResolvedValueOnce("opaque-issue-scope");
     const response = await request(new Request("http://localhost/api/auth/request", {
       method: "POST",
-      headers: { "x-forwarded-for": "203.0.113.8, 10.0.0.1" },
+      headers: { "x-real-ip": "2001:DB8:0:0:0:0:0:8", "x-forwarded-for": "198.51.100.91" },
       body: JSON.stringify({ email: "owner@example.com" }),
     }));
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ email: "owner@example.com" });
     const { createAuthEmailCodeIfAllowed } = jest.requireMock("../src/server/auth/repository") as { createAuthEmailCodeIfAllowed: jest.Mock };
-    expect(hashAccessToken).toHaveBeenCalledWith(expect.stringMatching(/^issue-ip:203\.0\.113\.8:\d+$/u), "pepper");
+    expect(hashAccessToken).toHaveBeenCalledWith(expect.stringMatching(/^issue-ip:2001:db8::8:\d+$/u), "pepper");
     expect(createAuthEmailCodeIfAllowed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       email: "owner@example.com",
       rateLimitSince: expect.any(String),
@@ -62,7 +62,26 @@ describe("unified account authentication APIs", () => {
       issueWindowStartedAt: expect.any(String),
       issueExpiresAt: expect.any(String),
     }));
-    expect(JSON.stringify(createAuthEmailCodeIfAllowed.mock.calls[0]?.[1])).not.toContain("203.0.113.8");
+    expect(JSON.stringify(createAuthEmailCodeIfAllowed.mock.calls[0]?.[1])).not.toContain("2001:db8::8");
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["invalid", "not-an-ip"],
+  ])("uses the shared unknown issue bucket when x-real-ip is %s even if x-forwarded-for is present", async (_case, realIp) => {
+    const headers = new Headers({ "x-forwarded-for": "198.51.100.92" });
+    if (realIp) headers.set("x-real-ip", realIp);
+
+    const response = await request(new Request("http://localhost/api/auth/request", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: "owner@example.com" }),
+    }));
+
+    expect(response.status).toBe(202);
+    const { hashAccessToken } = jest.requireMock("../src/server/auth/device-auth") as { hashAccessToken: jest.Mock };
+    expect(hashAccessToken).toHaveBeenCalledWith(expect.stringMatching(/^issue-ip:unknown:\d+$/u), "pepper");
+    expect(hashAccessToken.mock.calls.flat()).not.toContain(expect.stringContaining("198.51.100.92"));
   });
 
   it("returns 429 when the atomic login-code issue reaches its window limit", async () => {
@@ -133,12 +152,36 @@ describe("unified account authentication APIs", () => {
 
     const response = await verify(new Request("http://localhost/api/auth/verify", {
       method: "POST",
-      headers: { "x-forwarded-for": "203.0.113.5" },
+      headers: { "x-real-ip": "203.0.113.5", "x-forwarded-for": "198.51.100.93" },
       body: JSON.stringify({ email: "owner@example.com", code: "123456" }),
     }));
 
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("900");
+    expect(verifyAccountEmailCode).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      ipScopeHash: expect.stringMatching(/^hash:verify-ip:203\.0\.113\.5:\d+$/u),
+    }));
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["invalid", "203.0.113.999"],
+  ])("uses the shared unknown verification bucket when x-real-ip is %s even if x-forwarded-for is present", async (_case, realIp) => {
+    const headers = new Headers({ "x-forwarded-for": "198.51.100.94" });
+    if (realIp) headers.set("x-real-ip", realIp);
+
+    const response = await verify(new Request("http://localhost/api/auth/verify", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: "owner@example.com", code: "123456" }),
+    }));
+
+    expect(response.status).toBe(201);
+    const { verifyAccountEmailCode } = jest.requireMock("../src/server/auth/repository") as { verifyAccountEmailCode: jest.Mock };
+    expect(verifyAccountEmailCode).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      ipScopeHash: expect.stringMatching(/^hash:verify-ip:unknown:\d+$/u),
+    }));
+    expect(JSON.stringify(verifyAccountEmailCode.mock.calls[0]?.[1])).not.toContain("198.51.100.94");
   });
 
   it("reports the current user and revokes their session on logout", async () => {

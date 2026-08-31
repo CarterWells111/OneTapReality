@@ -185,7 +185,7 @@ describe("1.1.2 external Beta release artifacts", () => {
     expect(security).toContain("登录开放不授予管理员或礼品访问权限");
     expect(security).toContain("客户端 IP 的固定 15 分钟窗口最多签发 20 封");
     expect(railway).toContain("ALPHA_ALLOWED_EMAILS=");
-    expect(railway).toContain("GIFT_ADMIN_EMAILS 保持独立");
+    expect(railway).toContain("`GIFT_ADMIN_EMAILS` 保持独立");
     expect(railway).toContain("确认以下配置状态");
     expect(railway).not.toContain("取得单独云端配置批准后增加以下服务端变量");
     expect(railway).not.toContain("受邀测试者的 `ALPHA_ALLOWED_EMAILS`");

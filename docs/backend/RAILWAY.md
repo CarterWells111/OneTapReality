@@ -96,7 +96,7 @@ APPLE_REVIEW_FIXTURE_SECRET=<43 位 base64url 受保护变量>
 APPLE_REVIEW_CLAIM_TOKEN=<43 位 base64url 受保护变量>
 ```
 
-`ALPHA_ALLOWED_EMAILS` 必须未设置或为空，表示任意格式有效邮箱可以请求验证码；`GIFT_ADMIN_EMAILS 保持独立`，不得因开放登录而扩大开发者、NFC 初始化或管理员权限。若未来需要恢复受限环境，必须使用单独批准的环境与新决策，不得在仍服务外部 Beta 的同一 staging API 上恢复四人白名单。
+`ALPHA_ALLOWED_EMAILS` 必须未设置或为空，表示任意格式有效邮箱可以请求验证码；`GIFT_ADMIN_EMAILS` 保持独立，不得因开放登录而扩大开发者、NFC 初始化或管理员权限。若未来需要恢复受限环境，必须使用单独批准的环境与新决策，不得在仍服务外部 Beta 的同一 staging API 上恢复四人白名单。
 
 紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移到另一个单独批准的受限环境并记录新决策后，才允许配置非空 `ALPHA_ALLOWED_EMAILS`。
 

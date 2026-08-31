@@ -9,6 +9,7 @@
 - 不接入 App Store Connect tester API，不保存或同步 TestFlight 测试者邮箱，不新增 Apple API Key、定时任务、Webhook、支付、分析或其他第三方服务。
 - `beta_invite_required` 错误契约与客户端明确文案保留，供将来独立的受限环境显式配置 allowlist 时使用；当前外部 Beta staging 正常流程不再返回该错误。网络、邮件发送、输入校验与频率限制错误继续使用各自的稳定错误码和用户文案。
 - 非 Apple Review 的邮件验证码签发除每个规范化邮箱 15 分钟最多 5 次外，再按客户端 IP 的固定 15 分钟窗口限制为最多 20 次。服务端只在既有 `auth_rate_limits` 中保存由 `GIFT_AUTH_PEPPER` 哈希后的窗口 scope，不保存原始 IP；发信失败仅在本次验证码记录确实删除后原子释放一次签发占用。达到任一签发上限均返回现有 `email_code_rate_limited`，并附带 `Retry-After: 900`。Apple Review 固定码不发送邮件，因此不占邮件签发 IP 配额。本安全边界不新增数据库表、migration、第三方服务或客户端秘密。
+- Railway 公网入口只以平台覆盖的 `X-Real-IP` 作为客户端 IP 信任边界；`X-Forwarded-For` 可由客户端伪造，认证接口不得读取或回退到该值。服务端 trim 并规范化合法 IPv4/IPv6；可信头缺失或非法时 fail-closed 到共用 `unknown` 限流桶。原始 IP 只在请求内作为 pepper 哈希输入，绝不写入数据库、日志或响应。
 - `GIFT_SHARING_ENABLED=false` 仍是立即停测开关。仍服务 external Beta 的同一 staging 不得直接恢复四人 `ALPHA_ALLOWED_EMAILS`；只有先暂停 external Beta，或迁移到另一个单独批准的受限环境并记录新决策后，才允许恢复受控 allowlist。真实邮箱、验证码、会话、API Key 和完整名单不得进入 Git、日志、Issue、截图或聊天。
 
 完整设计见 `docs/superpowers/specs/2026-08-30-staging-open-email-auth-design.md`。

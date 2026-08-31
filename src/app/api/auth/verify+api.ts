@@ -6,6 +6,7 @@ import { isGiftAdminEmail } from "../../../server/gifts/admin-auth";
 import { getServerDatabase } from "../../../server/db/client";
 import { normalizeGiftEmail } from "../../../server/gifts/email-auth";
 import { ApiError, errorResponse } from "../../../server/http/errors";
+import { getTrustedClientIp } from "../../../server/http/client-ip";
 import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "../../../server/gifts/alpha-safety";
 
 export async function POST(request: Request): Promise<Response> {
@@ -23,13 +24,13 @@ export async function POST(request: Request): Promise<Response> {
     const db = getServerDatabase();
     const accessToken = createAccessToken();
     const sessionTokenHash = await hashAccessToken(accessToken, authPepper);
-    const forwardedFor = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() || "unknown";
+    const clientIp = getTrustedClientIp(request.headers);
     const windowStartedMs = Math.floor(nowDate.getTime() / (15 * 60 * 1000)) * 15 * 60 * 1000;
     const result = await verifyAccountEmailCode(db, {
       email,
       codeHash: await hashAccessToken(code, authPepper),
       now,
-      ipScopeHash: await hashAccessToken(`verify-ip:${forwardedFor}:${windowStartedMs}`, authPepper),
+      ipScopeHash: await hashAccessToken(`verify-ip:${clientIp}:${windowStartedMs}`, authPepper),
       ipWindowStartedAt: new Date(windowStartedMs).toISOString(),
       ipExpiresAt: new Date(windowStartedMs + 15 * 60 * 1000).toISOString(),
       session: {
