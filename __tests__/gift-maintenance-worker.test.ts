@@ -122,8 +122,15 @@ describe("gift maintenance Worker", () => {
     const config = readFileSync(join(process.cwd(), "workers/gift-maintenance/wrangler.toml"), "utf8");
 
     expect(config).toContain('crons = ["0 * * * *"]');
-    expect(config).toContain("MAINTENANCE_ENDPOINT");
-    expect(config).not.toMatch(/MAINTENANCE_SECRET\s*=/u);
+    expect(config).toContain(
+      'MAINTENANCE_ENDPOINT = "https://api.onetapreality.com/api/internal/gift-maintenance"',
+    );
+    expect(config).toContain(
+      'STAGING_MAINTENANCE_ENDPOINT = "https://api-staging.onetapreality.com/api/internal/gift-maintenance"',
+    );
+    expect(config).not.toMatch(
+      /(?:^|\n)\s*(?:MAINTENANCE_SECRET|STAGING_MAINTENANCE_SECRET)\s*=/u,
+    );
     expect(config).not.toMatch(/r2_buckets|kv_namespaces|d1_databases|durable_objects|queues/iu);
   });
 });
