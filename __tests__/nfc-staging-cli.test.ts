@@ -146,6 +146,9 @@ describe("NFC staging test CLI", () => {
     expect(packageJson.scripts["nfc:test:inspect"]).toContain("inspect");
     expect(packageJson.scripts["nfc:test:prepare-pr"]).toContain("prepare-pr");
     expect(packageJson.scripts["nfc:test:guard"]).toContain("guard");
+    const runner = require("node:fs").readFileSync(cliPath, "utf8");
+    expect(runner).not.toContain("verifyAllowlistRollback");
+    expect(runner).not.toContain("Remove the three +nfc aliases");
     const ignore = require("node:fs").readFileSync(join(process.cwd(), ".gitignore"), "utf8");
     expect(ignore).toContain("/src/app/nfc-lab-local.tsx");
     expect(ignore).toContain("/.data/nfc-staging/active.json");
