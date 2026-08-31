@@ -318,7 +318,7 @@ git commit -m "docs: open external beta staging login"
 
 - [ ] **Step 1: Record and test the abuse-control boundary**
 
-Record that non-Apple-Review email delivery keeps the existing five issues per normalized email in 15 minutes and adds twenty issues per hashed client-IP fixed 15-minute window. Only the `GIFT_AUTH_PEPPER` hash of `issue-ip:<first-forwarded-ip-or-unknown>:<window-start>` may reach `auth_rate_limits`; raw IP addresses must not be persisted. Add failing repository and route tests for cross-email exhaustion, opaque scope transfer, delivery-failure release, `Retry-After: 900`, and the Apple Review exemption.
+Record that non-Apple-Review email delivery keeps the existing five issues per normalized email in 15 minutes and adds twenty issues per hashed client-IP fixed 15-minute window. Railway authentication routes trust and validate only `X-Real-IP`; they must not read or fall back to client-spoofable `X-Forwarded-For`, and a missing or invalid trusted header uses the shared `unknown` bucket. Only the `GIFT_AUTH_PEPPER` hash of `issue-ip:<normalized-x-real-ip-or-unknown>:<window-start>` may reach `auth_rate_limits`; raw IP addresses must not be persisted. Add failing repository and route tests for cross-email exhaustion, opaque scope transfer, delivery-failure release, `Retry-After: 900`, and the Apple Review exemption.
 
 - [ ] **Step 2: Implement atomic issue and release accounting**
 
