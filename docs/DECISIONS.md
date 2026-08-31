@@ -759,6 +759,6 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 
 - 既有 `onetap-gift-maintenance` Worker 保持一个小时级 Cron；每次 scheduled invocation 固定先调用 production，再调用 external-Beta staging 的同契约维护端点，不创建第二个 Worker、Cron、Railway 服务、数据库、队列、监控或付费绑定。
 - production 继续使用 `MAINTENANCE_ENDPOINT` / `MAINTENANCE_SECRET`，staging 使用独立的 `STAGING_MAINTENANCE_ENDPOINT` / `STAGING_MAINTENANCE_SECRET`；端点必须为 HTTPS，两个 Secret 只存在于 Cloudflare Worker secrets，不进入 Git、客户端、日志或错误文本。
-- 任一目标失败时仍必须尝试另一目标；两端完成尝试后才以脱敏的目标标签和固定失败类别汇总失败。Worker 继续禁用平台重试且不实现内部重试，不读取或记录维护响应正文。
+- 任一目标失败时仍必须尝试另一目标；两端完成尝试后才以脱敏的目标标签和固定失败类别汇总失败。每个目标从发起请求到响应清理设 25 秒硬上限，并拒绝 HTTP 重定向；超时归类为固定的 `network_error`。Worker 继续禁用平台重试且不实现内部重试，不读取或记录维护响应正文。
 - 本地实现先以测试覆盖调用顺序、密钥隔离、单端失败继续、双端汇总、缺失绑定、HTTPS 校验及单 Cron/无付费绑定约束；部署、写入 staging Secret、修改 Cloudflare 配置和真实维护调用仍需分别批准。
 - 该方案每小时只增加一个 staging 子请求，约每月 744 次，不增加 Worker invocation 或新计费类别；如需付费计划、新服务或新绑定，立即停止并重新决策。完整设计见 `docs/superpowers/specs/2026-08-31-worker-dual-environment-maintenance-design.md`。

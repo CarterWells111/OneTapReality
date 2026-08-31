@@ -27,6 +27,7 @@ describe("gift maintenance Worker", () => {
         {
           method: "POST",
           redirect: "error",
+          signal: expect.any(AbortSignal),
           headers: { "x-gift-maintenance-secret": environment.MAINTENANCE_SECRET },
         },
       ],
@@ -35,6 +36,7 @@ describe("gift maintenance Worker", () => {
         {
           method: "POST",
           redirect: "error",
+          signal: expect.any(AbortSignal),
           headers: { "x-gift-maintenance-secret": environment.STAGING_MAINTENANCE_SECRET },
         },
       ],
@@ -87,6 +89,40 @@ describe("gift maintenance Worker", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("times out a stalled production request and still maintains staging", async () => {
+    const fetcher = jest.fn((input: string | URL | Request) => {
+      if (input === environment.MAINTENANCE_ENDPOINT) {
+        return new Promise<Response>((resolve) => {
+          setTimeout(() => resolve(new Response(null, { status: 200 })), 30);
+        });
+      }
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+
+    await expect(runScheduledMaintenance(environment, fetcher, 1)).rejects.toThrow(
+      "Maintenance targets failed: production=network_error",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("times out stalled response cleanup and still maintains staging", async () => {
+    const slowBody = new ReadableStream({
+      cancel: () =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 30);
+        }),
+    });
+    const fetcher = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(slowBody, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    await expect(runScheduledMaintenance(environment, fetcher, 1)).rejects.toThrow(
+      "Maintenance targets failed: production=network_error",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ["missing production endpoint", { ...environment, MAINTENANCE_ENDPOINT: "" }, "production=missing_endpoint"],
     ["missing production secret", { ...environment, MAINTENANCE_SECRET: "" }, "production=missing_secret"],
@@ -110,13 +146,18 @@ describe("gift maintenance Worker", () => {
   });
 
   it("disables platform retries before making the hourly request", async () => {
-    const noRetry = jest.fn();
-    const fetcher = jest.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+    const events: string[] = [];
+    const noRetry = jest.fn(() => events.push("noRetry"));
+    const fetcher = jest.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      events.push("fetch");
+      return new Response(null, { status: 200 });
+    });
 
     await worker.scheduled({ noRetry }, environment);
 
     expect(noRetry).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(["noRetry", "fetch", "fetch"]);
     fetcher.mockRestore();
   });
 

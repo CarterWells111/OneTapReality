@@ -35,4 +35,16 @@ describe("gift maintenance operations documentation", () => {
     expect(coordination).toContain("0014_database_phase2.sql");
     expect(coordination).not.toContain("旧表 `gift_email_codes` / `gift_sessions` 是否清理？ | **暂时保留**");
   });
+
+  it("documents dual-environment maintenance and a staging-aware rollback", () => {
+    const runbook = read("docs/operations/GIFT-MAINTENANCE.md");
+
+    expect(runbook).toContain("production 与 external-Beta staging");
+    expect(runbook).toContain("STAGING_MAINTENANCE_SECRET");
+    expect(runbook).toContain("每小时两个 POST");
+    expect(runbook).toContain("单目标 25 秒");
+    expect(runbook).toContain("两端均尝试");
+    expect(runbook).toContain("staging 请求兜底");
+    expect(runbook).not.toContain("Worker 每小时只发送一次 POST");
+  });
 });

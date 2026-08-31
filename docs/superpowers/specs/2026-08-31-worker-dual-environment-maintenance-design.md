@@ -27,10 +27,11 @@ For each target in the fixed production-then-staging order, the Worker will:
 
 1. confirm that the endpoint and secret bindings are present and non-empty;
 2. parse the endpoint and require the `https:` protocol;
-3. issue one `POST` with only the existing `x-gift-maintenance-secret` header;
-4. cancel the response body without reading or logging it;
-5. treat every non-2xx response as a target failure;
-6. record only a sanitized failure classification and continue to the next target.
+3. issue one `POST` with only the existing `x-gift-maintenance-secret` header, reject redirects, and attach an abort signal;
+4. enforce a 25-second target deadline covering both the request and response cleanup;
+5. cancel the response body without reading or logging it;
+6. treat every non-2xx response as a target failure;
+7. record only a sanitized failure classification and continue to the next target.
 
 After the second target, the invocation succeeds only when both targets succeeded. A configuration or request failure for one environment must not prevent the other environment from being attempted.
 
@@ -51,6 +52,7 @@ Both secret bindings are required for a healthy scheduled invocation. A Wrangler
 - A staging failure does not undo a successful production request.
 - HTTP failures are reported by target label and status only.
 - Network and configuration failures use fixed sanitized categories and do not interpolate raw exception messages.
+- A request or response cleanup that exceeds the 25-second per-target deadline is aborted and reported as `network_error`; it cannot prevent the next target from being attempted.
 - Cloudflare platform retries remain disabled and the Worker performs no retry loop.
 - Maintenance endpoint idempotency remains the server's responsibility; this change does not alter database leases, batch limits, retention rules, or R2 deletion behavior.
 
@@ -77,6 +79,7 @@ Tests will be written before implementation and will cover:
 - one or two failures produce one sanitized aggregate failure after both attempts;
 - missing or empty bindings and non-HTTPS endpoints fail only their target and never expose values;
 - response bodies are cancelled and never read;
+- stalled requests and stalled response cleanup time out per target without suppressing the next target;
 - the Worker exposes only `scheduled`, disables platform retries, and keeps one hourly trigger;
 - `wrangler.toml` contains both endpoint variables, contains neither secret, and has no paid storage or queue binding.
 
