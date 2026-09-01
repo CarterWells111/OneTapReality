@@ -40,6 +40,27 @@ test("provides the marketing, support, and privacy routes Apple requires", () =>
   assert.match(support, /停用礼品/);
 });
 
+test("publishes the first iOS external-test guide with a local WeChat group image", () => {
+  assert.equal(existsSync(join(websiteRoot, "beta", "index.html")), true);
+  assert.equal(existsSync(join(websiteRoot, "assets", "beta", "wechat-group-2026-09-08.jpg")), true);
+
+  const marketing = readWebsiteFile("index.html");
+  const beta = readWebsiteFile("beta/index.html");
+
+  assert.match(marketing, /href="beta\/"[^>]*>内测说明<\/a>/);
+  assert.match(beta, /第一批 iOS 用户外部测试/);
+  assert.match(beta, /NFC 功能已完成验证/);
+  assert.match(beta, /第一批 NFC 纪念品已生产/);
+  assert.match(beta, /贴纸、相框与背景素材已实现/);
+  assert.match(beta, /城市打卡与足迹地图已实现/);
+  assert.match(beta, /操作步骤/);
+  assert.match(beta, /iPhone 型号与 iOS 版本/);
+  assert.match(beta, /不要在群内发送登录验证码、访问令牌或其他敏感信息/);
+  assert.match(beta, /assets\/beta\/wechat-group-2026-09-08\.jpg/);
+  assert.match(beta, /有效期至 9 月 8 日/);
+  assert.doesNotMatch(beta, /https?:\/\//i);
+});
+
 test("does not market unavailable payments or cloud sync as current features", () => {
   const content = [readWebsiteFile("index.html"), readWebsiteFile("support/index.html"), readWebsiteFile("privacy/index.html")].join("\n");
 
@@ -66,6 +87,8 @@ test("builds the static website into the server worker for reliable hosting", ()
   assert.match(buildScript, /"\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/support\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /"\/privacy\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
+  assert.match(buildScript, /Copy-Item[^\n]+"beta"/);
+  assert.match(buildScript, /"\/beta\/"\s*=\s*\(\[System\.IO\.File\]::ReadAllText/);
   assert.match(buildScript, /ConvertTo-Json -InputObject \$pages/);
   assert.match(buildScript, /ConvertTo-Json -InputObject \(\[System\.IO\.File\]::ReadAllText/);
 });
@@ -100,6 +123,17 @@ test("bundles the carousel script and local product images into worker-served st
     const supportResponse = await worker.fetch(new Request("https://onetapreality.com/support/"));
     assert.equal(supportResponse.status, 200);
     assert.match(await supportResponse.text(), /support@onetapreality\.com/);
+
+    const betaResponse = await worker.fetch(new Request("https://onetapreality.com/beta/"));
+    assert.equal(betaResponse.status, 200);
+    assert.match(await betaResponse.text(), /第一批 iOS 用户外部测试/);
+
+    const betaImageResponse = await worker.fetch(
+      new Request("https://onetapreality.com/assets/beta/wechat-group-2026-09-08.jpg"),
+    );
+    assert.equal(betaImageResponse.status, 200);
+    assert.match(betaImageResponse.headers.get("content-type"), /^image\/jpeg/);
+    assert.ok((await betaImageResponse.arrayBuffer()).byteLength > 0);
 
     const activateResponse = await worker.fetch(new Request("https://onetapreality.com/activate"));
     assert.equal(activateResponse.status, 200);
@@ -168,7 +202,7 @@ test("serves a token-safe App Link fallback only for supported paths", () => {
 test("uses release-ready public wording without false local-only claims or purchase calls to action", () => {
   const content = [readWebsiteFile("index.html"), readWebsiteFile("support/index.html"), readWebsiteFile("privacy/index.html")].join("\n");
 
-  for (const term of ["内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟"]) {
+  for (const term of ["试用", "TestFlight", "实验", "演示", "模拟"]) {
     assert.doesNotMatch(content, new RegExp(term, "i"));
   }
 
@@ -325,12 +359,7 @@ test("keeps the imported product story local while retaining every source visual
   assert.match(marketing, /把“能看”变成“好看”/);
   assert.match(marketing, /目前任务：<\/span>联网/);
 
-  for (const heading of [
-    "City · Map & Archives 城市页面",
-    "Footprint Map · City Light Points 足迹地图",
-    "My · Archive & Settings 我的页面",
-    "Stickers · Frames · Backgrounds 素材装饰库",
-  ]) {
+  for (const heading of ["My · Archive & Settings 我的页面"]) {
     assert.match(
       marketing,
       new RegExp(`${heading.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}[\\s\\S]{0,800}未来规划 / 概念展示`),
@@ -348,6 +377,32 @@ test("keeps the imported product story local while retaining every source visual
 
   assert.doesNotMatch(marketing, /data:image\//i);
   assert.doesNotMatch(marketing, /https?:\/\//i);
+});
+
+test("marks implemented beta capabilities as current while preserving unavailable boundaries", () => {
+  const marketing = readWebsiteFile("index.html");
+
+  for (const implementedClaim of [
+    "城市打卡与足迹地图已实现",
+    "贴纸、相框与背景素材已实现",
+    "NFC 功能已完成验证",
+    "第一批 NFC 纪念品已生产",
+  ]) {
+    assert.match(marketing, new RegExp(implementedClaim));
+  }
+
+  for (const unavailableBoundary of [
+    "购买和订单服务尚未开放",
+    "个人档案中心、旅行数据统计与设置管理尚未",
+    "未开放实体商品、订单、配送或支付",
+    "合作愿景",
+  ]) {
+    assert.match(marketing, new RegExp(unavailableBoundary));
+  }
+
+  assert.doesNotMatch(marketing, /城市地图[^。]{0,80}尚未在当前 App 中实现/);
+  assert.doesNotMatch(marketing, /足迹地图[^。]{0,80}并非当前 App 功能/);
+  assert.doesNotMatch(marketing, /贴纸、相框、背景素材库[^。]{0,80}尚未在当前 App 中提供/);
 });
 
 test("styles the product story as a responsive paper carousel without changing shared pages", () => {

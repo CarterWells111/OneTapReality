@@ -18,6 +18,7 @@ Copy-Item -LiteralPath (Join-Path $siteRoot "product-carousel.js") -Destination 
 Copy-Item -LiteralPath (Join-Path $siteRoot "assets") -Destination (Join-Path $outputRoot "assets") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "support") -Destination (Join-Path $outputRoot "support") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "privacy") -Destination (Join-Path $outputRoot "privacy") -Recurse
+Copy-Item -LiteralPath (Join-Path $siteRoot "beta") -Destination (Join-Path $outputRoot "beta") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot ".well-known") -Destination (Join-Path $outputRoot ".well-known") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "open-app") -Destination (Join-Path $outputRoot "open-app") -Recurse
 Copy-Item -LiteralPath (Join-Path $siteRoot "worker\\route.mjs") -Destination (Join-Path $outputRoot "server\\route.mjs")
@@ -42,6 +43,8 @@ $pages = @{
   "/support/index.html" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "support\\index.html")))
   "/privacy/" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "privacy\\index.html")))
   "/privacy/index.html" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "privacy\\index.html")))
+  "/beta/" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "beta\\index.html")))
+  "/beta/index.html" = ([System.IO.File]::ReadAllText((Join-Path $siteRoot "beta\\index.html")))
 }
 
 $contentTypes = @{
