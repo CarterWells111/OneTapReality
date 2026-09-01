@@ -383,4 +383,3 @@ Open or locally inspect the generated `/beta/` page at desktop and narrow mobile
 - [ ] **Step 5: Request final code review**
 
 Invoke `superpowers:requesting-code-review`, address any validated findings through new failing tests first, rerun affected checks, and commit fixes separately.
-
