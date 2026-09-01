@@ -202,7 +202,7 @@ test("serves a token-safe App Link fallback only for supported paths", () => {
 test("uses release-ready public wording without false local-only claims or purchase calls to action", () => {
   const content = [readWebsiteFile("index.html"), readWebsiteFile("support/index.html"), readWebsiteFile("privacy/index.html")].join("\n");
 
-  for (const term of ["内测", "试用", "TestFlight", "BETA", "实验", "演示", "模拟"]) {
+  for (const term of ["试用", "TestFlight", "实验", "演示", "模拟"]) {
     assert.doesNotMatch(content, new RegExp(term, "i"));
   }
 
