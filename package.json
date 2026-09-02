@@ -85,6 +85,7 @@
     "build:server": "expo export --platform web --no-ssg",
     "start:server": "node --require dotenv/config server.cjs",
     "verify:backend": "node scripts/verify-backend.cjs",
+    "verify:public-site": "node scripts/verify-public-site.cjs",
     "check:lockfile": "node scripts/check-release-lockfile.cjs",
     "beta:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile beta-external",
     "alpha:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile alpha",
