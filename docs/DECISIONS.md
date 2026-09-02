@@ -71,6 +71,8 @@ NFC 礼品的账号、认领、首次激活、共享相册和停用回归使用�
 
 生产 API 迁移至 Railway 香港优先、新加坡备选区域时，必须保留已有 PostgreSQL 数据、现有 Cloudflare R2 bucket/object、设备与账号会话以及 NFC 礼品 token。新增 `API_WRITE_FREEZE` 统一阻断 `/api/*` 的写请求；最终备份前开启冻结，恢复并校验新数据库后再切换稳定 API 域名。新区域接收写入后，禁止直接把 DNS 指向旧数据库；回滚须先冻结新区域并将其最新数据恢复到回滚目标。旧环境至少只读保留 7 天。本阶段不引入中国大陆云、备案或新的第三方服务；所有 Railway、R2、DNS、secret 和生产操作仍需发布负责人逐项批准。
 
+Railway Hobby 不提供托管备份或 PITR，因此本次采用发布负责人控制的本地加密逻辑备份：只在目标 PostgreSQL 尚未接收生产写入时，使用 `pg_dump` 自定义格式导出、`pg_restore --list` 验证、恢复至候选数据库并运行迁移完整性校验。连接串仅在发布负责人本机的受保护环境变量中短暂提供，绝不出现在仓库、终端回显、聊天、Issue、截图或部署变量中。没有一次成功的候选恢复演练，不得开启最终写冻结或切换 DNS。
+
 ## 2026-08-17：产品与原生发布范围收敛为 iPhone / iOS
 
 OneTapReality 当前及可预见计划仅支持 iPhone / iOS，不再把 Android 作为后续 Backlog 或待重新评估平台。本决策取代此前“第 3–4 周重新评估 Android”、保留 Android package、Android App Links 与 Android development build 的旧规则。
