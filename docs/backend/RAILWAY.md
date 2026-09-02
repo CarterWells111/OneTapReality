@@ -75,6 +75,10 @@ EXPO_PUBLIC_API_ORIGIN=https://your-service.up.railway.app
 
 然后重新构建 App。该值会进入客户端 bundle，因此只能是公开 HTTPS origin；它不应出现在 Railway 后端 Service。打开 App 的“设置 → 后端实验”，点击“检查后端连接”，显示“后端连接正常”即完成客户端接入验证。
 
+## 生产区域迁移写冻结
+
+`API_WRITE_FREEZE=false` 是默认值。仅在 production release owner 已批准的数据保持迁移窗口内，才可临时改为 `true`；启用后 Express 会拒绝所有 `/api/*` 的 `POST`、`PUT`、`PATCH` 与 `DELETE`，并返回 `503 maintenance_in_progress`，而 health 与所有读请求继续可用。新区域必须在 Railway 控制台安全录入连续性所需 peppers 和清理密钥，绝不在仓库或命令行显示其值。完整备份、切换、观察与回滚顺序见 [生产区域迁移运行手册](../operations/PRODUCTION-REGIONAL-MIGRATION.md)。
+
 ## Alpha staging（历史）
 
 内部 Alpha 曾要求独立 Railway Service、PostgreSQL 数据库与私有 R2 bucket，不能复用生产数据库、bucket、peppers 或管理员名单；当时使用受邀测试邮箱的非空 allowlist。该段只保留为历史证据，不是当前 external-beta 的操作指令。当前同一个隔离 staging Service 的登录配置以紧接的 External Beta staging 段为准。EAS `alpha` profile 仍只注入 `https://api-staging.onetapreality.com`。

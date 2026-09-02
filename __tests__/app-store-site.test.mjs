@@ -7,12 +7,50 @@ import { pathToFileURL } from "node:url";
 import vm from "node:vm";
 import test from "node:test";
 import { resolveSitePage } from "../website/worker/route.mjs";
+import publicSiteVerifier from "../scripts/verify-public-site.cjs";
 
 const websiteRoot = join(process.cwd(), "website");
+const { verifyPublicSite } = publicSiteVerifier;
 
 function readWebsiteFile(path) {
   return readFileSync(join(websiteRoot, path), "utf8");
 }
+
+test("verifies root pages and a path-preserving www redirect without exposing gift tokens", async () => {
+  const root = "https://onetapreality.com";
+  const www = "https://www.onetapreality.com";
+  const token = "verification-token";
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.origin === www) {
+      return new Response(null, { status: 308, headers: { location: `${root}${url.pathname}` } });
+    }
+    if (url.pathname === "/.well-known/apple-app-site-association") {
+      return new Response("{}", { headers: { "content-type": "application/json; charset=utf-8" } });
+    }
+    if (url.pathname === `/gift/${token}`) {
+      return new Response("<h1>Open OneTapReality</h1>", { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+    return new Response("<html>OneTapReality</html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+  };
+
+  await assert.doesNotReject(() => verifyPublicSite({ rootOrigin: root, wwwOrigin: www, fetchImpl }));
+});
+
+test("rejects a www redirect that loses the requested path", async () => {
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.origin === "https://www.onetapreality.com") {
+      return new Response(null, { status: 301, headers: { location: "https://onetapreality.com/" } });
+    }
+    return new Response("ok", { headers: { "content-type": url.pathname.includes("apple-app") ? "application/json" : "text/html" } });
+  };
+
+  await assert.rejects(
+    () => verifyPublicSite({ rootOrigin: "https://onetapreality.com", wwwOrigin: "https://www.onetapreality.com", fetchImpl }),
+    /www redirect mismatch for \/support\//,
+  );
+});
 
 test("provides the marketing, support, and privacy routes Apple requires", () => {
   assert.equal(existsSync(join(websiteRoot, "index.html")), true);

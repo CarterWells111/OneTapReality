@@ -33,6 +33,11 @@ describe("backend API routes", () => {
   beforeEach(() => {
     mockDatabaseExecute.mockReset();
     mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 14 }] });
+    delete process.env.API_WRITE_FREEZE;
+  });
+
+  afterEach(() => {
+    delete process.env.API_WRITE_FREEZE;
   });
 
   it("returns health and capabilities without authentication", async () => {
@@ -45,8 +50,24 @@ describe("backend API routes", () => {
       contractVersion: 1,
       database: "ok",
       schemaVersion: 14,
+      writeFreeze: false,
     });
     expect((await capabilities.json()).features.automaticSync).toBe(false);
+  });
+
+  it("reports an enabled API write freeze without exposing migration details", async () => {
+    process.env.API_WRITE_FREEZE = "true";
+
+    const response = await getHealth(new Request("http://localhost/api/health"));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      service: "onetapreality-api",
+      contractVersion: 1,
+      database: "ok",
+      schemaVersion: 14,
+      writeFreeze: true,
+    });
   });
 
   it("rejects health when the database schema is version 13", async () => {

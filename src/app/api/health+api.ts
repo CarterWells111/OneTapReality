@@ -20,6 +20,7 @@ export async function GET(_request?: Request): Promise<Response> {
       contractVersion: backendContractVersion,
       database: "ok",
       schemaVersion,
+      writeFreeze: process.env.API_WRITE_FREEZE === "true",
     };
     return Response.json(response);
   } catch (error) {
