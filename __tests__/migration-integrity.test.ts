@@ -31,8 +31,9 @@ describe("migration integrity summary", () => {
   });
 
   it("reports a missing target table instead of throwing a property access error", () => {
-    const target = structuredClone(complete);
-    delete target.tables.users;
+    const { users: removedUserTable, ...targetTables } = structuredClone(complete).tables;
+    expect(removedUserTable).toBeDefined();
+    const target = { ...structuredClone(complete), tables: targetTables };
 
     expect(compareMigrationSummaries(complete, target)).toEqual([
       "users is missing from target summary",
