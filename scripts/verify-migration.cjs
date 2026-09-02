@@ -26,20 +26,37 @@ const tablePrimaryKeys = {
 };
 
 const orphanChecks = {
+  memoriesDevice: "select count(*)::int as count from memories child left join devices parent on parent.id = child.device_id where parent.id is null",
   memoryPages: "select count(*)::int as count from memory_pages child left join memories parent on parent.id = child.memory_id where parent.id is null",
+  giftCards: "select count(*)::int as count from gift_cards child left join gifts parent on parent.id = child.gift_id where child.gift_id is not null and parent.id is null",
+  giftCardEvents: "select count(*)::int as count from gift_card_events child left join gift_cards parent on parent.id = child.card_id where parent.id is null",
   giftMembers: "select count(*)::int as count from gift_members child left join gifts parent on parent.id = child.gift_id where parent.id is null",
+  sharedAlbums: "select count(*)::int as count from shared_albums child left join gifts parent on parent.id = child.gift_id where parent.id is null",
+  sharedAlbumPages: "select count(*)::int as count from shared_album_pages child left join shared_albums parent on parent.id = child.shared_album_id where parent.id is null",
   sharedAlbumMedia: "select count(*)::int as count from shared_album_media child left join shared_albums parent on parent.id = child.shared_album_id where parent.id is null",
+  giftMemberActivationsMember: "select count(*)::int as count from gift_member_activations child left join gift_members parent on parent.id = child.member_id where parent.id is null",
+  giftMemberActivationsUser: "select count(*)::int as count from gift_member_activations child left join users parent on parent.id = child.user_id where parent.id is null",
+  authSessions: "select count(*)::int as count from auth_sessions child left join users parent on parent.id = child.user_id where parent.id is null",
+  giftPublishSessions: "select count(*)::int as count from gift_publish_sessions child left join gifts parent on parent.id = child.gift_id where parent.id is null",
+  giftManagementRequestsGift: "select count(*)::int as count from gift_management_requests child left join gifts parent on parent.id = child.gift_id where parent.id is null",
+  giftManagementRequestsMember: "select count(*)::int as count from gift_management_requests child left join gift_members parent on parent.id = child.requester_member_id and parent.gift_id = child.gift_id where parent.id is null",
+  giftMediaCleanupJobs: "select count(*)::int as count from gift_media_cleanup_jobs child left join gifts parent on parent.id = child.gift_id where parent.id is null",
 };
 
 function compareMigrationSummaries(source, target) {
   const errors = [];
 
   for (const table of Object.keys(source.tables)) {
-    if (source.tables[table].count !== target.tables[table].count) {
-      errors.push(`${table} count differs: source=${source.tables[table].count} target=${target.tables[table].count}`);
+    const targetTable = target.tables[table];
+    if (!targetTable) {
+      errors.push(`${table} is missing from target summary`);
+      continue;
     }
-    if (target.tables[table].nullPrimaryKeys !== 0) {
-      errors.push(`${table} target has ${target.tables[table].nullPrimaryKeys} null primary keys`);
+    if (source.tables[table].count !== targetTable.count) {
+      errors.push(`${table} count differs: source=${source.tables[table].count} target=${targetTable.count}`);
+    }
+    if (targetTable.nullPrimaryKeys !== 0) {
+      errors.push(`${table} target has ${targetTable.nullPrimaryKeys} null primary keys`);
     }
   }
 
