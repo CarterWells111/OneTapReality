@@ -1,4 +1,8 @@
-const { compareMigrationSummaries, orphanChecks } = require("../scripts/verify-migration.cjs");
+const {
+  compareMigrationSummaries,
+  orphanChecks,
+  tablePrimaryKeys,
+} = require("../scripts/verify-migration.cjs");
 
 const complete = {
   tables: {
@@ -58,5 +62,36 @@ describe("migration integrity summary", () => {
       "giftManagementRequestsMember",
       "giftMediaCleanupJobs",
     ]);
+  });
+
+  it("tracks every current production table with its actual primary key", () => {
+    expect(tablePrimaryKeys).toEqual({
+      account_deletion_challenges: "id",
+      account_deletion_jobs: "id",
+      account_deletion_media_objects: "id",
+      app_maintenance_state: "id",
+      app_schema_meta: "key",
+      auth_email_codes: "id",
+      auth_rate_limits: "scope_hash",
+      auth_sessions: "id",
+      devices: "id",
+      gift_card_events: "id",
+      gift_cards: "id",
+      gift_content_reports: "id",
+      gift_management_requests: "id",
+      gift_media_cleanup_jobs: "id",
+      gift_member_activations: "member_id",
+      gift_members: "id",
+      gift_publish_sessions: "id",
+      gift_relationship_tombstones: "id",
+      gifts: "id",
+      memories: "id",
+      memory_pages: "id",
+      shared_album_media: "id",
+      shared_album_pages: "id",
+      shared_albums: "id",
+      user_blocks: "id",
+      users: "id",
+    });
   });
 });
