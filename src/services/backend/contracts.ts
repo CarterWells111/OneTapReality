@@ -70,6 +70,7 @@ export type HealthResponse = {
   contractVersion: typeof backendContractVersion;
   database: "ok";
   schemaVersion: number;
+  writeFreeze: boolean;
 };
 
 export type CapabilitiesResponse = {
