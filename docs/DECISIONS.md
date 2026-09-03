@@ -1,5 +1,14 @@
 ﻿# 决策记录
 
+## 2026-09-03：中国大陆访问可用性与生产入口迁移
+
+为消除中国大陆移动网络访问官网时由旧 OpenAI Sites 入口返回 `chatgpt.site` 拦截页的问题，生产官网从该入口迁至同一 Cloudflare 账户内的独立静态 Worker。生产 API 与 PostgreSQL 同时保持在已验证的新加坡 Railway 环境；稳定域名、NFC URL、AASA、R2 bucket 与所有既有用户数据不变。
+
+- 静态官网只发布仓库 `website/` 的本地构建产物，不引入新的第三方、远程素材、分析、支付或客户端秘密。
+- 切换前后均验证首页、支持页、隐私页、AASA、`/activate`、token-safe `/gift/*` 回退页及 `www` 规范化跳转；生产 API 健康检查保持 `database=ok`、schema 兼容且写冻结关闭。
+- 旧入口的根域名 DNS 记录在明确批准后移除，新静态 Worker 直接绑定生产根域名；邮件、API、staging 与其他 DNS 记录不在本次变更范围。
+- 回滚须先恢复一个经过验证的静态入口并复测上述公共路径；不得通过官网切换修改、回滚或覆盖生产数据库。
+
 ## 2026-08-30：外部 Beta staging 对所有有效邮箱开放验证码登录
 
 外部 TestFlight 已进入真实用户测试，继续只连接隔离的 staging API。为避免 App Store Connect 邀请名单与 Railway 邮箱白名单形成两套不同步的准入来源，staging 的账号登录改为对所有格式有效且可接收邮件的邮箱开放；`ALPHA_ALLOWED_EMAILS` 在当前 staging 与未来 production 均保持未设置或空值。现有服务端在该变量为空时跳过邀请名单检查，继续执行邮箱规范化、验证码单次使用、发送限流、验证失败限流、账号删除状态检查与 30 天会话规则。本决策取代此前 Alpha 阶段“staging 必须保留四人邮箱白名单”及 NFC Lab 临时追加/移除邮箱的当前执行规则；旧条目只保留为历史证据。
