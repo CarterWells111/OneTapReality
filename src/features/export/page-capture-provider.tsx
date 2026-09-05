@@ -270,7 +270,7 @@ function delay(ms: number): Promise<void> {
 const styles = StyleSheet.create({
   // 全屏遮罩
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     backgroundColor: "rgba(28, 44, 40, 0.6)",
     justifyContent: "center",

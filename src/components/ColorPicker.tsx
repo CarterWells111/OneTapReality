@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
 
   // Transparent gesture overlay
   gestureOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
 
   // RGB

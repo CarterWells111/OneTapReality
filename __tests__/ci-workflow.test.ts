@@ -17,8 +17,8 @@ describe("quality gate workflow", () => {
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain("push:");
     expect(workflow).toContain("main");
-    expect(workflow).toContain("Lockfile minimum (Node 20.19.4)");
-    expect(workflow).toContain("node-version: 20.19.4");
+    expect(workflow).toContain("Lockfile minimum (Node 22.13.0)");
+    expect(workflow).toContain("node-version: 22.13.0");
     expect(workflow).toContain("Quality (Node 24)");
     expect(workflow).toContain("node-version: 24.x");
     expect(workflow).toContain("npm ci --ignore-scripts");

@@ -121,13 +121,13 @@ describe("Expo Router production origin", () => {
     expect(expoConfig.version).toBe("1.1.2");
   });
 
-  it("keeps native export packages compatible with Expo SDK 54", () => {
+  it("keeps native export packages compatible with Expo SDK 57", () => {
     const packageConfig = require("../package.json");
 
     expect(packageConfig.dependencies).toEqual(expect.objectContaining({
-      "expo-print": "~15.0.8",
-      "expo-sharing": "~14.0.8",
-      "react-native-view-shot": "4.0.3",
+      "expo-print": "~57.0.1",
+      "expo-sharing": "~57.0.18",
+      "react-native-view-shot": "5.1.0",
     }));
   });
 

@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 
 import {
   ensureMemoryPhotosPersisted,
@@ -23,7 +23,7 @@ jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: jest.fn(async () => undefined),
 }));
 
-jest.mock("expo-media-library", () => ({
+jest.mock("expo-media-library/legacy", () => ({
   getAssetInfoAsync: jest.fn(async (assetId: string) => ({
     localUri: `file:///tmp/ph-resolved/${assetId}.jpg`,
   })),

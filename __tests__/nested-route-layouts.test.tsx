@@ -4,9 +4,11 @@ import { render } from "@testing-library/react-native";
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = ({ children }: { children: React.ReactNode }) => <View testID="nested-stack">{children}</View>;
-  Stack.Screen = ({ name, options }: { name: string; options?: { title?: string } }) => (
+  const Screen = ({ name, options }: { name: string; options?: { title?: string } }) => (
     <View testID={`nested-screen-${name}`} title={options?.title} />
   );
+  Screen.displayName = "MockStackScreen";
+  Stack.Screen = Screen;
   return { Stack, Slot: () => <View testID="slot" /> };
 });
 

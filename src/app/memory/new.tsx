@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
   photoPlaceholderText: { color: colors.muted, fontSize: 13 },
   errorText: { color: colors.danger, lineHeight: 21 },
   footNote: { color: colors.muted, fontSize: 13, textAlign: "center" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 22,
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: 72,
   },
-  coverPreviewImage: { ...StyleSheet.absoluteFillObject, borderRadius: 11 },
+  coverPreviewImage: { ...StyleSheet.absoluteFill, borderRadius: 11 },
   coverHintCol: { flex: 1, gap: 4 },
   coverHint: { color: colors.muted, flexShrink: 1, fontSize: 13, lineHeight: 19 },
   coverClearLink: { alignSelf: "flex-start" },
