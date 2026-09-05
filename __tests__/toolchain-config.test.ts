@@ -26,6 +26,7 @@ describe("Node and npm toolchain policy", () => {
   });
 
   it("pins dependency updates and patched transitive security floors", () => {
+    expect(packageJson.dependencies["@expo/config-plugins"]).toBe("~57.0.9");
     expect(packageJson.dependencies["@aws-sdk/client-s3"]).toBe("^3.1127.0");
     expect(packageJson.dependencies["@aws-sdk/s3-request-presigner"]).toBe(
       "^3.1127.0",
