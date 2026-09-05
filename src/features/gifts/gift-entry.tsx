@@ -91,7 +91,12 @@ function NativeGiftEntry({ token }: { token: string }) {
           </View>
         </PaperCard>
       ) : null}
-      {!session && entryStatus === "unclaimed" ? <AppButton label="登录后绑定此纪念品" onPress={() => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}` as never)} /> : null}
+      {!session && (entryStatus === "unclaimed" || entryStatus === "bound") ? (
+        <AppButton
+          label={entryStatus === "unclaimed" ? "登录后绑定此纪念品" : "登录后查看此纪念品"}
+          onPress={() => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}` as never)}
+        />
+      ) : null}
       {ownerId ? <AppButton label="管理礼品" onPress={() => router.push(`/gifts/${ownerId}` as never)} /> : null}
       {!showBindingPrompt ? <AppButton label="重试" tone="secondary" onPress={() => void refresh()} /> : null}
     </PaperCard>

@@ -1,11 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 import { GiftEntry } from "../src/features/gifts/gift-entry";
 import { BackendApiError } from "../src/services/backend/api-client";
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 const mockUseAuth = jest.fn();
-const mockRouter = { replace: mockReplace };
+const mockRouter = { push: mockPush, replace: mockReplace };
 const mockClient = {
   getGiftEntryStatus: jest.fn(),
   getGiftAccess: jest.fn(),
@@ -51,6 +52,17 @@ describe("gift NFC entry", () => {
     mockClient.getGiftEntryStatus.mockResolvedValue({ status: "unclaimed" });
     render(<GiftEntry token="gift-token" platform="native" />);
     await waitFor(() => expect(screen.getByText("登录后绑定此纪念品")).toBeTruthy());
+  });
+
+  it("preserves a bound gift token while sending a signed-out invitee to login", async () => {
+    const token = "Abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE";
+    mockClient.getGiftEntryStatus.mockResolvedValue({ status: "bound" });
+    render(<GiftEntry token={token} platform="native" />);
+
+    fireEvent.press(await screen.findByText("登录后查看此纪念品"));
+    expect(mockPush).toHaveBeenCalledWith(
+      `/login?returnTo=${encodeURIComponent(`/gift/${token}`)}`,
+    );
   });
 
   it("shows an invalid-link message when the gift entry does not exist", async () => {
