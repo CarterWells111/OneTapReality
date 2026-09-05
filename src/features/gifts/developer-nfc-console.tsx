@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, ScreenTitle, Tag } from "../../components/ui";
+import { getBuildEnvironment } from "../../config/build-environment";
 import {
   AdminGiftCardApiClient,
   type AdminGiftCard,
@@ -156,11 +157,12 @@ export function DeveloperNfcConsole({
   const policyResolution = React.useMemo<PolicyResolution>(() => {
     if (injectedUrlPolicy) return { error: null, policy: injectedUrlPolicy };
     try {
+      const environment = getBuildEnvironment();
       return {
         error: null,
         policy: createInternalNfcUrlPolicy({
-          apiOrigin: process.env.EXPO_PUBLIC_API_ORIGIN,
-          giftOrigin: process.env.EXPO_PUBLIC_GIFT_ORIGIN,
+          apiOrigin: environment.apiOrigin,
+          giftOrigin: environment.giftUrlOrigin,
         }),
       };
     } catch (error) {

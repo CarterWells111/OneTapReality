@@ -1,4 +1,6 @@
 import { render, within } from "@testing-library/react-native";
+const mockBuildEnvironment = jest.fn(() => ({ buildType: "production", buildLabel: "PRODUCTION" }));
+jest.mock("../src/config/build-environment", () => ({ getBuildEnvironment: () => mockBuildEnvironment() }));
 jest.mock("expo-router", () => {
   const { View } = require("react-native");
   const Stack = function Stack({ children }: { children: React.ReactNode }) {
@@ -44,6 +46,23 @@ jest.mock("../src/storage/memory-repository", () => ({ migrateDbIfNeeded: jest.f
 import RootLayout from "../src/app/_layout";
 
 describe("RootLayout", () => {
+  beforeEach(() => {
+    mockBuildEnvironment.mockReturnValue({ buildType: "production", buildLabel: "PRODUCTION" });
+  });
+
+  it("persistently identifies a Development/Staging build", async () => {
+    mockBuildEnvironment.mockReturnValue({
+      buildType: "development",
+      buildLabel: "DEVELOPMENT · STAGING",
+    });
+    const screen = await render(<RootLayout />);
+    expect(screen.getByText("DEVELOPMENT · STAGING")).toBeTruthy();
+  });
+
+  it("does not show the development banner in production", async () => {
+    const screen = await render(<RootLayout />);
+    expect(screen.queryByText("DEVELOPMENT · STAGING")).toBeNull();
+  });
   it("renders immediately without waiting for local fonts", async () => {
     const screen = await render(<RootLayout />);
 

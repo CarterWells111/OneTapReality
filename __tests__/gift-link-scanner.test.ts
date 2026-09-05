@@ -23,6 +23,24 @@ function makeAdapter(url = `${ORIGIN}/gift/${TOKEN}`): GiftNdefReadAdapter {
 }
 
 describe("read-only gift NFC scanner", () => {
+  it("uses the validated runtime gift origin by default", async () => {
+    const buildEnvironment = require("../src/config/build-environment");
+    const spy = jest.spyOn(buildEnvironment, "getBuildEnvironment").mockReturnValue({
+      giftUrlOrigin: ORIGIN,
+    });
+    const adapter = makeAdapter();
+    const scanner = createGiftLinkScanner({
+      loadAdapter: async () => adapter,
+      platform: "ios",
+    });
+
+    await expect(scanner.scan()).resolves.toEqual({
+      pathname: `/gift/${TOKEN}`,
+      token: TOKEN,
+    });
+    spy.mockRestore();
+  });
+
   it("reads one NDEF URI and hands off the canonical gift route", async () => {
     const adapter = makeAdapter();
     const scanner = createGiftLinkScanner({

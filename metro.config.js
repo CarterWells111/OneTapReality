@@ -45,6 +45,7 @@ const buildVariant = resolveBuildVariant(process.env.APP_VARIANT);
 config.resolver.resolveRequest = createActivateEntryResolver({
   projectRoot: __dirname,
   releaseAudience: buildVariant.releaseAudience,
+  developmentEntryEnabled: buildVariant.buildType === "development",
 });
 
 module.exports = config;

@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 import { GiftLinkError, parseGiftLink, type ParsedGiftLink } from "./gift-link-parser";
+import { getBuildEnvironment } from "../../config/build-environment";
 
 export type GiftNdefRecord = {
   payload: number[];
@@ -107,7 +108,7 @@ async function loadNativeReadAdapter(): Promise<GiftNdefReadAdapter> {
 }
 
 export function createGiftLinkScanner(options: ScannerOptions = {}): GiftLinkScanner {
-  const expectedOrigin = options.expectedOrigin ?? process.env.EXPO_PUBLIC_GIFT_ORIGIN ?? "";
+  const expectedOrigin = options.expectedOrigin ?? getBuildEnvironment().giftUrlOrigin;
   const isExpoGo = options.isExpoGo ?? (Platform.OS !== "web" && Constants.appOwnership === "expo");
   const loadAdapter = options.loadAdapter ?? loadNativeReadAdapter;
   const platform = options.platform ?? (Platform.OS as ScannerPlatform);

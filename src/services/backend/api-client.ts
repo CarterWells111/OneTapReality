@@ -6,6 +6,7 @@ import type {
   DeviceRegistrationResponse,
   HealthResponse,
 } from "./contracts";
+import { getBuildEnvironment } from "../../config/build-environment";
 
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
@@ -72,19 +73,22 @@ export function isBackendSessionInvalidError(error: unknown): boolean {
 }
 export function resolveBackendRequestUrl(
   path: string,
-  origin = process.env.EXPO_PUBLIC_API_ORIGIN,
+  origin = getBuildEnvironment().apiOrigin,
 ): string {
   const normalizedOrigin = origin?.replace(/\/+$/u, "");
   return normalizedOrigin ? `${normalizedOrigin}${path}` : path;
 }
 
 export class BackendApiClient {
-  constructor(private readonly request: typeof fetch = fetch) {}
+  constructor(
+    private readonly request: typeof fetch = fetch,
+    private readonly origin = getBuildEnvironment().apiOrigin,
+  ) {}
 
   protected async send<T>(path: string, options?: RequestInit): Promise<T> {
     let response: Response;
     try {
-      response = await this.request(resolveBackendRequestUrl(path), options);
+      response = await this.request(resolveBackendRequestUrl(path, this.origin), options);
     } catch {
       throw new BackendApiError(0, "network_unavailable", "Network unavailable");
     }

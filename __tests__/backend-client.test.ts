@@ -8,6 +8,10 @@ import {
   resolveBackendRequestUrl,
 } from "../src/services/backend/api-client";
 
+jest.mock("../src/config/build-environment", () => ({
+  getBuildEnvironment: () => ({ apiOrigin: "https://api-staging.onetapreality.com" }),
+}));
+
 describe("backend client", () => {
   afterEach(() => jest.restoreAllMocks());
 
@@ -42,8 +46,13 @@ describe("backend client", () => {
       .toBe("https://example.up.railway.app/api/health");
   });
 
-  it("keeps development requests relative when no origin is configured", () => {
-    expect(resolveBackendRequestUrl("/api/health", undefined)).toBe("/api/health");
+  it("uses the validated runtime API origin by default", () => {
+    expect(resolveBackendRequestUrl("/api/health"))
+      .toBe("https://api-staging.onetapreality.com/api/health");
+  });
+
+  it("allows an injected relative transport without guessing an environment", () => {
+    expect(resolveBackendRequestUrl("/api/health", "")).toBe("/api/health");
   });
 
   it("authenticates an account and reads the current server-derived role", async () => {
@@ -51,7 +60,7 @@ describe("backend client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ email: "owner@example.com" }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "account-token", user: { id: "user-1", email: "owner@example.com", isAdmin: false } }), { status: 201 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ user: { id: "user-1", email: "owner@example.com", isAdmin: false } }), { status: 200 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
 
     await expect(client.requestAuthEmailCode("owner@example.com")).resolves.toEqual({ email: "owner@example.com" });
     await expect(client.verifyAuthEmailCode("owner@example.com", "123456")).resolves.toEqual(expect.objectContaining({ accessToken: "account-token" }));
@@ -68,7 +77,7 @@ describe("backend client", () => {
     const request = jest.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ receiptId: "receipt-1", completeBy: "2026-08-25T10:00:00.000Z" }), { status: 202 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
 
     await expect(client.requestAccountDeletionChallenge("session")).resolves.toEqual({ challengeId: "challenge-1", expiresAt: "2026-08-24T10:05:00.000Z" });
     await expect(client.deleteAccount("session", { challengeId: "challenge-1", code: "123456", confirmation: "DELETE" }))
@@ -95,7 +104,7 @@ describe("backend client", () => {
 
   it("uses internal gift ids for owner management rather than NFC tokens", async () => {
     const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ gift: { id: "gift-1", status: "bound" }, members: [], album: null }), { status: 200 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
 
     await expect(client.getOwnedGiftManagement("session", "gift-1")).resolves.toEqual(expect.objectContaining({ gift: expect.objectContaining({ id: "gift-1" }) }));
     expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
@@ -105,7 +114,7 @@ describe("backend client", () => {
     const request = jest.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", travelDate: "2026-07-24", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ title: "A shared trip", travelDate: null, pages: [], media: [], publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: null }), { status: 200 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
 
     await expect(client.listInvitedGifts("session")).resolves.toEqual([
       expect.objectContaining({ giftId: "gift-1", album: expect.objectContaining({ travelDate: "2026-07-24", cover: expect.objectContaining({ readUrl: "https://cdn.test/cover.jpg" }) }) }),
@@ -122,7 +131,7 @@ describe("backend client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", report: { id: "report-1", snapshotVersion: 4 } }), { status: 201 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "created", block: { id: "block-1" } }), { status: 201 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
 
     await expect(client.reportGiftContent("gift-1", "session", "harassment", "说明")).resolves.toEqual({ status: "created", report: { id: "report-1", snapshotVersion: 4 } });
     await expect(client.blockGiftUser("gift-1", "session", { targetEmail: "owner@example.com" })).resolves.toEqual({ status: "created", block: { id: "block-1" } });
@@ -142,7 +151,7 @@ describe("backend client", () => {
 
   it("serializes the shared album title and travel date for every publish endpoint", async () => {
     const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ publicationId: "publish-1", uploads: [], coverUpload: null, expiresAt: "2026-07-24T00:10:00.000Z" }), { status: 201 }));
-    const client = new BackendApiClient(request);
+    const client = new BackendApiClient(request, "");
     const payload = { baseVersion: 0, sourceMemoryId: "memory-1", title: "A shared trip", travelDate: "2026-07-24", pages: [], media: [] };
 
     await client.startGiftPublish("tag", "session", payload);

@@ -70,6 +70,32 @@ describe("Metro configuration", () => {
     )).toThrow();
   });
 
+  it.each([
+    ["development-staging", "development-gift-link-entry.development.tsx"],
+    ["staging-testflight", "development-gift-link-entry.tsx"],
+    ["external-beta-staging", "development-gift-link-entry.tsx"],
+    ["production", "development-gift-link-entry.tsx"],
+  ] as const)("selects the %s development link surface", (variant, fileName) => {
+    const program = [
+      "const path = require('node:path');",
+      "const config = require('./metro.config');",
+      "const context = {",
+      "  originModulePath: path.join(process.cwd(), 'src/app/(tabs)/index.tsx'),",
+      "  resolveRequest: (_context, moduleName, platform) => ({ filePath: moduleName, platform, type: 'sourceFile' }),",
+      "};",
+      "const selected = config.resolver.resolveRequest(context, '../../features/gifts/development-gift-link-entry', 'ios');",
+      "process.stdout.write(JSON.stringify(selected));",
+    ].join("\n");
+    const output = execFileSync(process.execPath, ["-e", program], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, APP_VARIANT: variant },
+    });
+    expect(JSON.parse(output).filePath).toBe(
+      join(process.cwd(), "src", "features", "gifts", fileName),
+    );
+  });
+
   it("blocks generated and cache directories from Metro's file crawl", () => {
     const excludedDirectories = [
       ".pnpm-store",
