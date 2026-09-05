@@ -23,7 +23,10 @@ jest.mock("react-native-gesture-handler", () => {
 });
 jest.mock("react-native-safe-area-context", () => {
   const { View } = require("react-native");
-  return { SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <View testID="safe-area-provider">{children}</View> };
+  return {
+    SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <View testID="safe-area-provider">{children}</View>,
+    useSafeAreaInsets: () => ({ top: 47, right: 0, bottom: 0, left: 0 }),
+  };
 });
 jest.mock("../src/features/memories/memories-provider", () => {
   const { View } = require("react-native");
@@ -57,6 +60,9 @@ describe("RootLayout", () => {
     });
     const screen = await render(<RootLayout />);
     expect(screen.getByText("DEVELOPMENT · STAGING")).toBeTruthy();
+    expect(screen.getByTestId("build-environment-banner").props.style).toEqual(
+      expect.arrayContaining([expect.objectContaining({ paddingTop: 54 })]),
+    );
   });
 
   it("does not show the development banner in production", async () => {

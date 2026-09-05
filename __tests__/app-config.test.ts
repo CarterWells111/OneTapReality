@@ -183,8 +183,13 @@ describe("Expo Router production origin", () => {
     const expoConfig = require("../app.json").expo;
     const easConfig = require("../eas.json");
     const rootLayout = fs.readFileSync(path.resolve(__dirname, "..", "src/app/_layout.tsx"), "utf8");
+    const authStorage = fs.readFileSync(path.resolve(__dirname, "..", "src/features/auth/auth-storage.ts"), "utf8");
+    const photoPersistence = fs.readFileSync(path.resolve(__dirname, "..", "src/features/memories/photo-persistence.ts"), "utf8");
 
     expect(rootLayout).toContain('databaseName="luyi.db"');
+    expect(authStorage).toContain('"onetapreality.auth-session.v1"');
+    expect(authStorage).toContain('"onetapreality.remembered-email.v1"');
+    expect(photoPersistence).toContain('photos/accounts/${localAccountDirectorySegment(accountKey)}/${encodeURIComponent(memoryId)}/');
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
     expect(expoConfig.android).toBeUndefined();
     expect(Object.keys(easConfig.build)).toEqual(expect.arrayContaining(["development", "preview", "alpha", "production"]));

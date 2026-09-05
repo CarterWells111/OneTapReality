@@ -15,6 +15,7 @@ export type BuildEnvironment = Readonly<{
   bundleIdentifier: string;
   scheme: string;
   releaseAudience: ReleaseAudience;
+  contractChecksum: string;
 }>;
 
 const ENVIRONMENT_IDS = new Set<EnvironmentId>(["staging", "production"]);
@@ -26,6 +27,25 @@ const BUILD_TYPES = new Set<BuildType>([
   "production",
 ]);
 const RELEASE_AUDIENCES = new Set<ReleaseAudience>(["internal", "external-beta", "public"]);
+const CONTRACT_FIELDS = [
+  "variant",
+  "environmentId",
+  "environmentLabel",
+  "buildType",
+  "buildLabel",
+  "apiOrigin",
+  "giftUrlOrigin",
+  "bundleIdentifier",
+  "scheme",
+  "releaseAudience",
+] as const;
+const APPROVED_CONTRACT_CHECKSUMS: Readonly<Record<string, string>> = Object.freeze({
+  "development-staging": "7c478ce4",
+  "staging-testflight": "d353930b",
+  "alpha-staging": "d6f37975",
+  "external-beta-staging": "7dd36655",
+  production: "ffac6c7d",
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -60,6 +80,17 @@ function requireCanonicalHttpsOrigin(origin: string, key: string) {
   }
 }
 
+export function createBuildEnvironmentChecksum(value: Record<string, unknown>): string {
+  const serialized = CONTRACT_FIELDS
+    .map((field) => `${String(value[field]).length}:${String(value[field])}`)
+    .join("|");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash = Math.imul(hash ^ serialized.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
 export function parseBuildEnvironment(value: unknown): BuildEnvironment {
   if (!isRecord(value)) {
     throw new Error("Expo buildEnvironment metadata is missing or invalid");
@@ -76,7 +107,15 @@ export function parseBuildEnvironment(value: unknown): BuildEnvironment {
     bundleIdentifier: requireString(value, "bundleIdentifier"),
     scheme: requireString(value, "scheme"),
     releaseAudience: requireString(value, "releaseAudience") as ReleaseAudience,
+    contractChecksum: requireString(value, "contractChecksum"),
   };
+
+  const approvedChecksum = APPROVED_CONTRACT_CHECKSUMS[environment.variant];
+  if (!approvedChecksum
+    || environment.contractChecksum !== approvedChecksum
+    || createBuildEnvironmentChecksum(environment) !== approvedChecksum) {
+    throw new Error("Expo buildEnvironment does not match an approved build contract");
+  }
 
   if (!ENVIRONMENT_IDS.has(environment.environmentId)
     || environment.environmentLabel !== environment.environmentId.toUpperCase()) {

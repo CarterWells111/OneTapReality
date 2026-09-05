@@ -1,7 +1,7 @@
 // @ts-nocheck
 // EAS CLI loads this .ts file as CommonJS during project initialization.
 // Keep it valid JavaScript so both EAS and Expo CLI can evaluate it.
-const { resolveBuildVariant } = require("./scripts/build-variants.cjs");
+const { createBuildEnvironmentContract, resolveBuildVariant } = require("./scripts/build-variants.cjs");
 
 function normalizeOrigin(origin) {
   return origin.replace(/\/+$/u, "");
@@ -38,18 +38,7 @@ function resolveAppConfig(config, variantName) {
     extra: {
       ...(configured.extra ?? {}),
       releaseAudience: variant.releaseAudience,
-      buildEnvironment: {
-        variant: variantName,
-        environmentId: variant.environmentId,
-        environmentLabel: variant.environmentLabel,
-        buildType: variant.buildType,
-        buildLabel: variant.buildLabel,
-        apiOrigin: variant.apiOrigin,
-        giftUrlOrigin: variant.giftUrlOrigin,
-        bundleIdentifier: variant.bundleIdentifier,
-        scheme: variant.scheme,
-        releaseAudience: variant.releaseAudience,
-      },
+      buildEnvironment: createBuildEnvironmentContract(variantName, variant),
     },
   };
 }

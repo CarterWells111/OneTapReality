@@ -66,6 +66,49 @@ const BUILD_VARIANTS = Object.freeze({
   }),
 });
 
+const RUNTIME_CONTRACT_FIELDS = Object.freeze([
+  "variant",
+  "environmentId",
+  "environmentLabel",
+  "buildType",
+  "buildLabel",
+  "apiOrigin",
+  "giftUrlOrigin",
+  "bundleIdentifier",
+  "scheme",
+  "releaseAudience",
+]);
+
+function checksumRuntimeContract(contract) {
+  const serialized = RUNTIME_CONTRACT_FIELDS
+    .map((field) => `${String(contract[field]).length}:${String(contract[field])}`)
+    .join("|");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash = Math.imul(hash ^ serialized.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function createBuildEnvironmentContract(variantName, variant = resolveBuildVariant(variantName)) {
+  const contract = {
+    variant: variantName,
+    environmentId: variant.environmentId,
+    environmentLabel: variant.environmentLabel,
+    buildType: variant.buildType,
+    buildLabel: variant.buildLabel,
+    apiOrigin: variant.apiOrigin,
+    giftUrlOrigin: variant.giftUrlOrigin,
+    bundleIdentifier: variant.bundleIdentifier,
+    scheme: variant.scheme,
+    releaseAudience: variant.releaseAudience,
+  };
+  return Object.freeze({
+    ...contract,
+    contractChecksum: checksumRuntimeContract(contract),
+  });
+}
+
 function resolveBuildVariant(value) {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("APP_VARIANT is required");
@@ -75,4 +118,8 @@ function resolveBuildVariant(value) {
   return variant;
 }
 
-module.exports = { BUILD_VARIANTS, resolveBuildVariant };
+module.exports = {
+  BUILD_VARIANTS,
+  createBuildEnvironmentContract,
+  resolveBuildVariant,
+};

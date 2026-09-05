@@ -15,6 +15,7 @@ Constants.expoConfig.extra = {
         bundleIdentifier: "com.onereality.onetapreality",
         scheme: "onetapreality",
         releaseAudience: "public",
+        contractChecksum: "ffac6c7d",
   },
 };
 jest.mock("expo-media-library/legacy", () => ({
