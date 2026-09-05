@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: "100%",
   },
-  canvas: { ...StyleSheet.absoluteFillObject },
+  canvas: { ...StyleSheet.absoluteFill },
   emptyCover: { backgroundColor: "#EFE2CF", flex: 1 },
   pressed: { opacity: 0.85 },
   checkCircle: {

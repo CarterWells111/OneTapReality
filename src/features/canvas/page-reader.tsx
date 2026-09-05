@@ -1,5 +1,5 @@
 import * as React from "react";
-import { StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -29,10 +29,10 @@ function resolveRestoredIndex(pages: StoryPage[], initialPageId?: string, fallba
 type PageReaderLayerBufferProps = {
   current: StoryPage;
   currentIsRight: boolean;
-  currentStyle?: StyleProp<ViewStyle>;
+  currentStyle?: React.ComponentProps<typeof Animated.View>["style"];
   incoming?: StoryPage;
   incomingIsRight?: boolean;
-  incomingStyle?: StyleProp<ViewStyle>;
+  incomingStyle?: React.ComponentProps<typeof Animated.View>["style"];
   pageHeight: number;
   pageWidth: number;
 };
