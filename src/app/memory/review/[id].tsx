@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
   },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
+  overlay: { bottom: 0, left: 0, position: "absolute", right: 0, top: 0, backgroundColor: "rgba(38, 49, 62, 0.35)", justifyContent: "flex-end" },
   dateSheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 22,

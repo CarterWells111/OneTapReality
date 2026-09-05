@@ -31,4 +31,11 @@ module.exports = defineConfig([
       "react-hooks/set-state-in-effect": "off",
     },
   },
+  {
+    files: ["__tests__/**/*.{ts,tsx,js,jsx,mjs,cjs}"],
+    rules: {
+      // Jest module factories intentionally use small anonymous mock components.
+      "react/display-name": "off",
+    },
+  },
 ]);
