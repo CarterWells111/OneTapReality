@@ -1,9 +1,7 @@
 // @ts-nocheck
 // EAS CLI loads this .ts file as CommonJS during project initialization.
 // Keep it valid JavaScript so both EAS and Expo CLI can evaluate it.
-const {
-  normalizeReleaseAudience,
-} = require("./scripts/metro-activate-entry-resolver.cjs");
+const { resolveBuildVariant } = require("./scripts/build-variants.cjs");
 
 function normalizeOrigin(origin) {
   return origin.replace(/\/+$/u, "");
@@ -25,40 +23,37 @@ function withRouterOrigin(config, origin) {
   };
 }
 
-function withReleaseAudience(config, audience) {
+function resolveAppConfig(config, variantName) {
+  const variant = resolveBuildVariant(variantName);
+  const configured = withRouterOrigin(config, variant.apiOrigin);
   return {
-    ...config,
-    extra: {
-      ...(config.extra ?? {}),
-      releaseAudience: normalizeReleaseAudience(audience),
-    },
-  };
-}
-
-function withAssociatedDomains(config, audience) {
-  const normalizedAudience = normalizeReleaseAudience(audience);
-  const associatedDomains = normalizedAudience === "public"
-    ? ["applinks:onetapreality.com"]
-    : ["applinks:staging.onetapreality.com"];
-  return {
-    ...config,
+    ...configured,
+    name: variant.appName,
+    scheme: variant.scheme,
     ios: {
-      ...(config.ios ?? {}),
-      associatedDomains,
+      ...(configured.ios ?? {}),
+      bundleIdentifier: variant.bundleIdentifier,
+      associatedDomains: [...variant.associatedDomains],
+    },
+    extra: {
+      ...(configured.extra ?? {}),
+      releaseAudience: variant.releaseAudience,
+      buildEnvironment: {
+        variant: variantName,
+        environmentId: variant.environmentId,
+        environmentLabel: variant.environmentLabel,
+        buildType: variant.buildType,
+        buildLabel: variant.buildLabel,
+        apiOrigin: variant.apiOrigin,
+        giftUrlOrigin: variant.giftUrlOrigin,
+        bundleIdentifier: variant.bundleIdentifier,
+        scheme: variant.scheme,
+        releaseAudience: variant.releaseAudience,
+      },
     },
   };
 }
 
-module.exports = ({ config }) => {
-  const audience = process.env.EXPO_PUBLIC_RELEASE_AUDIENCE;
-  return withReleaseAudience(
-    withAssociatedDomains(
-      withRouterOrigin(config, process.env.EXPO_PUBLIC_API_ORIGIN),
-      audience,
-    ),
-    audience,
-  );
-};
-module.exports.withAssociatedDomains = withAssociatedDomains;
+module.exports = ({ config }) => resolveAppConfig(config, process.env.APP_VARIANT);
+module.exports.resolveAppConfig = resolveAppConfig;
 module.exports.withRouterOrigin = withRouterOrigin;
-module.exports.withReleaseAudience = withReleaseAudience;

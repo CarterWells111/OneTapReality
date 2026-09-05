@@ -1,4 +1,4 @@
-const { withAssociatedDomains, withReleaseAudience, withRouterOrigin } = require("../app.config");
+const { resolveAppConfig, withRouterOrigin } = require("../app.config");
 
 describe("Expo Router production origin", () => {
   const baseConfig = {
@@ -20,22 +20,11 @@ describe("Expo Router production origin", () => {
     expect(withRouterOrigin(baseConfig, undefined)).toEqual(baseConfig);
   });
 
-  it("defaults to the safe public audience and accepts only whitelisted audiences", () => {
-    expect(withReleaseAudience(baseConfig, "external-beta").extra).toEqual({
-      releaseAudience: "external-beta",
-    });
-    expect(withReleaseAudience(baseConfig, "internal").extra).toEqual({
-      releaseAudience: "internal",
-    });
-    expect(withReleaseAudience(baseConfig, "public").extra).toEqual({
-      releaseAudience: "public",
-    });
-    expect(withReleaseAudience(baseConfig, undefined).extra).toEqual({
-      releaseAudience: "public",
-    });
-    expect(() => withReleaseAudience(baseConfig, "unexpected")).toThrow(
-      "Unsupported release audience",
-    );
+  it("resolves explicit Beta and Development native identities", () => {
+    expect(resolveAppConfig(baseConfig, "development-staging").ios.bundleIdentifier)
+      .toBe("com.onereality.onetapreality.dev");
+    expect(resolveAppConfig(baseConfig, "staging-testflight").ios.bundleIdentifier)
+      .toBe("com.onereality.onetapreality");
   });
 
   it("uses the local OneTapReality images in both Expo icon asset entry points", () => {
@@ -59,18 +48,20 @@ describe("Expo Router production origin", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(expoConfig.ios.bundleIdentifier).toBe("com.onereality.onetapreality");
-    expect(withAssociatedDomains(expoConfig, "external-beta").ios.associatedDomains)
+    expect(resolveAppConfig(expoConfig, "external-beta-staging").ios.associatedDomains)
       .toEqual(["applinks:staging.onetapreality.com"]);
-    expect(withAssociatedDomains(expoConfig, "internal").ios.associatedDomains)
+    expect(resolveAppConfig(expoConfig, "staging-testflight").ios.associatedDomains)
       .toEqual(["applinks:staging.onetapreality.com"]);
-    expect(withAssociatedDomains(expoConfig, "public").ios.associatedDomains)
+    expect(resolveAppConfig(expoConfig, "production").ios.associatedDomains)
       .toEqual(["applinks:onetapreality.com"]);
+    expect(resolveAppConfig(expoConfig, "development-staging").ios.associatedDomains)
+      .toEqual([]);
     expect(expoConfig.android).toBeUndefined();
   });
 
   it("fails closed instead of resolving domains for an unknown release audience", () => {
-    expect(() => withAssociatedDomains(baseConfig, "unexpected")).toThrow(
-      "Unsupported release audience",
+    expect(() => resolveAppConfig(baseConfig, "unexpected")).toThrow(
+      "Unsupported APP_VARIANT",
     );
   });
 
@@ -145,9 +136,7 @@ describe("Expo Router production origin", () => {
     expect(easConfig.build.alpha).toEqual(expect.objectContaining({
       distribution: "internal",
       env: {
-        EXPO_PUBLIC_API_ORIGIN: "https://api-staging.onetapreality.com",
-        EXPO_PUBLIC_GIFT_ORIGIN: "https://staging.onetapreality.com",
-        EXPO_PUBLIC_RELEASE_AUDIENCE: "internal",
+        APP_VARIANT: "alpha-staging",
       },
     }));
   });
@@ -158,33 +147,33 @@ describe("Expo Router production origin", () => {
     expect(Object.fromEntries(
       Object.entries(profiles).map(([name, profile]: [string, any]) => [
         name,
-        profile.env?.EXPO_PUBLIC_RELEASE_AUDIENCE,
+        profile.env?.APP_VARIANT,
       ]),
     )).toEqual({
-      development: "public",
-      preview: "public",
-      alpha: "internal",
-      "staging-testflight": "internal",
-      "beta-external": "external-beta",
-      production: "public",
+      development: "development-staging",
+      preview: "production",
+      alpha: "alpha-staging",
+      "staging-testflight": "staging-testflight",
+      "beta-external": "external-beta-staging",
+      production: "production",
     });
   });
 
-  it("pairs every local build profile with its exact public gift origin", () => {
+  it("keeps every local build profile on one explicit variant selector", () => {
     const profiles = require("../eas.json").build;
 
     expect(Object.fromEntries(
       Object.entries(profiles).map(([name, profile]: [string, any]) => [
         name,
-        profile.env?.EXPO_PUBLIC_GIFT_ORIGIN,
+        Object.keys(profile.env ?? {}),
       ]),
     )).toEqual({
-      development: "https://onetapreality.com",
-      preview: "https://onetapreality.com",
-      alpha: "https://staging.onetapreality.com",
-      "staging-testflight": "https://staging.onetapreality.com",
-      "beta-external": "https://staging.onetapreality.com",
-      production: "https://onetapreality.com",
+      development: ["APP_VARIANT"],
+      preview: ["APP_VARIANT"],
+      alpha: ["APP_VARIANT"],
+      "staging-testflight": ["APP_VARIANT"],
+      "beta-external": ["APP_VARIANT"],
+      production: ["APP_VARIANT"],
     });
   });
 

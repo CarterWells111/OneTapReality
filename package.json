@@ -81,9 +81,9 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "dev": "expo start",
-    "start": "expo start",
-    "build:server": "expo export --platform web --no-ssg",
+    "dev": "node scripts/run-expo-with-variant.cjs development-staging start",
+    "start": "node scripts/run-expo-with-variant.cjs development-staging start",
+    "build:server": "node scripts/run-expo-with-variant.cjs production export --platform web --no-ssg",
     "start:server": "node --require dotenv/config server.cjs",
     "verify:backend": "node scripts/verify-backend.cjs",
     "verify:public-site": "node scripts/verify-public-site.cjs",
@@ -93,8 +93,8 @@
     "alpha:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile alpha",
     "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "ios": "node scripts/run-expo-with-variant.cjs development-staging start --ios",
+    "web": "node scripts/run-expo-with-variant.cjs development-staging start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "test": "jest --watch",

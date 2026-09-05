@@ -2,8 +2,8 @@ const { getDefaultConfig } = require("expo/metro-config");
 const path = require("node:path");
 const {
   createActivateEntryResolver,
-  normalizeReleaseAudience,
 } = require("./scripts/metro-activate-entry-resolver.cjs");
+const { resolveBuildVariant } = require("./scripts/build-variants.cjs");
 
 const config = getDefaultConfig(__dirname);
 
@@ -41,11 +41,10 @@ if (!__dirname.split(path.sep).includes(".worktrees")) {
   blockListSources.push(worktreeBlockList.source);
 }
 config.resolver.blockList = new RegExp(blockListSources.join("|"), "u");
+const buildVariant = resolveBuildVariant(process.env.APP_VARIANT);
 config.resolver.resolveRequest = createActivateEntryResolver({
   projectRoot: __dirname,
-  releaseAudience: normalizeReleaseAudience(
-    process.env.EXPO_PUBLIC_RELEASE_AUDIENCE,
-  ),
+  releaseAudience: buildVariant.releaseAudience,
 });
 
 module.exports = config;

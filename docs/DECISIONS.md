@@ -1,5 +1,14 @@
 ﻿# 决策记录
 
+## 2026-09-05：Beta 礼品恢复与独立 Development Build 并存
+
+现有外部 TestFlight Beta 的 `/activate` 占位页继续属于 external/public 构建边界；管理员 NFC 初始化只进入获准的 staging 内部构建。通过保持 `com.onereality.onetapreality`、`luyi.db`、SecureStore 键和本地照片目录规则不变的内部 TestFlight 构建原位更新 Beta，以恢复 staging 初始化、认领和主动发布；不得删除 App、迁移或覆盖现有本地旅行册。
+
+- Development Build 使用 `OneTapReality Dev`、`com.onereality.onetapreality.dev` 与 `onetapreality-dev`，只连接与 Beta 相同的 staging API、PostgreSQL 和私有媒体存储；两个 Bundle ID 的 SQLite、SecureStore、照片目录和登录 session 各自独立，不复制本地数据。
+- staging Universal Link 暂只由 Beta 接收。Development Build 使用构建级隔离的 staging 礼品链接输入入口，严格复用登录、成员、礼品状态和服务端权限校验；未来独立开发域名/AASA 需另行批准。
+- 普通旅行册继续默认仅保存在本机。只有用户明确发布到已绑定礼品时才上传共享快照和所选照片；不增加自动云同步。
+- production 不包含开发入口或 staging 配置。EAS 构建、TestFlight 提交、App Store Connect、DNS/AASA 和任何云端写操作继续逐项审批。
+
 ## 2026-09-03：中国大陆访问可用性与生产入口迁移
 
 为消除中国大陆移动网络访问官网时由旧 OpenAI Sites 入口返回 `chatgpt.site` 拦截页的问题，生产官网从该入口迁至同一 Cloudflare 账户内的独立静态 Worker。生产 API 与 PostgreSQL 同时保持在已验证的新加坡 Railway 环境；稳定域名、NFC URL、AASA、R2 bucket 与所有既有用户数据不变。
