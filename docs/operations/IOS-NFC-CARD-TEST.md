@@ -2,6 +2,8 @@
 
 本手册只用于首批 iPhone / iOS Beta 的三张内部样卡。不得记录完整 URL、token、验证码或邮箱，也不得把测试卡写成 production 域名。
 
+涉及保留现有 Beta 本地旅行册、双 App 并存和跨 App 共享版本验证时，先执行 [`DUAL-IOS-STAGING-TEST.md`](./DUAL-IOS-STAGING-TEST.md)。STAGING 礼品仅用于测试；PRODUCTION 礼品才可正式交付。测试实体卡不得写入 production URL，正式实体卡不得写入 staging URL，staging 内容不得自动复制到 production。所有实体卡写入仍需单独批准。
+
 ## 测试对象
 
 | 脱敏卡号 | 环境 | 用途 | 初始状态 |
@@ -14,7 +16,7 @@
 
 ## 测试前门槛
 
-- [ ] 当前代码来自干净的最新 `main` 候选分支，且内部演练使用 `npm run alpha:preflight:ios`、外部 Beta 使用 `npm run beta:preflight:ios`，对应预检与完整质量门禁均通过。
+- [ ] 当前代码来自干净的最新 `main` 候选分支，且内部演练使用 `npm run alpha:preflight:ios` 或 `npm run staging:preflight:ios`、Development Build 使用 `npm run development:preflight:ios`、外部 Beta 使用 `npm run beta:preflight:ios`，对应预检与完整质量门禁均通过。
 - [ ] EAS `alpha` 或 `staging-testflight` 构建经过对应的单独批准，安装在支持 NFC 的 iPhone 上；TestFlight 路径还需单独批准提交。记录 profile 与构建号，不记录安装链接中的敏感参数。
 - [ ] staging `/api/health` 返回 200、`database=ok`、`schemaVersion>=7`。
 - [ ] staging 的 `GIFT_SHARING_ENABLED=true`、`GIFT_URL_ORIGIN=https://staging.onetapreality.com` 已只读复核。

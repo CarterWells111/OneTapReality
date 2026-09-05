@@ -140,9 +140,10 @@ export function createLocalDiagnostics({
 }
 
 const isDevelopmentBuild = typeof __DEV__ !== "undefined" && __DEV__;
+const isClientRuntime = typeof window !== "undefined";
 
 export const localDiagnostics = createLocalDiagnostics({
-  enabled: process.env.NODE_ENV !== "test" && isLocalDiagnosticsEnabled({
+  enabled: process.env.NODE_ENV !== "test" && isClientRuntime && isLocalDiagnosticsEnabled({
     environmentId: getBuildEnvironment().environmentId,
     isDevelopment: isDevelopmentBuild,
   }),

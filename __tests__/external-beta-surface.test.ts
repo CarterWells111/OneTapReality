@@ -48,18 +48,11 @@ describe("external Beta release surface", () => {
     expect(appJson.expo.version).toBe("1.1.2");
   });
 
-  it("exposes only the two public client variables to beta-external", () => {
+  it("selects the external Beta build through one validated public variant", () => {
     const eas = readJson("eas.json");
     const env = eas.build["beta-external"].env;
 
-    expect(Object.keys(env).sort()).toEqual([
-      "EXPO_PUBLIC_API_ORIGIN",
-      "EXPO_PUBLIC_GIFT_ORIGIN",
-      "EXPO_PUBLIC_RELEASE_AUDIENCE",
-    ]);
-    expect(env.EXPO_PUBLIC_GIFT_ORIGIN).toBe(
-      "https://staging.onetapreality.com",
-    );
+    expect(env).toEqual({ APP_VARIANT: "external-beta-staging" });
     expect(JSON.stringify(env)).not.toMatch(
       /DATABASE_URL|PEPPER|SECRET|PASSWORD|RESEND_API_KEY|R2_ACCESS_KEY/i,
     );

@@ -4,6 +4,8 @@
 
 现有外部 TestFlight Beta 的 `/activate` 占位页继续属于 external/public 构建边界；管理员 NFC 初始化只进入获准的 staging 内部构建。通过保持 `com.onereality.onetapreality`、`luyi.db`、SecureStore 键和本地照片目录规则不变的内部 TestFlight 构建原位更新 Beta，以恢复 staging 初始化、认领和主动发布；不得删除 App、迁移或覆盖现有本地旅行册。
 
+staging 与 production 的礼品序号分别独立递增，不具有跨环境对应关系。所有管理员礼品界面、NFC 写入确认和危险操作必须同时显示环境名称与礼品序号。客户端必须阻止跨环境写卡和发布。staging 数据不得自动同步或提升为 production 数据。
+
 - Development Build 使用 `OneTapReality Dev`、`com.onereality.onetapreality.dev` 与 `onetapreality-dev`，只连接与 Beta 相同的 staging API、PostgreSQL 和私有媒体存储；两个 Bundle ID 的 SQLite、SecureStore、照片目录和登录 session 各自独立，不复制本地数据。
 - staging Universal Link 暂只由 Beta 接收。Development Build 使用构建级隔离的 staging 礼品链接输入入口，严格复用登录、成员、礼品状态和服务端权限校验；未来独立开发域名/AASA 需另行批准。
 - 普通旅行册继续默认仅保存在本机。只有用户明确发布到已绑定礼品时才上传共享快照和所选照片；不增加自动云同步。

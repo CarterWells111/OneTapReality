@@ -7,8 +7,8 @@ if (expoArguments.length === 0) {
   throw new Error("An Expo command is required");
 }
 
-const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-const result = spawnSync(executable, ["expo", ...expoArguments], {
+const expoCli = require.resolve("expo/bin/cli");
+const result = spawnSync(process.execPath, [expoCli, ...expoArguments], {
   cwd: process.cwd(),
   env: { ...process.env, APP_VARIANT: variantName },
   stdio: "inherit",

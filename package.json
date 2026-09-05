@@ -91,6 +91,8 @@
     "check:lockfile": "node scripts/check-release-lockfile.cjs",
     "beta:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile beta-external",
     "alpha:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile alpha",
+    "staging:preflight:ios": "node scripts/check-ios-beta-readiness.cjs --profile staging-testflight",
+    "development:preflight:ios": "node scripts/check-ios-development-readiness.cjs",
     "release:ios": "node scripts/release-ios-testflight.cjs",
     "reset-project": "node ./scripts/reset-project.js",
     "ios": "node scripts/run-expo-with-variant.cjs development-staging start --ios",
