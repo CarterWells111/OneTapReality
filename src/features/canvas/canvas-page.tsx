@@ -146,11 +146,11 @@ export function CanvasPage({
       {!background && coverImageUri && isMissingPhotoToken(coverImageUri) ? (
         <LocalMissingPhotoPlaceholder style={StyleSheet.absoluteFill} testID="canvas-missing-cover-placeholder" />
       ) : !background && coverImageUri ? (
-        <CroppedImage
+        <TrackedCroppedImage
+          assetId="cover"
           crop={layout.coverCrop}
           imageTestID="canvas-cover-image"
-          onDisplay={() => onAssetEvent?.({ id: "cover", outcome: "displayed" })}
-          onError={() => onAssetEvent?.({ id: "cover", outcome: "error" })}
+          onAssetEvent={onAssetEvent}
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
           testID="canvas-cover-image-viewport"
@@ -216,6 +216,16 @@ function TrackedPageImage({ assetId, onAssetEvent, ...props }: React.ComponentPr
     onAssetEvent?.({ id: assetId, outcome });
   };
   return <Image {...props} onDisplay={() => report("displayed")} onError={() => report("error")} />;
+}
+
+function TrackedCroppedImage({ assetId, onAssetEvent, ...props }: React.ComponentProps<typeof CroppedImage> & { assetId: string; onAssetEvent?: (event: CanvasAssetEvent) => void }) {
+  const reported = React.useRef(false);
+  const report = (outcome: CanvasAssetEvent["outcome"]) => {
+    if (reported.current) return;
+    reported.current = true;
+    onAssetEvent?.({ id: assetId, outcome });
+  };
+  return <CroppedImage {...props} onDisplay={() => report("displayed")} onError={() => report("error")} />;
 }
 
 function CoverColorPreview({ value }: { value: SharedValue<string> }) {

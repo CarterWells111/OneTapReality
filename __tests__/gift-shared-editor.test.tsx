@@ -91,6 +91,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
 
 import { SharedAlbumEditor } from "../src/features/gifts/shared-album-editor";
 import { AlbumMetadataEditor } from "../src/features/memories/album-metadata-editor";
+import { UserActionRequiredError } from "../src/services/backend/user-facing-error";
 
 const album: any = {
   role: "editor", title: "Trip", travelDate: "2026-08-16", version: 4, publishedAt: "2026-08-16T00:00:00Z", cover: null,
@@ -256,9 +257,8 @@ describe("SharedAlbumEditor", () => {
 
     const directory = sessionDirectory(staged.uri);
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(directory, { idempotent: true });
-    const uploadCall = (global.fetch as jest.Mock).mock.calls.find(([, options]) => options?.method === "PUT");
-    expect(uploadCall).toBeDefined();
-    expect((global.fetch as jest.Mock).mock.invocationCallOrder.at(-1)).toBeLessThan(
+    expect(mockUploadFiles).toHaveBeenCalled();
+    expect(mockUploadFiles.mock.invocationCallOrder.at(-1)).toBeLessThan(
       (FileSystem.deleteAsync as jest.Mock).mock.invocationCallOrder.at(-1)!,
     );
   });
@@ -382,7 +382,7 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-png", uploads: [{ position: 0, uploadUrl: "https://upload.test/png" }], coverUpload: null });
     render(<SharedAlbumEditor accessToken="token" album={noMediaAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
     fireEvent.press(screen.getByText("set local png cover"));
-    fireEvent.press(screen.getByText("发布新版本"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
     await waitFor(() => expect(mockFinish).toHaveBeenCalled());
     expect(mockCreateDerivative).toHaveBeenCalledWith("file:///new.png", "image/png");
     expect(mockStart.mock.calls[0][2].media).toEqual([{ position: 0, contentType: "image/png", byteSize: 300 }]);
@@ -392,7 +392,7 @@ describe("SharedAlbumEditor", () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-two", uploads: [
       { position: 0, uploadUrl: "https://upload.test/a" }, { position: 1, uploadUrl: "https://upload.test/b" },
     ], coverUpload: null });
-    mockUploadFiles.mockRejectedValueOnce(new Error("第 1 张照片上传失败，请检查网络后重试。"));
+    mockUploadFiles.mockRejectedValueOnce(new UserActionRequiredError("第 1 张照片上传失败，请检查网络后重试。"));
     const onPublished = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add two local photos"));

@@ -1,5 +1,5 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftEmailCode, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftPublishPayload, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, consumeGiftEmailCode, createGiftSession, getGiftSessionEmail, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
+import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftPublishPayload, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
 import { users } from "../src/server/db/schema";
 
 describe("gift repository", () => {
@@ -8,6 +8,7 @@ describe("gift repository", () => {
     try {
       await migrateBackendDatabase(db);
       await createGift(db, { id: "gift-1", tokenHash: "publish-token", createdAt: "2026-09-06T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "publish-token", "owner@example.com", "2026-09-06T00:00:01.000Z");
       await createGiftPublishSession(db, {
         id: "publish-1", giftId: "gift-1", ownerEmail: "Owner@Example.com", baseVersion: 0,
         createdAt: "2026-09-06T00:00:00.000Z", expiresAt: "2026-09-06T00:30:00.000Z",

@@ -5,7 +5,7 @@ import * as Print from "expo-print";
 
 import { capturePagesAsImages } from "./page-capture-provider";
 import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../memories/local-photo-integrity";
-import type { CanvasImageElement, CanvasTextElement, StoryPage } from "../../types/memory";
+import type { StoryPage } from "../../types/memory";
 
 type ShareTarget = {
   coverImage?: string;
@@ -13,6 +13,8 @@ type ShareTarget = {
   photoUris?: string[];
   title: string;
 };
+
+class PdfExportUserError extends Error {}
 
 /**
  * 导出/分享 ActionSheet。
@@ -42,8 +44,8 @@ async function handlePdfExport(target: ShareTarget) {
   }
   try {
     await exportPdf(pages, title);
-  } catch {
-    Alert.alert("导出失败", "暂时无法生成 PDF，请稍后重试。");
+  } catch (error) {
+    Alert.alert("导出失败", error instanceof PdfExportUserError ? error.message : "暂时无法生成 PDF，请稍后重试。");
   }
 }
 
@@ -77,10 +79,15 @@ export const MAX_PDF_ENCODED_IMAGE_CHARACTERS = 32 * 1024 * 1024;
 
 async function exportPdf(pages: StoryPage[], title: string) {
   // 1. 逐页截图（有 layout 的页由 CanvasPage 渲染，无 layout 的返回 null）
-  const captured = await capturePagesAsImages(pages, PAGE_WIDTH, PAGE_HEIGHT);
+  let captured: (string | null)[];
+  try {
+    captured = await capturePagesAsImages(pages, PAGE_WIDTH, PAGE_HEIGHT);
+  } catch (error) {
+    throw new PdfExportUserError(error instanceof Error ? error.message : "页面截图失败，PDF 未生成");
+  }
   const encodedCharacters = captured.reduce((total, dataUri) => total + (dataUri?.length ?? 0), 0);
   if (encodedCharacters > MAX_PDF_ENCODED_IMAGE_CHARACTERS) {
-    throw new Error("这本旅行册页数或图片内容过多，暂时无法一次导出 PDF。请减少册页后重试。");
+    throw new PdfExportUserError("这本旅行册页数或图片内容过多，暂时无法一次导出 PDF。请减少册页后重试。");
   }
 
   // 2. 拼接 HTML：有截图的用截图，没截图的用 HTML
@@ -92,7 +99,7 @@ async function exportPdf(pages: StoryPage[], title: string) {
         // 截图成功 → 一整页就是一张图，不再包 div，减少一层可能溢出的盒子
         return `<img class="sheet" src="${dataUri}" alt="第 ${i + 1} 页" />`;
       }
-      if (page.layout) throw new Error(`第 ${i + 1} 页截图不完整，PDF 未生成`);
+      if (page.layout) throw new PdfExportUserError(`第 ${i + 1} 页截图不完整，PDF 未生成`);
       // 只有确实没有 Canvas layout 的旧版纯文字页使用 HTML。
       return pageToHtml(page);
     })

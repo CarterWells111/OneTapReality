@@ -11,6 +11,7 @@ import {
 import {
   toUserFacingOperationError,
 } from "../../services/backend/user-facing-error";
+import type { StoryPage } from "../../types/memory";
 import {
   BookCanvasEditor,
   type BookCanvasEditorHandle,
@@ -176,8 +177,6 @@ export function SharedAlbumEditor({
     setBusy(true);
     setBusyIntent("stage");
     setMessage("");
-    const derivatives: GiftImageDerivative[] = [];
-    let downloadedCoverUri: string | null = null;
     try {
       const prepared = await operationEditor?.prepareSave();
       if (!current()) return;
@@ -219,6 +218,8 @@ export function SharedAlbumEditor({
     setBusy(true);
     setBusyIntent("publish");
     setMessage("");
+    const derivatives: GiftImageDerivative[] = [];
+    let downloadedCoverUri: string | null = null;
     try {
       const prepared = await operationEditor?.prepareSave();
       if (!current()) return;

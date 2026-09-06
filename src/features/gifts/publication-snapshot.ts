@@ -76,12 +76,13 @@ export function snapshotPagesForPublication(
     };
 
     if (layout) {
+      const { photoPlanVersion: _photoPlanVersion, ...shareableLayout } = layout;
       snapshot.layout = {
-        ...layout,
-        ...(layout.coverImage
-          ? { coverImage: stableReference(requireReference(page, layout.coverImage)) }
+        ...shareableLayout,
+        ...(shareableLayout.coverImage
+          ? { coverImage: stableReference(requireReference(page, shareableLayout.coverImage)) }
           : {}),
-        elements: layout.elements.map((element) => {
+        elements: shareableLayout.elements.map((element) => {
           if (element.type !== "image" || !element.uri) return { ...element };
           const reference = requireReference(page, element.uri);
           return {

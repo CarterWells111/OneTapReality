@@ -239,16 +239,19 @@ describe("gift owner member management", () => {
 
     await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
     expect(mockStartOwnedGiftPublish.mock.calls[0][2].media).toEqual([
-      { position: 0, contentType: "image/jpeg", byteSize: 12 },
-      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+      { position: 0, contentType: "image/jpeg", byteSize: 1500 },
+      { position: 1, contentType: "image/jpeg", byteSize: 1500 },
     ]);
-    expect((FileSystem.uploadAsync as jest.Mock).mock.calls.map((call) => call[1])).toEqual([
-      "file:///one.jpg", "file:///two.jpg",
-    ]);
+    expect(mockUploadPublicationFiles).toHaveBeenCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ position: 0, uri: "file:///cache/file%3A%2F%2F%2Fone.jpg.jpg" }),
+        expect.objectContaining({ position: 1, uri: "file:///cache/file%3A%2F%2F%2Ftwo.jpg.jpg" }),
+      ],
+    }));
     expect(mockStartOwnedGiftPublish.mock.calls[0][2].pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
   });
 
-  it("maps layout media explicitly when legacy photoUri is stale", async () => {
+  it("maps every page and layout image explicitly when legacy photoUri differs", async () => {
     const memory = {
       id: "memory-1", title: "Layout trip", city: "London", travelDate: "2026-08-16", photoUris: [],
       pages: [{
@@ -282,20 +285,22 @@ describe("gift owner member management", () => {
 
     const payload = mockStartOwnedGiftPublish.mock.calls[0][2];
     expect(payload.media).toEqual([
-      { position: 0, contentType: "image/jpeg", byteSize: 12 },
-      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+      { position: 0, contentType: "image/jpeg", byteSize: 1700 },
+      { position: 1, contentType: "image/jpeg", byteSize: 1500 },
+      { position: 2, contentType: "image/jpeg", byteSize: 1500 },
     ]);
     expect(payload.pages[0].page).not.toHaveProperty("photoUri");
     expect(payload.pages[0].page.layout.elements.filter((element: { type: string }) => element.type === "image")).toEqual([
-      expect.objectContaining({ uri: "", mediaPosition: 0 }),
       expect.objectContaining({ uri: "", mediaPosition: 1 }),
+      expect.objectContaining({ uri: "", mediaPosition: 2 }),
     ]);
 
     const restored = mapSharedAlbumToStoryPages({
       role: "viewer", title: "Layout trip", travelDate: null, pages: payload.pages,
       media: [
-        { id: "one", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
-        { id: "two", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
+        { id: "stale", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/stale.jpg" },
+        { id: "one", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
+        { id: "two", position: 2, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
       ],
       publishedAt: "2026-08-16T00:00:00Z", version: 1, cover: null,
     });

@@ -465,6 +465,7 @@ export function CanvasElement({
                 contentScale={contentScale}
                 element={element}
                 fontScale={fontScale}
+                onAssetEvent={onAssetEvent}
                 stylePreview={stylePreview}
               />
             </View>
@@ -601,13 +602,13 @@ function TrackedImage({
 function ImageElement({ assetId, crop, onAssetEvent, testID, uri }: { assetId: string; crop?: CanvasImageElement["crop"]; onAssetEvent?: (event: CanvasAssetEvent) => void; testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
   const reported = React.useRef(false);
-  const report = (outcome: CanvasAssetEvent["outcome"]) => {
+  const report = React.useCallback((outcome: CanvasAssetEvent["outcome"]) => {
     if (reported.current) return;
     reported.current = true;
     onAssetEvent?.({ id: assetId, outcome });
-  };
+  }, [assetId, onAssetEvent]);
   const missing = isMissingPhotoToken(uri);
-  React.useEffect(() => { if (missing) report("error"); }, [missing]);
+  React.useEffect(() => { if (missing) report("error"); }, [missing, report]);
   if (missing || failed) {
     return (
       <View accessibilityLabel="本地照片缺失" accessibilityRole="image" accessible style={styles.imagePlaceholder} testID={isMissingPhotoToken(uri) ? "canvas-missing-image-placeholder" : "canvas-image-placeholder"}>
