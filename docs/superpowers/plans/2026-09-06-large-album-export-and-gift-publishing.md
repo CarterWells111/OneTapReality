@@ -835,4 +835,3 @@ Confirm in the final handoff:
 - If the new client must be rolled back, existing POST/PUT publishing and already-published R2 objects remain compatible.
 - Never delete or rewrite local originals during rollback.
 - Failed or superseded publication sessions remain subject to existing maintenance cleanup; do not manually delete broad R2 prefixes.
-
