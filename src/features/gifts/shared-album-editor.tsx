@@ -1,4 +1,5 @@
 import * as React from "react";
+import * as FileSystem from "expo-file-system/legacy";
 import { Text, View } from "react-native";
 
 import { AppButton, bodyFont, colors } from "../../components/ui";
@@ -6,13 +7,10 @@ import {
   BackendApiClient,
   BackendApiError,
   type InvitedGiftAlbum,
-  type SharedAlbumPublishPayload,
 } from "../../services/backend/api-client";
 import {
   toUserFacingOperationError,
-  UserActionRequiredError,
 } from "../../services/backend/user-facing-error";
-import type { CanvasElement, StoryPage } from "../../types/memory";
 import {
   BookCanvasEditor,
   type BookCanvasEditorHandle,
@@ -24,6 +22,9 @@ import {
 } from "../memories/album-metadata-editor";
 import { createPhotoStagingSession, type PhotoStagingSession } from "../memories/photo-persistence";
 import { mapSharedAlbumToEditablePages } from "./shared-album-mapper";
+import { createGiftImageDerivative, removeGiftImageDerivatives, type GiftImageDerivative } from "./gift-image-derivative";
+import { collectPublicationSources, snapshotPagesForPublication } from "./publication-snapshot";
+import { uploadPublicationFile, uploadPublicationFiles, type PublicationUploadFile } from "./publication-uploader";
 
 type Props = {
   accessToken: string;
@@ -39,8 +40,6 @@ type Props = {
   onReload?: (cursor: { pageId: string; index: number }) => void | Promise<void>;
 };
 
-type MediaSource = { uri: string; existingId?: string; contentType?: string; byteSize?: number };
-
 const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
 const STAGED_MESSAGE = "修改已暂存在当前编辑会话，尚未发布。";
 let sharedPhotoSessionSequence = 0;
@@ -48,42 +47,6 @@ let sharedPhotoSessionSequence = 0;
 function nextSharedPhotoSessionId(giftId: string) {
   sharedPhotoSessionSequence += 1;
   return `shared-gift-${giftId}-${Date.now()}-${sharedPhotoSessionSequence}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function pageImageUris(page: StoryPage) {
-  const uris: string[] = [];
-  if (page.photoUri) uris.push(page.photoUri);
-  if (page.coverImage) uris.push(page.coverImage);
-  if (page.layout?.coverImage) uris.push(page.layout.coverImage);
-  page.layout?.elements.forEach((element) => { if (element.type === "image" && element.uri) uris.push(element.uri); });
-  return uris;
-}
-
-function snapshotPage(page: StoryPage, positions: Map<string, { position: number; mediaId?: string }>) {
-  const { photoUri: _photoUri, coverImage, ...safe } = page;
-  const topCover = coverImage ? positions.get(coverImage) : undefined;
-  const withTopCover = {
-    ...safe,
-    ...(topCover ? { coverImage: topCover.mediaId ? `shared-media:${topCover.mediaId}` : `shared-position:${topCover.position}` } : {}),
-  };
-  if (!safe.layout) return withTopCover;
-  const { photoPlanVersion: _photoPlanVersion, ...layoutWithoutLocalPlan } = safe.layout;
-  return {
-    ...withTopCover,
-    layout: {
-      ...layoutWithoutLocalPlan,
-      ...(layoutWithoutLocalPlan.coverImage && positions.get(layoutWithoutLocalPlan.coverImage)
-        ? { coverImage: positions.get(layoutWithoutLocalPlan.coverImage)!.mediaId
-          ? `shared-media:${positions.get(layoutWithoutLocalPlan.coverImage)!.mediaId}`
-          : `shared-position:${positions.get(layoutWithoutLocalPlan.coverImage)!.position}` }
-        : {}),
-      elements: layoutWithoutLocalPlan.elements.map((element): CanvasElement | Record<string, unknown> => {
-        if (element.type !== "image") return element;
-        const ref = positions.get(element.uri);
-        return { ...element, uri: "", ...(ref?.mediaId ? { mediaId: ref.mediaId } : {}), ...(ref ? { mediaPosition: ref.position } : {}) };
-      }),
-    },
-  };
 }
 
 export function SharedAlbumEditor({
@@ -205,6 +168,8 @@ export function SharedAlbumEditor({
     setBusy(true);
     setBusyIntent("stage");
     setMessage("");
+    const derivatives: GiftImageDerivative[] = [];
+    let downloadedCoverUri: string | null = null;
     try {
       const prepared = await operationEditor?.prepareSave();
       if (!current()) return;
@@ -265,69 +230,67 @@ export function SharedAlbumEditor({
       pagesRef.current = publishPages;
       setPages(publishPages);
       const existingByUrl = new Map(album.media.map((media) => [media.readUrl, media]));
-      const sources: MediaSource[] = [];
-      const seen = new Set<string>();
-      publishPages.flatMap(pageImageUris).forEach((uri) => {
-        if (seen.has(uri)) return;
-        seen.add(uri);
-        const existing = existingByUrl.get(uri);
-        sources.push(existing ? { uri, existingId: existing.id, contentType: existing.contentType } : { uri });
-      });
-      for (const source of sources) {
+      const sources = collectPublicationSources(publishPages, existingByUrl);
+      const derivativesByPosition = new Map<number, GiftImageDerivative>();
+      const newSources = sources.filter((source) => !source.existingId);
+      let optimizedCount = 0;
+      for (let position = 0; position < sources.length; position += 1) {
+        const source = sources[position];
         if (source.existingId) continue;
-        const response = await fetch(source.uri);
-        if (!current()) return;
-        if (!response.ok) throw new UserActionRequiredError("有照片无法读取，请重新选择后再发布。");
-        const blob = await response.blob();
-        if (!current()) return;
-        source.contentType = blob.type || "image/jpeg";
-        source.byteSize = blob.size;
+        optimizedCount += 1;
+        setMessage(`正在优化照片 ${optimizedCount}/${newSources.length}…`);
+        try {
+          const derivative = await createGiftImageDerivative(source.uri, "image/jpeg");
+          derivatives.push(derivative);
+          derivativesByPosition.set(position, derivative);
+        } catch {
+          throw new Error(`第 ${position + 1} 张照片无法处理，请重新选择后再试。`);
+        }
       }
-      let coverBlob: Blob | null = null;
+      let coverDerivative: GiftImageDerivative | null = null;
       if (album.cover) {
-        const response = await fetch(album.cover.readUrl);
-        if (!current()) return;
-        if (!response.ok) throw new UserActionRequiredError("封面图片无法读取，请重新加载后再发布。");
-        coverBlob = await response.blob();
-        if (!current()) return;
+        if (!FileSystem.cacheDirectory) throw new Error("无法使用临时目录处理封面。");
+        downloadedCoverUri = `${FileSystem.cacheDirectory}gift-cover-${giftId}-${Date.now()}`;
+        const download = await FileSystem.downloadAsync(album.cover.readUrl, downloadedCoverUri);
+        downloadedCoverUri = download.uri;
+        setMessage("正在优化礼品封面…");
+        coverDerivative = await createGiftImageDerivative(download.uri, album.cover.contentType);
+        derivatives.push(coverDerivative);
       }
-      const refs = new Map(sources.map((source, position) => [source.uri, { position, ...(source.existingId ? { mediaId: source.existingId } : {}) }]));
-      const publishPayload: SharedAlbumPublishPayload = {
+      const references = sources.map((source, position) => ({ ...source, position }));
+      const publishPayload = {
         baseVersion: album.version,
         sourceMemoryId: `shared:${giftId}`,
         title,
         travelDate: publishMetadata.travelDate,
-        pages: publishPages.map((page, position) => ({ position, page: snapshotPage(page, refs) })),
+        pages: snapshotPagesForPublication(publishPages, references),
         media: sources.map((source, position) => source.existingId
           ? { position, mediaId: source.existingId }
-          : { position, contentType: source.contentType!, byteSize: source.byteSize! }),
-        cover: coverBlob ? { contentType: coverBlob.type || album.cover!.contentType, byteSize: coverBlob.size } : null,
+          : { position, contentType: derivativesByPosition.get(position)!.contentType, byteSize: derivativesByPosition.get(position)!.byteSize }),
+        cover: coverDerivative ? { contentType: coverDerivative.contentType, byteSize: coverDerivative.byteSize } : null,
       };
       const publication = isOwner
         ? await client.startOwnedGiftPublish(accessToken, giftId, publishPayload)
         : await client.startInvitedGiftPublish(giftId, accessToken, publishPayload);
       if (!current()) return;
-      for (const upload of publication.uploads) {
-        const source = sources[upload.position];
-        if (!source || source.existingId) throw new UserActionRequiredError("照片准备不完整，请重新发布。");
-        const readResponse = await fetch(source.uri);
-        if (!current()) return;
-        if (!readResponse.ok) throw new UserActionRequiredError("有照片无法读取，请重新选择后再发布。");
-        const blob = await readResponse.blob();
-        if (!current()) return;
-        const response = await fetch(upload.uploadUrl, { method: "PUT", headers: { "Content-Type": source.contentType! }, body: blob });
-        if (!current()) return;
-        if (!response.ok) throw new UserActionRequiredError("照片上传失败，请检查网络后重新发布。");
-      }
-      if (publication.coverUpload && coverBlob) {
-        const response = await fetch(publication.coverUpload.uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": coverBlob.type || album.cover!.contentType },
-          body: coverBlob,
-        });
-        if (!current()) return;
-        if (!response.ok) throw new UserActionRequiredError("封面上传失败，请检查网络后重新发布。");
-      }
+      const files: PublicationUploadFile[] = publication.uploads.map((upload) => {
+        const derivative = derivativesByPosition.get(upload.position);
+        if (!derivative) throw new Error("上传清单不完整，请重新发布。");
+        return { kind: "media", position: upload.position, uri: derivative.uri, contentType: derivative.contentType, uploadUrl: upload.uploadUrl };
+      });
+      if (publication.coverUpload && coverDerivative) files.push({
+        kind: "cover", uri: coverDerivative.uri, contentType: coverDerivative.contentType, uploadUrl: publication.coverUpload.uploadUrl,
+      });
+      await uploadPublicationFiles({
+        publicationId: publication.publicationId,
+        files,
+        uploadFile: uploadPublicationFile,
+        refreshUploads: (selection) => isOwner
+          ? client.refreshOwnedGiftPublishUploads(accessToken, giftId, selection)
+          : client.refreshInvitedGiftPublishUploads(giftId, accessToken, selection),
+        onProgress: (completed, total) => { if (current()) setMessage(`正在上传照片 ${completed}/${total}…`); },
+      });
+      if (!current()) return;
       if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
       else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
       if (!current()) return;
@@ -353,11 +316,21 @@ export function SharedAlbumEditor({
       } else if (error instanceof BackendApiError && error.status === 409 && error.code === "gift_album_version_conflict") {
         setStale(true);
         setMessage("相册已有新版本，请重新加载后再编辑。");
+      } else if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") {
+        setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
+      } else if (error instanceof BackendApiError && error.code === "gift_upload_incomplete") {
+        setMessage("部分照片尚未完整上传，请重新发布；当前共享版本未改变。");
       } else {
         setMessage(toUserFacingOperationError(error, "发布失败，请检查网络后重试。"));
       }
     } finally {
       operationEditor?.releaseSaveLock();
+      await removeGiftImageDerivatives(derivatives);
+      if (downloadedCoverUri) {
+        await FileSystem.deleteAsync(downloadedCoverUri, { idempotent: true }).catch((error) => {
+          console.warn("[gift-publish] 无法清理临时封面：", error);
+        });
+      }
       inFlight.current = false;
       if (current()) {
         setBusy(false);
