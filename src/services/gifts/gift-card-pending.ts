@@ -8,6 +8,7 @@ export type PendingGiftCard = {
   operationId: string;
   revision: number;
   cardId: string;
+  displayNumber?: number;
   cardCode: string;
   giftUrl: string;
   expiresAt: string;
@@ -42,6 +43,7 @@ function normalizePendingGiftCard(
     || !Number.isSafeInteger(revision)
     || revision < 1
     || !isSafeIdentifier(candidate.cardId)
+    || (candidate.displayNumber !== undefined && (!Number.isSafeInteger(candidate.displayNumber) || candidate.displayNumber < 1))
     || !isSafeIdentifier(candidate.cardCode)
     || typeof candidate.giftUrl !== "string"
     || candidate.giftUrl.length === 0
@@ -55,6 +57,7 @@ function normalizePendingGiftCard(
     operationId: candidate.operationId,
     revision,
     cardId: candidate.cardId,
+    ...(candidate.displayNumber !== undefined ? { displayNumber: candidate.displayNumber } : {}),
     cardCode: candidate.cardCode,
     giftUrl: candidate.giftUrl,
     expiresAt: candidate.expiresAt,
@@ -96,6 +99,7 @@ function sameReservation(left: PendingGiftCard, right: PendingGiftCard): boolean
     && left.operationId === right.operationId
     && left.revision === right.revision
     && left.cardId === right.cardId
+    && left.displayNumber === right.displayNumber
     && left.cardCode === right.cardCode
     && left.giftUrl === right.giftUrl
     && left.expiresAt === right.expiresAt

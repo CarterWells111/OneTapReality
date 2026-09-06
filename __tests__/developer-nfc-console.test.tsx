@@ -35,11 +35,11 @@ const {
 };
 
 const activeCard = {
-  id: "card-1", code: "CARD-001", state: "active" as const, note: "July batch", giftId: "gift-1", giftStatus: "unclaimed",
+  id: "card-1", displayNumber: 1, name: "Launch card", state: "active" as const, note: "July batch", giftId: "gift-1", giftStatus: "unclaimed",
   createdAt: "2026-07-24T00:00:00.000Z", activatedAt: "2026-07-24T00:01:00.000Z", retiredAt: null,
 };
 const initializingCard = {
-  id: "card-2", code: "CARD-002", state: "initializing" as const, note: "New batch", giftId: "gift-2", giftStatus: "initializing",
+  id: "card-2", displayNumber: 2, name: null, state: "initializing" as const, note: "New batch", giftId: "gift-2", giftStatus: "initializing",
   createdAt: "2026-07-24T00:02:00.000Z", expiresAt: "2026-07-24T00:15:00.000Z", activatedAt: null, retiredAt: null,
 };
 
@@ -118,6 +118,7 @@ function pendingReservation(
     operationId: "card-2",
     revision: 1,
     cardId: "card-2",
+    displayNumber: 2,
     cardCode: "CARD-002",
     giftUrl: STAGING_GIFT_URL,
     expiresAt,
@@ -128,7 +129,8 @@ function createClient(giftUrl = STAGING_GIFT_URL) {
   return {
     listAdminGiftCards: jest.fn().mockResolvedValue([activeCard]),
     getAdminGiftCard: jest.fn().mockResolvedValue({ card: activeCard, events: [{ id: "event-1", kind: "activated", actorEmail: "dev@example.com", metadata: null, createdAt: activeCard.activatedAt }]}),
-    reserveGiftCard: jest.fn().mockResolvedValue({ cardId: "card-2", cardCode: "CARD-002", giftUrl, expiresAt: "2026-07-24T00:15:00.000Z" }),
+    reserveGiftCard: jest.fn().mockResolvedValue({ cardId: "card-2", displayNumber: 2, cardCode: "CARD-002", giftUrl, expiresAt: "2026-07-24T00:15:00.000Z" }),
+    updateAdminGiftCard: jest.fn().mockResolvedValue({ card: { ...activeCard, name: "Updated name", note: "Updated note" } }),
     activateAdminGiftCard: jest.fn().mockResolvedValue({ activated: true }),
     retireAdminGiftCard: jest.fn().mockResolvedValue({ retired: true }),
   };
@@ -194,8 +196,52 @@ describe("developer NFC console", () => {
   it("lists active developer cards from the stored gift session", async () => {
     renderConsole();
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
+    expect(screen.getByText("Launch card")).toBeTruthy();
     expect(screen.getByText("July batch")).toBeTruthy();
+    expect(screen.queryByText(/CARD-/u)).toBeNull();
+  });
+
+  it("edits a card name and note without exposing its internal code", async () => {
+    const client = createClient();
+    renderConsole(client);
+    await screen.findByText("Card #1");
+    fireEvent.press(screen.getByText("Card #1"));
+    await screen.findByText("Edit name and note");
+    fireEvent.press(screen.getByText("Edit name and note"));
+    fireEvent.changeText(screen.getByLabelText("Card name"), "Updated name");
+    fireEvent.changeText(screen.getByLabelText("Card details note"), "Updated note");
+    fireEvent.press(screen.getByText("Save changes"));
+    await waitFor(() => expect(client.updateAdminGiftCard).toHaveBeenCalledWith("session", "card-1", { name: "Updated name", note: "Updated note" }));
+    expect(screen.queryByText(/CARD-/u)).toBeNull();
+  });
+
+  it("cancels metadata editing without submitting", async () => {
+    const client = createClient();
+    renderConsole(client);
+    await screen.findByText("Card #1");
+    fireEvent.press(screen.getByText("Card #1"));
+    await screen.findByText("Edit name and note");
+    fireEvent.press(screen.getByText("Edit name and note"));
+    fireEvent.changeText(screen.getByLabelText("Card name"), "Discard me");
+    fireEvent.press(screen.getByText("Cancel editing"));
+    expect(client.updateAdminGiftCard).not.toHaveBeenCalled();
+    expect(screen.getByText("Name: Launch card")).toBeTruthy();
+  });
+
+  it("keeps metadata input available when saving fails", async () => {
+    const client = createClient();
+    client.updateAdminGiftCard.mockRejectedValueOnce(new Error("CARD-INTERNAL-SECRET failed"));
+    renderConsole(client);
+    await screen.findByText("Card #1");
+    fireEvent.press(screen.getByText("Card #1"));
+    await screen.findByText("Edit name and note");
+    fireEvent.press(screen.getByText("Edit name and note"));
+    fireEvent.changeText(screen.getByLabelText("Card name"), "Keep me");
+    fireEvent.press(screen.getByText("Save changes"));
+    await screen.findByText("Unable to save card metadata.");
+    expect(screen.getByLabelText("Card name").props.value).toBe("Keep me");
+    expect(screen.queryByText(/CARD-/u)).toBeNull();
   });
 
   it("blocks a second reservation until pending-card recovery finishes", async () => {
@@ -206,7 +252,7 @@ describe("developer NFC console", () => {
     const client = createClient();
     renderConsole(client);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
     expect(client.reserveGiftCard).not.toHaveBeenCalled();
 
@@ -236,7 +282,7 @@ describe("developer NFC console", () => {
     )).toBeTruthy());
 
     await act(async () => oldInventory.resolve([activeCard]));
-    expect(screen.queryByText("CARD-001")).toBeNull();
+    expect(screen.queryByText("Card #1")).toBeNull();
     expect(screen.getByText("This email does not have developer NFC access.")).toBeTruthy();
     expect(screen.queryByText(/access-token|old secret/u)).toBeNull();
   });
@@ -486,7 +532,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     expect(await screen.findByText(
@@ -513,7 +559,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledTimes(1));
@@ -543,7 +589,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer, stagingPolicy, () => mutableNow);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledTimes(1));
@@ -575,7 +621,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer, stagingPolicy, () => mutableNow);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     expect(await screen.findByText(
@@ -780,7 +826,7 @@ describe("developer NFC console", () => {
     currentAuth = { isAuthReady: true, session: oldSession };
     const view = renderConsole(client, writer);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
     await waitFor(() => expect(client.reserveGiftCard).toHaveBeenCalledTimes(1));
     view.unmount();
@@ -801,7 +847,7 @@ describe("developer NFC console", () => {
     currentAuth = { isAuthReady: true, session: oldSession };
     const view = renderConsole(client, writer);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     jest.clearAllMocks();
     fireEvent.press(screen.getByText("Initialize current blank card"));
     await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledTimes(1));
@@ -861,7 +907,7 @@ describe("developer NFC console", () => {
     currentAuth = { isAuthReady: true, session: oldSession };
     const view = renderConsole(client, writer);
 
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
     fireEvent.press(screen.getByText("Initialize current blank card"));
     await waitFor(() => expect(client.activateAdminGiftCard).toHaveBeenCalledWith(
       oldSession.accessToken,
@@ -892,7 +938,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     currentAuth = { isAuthReady: true, session: oldSession };
     const view = renderConsole(client, writer);
-    await screen.findByText("CARD-001");
+    await screen.findByText("Card #1");
 
     currentAuth = { isAuthReady: true, session: newAdminSession };
     view.rerender(consoleElement(client, writer));
@@ -926,7 +972,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.changeText(screen.getByLabelText("Card note"), "New batch");
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
@@ -948,10 +994,10 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
-    await waitFor(() => expect(screen.getByText("CARD-002")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #2")).toBeTruthy());
     expect(screen.getByText("Retry NFC write")).toBeTruthy();
     expect(client.activateAdminGiftCard).not.toHaveBeenCalled();
   });
@@ -964,7 +1010,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     await waitFor(() => expect(screen.getByText(/does not contain the expected activation URL/)).toBeTruthy());
@@ -983,7 +1029,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Prepare blank card"));
 
     await waitFor(() => expect(screen.getByText("This card already contains a URL and was not changed.")).toBeTruthy());
@@ -1002,7 +1048,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
     await waitFor(() => expect(savePendingGiftCard).toHaveBeenCalledWith(
       "user-1",
@@ -1025,7 +1071,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer, productionPolicy);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     await waitFor(() => expect(writer.replaceHttpsUrl).toHaveBeenCalledWith(
@@ -1042,7 +1088,7 @@ describe("developer NFC console", () => {
     } as unknown as NfcUrlWriter;
     renderConsole(client, writer);
 
-    await waitFor(() => expect(screen.getByText("CARD-001")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Card #1")).toBeTruthy());
     fireEvent.press(screen.getByText("Initialize current blank card"));
 
     await waitFor(() => expect(screen.getByText(
