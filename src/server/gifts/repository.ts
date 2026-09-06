@@ -489,9 +489,10 @@ export async function createGiftPublishSession(
   });
 }
 
-export async function getGiftPublishPayload(db: BackendDatabase, sessionId: string, ownerEmail: string, now: string): Promise<GiftPublicationPayload | null> {
+export async function getGiftPublishPayload(db: BackendDatabase, sessionId: string, giftId: string, ownerEmail: string, now: string): Promise<GiftPublicationPayload | null> {
   const [session] = await db.select({ payloadJson: giftPublishSessions.payloadJson }).from(giftPublishSessions).where(and(
     eq(giftPublishSessions.id, sessionId),
+    eq(giftPublishSessions.giftId, giftId),
     eq(giftPublishSessions.ownerEmail, normalizeEmail(ownerEmail)),
     isNull(giftPublishSessions.completedAt),
     gt(giftPublishSessions.expiresAt, now),

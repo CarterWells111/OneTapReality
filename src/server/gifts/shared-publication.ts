@@ -17,6 +17,46 @@ function normalizeSharedTravelDate(travelDate: string | null | undefined): strin
   return travelDate;
 }
 
+export const GIFT_PUBLICATION_LIFETIME_MS = 30 * 60_000;
+
+export type RefreshPublishUploadsBody = {
+  publicationId?: string;
+  positions?: number[];
+  cover?: boolean;
+};
+
+export function selectRefreshableUploads(
+  body: RefreshPublishUploadsBody,
+  payload: GiftPublicationPayload,
+): { media: GiftPublicationPayload["media"]; cover: GiftPublicationPayload["cover"] | null } {
+  if (!body || typeof body !== "object" || typeof body.publicationId !== "string" || !body.publicationId.trim()) {
+    throw new ApiError(400, "validation_failed", "A publication id is required");
+  }
+  if (body.positions !== undefined && !Array.isArray(body.positions)) {
+    throw new ApiError(400, "validation_failed", "Upload positions must be an array");
+  }
+  if (body.cover !== undefined && typeof body.cover !== "boolean") {
+    throw new ApiError(400, "validation_failed", "Cover selection must be a boolean");
+  }
+  const positions = body.positions ?? [];
+  if (positions.some((position) => !Number.isInteger(position) || position < 0)
+    || new Set(positions).size !== positions.length) {
+    throw new ApiError(400, "validation_failed", "Upload positions must be unique non-negative integers");
+  }
+  const uploadByPosition = new Map(payload.media
+    .filter((item) => item.source !== "existing")
+    .map((item) => [item.position, item]));
+  const media = positions.map((position) => {
+    const item = uploadByPosition.get(position);
+    if (!item) throw new ApiError(400, "validation_failed", "Only pending uploaded media can be refreshed");
+    return item;
+  });
+  if (body.cover && !payload.cover) {
+    throw new ApiError(400, "validation_failed", "This publication has no uploaded cover");
+  }
+  return { media, cover: body.cover ? (payload.cover ?? null) : null };
+}
+
 export function prepareSharedPublication(body: SharedPublishBody, giftId: string, sessionId: string, options: { allowExistingMedia?: boolean } = {}) {
   if (!body || typeof body !== "object" || (body.pages !== undefined && !Array.isArray(body.pages)) || (body.media !== undefined && !Array.isArray(body.media))) throw new ApiError(400, "validation_failed", "Pages and media must be arrays");
   if (!Number.isInteger(body.baseVersion) || body.baseVersion! < 0) throw new ApiError(400, "validation_failed", "A non-negative baseVersion is required");

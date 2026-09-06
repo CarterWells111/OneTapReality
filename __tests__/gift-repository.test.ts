@@ -1,8 +1,30 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
+import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftEmailCode, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftPublishPayload, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, consumeGiftEmailCode, createGiftSession, getGiftSessionEmail, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
 import { users } from "../src/server/db/schema";
 
 describe("gift repository", () => {
+  it("scopes active publication payload lookup to gift, actor, expiry, and completion", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "publish-token", createdAt: "2026-09-06T00:00:00.000Z" });
+      await createGiftPublishSession(db, {
+        id: "publish-1", giftId: "gift-1", ownerEmail: "Owner@Example.com", baseVersion: 0,
+        createdAt: "2026-09-06T00:00:00.000Z", expiresAt: "2026-09-06T00:30:00.000Z",
+        payload: { sourceMemoryId: "memory", title: "Trip", pages: [], media: [] },
+      });
+
+      await expect(getGiftPublishPayload(db, "publish-1", "gift-1", "owner@example.com", "2026-09-06T00:10:00.000Z"))
+        .resolves.toEqual(expect.objectContaining({ title: "Trip" }));
+      await expect(getGiftPublishPayload(db, "publish-1", "gift-2", "owner@example.com", "2026-09-06T00:10:00.000Z"))
+        .resolves.toBeNull();
+      await expect(getGiftPublishPayload(db, "publish-1", "gift-1", "other@example.com", "2026-09-06T00:10:00.000Z"))
+        .resolves.toBeNull();
+      await expect(getGiftPublishPayload(db, "publish-1", "gift-1", "owner@example.com", "2026-09-06T00:31:00.000Z"))
+        .resolves.toBeNull();
+    } finally { await close(); }
+  });
+
   it("claims a pre-registered gift once and persists its owner", async () => {
     const { db, close } = createBackendTestDatabase();
     try {
