@@ -19,7 +19,6 @@ import {
   toUserFacingOperationError,
   UserActionRequiredError,
 } from "../../services/backend/user-facing-error";
-import type { Memory } from "../../types/memory";
 
 function imageContentType(uri: string) {
   const lower = uri.split("?")[0].toLowerCase();

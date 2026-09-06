@@ -197,7 +197,7 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
         });
         if (cancelled || task.current !== activeTask) return;
         t.results[t.index] = dataUri;
-      } catch (err) {
+      } catch {
         fail(`第 ${t.index + 1} 页截图失败，PDF 未生成`);
         return;
       }
