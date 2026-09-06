@@ -40,8 +40,7 @@ export async function GET(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const filters: GiftCardFilters = {
       state: url.searchParams.get("state") || undefined,
-      code: url.searchParams.get("code") || undefined,
-      note: url.searchParams.get("note") || undefined,
+      search: url.searchParams.get("search") || undefined,
     };
     return Response.json({ items: await listGiftCards(database, filters) });
   } catch (error) {
@@ -63,7 +62,7 @@ export async function POST(request: Request): Promise<Response> {
       const cardId = crypto.randomUUID();
       const cardCode = createCardCode();
       try {
-        await createInitializingGiftCard(database, {
+        const card = await createInitializingGiftCard(database, {
           cardId,
           cardCode,
           giftId: crypto.randomUUID(),
@@ -76,6 +75,7 @@ export async function POST(request: Request): Promise<Response> {
         scheduleOpportunisticGiftMaintenance();
         return Response.json({
           cardId,
+          displayNumber: card.displayNumber,
           cardCode,
           giftUrl: `${getGiftUrlOrigin()}/gift/${giftToken}`,
           expiresAt,

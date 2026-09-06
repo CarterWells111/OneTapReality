@@ -815,12 +815,13 @@ export async function expireGiftPublishSessions(db: BackendDatabase, now: string
 export async function createInitializingGiftCard(
   db: BackendDatabase,
   input: { cardId: string; cardCode: string; giftId: string; tokenHash: string; note: string | null; adminEmail: string; createdAt: string; expiresAt: string },
-) {
+) : Promise<{ displayNumber: number }> {
   const email = normalizeEmail(input.adminEmail);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.insert(gifts).values({ id: input.giftId, tokenHash: input.tokenHash, status: "initializing", createdAt: input.createdAt, claimedAt: null, disabledAt: null });
-    await tx.insert(giftCards).values({ id: input.cardId, code: input.cardCode, state: "initializing", giftId: input.giftId, note: input.note, createdByEmail: email, expiresAt: input.expiresAt, activatedAt: null, retiredAt: null, createdAt: input.createdAt });
+    const [card] = await tx.insert(giftCards).values({ id: input.cardId, code: input.cardCode, state: "initializing", giftId: input.giftId, name: null, note: input.note, createdByEmail: email, expiresAt: input.expiresAt, activatedAt: null, retiredAt: null, createdAt: input.createdAt }).returning({ displayNumber: giftCards.displayNumber });
     await tx.insert(giftCardEvents).values({ id: crypto.randomUUID(), cardId: input.cardId, kind: "initialization_started", actorEmail: email, metadataJson: null, createdAt: input.createdAt });
+    return card;
   });
 }
 
@@ -857,22 +858,38 @@ export async function expireGiftCardReservations(db: BackendDatabase, now: strin
   });
 }
 
-export type GiftCardFilters = { state?: string; code?: string; note?: string };
+export type GiftCardFilters = { state?: string; search?: string };
+
+const adminGiftCardSelection = {
+  id: giftCards.id,
+  displayNumber: giftCards.displayNumber,
+  name: giftCards.name,
+  state: giftCards.state,
+  note: giftCards.note,
+  giftId: giftCards.giftId,
+  giftStatus: gifts.status,
+  createdAt: giftCards.createdAt,
+  activatedAt: giftCards.activatedAt,
+  retiredAt: giftCards.retiredAt,
+};
 
 export async function listGiftCards(db: BackendDatabase, filters: GiftCardFilters = {}) {
   const predicates = [];
   if (filters.state) predicates.push(eq(giftCards.state, filters.state));
-  if (filters.code) predicates.push(ilike(giftCards.code, `%${filters.code}%`));
-  if (filters.note) predicates.push(ilike(giftCards.note, `%${filters.note}%`));
-  return db.select({ id: giftCards.id, code: giftCards.code, state: giftCards.state, note: giftCards.note, giftId: giftCards.giftId, giftStatus: gifts.status, createdAt: giftCards.createdAt, activatedAt: giftCards.activatedAt, retiredAt: giftCards.retiredAt })
+  if (filters.search) predicates.push(or(
+    ilike(sql`${giftCards.displayNumber}::text`, `%${filters.search}%`),
+    ilike(giftCards.name, `%${filters.search}%`),
+    ilike(giftCards.note, `%${filters.search}%`),
+  ));
+  return db.select(adminGiftCardSelection)
     .from(giftCards)
     .leftJoin(gifts, eq(giftCards.giftId, gifts.id))
     .where(predicates.length ? and(...predicates) : undefined)
-    .orderBy(giftCards.createdAt);
+    .orderBy(giftCards.displayNumber);
 }
 
 export async function getGiftCardDetails(db: BackendDatabase, cardId: string) {
-  const [card] = await db.select({ id: giftCards.id, code: giftCards.code, state: giftCards.state, note: giftCards.note, giftId: giftCards.giftId, giftStatus: gifts.status, createdAt: giftCards.createdAt, expiresAt: giftCards.expiresAt, activatedAt: giftCards.activatedAt, retiredAt: giftCards.retiredAt })
+  const [card] = await db.select({ ...adminGiftCardSelection, expiresAt: giftCards.expiresAt })
     .from(giftCards)
     .leftJoin(gifts, eq(giftCards.giftId, gifts.id))
     .where(eq(giftCards.id, cardId))
@@ -883,6 +900,40 @@ export async function getGiftCardDetails(db: BackendDatabase, cardId: string) {
     .where(eq(giftCardEvents.cardId, cardId))
     .orderBy(giftCardEvents.createdAt);
   return { card, events };
+}
+
+export async function updateGiftCardMetadata(
+  db: BackendDatabase,
+  cardId: string,
+  input: { name?: string | null; note?: string | null },
+  adminEmail: string,
+  now: string,
+) {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select({ id: giftCards.id }).from(giftCards).where(eq(giftCards.id, cardId)).limit(1);
+    if (!existing) return null;
+    const values: { name?: string | null; note?: string | null } = {};
+    const fields: string[] = [];
+    if (Object.hasOwn(input, "name")) {
+      values.name = input.name?.trim() || null;
+      fields.push("name");
+    }
+    if (Object.hasOwn(input, "note")) {
+      values.note = input.note?.trim() || null;
+      fields.push("note");
+    }
+    await tx.update(giftCards).set(values).where(eq(giftCards.id, cardId));
+    await tx.insert(giftCardEvents).values({
+      id: crypto.randomUUID(),
+      cardId,
+      kind: "metadata_updated",
+      actorEmail: normalizeEmail(adminEmail),
+      metadataJson: { fields },
+      createdAt: now,
+    });
+    const [card] = await tx.select(adminGiftCardSelection).from(giftCards).leftJoin(gifts, eq(giftCards.giftId, gifts.id)).where(eq(giftCards.id, cardId)).limit(1);
+    return card;
+  });
 }
 
 /** A card may only be retired before its gift is claimed. */

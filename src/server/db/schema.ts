@@ -198,9 +198,11 @@ export const giftCards = pgTable(
   "gift_cards",
   {
     id: text("id").primaryKey(),
+    displayNumber: integer("display_number").default(sql`nextval('gift_cards_display_number_seq')`).notNull(),
     code: text("code").notNull(),
     state: text("state").notNull(),
     giftId: text("gift_id").references(() => gifts.id, { onDelete: "restrict" }),
+    name: text("name"),
     note: text("note"),
     createdByEmail: text("created_by_email").notNull(),
     expiresAt: text("expires_at"),
@@ -210,10 +212,12 @@ export const giftCards = pgTable(
   },
   (table) => [
     uniqueIndex("gift_cards_code_unique").on(table.code),
+    uniqueIndex("gift_cards_display_number_unique").on(table.displayNumber),
     uniqueIndex("gift_cards_gift_unique").on(table.giftId),
     index("gift_cards_state_expires_idx").on(table.state, table.expiresAt, table.id),
     check("gift_cards_state_check", sql`${table.state} in ('initializing', 'active', 'retired')`),
     check("gift_cards_gift_id_present_check", sql`${table.giftId} is not null`),
+    check("gift_cards_display_number_positive_check", sql`${table.displayNumber} > 0`),
   ],
 );
 

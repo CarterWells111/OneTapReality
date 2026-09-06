@@ -7,6 +7,39 @@ import {
 } from "../src/server/db/test-database";
 
 describe("backend PostgreSQL migrations", () => {
+  it("backfills legacy cards with continuous numbers and continues without reuse", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      const migrationFiles = readdirSync("drizzle")
+        .filter((file) => /^00(?:0\d|1[0-4])_.*\.sql$/u.test(file))
+        .sort();
+      for (const migrationFile of migrationFiles) {
+        const statements = readFileSync(`drizzle/${migrationFile}`, "utf8")
+          .split("--> statement-breakpoint").map((statement) => statement.trim()).filter(Boolean);
+        for (const statement of statements) await db.execute(sql.raw(statement));
+      }
+      await db.execute(sql`insert into gifts (id, token_hash, status, created_at) values
+        ('legacy-gift-1', 'legacy-hash-1', 'unclaimed', '2026-01-01T00:00:00.000Z'),
+        ('legacy-gift-2', 'legacy-hash-2', 'unclaimed', '2026-01-02T00:00:00.000Z')`);
+      await db.execute(sql`insert into gift_cards (id, code, state, gift_id, created_by_email, created_at) values
+        ('legacy-card-1', 'CARD-LEGACY-1', 'active', 'legacy-gift-1', 'admin@example.com', '2026-01-01T00:00:00.000Z'),
+        ('legacy-card-2', 'CARD-LEGACY-2', 'active', 'legacy-gift-2', 'admin@example.com', '2026-01-02T00:00:00.000Z')`);
+      for (const statement of readFileSync("drizzle/0015_gift_card_display_numbers.sql", "utf8")
+        .split("--> statement-breakpoint").map((part) => part.trim()).filter(Boolean)) {
+        await db.execute(sql.raw(statement));
+      }
+      const legacy = await db.execute(sql`select display_number, name from gift_cards order by display_number`);
+      expect(legacy.rows).toEqual([{ display_number: 1, name: null }, { display_number: 2, name: null }]);
+      await db.execute(sql`delete from gift_cards where display_number = 2`);
+      await db.execute(sql`insert into gifts (id, token_hash, status, created_at) values ('legacy-gift-3', 'legacy-hash-3', 'unclaimed', '2026-01-03T00:00:00.000Z')`);
+      await db.execute(sql`insert into gift_cards (id, code, state, gift_id, created_by_email, created_at) values ('legacy-card-3', 'CARD-LEGACY-3', 'active', 'legacy-gift-3', 'admin@example.com', '2026-01-03T00:00:00.000Z')`);
+      const next = await db.execute(sql`select display_number from gift_cards where id = 'legacy-card-3'`);
+      expect(next.rows).toEqual([{ display_number: 3 }]);
+    } finally {
+      await close();
+    }
+  });
+
   it("adapts the phase-two PL/pgSQL guard when migrations use Windows line endings", async () => {
     const observedQueries: string[] = [];
     const { db, close } = createBackendTestDatabase({
@@ -136,7 +169,15 @@ describe("backend PostgreSQL migrations", () => {
       expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
 
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 14 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 15 }]);
+
+      const cardColumns = await db.execute(sql`
+        select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'gift_cards'
+          and column_name in ('display_number', 'name') order by column_name
+      `);
+      expect(cardColumns.rows).toEqual([{ column_name: "display_number" }, { column_name: "name" }]);
+      expect(readFileSync("drizzle/0015_gift_card_display_numbers.sql", "utf8")).toContain("gift_cards_display_number_unique");
 
       const deletionMigration = readFileSync("drizzle/0012_external_beta_accounts_and_safety.sql", "utf8");
       expect(deletionMigration).toContain("account_deletion_challenges");

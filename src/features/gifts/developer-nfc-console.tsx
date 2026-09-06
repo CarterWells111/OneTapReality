@@ -27,7 +27,7 @@ import {
 import { createNfcUrlWriter, type NfcUrlWriter } from "../../services/nfc/nfc-url-writer";
 import { useAuth } from "../auth/auth-provider";
 
-type ConsoleClient = Pick<AdminGiftCardApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
+type ConsoleClient = Pick<AdminGiftCardApiClient, "listAdminGiftCards" | "getAdminGiftCard" | "reserveGiftCard" | "updateAdminGiftCard" | "activateAdminGiftCard" | "retireAdminGiftCard">;
 type AccessState = "checking" | "signedOut" | "noAccess" | "ready";
 type PolicyResolution = {
   readonly error: unknown;
@@ -73,8 +73,18 @@ function canRetire(card: AdminGiftCard) {
   return card.state === "active" && card.giftStatus === "unclaimed";
 }
 
+function cardLabel(card: Pick<AdminGiftCard, "displayNumber">) {
+  return `Card #${card.displayNumber}`;
+}
+
+function pendingCardLabel(card: PendingGiftCard) {
+  return card.displayNumber ? `Card #${card.displayNumber}` : "the pending card";
+}
+
 function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    return /\bCARD-[A-Za-z0-9-]+\b/u.test(error.message) ? fallback : error.message;
+  }
   const nativeErrorName = typeof error === "object" && error
     ? (error as { constructor?: { name?: string } }).constructor?.name
     : undefined;
@@ -124,7 +134,7 @@ function isConfirmedReservationDetail(
   const card = candidate.card as Partial<AdminGiftCard & { expiresAt: string | null }>;
   const matchesCard = Array.isArray(candidate.events)
     && card.id === reservation.cardId
-    && card.code === reservation.cardCode
+    && (reservation.displayNumber === undefined || card.displayNumber === reservation.displayNumber)
     && ["initializing", "active", "retired"].includes(card.state ?? "");
   if (!matchesCard) return false;
   return card.state !== "initializing"
@@ -182,6 +192,9 @@ export function DeveloperNfcConsole({
   const [search, setSearch] = React.useState("");
   const [message, setMessage] = React.useState("Checking developer access...");
   const [busy, setBusy] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [editName, setEditName] = React.useState("");
+  const [editNote, setEditNote] = React.useState("");
   const [recoveryComplete, setRecoveryComplete] = React.useState(false);
   const mountedRef = React.useRef(false);
   const generationRef = React.useRef(0);
@@ -209,6 +222,9 @@ export function DeveloperNfcConsole({
     activeContextRef.current = null;
     setCards([]);
     setDetail(null);
+    setEditing(false);
+    setEditName("");
+    setEditNote("");
     setPending(null);
     setNote("");
     setStateFilter("");
@@ -227,7 +243,7 @@ export function DeveloperNfcConsole({
 
   const loadCards = React.useCallback(async (
     context: OperationContext,
-    filters?: { state?: AdminGiftCard["state"]; code?: string; note?: string },
+    filters?: { state?: AdminGiftCard["state"]; search?: string },
   ): Promise<boolean> => {
     if (!isCurrentContext(context)) return false;
     try {
@@ -451,10 +467,10 @@ export function DeveloperNfcConsole({
       setPending(null);
       setNote("");
       if (!await loadCards(context) || !isCurrentContext(context)) return;
-      setMessage(`Card ${reservation.cardCode} is active and ready for customer claim.`);
+      setMessage(`${pendingCardLabel(reservation)} is active and ready for customer claim.`);
     } catch (error) {
       if (!isCurrentContext(context)) return;
-      setMessage(`Activation was not confirmed. Retry activation for ${reservation.cardCode}; do not write the card again. ${errorMessage(error, "")}`.trim());
+      setMessage(`Activation was not confirmed. Retry activation for ${pendingCardLabel(reservation)}; do not write the card again. ${errorMessage(error, "")}`.trim());
     } finally {
       if (manageBusy && isCurrentContext(context)) setBusy(false);
     }
@@ -581,6 +597,7 @@ export function DeveloperNfcConsole({
         operationId: reservation.cardId,
         revision: 1,
         cardId: reservation.cardId,
+        displayNumber: reservation.displayNumber,
         cardCode: reservation.cardCode,
         giftUrl,
         expiresAt: reservation.expiresAt,
@@ -640,6 +657,9 @@ export function DeveloperNfcConsole({
       const nextDetail = await client.getAdminGiftCard(context.accessToken, cardId);
       if (!isCurrentContext(context)) return;
       setDetail(nextDetail);
+      setEditing(false);
+      setEditName(nextDetail.card.name || "");
+      setEditNote(nextDetail.card.note || "");
     } catch (error) {
       if (isCurrentContext(context)) setMessage(errorMessage(error, "Unable to read card details."));
     } finally {
@@ -657,7 +677,7 @@ export function DeveloperNfcConsole({
       if (!isCurrentContext(context)) return;
       setDetail(null);
       if (!await loadCards(context) || !isCurrentContext(context)) return;
-      setMessage(`Card ${card.code} is retired.`);
+      setMessage(`${cardLabel(card)} is retired.`);
     } catch (error) {
       if (isCurrentContext(context)) setMessage(errorMessage(error, "Unable to retire this card."));
     } finally {
@@ -675,8 +695,7 @@ export function DeveloperNfcConsole({
       : undefined;
     const ready = await loadCards(context, {
       state,
-      code: search || undefined,
-      note: search || undefined,
+      search: search || undefined,
     });
     if (!isCurrentContext(context)) return;
     if (ready && !recoveryComplete) {
@@ -693,6 +712,49 @@ export function DeveloperNfcConsole({
     if (isCurrentContext(context)) setBusy(false);
   };
 
+  const beginEditing = () => {
+    if (!detail) return;
+    setEditName(detail.card.name || "");
+    setEditNote(detail.card.note || "");
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    if (!detail) return;
+    setEditName(detail.card.name || "");
+    setEditNote(detail.card.note || "");
+    setEditing(false);
+  };
+
+  const saveMetadata = async () => {
+    const context = getReadyContext();
+    if (!context || !detail) return;
+    try {
+      setBusy(true);
+      const cardId = detail.card.id;
+      await client.updateAdminGiftCard(context.accessToken, cardId, {
+        name: editName.trim() || null,
+        note: editNote.trim() || null,
+      });
+      if (!isCurrentContext(context)) return;
+      const [nextCards, nextDetail] = await Promise.all([
+        client.listAdminGiftCards(context.accessToken),
+        client.getAdminGiftCard(context.accessToken, cardId),
+      ]);
+      if (!isCurrentContext(context)) return;
+      setCards(nextCards);
+      setDetail(nextDetail);
+      setEditName(nextDetail.card.name || "");
+      setEditNote(nextDetail.card.note || "");
+      setEditing(false);
+      setMessage(`${cardLabel(nextDetail.card)} metadata saved.`);
+    } catch (error) {
+      if (isCurrentContext(context)) setMessage(errorMessage(error, "Unable to save card metadata."));
+    } finally {
+      if (isCurrentContext(context)) setBusy(false);
+    }
+  };
+
   if (access === "signedOut") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text><AppButton disabled={busy} label="Sign in" onPress={() => router.push("/login?returnTo=/activate" as never)} /></PaperCard></ScrollView>;
 
   if (access === "checking" || access === "noAccess") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text>{access === "checking" ? <AppButton disabled={busy} label="Retry" onPress={() => void retryOrFilter()} /> : null}</PaperCard></ScrollView>;
@@ -704,7 +766,7 @@ export function DeveloperNfcConsole({
       <Text style={styles.heading}>Initialize NFC cards</Text>
       <Text style={styles.hint}>Each action uses one NFC scan. After tapping, hold the card against the top of the phone until verification finishes.</Text>
       <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Prepare blank card" onPress={() => void prepareBlankCard()} />
-      <TextInput accessibilityLabel="Card note" onChangeText={setNote} placeholder="Optional batch, order, or note" style={styles.input} value={note} />
+      <TextInput accessibilityLabel="Card note" maxLength={240} onChangeText={setNote} placeholder="Optional batch, order, or note" style={styles.input} value={note} />
       <AppButton disabled={busy || !recoveryComplete || Boolean(pending)} label="Initialize current blank card" tone="warm" onPress={() => void initializeCard()} />
       {pending && !pending.writeVerified ? <AppButton disabled={busy || !recoveryComplete} label="Retry NFC write" tone="warm" onPress={() => void writePending()} /> : null}
       {pending?.writeVerified ? <AppButton disabled={busy || !recoveryComplete} label="Retry activation" tone="warm" onPress={() => void activatePending()} /> : null}
@@ -712,11 +774,26 @@ export function DeveloperNfcConsole({
     <PaperCard style={styles.card}>
       <Text style={styles.heading}>Card inventory</Text>
       <TextInput accessibilityLabel="Card state filter" onChangeText={setStateFilter} placeholder="initializing / active / retired" style={styles.input} value={stateFilter} />
-      <TextInput accessibilityLabel="Search cards" onChangeText={setSearch} placeholder="Card code or note" style={styles.input} value={search} />
+      <TextInput accessibilityLabel="Search cards" onChangeText={setSearch} placeholder="Card number, name, or note" style={styles.input} value={search} />
       <AppButton disabled={busy} label="Filter and refresh" tone="secondary" onPress={() => void retryOrFilter()} />
-      {cards.map((card) => <Pressable accessibilityRole="button" key={card.id} onPress={() => void showDetail(card.id)} style={styles.cardRow}><View style={{ flex: 1, gap: 3 }}><Text style={styles.code}>{card.code}</Text><Text style={styles.hint}>{card.note || "No note"}</Text><Text style={styles.hint}>Gift: {card.giftStatus || "unlinked"}</Text></View><Tag label={card.state} tone={card.state === "active" ? "blue" : "warm"} /></Pressable>)}
+      {cards.map((card) => <Pressable accessibilityRole="button" key={card.id} onPress={() => void showDetail(card.id)} style={styles.cardRow}><View style={{ flex: 1, gap: 3 }}><Text style={styles.code}>{cardLabel(card)}</Text><Text style={styles.hint}>{card.name || "Unnamed card"}</Text><Text style={styles.hint}>{card.note || "No note"}</Text><Text style={styles.hint}>Status: {card.state}</Text></View><Tag label={card.state} tone={card.state === "active" ? "blue" : "warm"} /></Pressable>)}
     </PaperCard>
-    {detail ? <PaperCard tone="paper" style={styles.card}><Text style={styles.heading}>Card details: {detail.card.code}</Text><Text style={styles.hint}>State: {detail.card.state}; gift: {detail.card.giftStatus || "none"}</Text><Text style={styles.hint}>Events: {detail.events.map((event) => event.kind).join(", ") || "none"}</Text>{canRetire(detail.card) ? <AppButton disabled={busy} label="Retire unclaimed card" tone="danger" onPress={() => void retire(detail.card)} /> : null}</PaperCard> : null}
+    {detail ? <PaperCard tone="paper" style={styles.card}>
+      <Text style={styles.heading}>{cardLabel(detail.card)}</Text>
+      <Text style={styles.hint}>Status: {detail.card.state}</Text>
+      {editing ? <>
+        <TextInput accessibilityLabel="Card name" maxLength={80} onChangeText={setEditName} placeholder="Optional card name" style={styles.input} value={editName} />
+        <TextInput accessibilityLabel="Card details note" maxLength={240} multiline onChangeText={setEditNote} placeholder="Optional note" style={styles.input} value={editNote} />
+        <AppButton disabled={busy} label="Save changes" tone="warm" onPress={() => void saveMetadata()} />
+        <AppButton disabled={busy} label="Cancel editing" tone="secondary" onPress={cancelEditing} />
+      </> : <>
+        <Text style={styles.hint}>Name: {detail.card.name || "Unnamed card"}</Text>
+        <Text style={styles.hint}>Note: {detail.card.note || "No note"}</Text>
+        <AppButton disabled={busy} label="Edit name and note" tone="secondary" onPress={beginEditing} />
+      </>}
+      <Text style={styles.hint}>Events: {detail.events.map((event) => event.kind).join(", ") || "none"}</Text>
+      {canRetire(detail.card) ? <AppButton disabled={busy} label="Retire unclaimed card" tone="danger" onPress={() => void retire(detail.card)} /> : null}
+    </PaperCard> : null}
   </ScrollView>;
 }
 
