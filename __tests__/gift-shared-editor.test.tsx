@@ -16,6 +16,7 @@ jest.mock("expo-file-system/legacy", () => ({
   makeDirectoryAsync: jest.fn(async () => undefined),
   getInfoAsync: jest.fn(async () => ({ exists: false })),
   copyAsync: jest.fn(async () => undefined),
+  downloadAsync: jest.fn(async (_url: string, uri: string) => ({ uri, status: 200 })),
   deleteAsync: jest.fn(async () => undefined),
 }));
 
@@ -25,6 +26,11 @@ jest.mock("expo-media-library", () => ({
 
 const mockSharedCopy = FileSystem.copyAsync as jest.Mock;
 const mockSharedInfo = FileSystem.getInfoAsync as jest.Mock;
+const mockRefresh = jest.fn();
+const mockRefreshOwned = jest.fn();
+const mockCreateDerivative = jest.fn();
+const mockRemoveDerivatives = jest.fn();
+const mockUploadFiles = jest.fn();
 
 jest.mock("../src/services/backend/api-client", () => ({
   BackendApiClient: jest.fn(() => ({
@@ -32,12 +38,22 @@ jest.mock("../src/services/backend/api-client", () => ({
     finishInvitedGiftPublish: mockFinish,
     startOwnedGiftPublish: mockStartOwned,
     finishOwnedGiftPublish: mockFinishOwned,
+    refreshInvitedGiftPublishUploads: mockRefresh,
+    refreshOwnedGiftPublishUploads: mockRefreshOwned,
   })),
   BackendApiError: class BackendApiError extends Error {
     status: number;
     code: string;
     constructor(errorStatus: number, errorCode: string, message: string) { super(message); this.status = errorStatus; this.code = errorCode; }
   },
+}));
+jest.mock("../src/features/gifts/gift-image-derivative", () => ({
+  createGiftImageDerivative: (...args: unknown[]) => mockCreateDerivative(...args),
+  removeGiftImageDerivatives: (...args: unknown[]) => mockRemoveDerivatives(...args),
+}));
+jest.mock("../src/features/gifts/publication-uploader", () => ({
+  uploadPublicationFile: jest.fn(),
+  uploadPublicationFiles: (...args: unknown[]) => mockUploadFiles(...args),
 }));
 jest.mock("../src/features/canvas/book-canvas-editor", () => {
   const React = require("react");
@@ -64,6 +80,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
       <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
       <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
       <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
+      <Button title="set local png cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.png" }], "structure")} />
       <Button title="add two local photos" onPress={() => onPagesChange([
         { ...pages[0], id: "new-a", photoUri: "file:///a.jpg" },
         { ...pages[0], id: "new-b", position: 1, photoUri: "file:///b.jpg" },
@@ -74,6 +91,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
 
 import { SharedAlbumEditor } from "../src/features/gifts/shared-album-editor";
 import { AlbumMetadataEditor } from "../src/features/memories/album-metadata-editor";
+import { UserActionRequiredError } from "../src/services/backend/user-facing-error";
 
 const album: any = {
   role: "editor", title: "Trip", travelDate: "2026-08-16", version: 4, publishedAt: "2026-08-16T00:00:00Z", cover: null,
@@ -111,6 +129,11 @@ describe("SharedAlbumEditor", () => {
     mockFinish.mockResolvedValue({ albumId: "album-1" });
     mockStartOwned.mockResolvedValue({ publicationId: "owned-pub", uploads: [], coverUpload: null });
     mockFinishOwned.mockResolvedValue({ albumId: "album-1" });
+    mockRefresh.mockResolvedValue({ uploads: [], coverUpload: null });
+    mockRefreshOwned.mockResolvedValue({ uploads: [], coverUpload: null });
+    mockCreateDerivative.mockImplementation(async (uri: string, contentType: string) => ({ uri: `file:///cache/${uri.split("/").at(-1)}`, contentType: contentType === "image/png" ? "image/png" : "image/jpeg", byteSize: uri.endsWith("a.jpg") ? 200 : uri.endsWith("b.jpg") ? 300 : 300, width: 1200, height: 900 }));
+    mockRemoveDerivatives.mockResolvedValue(undefined);
+    mockUploadFiles.mockResolvedValue(undefined);
     global.fetch = jest.fn(async (url: any) => url === "file:///new.jpg"
       ? ({ ok: true, blob: async () => new Blob(["new"], { type: "image/jpeg" }) })
       : ({ ok: true })) as any;
@@ -130,10 +153,13 @@ describe("SharedAlbumEditor", () => {
     expect(payload.travelDate).toBe("2026-08-16");
     expect(payload.media).toEqual([
       { position: 0, mediaId: "media-1" },
-      { position: 1, contentType: "image/jpeg", byteSize: 3 },
+      { position: 1, contentType: "image/jpeg", byteSize: 300 },
     ]);
     expect(JSON.stringify(payload.pages)).not.toContain("https://signed.test");
-    expect(global.fetch).toHaveBeenCalledWith("https://upload.test/new", expect.objectContaining({ method: "PUT" }));
+    expect(mockUploadFiles).toHaveBeenCalledWith(expect.objectContaining({
+      publicationId: "pub-1",
+      files: [expect.objectContaining({ position: 1, uri: "file:///cache/new.jpg" })],
+    }));
     expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
   });
 
@@ -231,9 +257,8 @@ describe("SharedAlbumEditor", () => {
 
     const directory = sessionDirectory(staged.uri);
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(directory, { idempotent: true });
-    const uploadCall = (global.fetch as jest.Mock).mock.calls.find(([, options]) => options?.method === "PUT");
-    expect(uploadCall).toBeDefined();
-    expect((global.fetch as jest.Mock).mock.invocationCallOrder.at(-1)).toBeLessThan(
+    expect(mockUploadFiles).toHaveBeenCalled();
+    expect(mockUploadFiles.mock.invocationCallOrder.at(-1)).toBeLessThan(
       (FileSystem.deleteAsync as jest.Mock).mock.invocationCallOrder.at(-1)!,
     );
   });
@@ -352,32 +377,32 @@ describe("SharedAlbumEditor", () => {
     expect(JSON.stringify(payload.pages)).not.toContain("file:///new.jpg");
   });
 
-  it("re-fetches new blobs one at a time for upload and stops after a failed PUT", async () => {
-    let releaseFirstPut!: () => void;
-    const firstPut = new Promise<void>((resolve) => { releaseFirstPut = resolve; });
-    const reads = new Map<string, number>();
-    global.fetch = jest.fn(async (url: any, options?: any) => {
-      if (url === "file:///a.jpg" || url === "file:///b.jpg") {
-        reads.set(url, (reads.get(url) ?? 0) + 1);
-        return { ok: true, blob: async () => new Blob([url.endsWith("a.jpg") ? "aa" : "bbb"], { type: "image/jpeg" }) };
-      }
-      if (url === "https://upload.test/a") { await firstPut; return { ok: false }; }
-      return { ok: true };
-    }) as any;
+  it("preserves PNG transparency for newly added shared images", async () => {
+    const noMediaAlbum = { ...album, media: [], pages: [{ ...album.pages[0], page: { ...album.pages[0].page, photoSlot: undefined } }] };
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-png", uploads: [{ position: 0, uploadUrl: "https://upload.test/png" }], coverUpload: null });
+    render(<SharedAlbumEditor accessToken="token" album={noMediaAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("set local png cover"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(mockCreateDerivative).toHaveBeenCalledWith("file:///new.png", "image/png");
+    expect(mockStart.mock.calls[0][2].media).toEqual([{ position: 0, contentType: "image/png", byteSize: 300 }]);
+  });
+
+  it("prepares new derivatives serially and does not finish after uploader failure", async () => {
     mockStart.mockResolvedValueOnce({ publicationId: "pub-two", uploads: [
       { position: 0, uploadUrl: "https://upload.test/a" }, { position: 1, uploadUrl: "https://upload.test/b" },
     ], coverUpload: null });
+    mockUploadFiles.mockRejectedValueOnce(new UserActionRequiredError("第 1 张照片上传失败，请检查网络后重试。"));
     const onPublished = jest.fn();
     render(<SharedAlbumEditor accessToken="token" album={{ ...album, media: [] }} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
     fireEvent.press(screen.getByText("add two local photos"));
     fireEvent.press(screen.getByText("保存并发布更新"));
-    await waitFor(() => expect(reads.get("file:///a.jpg")).toBe(2));
-    expect(reads.get("file:///b.jpg")).toBe(1);
-    releaseFirstPut();
-    await waitFor(() =>
-      expect(screen.getByText("照片上传失败，请检查网络后重新发布。")).toBeTruthy(),
-    );
-    expect(reads.get("file:///b.jpg")).toBe(1);
+    await waitFor(() => expect(screen.getByText("第 1 张照片上传失败，请检查网络后重试。")).toBeTruthy());
+    expect(mockCreateDerivative.mock.calls.map(([uri]) => uri)).toEqual(["file:///a.jpg", "file:///b.jpg"]);
+    expect(mockUploadFiles).toHaveBeenCalledWith(expect.objectContaining({
+      files: [expect.objectContaining({ position: 0 }), expect.objectContaining({ position: 1 })],
+    }));
+    expect(mockRemoveDerivatives).toHaveBeenCalled();
     expect(mockFinish).not.toHaveBeenCalled();
     expect(onPublished).not.toHaveBeenCalled();
   });

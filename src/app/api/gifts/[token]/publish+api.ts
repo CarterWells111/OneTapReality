@@ -5,7 +5,7 @@ import { hashGiftToken, requireGiftSessionEmail } from "../../../../server/gifts
 import { ApiError, errorResponse } from "../../../../server/http/errors";
 import { requireGiftSharingEnabled } from "../../../../server/gifts/alpha-safety";
 import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
-import { prepareSharedPublication, promoteSharedPublicationDurably, type SharedPublishBody } from "../../../../server/gifts/shared-publication";
+import { GIFT_PUBLICATION_LIFETIME_MS, prepareSharedPublication, promoteSharedPublicationDurably, selectRefreshableUploads, type RefreshPublishUploadsBody, type SharedPublishBody } from "../../../../server/gifts/shared-publication";
 
 async function requireOwner(request: Request, token: string) {
   requireGiftSharingEnabled();
@@ -25,11 +25,12 @@ export async function POST(request: Request, { token }: { token: string }): Prom
     const now = new Date();
     const body = await request.json() as SharedPublishBody;
     const { baseVersion, payload } = prepareSharedPublication(body as unknown as SharedPublishBody, giftId, sessionId);
-    await createGiftPublishSession(db, { id: sessionId, giftId, ownerEmail: email, baseVersion, payload, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString() });
+    const expiresAt = new Date(now.getTime() + GIFT_PUBLICATION_LIFETIME_MS).toISOString();
+    await createGiftPublishSession(db, { id: sessionId, giftId, ownerEmail: email, baseVersion, payload, createdAt: now.toISOString(), expiresAt });
     const uploads = await Promise.all(payload.media.map(async (media) => ({ position: media.position, objectKey: media.objectKey, uploadUrl: await store.createUploadUrl(media) })));
     const coverUpload = payload.cover ? { uploadUrl: await store.createUploadUrl(payload.cover) } : null;
     scheduleOpportunisticGiftMaintenance();
-    return Response.json({ publicationId: sessionId, uploads, coverUpload, expiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString() }, { status: 201 });
+    return Response.json({ publicationId: sessionId, uploads, coverUpload, expiresAt }, { status: 201 });
   } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }
 
@@ -41,7 +42,7 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     if (!store) throw new ApiError(503, "gift_media_unavailable", "Gift media storage is not configured");
     const { db, email, giftId } = await requireOwner(request, token);
     const now = new Date().toISOString();
-    const payload = await getGiftPublishPayload(db, publicationId, email, now);
+    const payload = await getGiftPublishPayload(db, publicationId, giftId, email, now);
     if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
     const uploaded = await Promise.all(payload.media.map(async (media) => {
       const metadata = await store.getObjectMetadata(media.objectKey);
@@ -63,4 +64,20 @@ export async function PUT(request: Request, { token }: { token: string }): Promi
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ albumId: result.albumId }, { status: 201 });
   } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
+}
+
+export async function PATCH(request: Request, { token }: { token: string }): Promise<Response> {
+  try {
+    const { db, email, giftId } = await requireOwner(request, token);
+    const body = await request.json() as RefreshPublishUploadsBody;
+    if (typeof body.publicationId !== "string") throw new ApiError(400, "validation_failed", "A publication id is required");
+    const payload = await getGiftPublishPayload(db, body.publicationId, giftId, email, new Date().toISOString());
+    if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
+    const selected = selectRefreshableUploads(body, payload);
+    const store = getR2MediaStoreFromEnvironment();
+    if (!store) throw new ApiError(503, "gift_media_unavailable", "Gift media storage is not configured");
+    const uploads = await Promise.all(selected.media.map(async (media) => ({ position: media.position, uploadUrl: await store.createUploadUrl(media) })));
+    const coverUpload = selected.cover ? { uploadUrl: await store.createUploadUrl(selected.cover) } : null;
+    return Response.json({ uploads, coverUpload });
+  } catch (error) { return errorResponse(error); }
 }

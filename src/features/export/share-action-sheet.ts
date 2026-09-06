@@ -5,7 +5,7 @@ import * as Print from "expo-print";
 
 import { capturePagesAsImages } from "./page-capture-provider";
 import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../memories/local-photo-integrity";
-import type { CanvasImageElement, CanvasTextElement, StoryPage } from "../../types/memory";
+import type { StoryPage } from "../../types/memory";
 
 type ShareTarget = {
   coverImage?: string;
@@ -13,6 +13,8 @@ type ShareTarget = {
   photoUris?: string[];
   title: string;
 };
+
+class PdfExportUserError extends Error {}
 
 /**
  * 导出/分享 ActionSheet。
@@ -42,8 +44,8 @@ async function handlePdfExport(target: ShareTarget) {
   }
   try {
     await exportPdf(pages, title);
-  } catch {
-    Alert.alert("导出失败", "暂时无法生成 PDF，请稍后重试。");
+  } catch (error) {
+    Alert.alert("导出失败", error instanceof PdfExportUserError ? error.message : "暂时无法生成 PDF，请稍后重试。");
   }
 }
 
@@ -73,14 +75,19 @@ const PDF_PAGE_H = 576;
 // 内容盒略小于纸张：避免 "刚好等高" 被打印引擎判为溢出而多出一张空白页
 const CONTENT_H = PDF_PAGE_H - 2;
 const CONTENT_W = PDF_PAGE_W - 2;
+export const MAX_PDF_ENCODED_IMAGE_CHARACTERS = 32 * 1024 * 1024;
 
 async function exportPdf(pages: StoryPage[], title: string) {
   // 1. 逐页截图（有 layout 的页由 CanvasPage 渲染，无 layout 的返回 null）
-  let captured: (string | null)[] = [];
+  let captured: (string | null)[];
   try {
     captured = await capturePagesAsImages(pages, PAGE_WIDTH, PAGE_HEIGHT);
-  } catch {
-    // 截图失败 → 继续用纯 HTML 方案（全部 fallback）
+  } catch (error) {
+    throw new PdfExportUserError(error instanceof Error ? error.message : "页面截图失败，PDF 未生成");
+  }
+  const encodedCharacters = captured.reduce((total, dataUri) => total + (dataUri?.length ?? 0), 0);
+  if (encodedCharacters > MAX_PDF_ENCODED_IMAGE_CHARACTERS) {
+    throw new PdfExportUserError("这本旅行册页数或图片内容过多，暂时无法一次导出 PDF。请减少册页后重试。");
   }
 
   // 2. 拼接 HTML：有截图的用截图，没截图的用 HTML
@@ -92,7 +99,8 @@ async function exportPdf(pages: StoryPage[], title: string) {
         // 截图成功 → 一整页就是一张图，不再包 div，减少一层可能溢出的盒子
         return `<img class="sheet" src="${dataUri}" alt="第 ${i + 1} 页" />`;
       }
-      // 无截图 → 回退到 HTML 布局渲染
+      if (page.layout) throw new PdfExportUserError(`第 ${i + 1} 页截图不完整，PDF 未生成`);
+      // 只有确实没有 Canvas layout 的旧版纯文字页使用 HTML。
       return pageToHtml(page);
     })
     .filter(Boolean);
@@ -229,39 +237,7 @@ async function exportPdf(pages: StoryPage[], title: string) {
 
 /** 将单页 StoryPage 转换为 HTML div（回退方案，用于无 layout 的页面）。 */
 function pageToHtml(page: StoryPage): string {
-  const layout = page.layout;
   const isCover = page.kind === "cover";
-
-  // ---- 有 layout 的页面（画布编辑页）—— HTML 回退 ----
-  if (layout) {
-    const bgColor = layout.coverColor ?? "#EFE2CF";
-    const bgImage = layout.coverImage;
-
-    const images = layout.elements
-      .filter((el): el is CanvasImageElement => el.type === "image" && Boolean(el.uri))
-      .map((el) => {
-        return `<img class="element-img" src="${escapeHtml(el.uri)}" style="left:${(el.x * 100).toFixed(1)}%;top:${(el.y * 100).toFixed(1)}%;width:${(el.width * 100).toFixed(1)}%;height:${(el.height * 100).toFixed(1)}%;" />`;
-      })
-      .join("\n");
-
-    const texts = layout.elements
-      .filter((el): el is CanvasTextElement => el.type === "text" && Boolean(el.text))
-      .map((el) => {
-        const fontSize = el.fontSize ?? 16;
-        return `<div class="element-text" style="left:${(el.x * 100).toFixed(1)}%;top:${(el.y * 100).toFixed(1)}%;width:${(el.width * 100).toFixed(1)}%;font-size:${fontSize}px;color:${escapeHtml(el.color ?? "#1C2C28")};">${escapeHtml(el.text)}</div>`;
-      })
-      .join("\n");
-
-    const bgImgTag = bgImage
-      ? `<img class="bg-image" src="${escapeHtml(bgImage)}" />`
-      : "";
-
-    return `<div class="sheet page-fallback" style="background-color:${escapeHtml(bgColor)};">
-      ${bgImgTag}
-      ${images}
-      ${texts}
-    </div>`;
-  }
 
   // ---- 无 layout 的纯文字页（如示例记忆） ----
   if (isCover) {

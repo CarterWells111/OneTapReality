@@ -1,24 +1,24 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
-import * as FileSystem from "expo-file-system/legacy";
 import * as React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
-import { collectMemoryImageUris } from "../../features/gifts/page-media";
+import { createGiftImageDerivative, removeGiftImageDerivatives, type GiftImageDerivative } from "../../features/gifts/gift-image-derivative";
+import { collectPublicationSources, snapshotPagesForPublication } from "../../features/gifts/publication-snapshot";
+import { uploadPublicationFile, uploadPublicationFiles, type PublicationUploadFile } from "../../features/gifts/publication-uploader";
 import { useMemories } from "../../features/memories/memories-provider";
 import { hasMissingLocalPhotos, MISSING_LOCAL_PHOTO_ACTION_MESSAGE } from "../../features/memories/local-photo-integrity";
 import { isMissingPhotoToken } from "../../features/memories/photo-references";
-import { BackendApiClient } from "../../services/backend/api-client";
+import { BackendApiClient, BackendApiError } from "../../services/backend/api-client";
 import type { GiftManagementRequest, GiftMemberRole } from "../../services/backend/api-client";
 import {
   toUserFacingBackendError,
   toUserFacingOperationError,
   UserActionRequiredError,
 } from "../../services/backend/user-facing-error";
-import type { Memory } from "../../types/memory";
 
 function imageContentType(uri: string) {
   const lower = uri.split("?")[0].toLowerCase();
@@ -26,27 +26,6 @@ function imageContentType(uri: string) {
   if (lower.endsWith(".webp")) return "image/webp";
   if (lower.endsWith(".heic") || lower.endsWith(".heif")) return "image/heic";
   return "image/jpeg";
-}
-
-function sharedPage(page: Memory["pages"][number], positions: Map<string, { position: number; mediaId?: string }>) {
-  const { photoUri: _photoUri, coverImage: _coverImage, ...safePage } = page;
-  const legacyRef = page.photoUri ? positions.get(page.photoUri) : undefined;
-  const withLegacy = legacyRef
-    ? { ...safePage, photoUri: `shared-position:${legacyRef.position}` }
-    : safePage;
-  if (!safePage.layout) return withLegacy;
-  const { photoPlanVersion: _photoPlanVersion, ...sharedLayout } = safePage.layout;
-  return {
-    ...withLegacy,
-    layout: {
-      ...sharedLayout,
-      elements: sharedLayout.elements.map((element) => {
-        if (element.type !== "image") return element;
-        const ref = positions.get(element.uri);
-        return { ...element, uri: "", ...(ref ? { mediaPosition: ref.position } : {}) };
-      }),
-    },
-  };
 }
 
 type CoverCandidate = { label: string; uri: string };
@@ -162,62 +141,72 @@ export default function GiftManagementScreen() {
     }
     const operation = beginOwnerOperation();
     if (!operation) return;
+    const derivatives: GiftImageDerivative[] = [];
     try {
-      const imageUris = collectMemoryImageUris(selectedMemory.pages);
-      const media = await Promise.all(imageUris.map(async (uri, position) => {
-        const info = await FileSystem.getInfoAsync(uri);
-        if (!info.exists || typeof info.size !== "number" || info.size < 1) throw new UserActionRequiredError("有照片无法读取，请在本机重新选择后再发布。");
-        return { position, contentType: imageContentType(uri), byteSize: info.size, uri };
-      }));
-      if (!operationIsCurrent(operation)) return;
-      const refs = new Map(media.map((source) => [source.uri, { position: source.position }]));
-      let coverSize: number | null = null;
-      let coverContentType: string | null = null;
-      if (selectedCoverUri) {
-        const coverInfo = await FileSystem.getInfoAsync(selectedCoverUri);
+      const sources = collectPublicationSources(selectedMemory.pages);
+      for (let index = 0; index < sources.length; index += 1) {
         if (!operationIsCurrent(operation)) return;
-        if (!coverInfo.exists || typeof coverInfo.size !== "number" || coverInfo.size < 1) {
-          throw new UserActionRequiredError("封面图片无法读取，请重新选择后再发布。");
+        setMessage(`正在优化照片 ${index + 1}/${sources.length}…`);
+        try {
+          derivatives.push(await createGiftImageDerivative(sources[index].uri, imageContentType(sources[index].uri)));
+        } catch {
+          throw new UserActionRequiredError(`第 ${index + 1} 张照片无法处理，请重新选择后再试。`);
         }
-        coverSize = coverInfo.size;
-        coverContentType = imageContentType(selectedCoverUri);
       }
+      let selectedCoverDerivative: GiftImageDerivative | null = null;
+      if (selectedCoverUri) {
+        const sourceIndex = sources.findIndex((source) => source.uri === selectedCoverUri);
+        selectedCoverDerivative = sourceIndex >= 0 ? derivatives[sourceIndex] : null;
+        if (!selectedCoverDerivative) {
+          setMessage("正在优化礼品封面…");
+          selectedCoverDerivative = await createGiftImageDerivative(selectedCoverUri, imageContentType(selectedCoverUri));
+          derivatives.push(selectedCoverDerivative);
+        }
+        if (!operationIsCurrent(operation)) return;
+      }
+      const references = sources.map((source, position) => ({ ...source, position }));
       const publication = await client.startOwnedGiftPublish(session.accessToken, id, {
         baseVersion: album?.version ?? 0,
         sourceMemoryId: selectedMemory.id,
         title: selectedMemory.title,
         travelDate: selectedMemory.travelDate,
-        pages: selectedMemory.pages.map((page, position) => ({ position, page: sharedPage(page, refs) })),
-        media: media.map(({ position, contentType, byteSize }) => ({ position, contentType, byteSize })),
-        cover: coverSize && coverContentType ? { contentType: coverContentType, byteSize: coverSize } : null,
+        pages: snapshotPagesForPublication(selectedMemory.pages, references),
+        media: derivatives.slice(0, sources.length).map((derivative, position) => ({ position, contentType: derivative.contentType, byteSize: derivative.byteSize })),
+        cover: selectedCoverDerivative ? { contentType: selectedCoverDerivative.contentType, byteSize: selectedCoverDerivative.byteSize } : null,
       });
       if (!operationIsCurrent(operation)) return;
-      for (const upload of publication.uploads) {
-        const file = media.find((item) => item.position === upload.position);
-        if (!file) throw new UserActionRequiredError("照片准备不完整，请重新发布。");
-        const response = await FileSystem.uploadAsync(upload.uploadUrl, file.uri, {
-          httpMethod: "PUT",
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: { "Content-Type": file.contentType },
-        });
-        if (!operationIsCurrent(operation)) return;
-        if (response.status < 200 || response.status >= 300) throw new UserActionRequiredError("照片上传失败，请检查网络后重新发布。");
-      }
-      if (publication.coverUpload && selectedCoverUri) {
-        const response = await FileSystem.uploadAsync(publication.coverUpload.uploadUrl, selectedCoverUri, {
-          httpMethod: "PUT",
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: { "Content-Type": imageContentType(selectedCoverUri) },
-        });
-        if (!operationIsCurrent(operation)) return;
-        if (response.status < 200 || response.status >= 300) throw new UserActionRequiredError("封面上传失败，请检查网络后重新发布。");
-      }
+      const files: PublicationUploadFile[] = publication.uploads.map((upload) => {
+        const derivative = derivatives[upload.position];
+        if (!derivative) throw new Error("上传清单不完整，请重新发布。");
+        return { kind: "media" as const, position: upload.position, uri: derivative.uri, contentType: derivative.contentType, uploadUrl: upload.uploadUrl };
+      });
+      if (publication.coverUpload && selectedCoverDerivative) files.push({
+        kind: "cover", uri: selectedCoverDerivative.uri, contentType: selectedCoverDerivative.contentType, uploadUrl: publication.coverUpload.uploadUrl,
+      });
+      await uploadPublicationFiles({
+        publicationId: publication.publicationId,
+        files,
+        uploadFile: uploadPublicationFile,
+        refreshUploads: (selection) => client.refreshOwnedGiftPublishUploads(session.accessToken, id, selection),
+        onProgress: (completed, total) => {
+          if (operationIsCurrent(operation)) setMessage(`正在上传照片 ${completed}/${total}…`);
+        },
+      });
+      if (!operationIsCurrent(operation)) return;
       await client.finishOwnedGiftPublish(session.accessToken, id, publication.publicationId);
       if (!operationIsCurrent(operation)) return;
       setMessage("共享相册已发布。日后本机修改不会自动上传，请在此页面手动更新。");
       await load(operation.generation, () => operationIsCurrent(operation));
-    } catch (error) { if (operationIsCurrent(operation)) setMessage(toUserFacingOperationError(error, "发布失败，可重试；当前已发布相册不会变化。")); }
-    finally { finishOwnerOperation(operation); }
+    } catch (error) {
+      if (operationIsCurrent(operation)) {
+        if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
+        else if (error instanceof BackendApiError && error.code === "gift_upload_incomplete") setMessage("部分照片尚未完整上传，请重新发布；当前共享版本未改变。");
+        else setMessage(toUserFacingOperationError(error, "发布失败，可重试；当前已发布相册不会变化。"));
+      }
+    } finally {
+      await removeGiftImageDerivatives(derivatives);
+      finishOwnerOperation(operation);
+    }
   };
 
   const invite = async () => {

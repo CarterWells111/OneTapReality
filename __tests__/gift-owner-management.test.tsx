@@ -9,6 +9,10 @@ const mockDecideOwnedGiftManagementRequest = jest.fn();
 const mockStartOwnedGiftPublish = jest.fn();
 const mockFinishOwnedGiftPublish = jest.fn();
 const mockBlockGiftUser = jest.fn();
+const mockRefreshOwnedGiftPublishUploads = jest.fn();
+const mockCreateGiftImageDerivative = jest.fn();
+const mockRemoveGiftImageDerivatives = jest.fn();
+const mockUploadPublicationFiles = jest.fn();
 const mockUseAuth = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 const mockMemories = jest.fn();
@@ -37,8 +41,17 @@ jest.mock("../src/services/backend/api-client", () => ({
     startOwnedGiftPublish: mockStartOwnedGiftPublish,
     finishOwnedGiftPublish: mockFinishOwnedGiftPublish,
     blockGiftUser: mockBlockGiftUser,
+    refreshOwnedGiftPublishUploads: mockRefreshOwnedGiftPublishUploads,
     updateOwnedGiftMemberRole: mockUpdateOwnedGiftMemberRole,
   })),
+}));
+jest.mock("../src/features/gifts/gift-image-derivative", () => ({
+  createGiftImageDerivative: (...args: unknown[]) => mockCreateGiftImageDerivative(...args),
+  removeGiftImageDerivatives: (...args: unknown[]) => mockRemoveGiftImageDerivatives(...args),
+}));
+jest.mock("../src/features/gifts/publication-uploader", () => ({
+  uploadPublicationFile: jest.fn(),
+  uploadPublicationFiles: (...args: unknown[]) => mockUploadPublicationFiles(...args),
 }));
 
 import GiftManagementScreen from "../src/app/gifts/[id]";
@@ -75,6 +88,58 @@ describe("gift owner member management", () => {
     mockStartOwnedGiftPublish.mockResolvedValue({ publicationId: "publication-1", uploads: [], coverUpload: null, expiresAt: "2026-08-16T01:00:00.000Z" });
     mockFinishOwnedGiftPublish.mockResolvedValue({ albumId: "album-1" });
     mockBlockGiftUser.mockResolvedValue({ status: "created", block: { id: "block-1" } });
+    mockRefreshOwnedGiftPublishUploads.mockResolvedValue({ uploads: [], coverUpload: null });
+    mockCreateGiftImageDerivative.mockImplementation(async (uri: string, contentType: string) => ({
+      uri: `file:///cache/${encodeURIComponent(uri)}.jpg`, contentType: contentType === "image/png" ? "image/png" : "image/jpeg",
+      byteSize: uri.length * 100, width: 1200, height: 900,
+    }));
+    mockRemoveGiftImageDerivatives.mockResolvedValue(undefined);
+    mockUploadPublicationFiles.mockResolvedValue(undefined);
+  });
+
+  it("publishes every unique canvas image as derivatives and keeps local originals unchanged", async () => {
+    const memory: any = {
+      id: "memory-large", title: "Complete", city: "London", travelDate: "2026-09-06", photoUris: [],
+      coverImage: "file:///standalone-cover.jpg",
+      pages: [{
+        id: "p1", position: 0, kind: "cover", headline: "", body: "", photoUri: "file:///legacy.jpg",
+        coverImage: "file:///top.jpg",
+        layout: { aspectRatio: 0.75, coverImage: "file:///layout.png", elements: [
+          { id: "a", type: "image", uri: "file:///same.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 },
+          { id: "again", type: "image", uri: "file:///same.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 },
+          { id: "b", type: "image", uri: "file:///other.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 2 },
+        ] },
+      }], createdAt: "2026-09-06T00:00:00Z", updatedAt: "2026-09-06T00:00:00Z",
+    };
+    const original = structuredClone(memory);
+    mockUseLocalSearchParams.mockReturnValue({ id: "gift-1", memoryId: memory.id });
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockImplementation(async (_token, _id, payload) => ({
+      publicationId: "publication-1",
+      uploads: payload.media.map((item: any) => ({ position: item.position, uploadUrl: `https://upload.test/${item.position}` })),
+      coverUpload: { uploadUrl: "https://upload.test/cover" },
+    }));
+
+    render(<GiftManagementScreen />);
+    await screen.findByText("已选择：Complete");
+    fireEvent.press(screen.getByText("发布共享相册"));
+    await waitFor(() => expect(mockFinishOwnedGiftPublish).toHaveBeenCalled());
+
+    expect(mockCreateGiftImageDerivative.mock.calls.map(([uri]) => uri)).toEqual([
+      "file:///legacy.jpg", "file:///top.jpg", "file:///layout.png", "file:///same.jpg", "file:///other.jpg", "file:///standalone-cover.jpg",
+    ]);
+    const payload = mockStartOwnedGiftPublish.mock.calls[0][2];
+    expect(payload.media).toHaveLength(5);
+    expect(JSON.stringify(payload.pages)).not.toMatch(/file:\/\//u);
+    expect(payload.pages[0].page.layout.elements[0].mediaPosition).toBe(payload.pages[0].page.layout.elements[1].mediaPosition);
+    expect(mockUploadPublicationFiles).toHaveBeenCalledWith(expect.objectContaining({
+      publicationId: "publication-1",
+      files: expect.arrayContaining([expect.objectContaining({ kind: "cover", uri: expect.stringContaining("standalone-cover") })]),
+    }));
+    expect(mockRemoveGiftImageDerivatives).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ uri: expect.stringContaining("standalone-cover") }),
+    ]));
+    expect(memory).toEqual(original);
   });
 
   it("publishes an existing local album only for the first shared version", async () => {
@@ -174,16 +239,19 @@ describe("gift owner member management", () => {
 
     await waitFor(() => expect(mockStartOwnedGiftPublish).toHaveBeenCalled());
     expect(mockStartOwnedGiftPublish.mock.calls[0][2].media).toEqual([
-      { position: 0, contentType: "image/jpeg", byteSize: 12 },
-      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+      { position: 0, contentType: "image/jpeg", byteSize: 1500 },
+      { position: 1, contentType: "image/jpeg", byteSize: 1500 },
     ]);
-    expect((FileSystem.uploadAsync as jest.Mock).mock.calls.map((call) => call[1])).toEqual([
-      "file:///one.jpg", "file:///two.jpg",
-    ]);
+    expect(mockUploadPublicationFiles).toHaveBeenCalledWith(expect.objectContaining({
+      files: [
+        expect.objectContaining({ position: 0, uri: "file:///cache/file%3A%2F%2F%2Fone.jpg.jpg" }),
+        expect.objectContaining({ position: 1, uri: "file:///cache/file%3A%2F%2F%2Ftwo.jpg.jpg" }),
+      ],
+    }));
     expect(mockStartOwnedGiftPublish.mock.calls[0][2].pages[0].page.layout).not.toHaveProperty("photoPlanVersion");
   });
 
-  it("maps layout media explicitly when legacy photoUri is stale", async () => {
+  it("maps every page and layout image explicitly when legacy photoUri differs", async () => {
     const memory = {
       id: "memory-1", title: "Layout trip", city: "London", travelDate: "2026-08-16", photoUris: [],
       pages: [{
@@ -217,20 +285,22 @@ describe("gift owner member management", () => {
 
     const payload = mockStartOwnedGiftPublish.mock.calls[0][2];
     expect(payload.media).toEqual([
-      { position: 0, contentType: "image/jpeg", byteSize: 12 },
-      { position: 1, contentType: "image/jpeg", byteSize: 12 },
+      { position: 0, contentType: "image/jpeg", byteSize: 1700 },
+      { position: 1, contentType: "image/jpeg", byteSize: 1500 },
+      { position: 2, contentType: "image/jpeg", byteSize: 1500 },
     ]);
-    expect(payload.pages[0].page).not.toHaveProperty("photoUri");
+    expect(payload.pages[0].page.photoUri).toBe("shared-position:0");
     expect(payload.pages[0].page.layout.elements.filter((element: { type: string }) => element.type === "image")).toEqual([
-      expect.objectContaining({ uri: "", mediaPosition: 0 }),
       expect.objectContaining({ uri: "", mediaPosition: 1 }),
+      expect.objectContaining({ uri: "", mediaPosition: 2 }),
     ]);
 
     const restored = mapSharedAlbumToStoryPages({
       role: "viewer", title: "Layout trip", travelDate: null, pages: payload.pages,
       media: [
-        { id: "one", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
-        { id: "two", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
+        { id: "stale", position: 0, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/stale.jpg" },
+        { id: "one", position: 1, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/one.jpg" },
+        { id: "two", position: 2, contentType: "image/jpeg", byteSize: 12, readUrl: "https://cdn.test/two.jpg" },
       ],
       publishedAt: "2026-08-16T00:00:00Z", version: 1, cover: null,
     });

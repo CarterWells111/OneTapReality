@@ -2,7 +2,7 @@ import * as React from "react";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { captureRef } from "react-native-view-shot";
 
-import { CanvasPage } from "../canvas/canvas-page";
+import { CanvasPage, listCanvasRasterAssetIds, type CanvasAssetEvent } from "../canvas/canvas-page";
 import { colors, bodyFont, serifFont } from "../../components/ui";
 import type { StoryPage } from "../../types/memory";
 
@@ -17,7 +17,7 @@ import type { StoryPage } from "../../types/memory";
  * 工作流程：
  * 1. capturePagesAsImages() 被调用（从 share-action-sheet）
  * 2. Provider 显示进度遮罩层，逐页渲染 CanvasPage
- * 3. captureRef 以 3x 逻辑分辨率截图 → data-URI
+ * 3. 等待全部图片显示后，captureRef 以 2x 逻辑分辨率截图 → JPEG data-URI
  * 4. 全部完成后 resolve 结果数组，调用者嵌入 HTML → PDF
  */
 
@@ -37,7 +37,7 @@ let bridge: CaptureAPI | null = null;
  * 命令式入口：请求对给定的页面列表逐页截图。
  *
  * 返回值是一个 (string | null)[]，其中：
- * - string  → data-URI PNG（页面有 layout 且截图成功）
+ * - string  → data-URI JPEG（页面有 layout 且截图成功）
  * - null    → 该页无 layout（调用方回退到 HTML 渲染）
  *
  * 如果 Provider 未挂载或正在执行另一个任务，会抛出错误。
@@ -53,11 +53,9 @@ export function capturePagesAsImages(
   return bridge.capturePages(pages, pageWidth, pageHeight);
 }
 
-// ── 截图缩放倍率 ──
-// 1x → 360x480 logical pixels → 360x480 output.
-// Keep Expo Go and TestFlight exports at the original 360x480 canvas size.
-// This avoids iOS PDF memory limits for multipage albums.
-const CAPTURE_SCALE = 1;
+const PDF_CAPTURE_SCALE = 2;
+const PDF_CAPTURE_QUALITY = 0.80;
+const PDF_PAGE_ASSET_TIMEOUT_MS = 10_000;
 
 // ── Provider 组件 ──
 
@@ -72,6 +70,10 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
   const busy = React.useRef(false);
   // 截图目标的 View ref（每次换页时指向新的 CanvasPage 包裹容器）
   const pageRef = React.useRef<View>(null);
+  const assetController = React.useRef<{
+    index: number;
+    onEvent: (event: CanvasAssetEvent) => void;
+  } | null>(null);
 
   // 截图任务的完整可变状态用 ref 存储，避免闭包陈旧问题
   const task = React.useRef<{
@@ -123,76 +125,110 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
     };
   }, [capturePages]);
 
-  // ── 截图循环 ──
-  // 每次 progress 变化 → 新页面已挂载 → 截图 → 推进到下一页
-  React.useEffect(() => {
+  const handleAssetEvent = React.useCallback((event: CanvasAssetEvent) => {
+    assetController.current?.onEvent(event);
+  }, []);
+
+  // 每次 progress 变化时，新页面已经提交到原生视图树。只有全部图片报告 displayed
+  // 后才允许截图；timeout 只会失败，不会作为“继续截图”的许可。
+  React.useLayoutEffect(() => {
     const t = task.current;
     if (!t) return;
     const activeTask = t;
-
     const page = t.pages[t.index];
-
-    // 无 layout 的页面：不截图，直接跳到下一页
-    if (!page?.layout) {
-      t.results[t.index] = null;
-      advance();
-      return;
-    }
-
     let cancelled = false;
+    let capturing = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
 
-    const captureCurrent = async () => {
-      // 给 expo-image 和布局留出渲染时间
-      await delay(100);
+    const stop = () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+      if (assetController.current?.index === activeTask.index) assetController.current = null;
+    };
 
-      if (cancelled || !pageRef.current) {
-        // 如果 ref 还没就位，再等一下
-        await delay(200);
-      }
-      if (cancelled) return;
-
-      try {
-        const dataUri = await captureRef(pageRef, {
-          format: "png",
-          quality: 1,
-          result: "data-uri",
-          width: t.pageWidth * CAPTURE_SCALE,
-          height: t.pageHeight * CAPTURE_SCALE,
-        });
-        t.results[t.index] = dataUri;
-      } catch (err) {
-        // 单页失败不中断整体流程，该页保持 null
-        console.warn(
-          `[PageCapture] 第 ${t.index + 1} 页截图失败:`,
-          err instanceof Error ? err.message : String(err),
-        );
-        t.results[t.index] = null;
-      }
-
-      if (!cancelled) {
-        advance();
-      }
+    const fail = (message: string) => {
+      if (cancelled || task.current !== activeTask) return;
+      stop();
+      activeTask.reject(new Error(message));
+      busy.current = false;
+      task.current = null;
+      setProgress(null);
     };
 
     function advance() {
+      if (timeout) clearTimeout(timeout);
       const nextIndex = activeTask.index + 1;
       if (nextIndex >= activeTask.pages.length) {
-        // 全部完成
         const finalResults = [...activeTask.results];
+        stop();
         activeTask.resolve(finalResults);
         busy.current = false;
         task.current = null;
         setProgress(null);
       } else {
+        assetController.current = null;
         activeTask.index = nextIndex;
         setProgress({ current: nextIndex, total: activeTask.pages.length });
       }
     }
 
-    captureCurrent();
+    if (!page?.layout) {
+      t.results[t.index] = null;
+      advance();
+      return stop;
+    }
+
+    const expected = new Set(listCanvasRasterAssetIds(page.layout));
+    const displayed = new Set<string>();
+
+    const captureCurrent = async () => {
+      if (capturing || cancelled) return;
+      capturing = true;
+      try {
+        await nextAnimationFrame();
+        await nextAnimationFrame();
+        if (cancelled || task.current !== activeTask) return;
+        const dataUri = await captureRef(pageRef, {
+          format: "jpg",
+          quality: PDF_CAPTURE_QUALITY,
+          result: "data-uri",
+          width: t.pageWidth * PDF_CAPTURE_SCALE,
+          height: t.pageHeight * PDF_CAPTURE_SCALE,
+        });
+        if (cancelled || task.current !== activeTask) return;
+        t.results[t.index] = dataUri;
+      } catch {
+        fail(`第 ${t.index + 1} 页截图失败，PDF 未生成`);
+        return;
+      }
+      if (!cancelled) advance();
+    };
+
+    const maybeCapture = () => {
+      if ([...expected].every((id) => displayed.has(id))) void captureCurrent();
+    };
+    assetController.current = {
+      index: t.index,
+      onEvent: (event) => {
+        if (cancelled || !expected.has(event.id)) return;
+        if (event.outcome === "error") {
+          fail(`第 ${t.index + 1} 页有图片无法加载，PDF 未生成`);
+          return;
+        }
+        displayed.add(event.id);
+        maybeCapture();
+      },
+    };
+    timeout = setTimeout(() => {
+      fail(`第 ${t.index + 1} 页图片加载超时，PDF 未生成`);
+    }, PDF_PAGE_ASSET_TIMEOUT_MS);
+    maybeCapture();
 
     return () => {
-      cancelled = true;
+      if (!cancelled) {
+        cancelled = true;
+        if (timeout) clearTimeout(timeout);
+      }
     };
   }, [progress]);
 
@@ -249,7 +285,9 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
               flatEdges
               height={task.current!.pageHeight}
               interactive={false}
+              key={currentPage.id}
               layout={currentPage.layout}
+              onAssetEvent={handleAssetEvent}
               width={task.current!.pageWidth}
             />
           </View>
@@ -261,8 +299,8 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
 
 // ── 工具函数 ──
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 // ── 样式 ──

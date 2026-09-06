@@ -28,7 +28,7 @@ describe("travel-book share action sheet", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCapturePagesAsImages.mockResolvedValue(["data:image/png;base64,test"]);
+    mockCapturePagesAsImages.mockResolvedValue(["data:image/jpeg;base64,test"]);
     mockPrintToFileAsync.mockResolvedValue({ uri: "file:///cache/original.pdf" });
     mockIsAvailableAsync.mockResolvedValue(true);
   });
@@ -108,5 +108,33 @@ describe("travel-book share action sheet", () => {
 
     const buttons = alertSpy.mock.calls[0][2] ?? [];
     expect(buttons.map((button) => button.text)).toEqual(["导出为 PDF", "取消"]);
+  });
+
+  it("does not print or share a partial PDF when canvas capture fails", async () => {
+    mockCapturePagesAsImages.mockRejectedValue(new Error("第 1 页有图片无法加载，PDF 未生成"));
+
+    await choosePdf();
+
+    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenLastCalledWith("导出失败", "第 1 页有图片无法加载，PDF 未生成");
+  });
+
+  it("stops before printing when encoded page images exceed the safety limit", async () => {
+    mockCapturePagesAsImages.mockResolvedValue([`data:image/jpeg;base64,${"a".repeat(32 * 1024 * 1024)}`]);
+
+    await choosePdf();
+
+    expect(mockPrintToFileAsync).not.toHaveBeenCalled();
+    expect(mockShareAsync).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenLastCalledWith("导出失败", "这本旅行册页数或图片内容过多，暂时无法一次导出 PDF。请减少册页后重试。");
+  });
+
+  it("keeps no-layout legacy text pages eligible for HTML printing", async () => {
+    mockCapturePagesAsImages.mockResolvedValue([null]);
+
+    await choosePdf();
+
+    expect(mockPrintToFileAsync).toHaveBeenCalledWith(expect.objectContaining({ html: expect.stringContaining("夏日") }));
   });
 });

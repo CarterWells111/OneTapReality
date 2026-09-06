@@ -16,6 +16,11 @@ export type GiftMemberRole = "owner" | "viewer" | "editor";
 export type GiftContentReportReason = "sexual" | "harassment" | "hate" | "violence" | "spam" | "other";
 export type GiftManagementAction = "delete_album" | "remove_member" | "change_member_role";
 export type GiftManagementRequest = { id: string; action: GiftManagementAction; targetEmail: string | null; targetRole: "viewer" | "editor" | null; status: "pending" | "approved" | "rejected"; createdAt: string; decidedAt: string | null };
+export type RefreshPublicationUploadsSelection = { publicationId: string; positions: number[]; cover: boolean };
+export type RefreshedPublicationUploads = {
+  uploads: { position: number; uploadUrl: string }[];
+  coverUpload: { uploadUrl: string } | null;
+};
 
 export type SharedAlbumPublishPayload = {
   baseVersion: number;
@@ -168,6 +173,10 @@ export class BackendApiClient {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 
+  refreshGiftPublishUploads(token: string, accessToken: string, selection: RefreshPublicationUploadsSelection): Promise<RefreshedPublicationUploads> {
+    return this.send(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(selection) });
+  }
+
   listOwnedGifts(accessToken: string): Promise<{ id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[]> {
     return this.send<{ items: { id: string; status: string; claimedAt: string | null; album: { title: string; travelDate: string | null; albumId: string; publishedAt: string; version: number; cover: SharedAlbumCover | null } | null }[] }>("/api/gifts/owned", { headers: { Authorization: `Bearer ${accessToken}` } }).then((response) => response.items);
   }
@@ -202,6 +211,10 @@ export class BackendApiClient {
 
   finishOwnedGiftPublish(accessToken: string, id: string, publicationId: string): Promise<{ albumId: string }> {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
+  }
+
+  refreshOwnedGiftPublishUploads(accessToken: string, id: string, selection: RefreshPublicationUploadsSelection): Promise<RefreshedPublicationUploads> {
+    return this.send(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(selection) });
   }
 
   async disableOwnedGift(accessToken: string, id: string): Promise<void> {
@@ -267,6 +280,10 @@ export class BackendApiClient {
 
   finishInvitedGiftPublish(id: string, accessToken: string, publicationId: string): Promise<{ albumId: string }> {
     return this.send(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
+  }
+
+  refreshInvitedGiftPublishUploads(id: string, accessToken: string, selection: RefreshPublicationUploadsSelection): Promise<RefreshedPublicationUploads> {
+    return this.send(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(selection) });
   }
 
   createInvitedGiftManagementRequest(id: string, accessToken: string, input: { action: GiftManagementAction; targetEmail?: string; targetRole?: "viewer" | "editor" }): Promise<GiftManagementRequest> {

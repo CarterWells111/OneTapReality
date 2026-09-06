@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { ColorPicker } from "../../components/ColorPicker";
@@ -39,6 +39,8 @@ const COVER_COLORS = [
   "#C7B79C",
 ] as const;
 
+type PhotoLoadState = "loading" | "loaded" | "failed";
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -56,6 +58,7 @@ export default function NewMemoryScreen() {
   const [coverImage, setCoverImage] = React.useState<string | undefined>(undefined);
   const [showColorPicker, setShowColorPicker] = React.useState(false);
   const [photoUris, setPhotoUris] = React.useState<string[]>([]);
+  const [photoLoadStates, setPhotoLoadStates] = React.useState<PhotoLoadState[]>([]);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
   const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
@@ -97,11 +100,11 @@ export default function NewMemoryScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ["images"],
-      quality: 0.8,
     });
     if (!result.canceled) {
       const nextPhotoUris = result.assets.map((asset) => asset.uri);
       setPhotoUris(nextPhotoUris);
+      setPhotoLoadStates(nextPhotoUris.map(() => "loading"));
       try {
         setPagePlans(createBalancedPhotoPagePlans(nextPhotoUris));
       } catch {
@@ -110,6 +113,15 @@ export default function NewMemoryScreen() {
       }
       void Haptics.selectionAsync();
     }
+  };
+
+  const markPhotoLoadState = (index: number, state: PhotoLoadState) => {
+    setPhotoLoadStates((current) => {
+      if (!current[index] || current[index] === state) return current;
+      const next = [...current];
+      next[index] = state;
+      return next;
+    });
   };
 
   const pickCoverImage = async () => {
@@ -139,7 +151,12 @@ export default function NewMemoryScreen() {
     }
   };
 
-  const canGenerate = areDraftPhotoPlansValid(photoUris, pagePlans);
+  const loadedPhotoCount = photoLoadStates.filter((state) => state === "loaded").length;
+  const failedPhotoCount = photoLoadStates.filter((state) => state === "failed").length;
+  const allPhotosReady = photoUris.length > 0
+    && photoLoadStates.length === photoUris.length
+    && loadedPhotoCount === photoUris.length;
+  const canGenerate = allPhotosReady && areDraftPhotoPlansValid(photoUris, pagePlans);
 
   return (
     <View style={styles.root}>
@@ -248,12 +265,48 @@ export default function NewMemoryScreen() {
         <AppButton label={photoUris.length ? `已选 ${photoUris.length} 张，重新选择` : "从相册选择照片"} tone="secondary" onPress={() => void selectPhotos()} />
         {photoUris.length > 0 ? (
           <ScrollView horizontal contentContainerStyle={styles.photoStrip} showsHorizontalScrollIndicator={false}>
-            {photoUris.map((uri) => (
-              <Image key={uri} source={{ uri }} style={styles.photoPreview} />
-            ))}
+            {photoUris.map((uri, index) => {
+              const loadState = photoLoadStates[index] ?? "loading";
+              const statusLabel = loadState === "loaded" ? "已载入" : loadState === "failed" ? "载入失败" : "正在载入";
+              return (
+                <View
+                  accessibilityLabel={`照片 ${index + 1}，${statusLabel}`}
+                  accessible
+                  key={`${index}-${uri}`}
+                  style={styles.photoPreviewSlot}
+                >
+                  {loadState !== "loaded" ? (
+                    <View style={styles.photoPreviewPlaceholder}>
+                      {loadState === "failed" ? (
+                        <Text selectable style={styles.photoPreviewError}>!</Text>
+                      ) : (
+                        <ActivityIndicator color={colors.warmAccent} size="small" />
+                      )}
+                    </View>
+                  ) : null}
+                  <Image
+                    accessible={false}
+                    onError={() => markPhotoLoadState(index, "failed")}
+                    onLoad={() => markPhotoLoadState(index, "loaded")}
+                    source={{ uri }}
+                    style={[styles.photoPreview, loadState !== "loaded" && styles.photoPreviewLoading]}
+                    testID={`new-memory-photo-${index + 1}`}
+                  />
+                </View>
+              );
+            })}
           </ScrollView>
         ) : null}
         {photoUris.length > 0 ? (
+          <Text accessibilityLiveRegion="polite" selectable style={[styles.photoLoadStatus, failedPhotoCount > 0 && styles.photoLoadError]}>
+            {failedPhotoCount > 0
+              ? `有 ${failedPhotoCount} 张照片无法载入，请重新选择。`
+              : allPhotosReady
+                ? `${photoUris.length} 张照片已载入`
+                : `正在载入照片，已完成 ${loadedPhotoCount} / ${photoUris.length} 张`}
+          </Text>
+        ) : null}
+        {allPhotosReady ? (
           <DraftPhotoAllocation onChange={setPagePlans} photoUris={photoUris} value={pagePlans} />
         ) : null}
       </Section>
@@ -383,7 +436,26 @@ const styles = StyleSheet.create({
   formInput: { color: colors.ink, flex: 1, fontSize: 15.5, textAlign: "right" },
   formValue: { color: colors.accent, fontSize: 15.5, fontWeight: "700" },
   photoStrip: { gap: 10 },
-  photoPreview: { borderRadius: 12, height: 92, width: 92 },
+  photoPreviewSlot: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 92,
+    overflow: "hidden",
+    position: "relative",
+    width: 92,
+  },
+  photoPreview: { ...StyleSheet.absoluteFill },
+  photoPreviewLoading: { opacity: 0 },
+  photoPreviewPlaceholder: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoPreviewError: { color: colors.danger, fontSize: 24, fontWeight: "800" },
+  photoLoadStatus: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  photoLoadError: { color: colors.danger },
   photoPlaceholder: {
     alignItems: "center",
     backgroundColor: colors.surface,

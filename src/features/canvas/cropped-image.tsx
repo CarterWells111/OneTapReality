@@ -11,6 +11,7 @@ export type CroppedImageProps = {
   accessibilityLabel?: string;
   crop?: PhotoCropState;
   imageTestID?: string;
+  onDisplay?: () => void;
   onError?: () => void;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   style?: StyleProp<ViewStyle>;
@@ -22,6 +23,7 @@ export function CroppedImage({
   accessibilityLabel,
   crop,
   imageTestID,
+  onDisplay,
   onError,
   pointerEvents,
   style,
@@ -54,6 +56,7 @@ export function CroppedImage({
     >
       <Image
         contentFit={geometry ? "fill" : "cover"}
+        onDisplay={onDisplay}
         onError={onError}
         onLoad={(event) => setSourceSize({ height: event.source.height, width: event.source.width })}
         source={{ uri }}

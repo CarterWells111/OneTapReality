@@ -110,6 +110,16 @@ Authorization: Bearer <accessToken>
 - `PUT /api/memories/:id`：完整替换当前设备的单册。
 - `DELETE /api/memories/:id`：硬删除并级联删除页面，返回 `204`。
 
+## 礼品相册发布
+
+礼品 owner 或已激活 editor 使用对应的 `/publish` 路由完成三段式发布：
+
+1. `POST` 提交页面快照及媒体的类型、字节数，服务端创建 30 分钟有效的发布会话并返回 10 分钟有效的私有上传 URL；
+2. 客户端直接 `PUT` 图片到返回的 R2 URL；URL 在会话期间失效时，可对同一路由发送已认证的 `PATCH`，请求体只能包含 `{ publicationId, positions, cover }`，服务端重新核对礼品、账号权限、会话有效期与待上传位置后签发指定 URL；
+3. 所有对象上传完成后，对同一路由发送 `PUT { publicationId }` 完成发布。
+
+`PATCH` 不创建或延长发布会话，不接受客户端提供的对象 key，也不会发布或改变当前共享版本。只有最终 `PUT` 完成元数据校验与版本比较后才会原子替换当前共享相册；失败或过期的会话不会影响上一版本。
+
 ## 错误
 
 ```json
