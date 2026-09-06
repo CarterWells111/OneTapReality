@@ -1,5 +1,7 @@
 # PDF export native-resolution design
 
+> Superseded on 2026-09-06 by `docs/superpowers/plans/2026-09-06-large-album-export-and-gift-publishing.md`. Do not implement the 360×480 scale-1 capture; the replacement uses load-aware 720×960 JPEG capture and covers gift publishing.
+
 ## Goal
 
 Make Expo Go and TestFlight export the same PDF raster resolution: the original canvas size of 360 by 480 logical pixels. This reduces the memory pressure caused by generating a multipage PDF on iOS.

@@ -1,5 +1,5 @@
 import { ApiError } from "../src/server/http/errors";
-import { prepareSharedPublication, promoteSharedPublication, verifySharedPublication } from "../src/server/gifts/shared-publication";
+import { prepareSharedPublication, promoteSharedPublication, selectRefreshableUploads, verifySharedPublication } from "../src/server/gifts/shared-publication";
 
 const mockRequireAccount = jest.fn(async (..._args: unknown[]) => ({ id: "editor-user", email: "editor@example.com" }));
 const mockGetAccess = jest.fn(async (..._args: unknown[]): Promise<any> => ({ memberId: "member-1", id: "gift-1", status: "bound", role: "editor", albumId: "album-1", version: 1 }));
@@ -11,13 +11,14 @@ const mockResolveExisting = jest.fn(async (..._args: unknown[]): Promise<any> =>
 const mockDeleteObjects = jest.fn(async (..._args: unknown[]) => undefined);
 const mockCopyObject = jest.fn(async (..._args: unknown[]) => undefined);
 const mockEnqueueCleanup = jest.fn(async (..._args: unknown[]) => undefined);
+const mockCreateUploadUrl = jest.fn(async (input: { objectKey: string }) => `https://upload.test/${input.objectKey.split("/").at(-1)}`);
 
 jest.mock("../src/server/db/client", () => ({ getServerDatabase: jest.fn(() => ({})) }));
 jest.mock("../src/server/gifts/owner-access", () => ({ requireOwnedGift: jest.fn(async () => ({ db: {}, email: "owner@example.com", gift: { id: "gift-1", status: "bound" } })) }));
 jest.mock("../src/server/gifts/session-auth", () => ({ requireGiftSessionEmail: jest.fn(async () => "owner@example.com"), hashGiftToken: jest.fn(async () => "hash") }));
 jest.mock("../src/server/auth/session-auth", () => ({ requireAuthenticatedAccount: (...args: unknown[]) => mockRequireAccount(...args) }));
 jest.mock("../src/server/gifts/member-access", () => ({ getActivatedGiftMemberAccess: (...args: unknown[]) => mockGetAccess(...args) }));
-jest.mock("../src/server/gifts/r2-media", () => ({ getR2MediaStoreFromEnvironment: jest.fn(() => ({ createUploadUrl: jest.fn(async () => "https://upload.test"), getObjectMetadata: (...args: unknown[]) => mockMetadata(...args), copyObject: (...args: unknown[]) => mockCopyObject(...args), deleteObjects: (...args: unknown[]) => mockDeleteObjects(...args) })) }));
+jest.mock("../src/server/gifts/r2-media", () => ({ getR2MediaStoreFromEnvironment: jest.fn(() => ({ createUploadUrl: (...args: [{ objectKey: string }]) => mockCreateUploadUrl(...args), getObjectMetadata: (...args: unknown[]) => mockMetadata(...args), copyObject: (...args: unknown[]) => mockCopyObject(...args), deleteObjects: (...args: unknown[]) => mockDeleteObjects(...args) })) }));
 jest.mock("../src/server/gifts/repository", () => {
   class Conflict extends Error { code = "gift_album_version_conflict"; }
   class Unavailable extends Error { code = "gift_publication_unavailable"; }
@@ -38,9 +39,9 @@ jest.mock("../src/server/gifts/repository", () => {
 });
 
 import { GiftAlbumVersionConflictError, GiftPublicationUnavailableError } from "../src/server/gifts/repository";
-import { POST, PUT } from "../src/app/api/gifts/invited/[id]/publish+api";
-import { POST as ownedPOST } from "../src/app/api/my-gifts/[id]/publish+api";
-import { POST as tokenPOST } from "../src/app/api/gifts/[token]/publish+api";
+import { PATCH, POST, PUT } from "../src/app/api/gifts/invited/[id]/publish+api";
+import { PATCH as ownedPATCH, POST as ownedPOST } from "../src/app/api/my-gifts/[id]/publish+api";
+import { PATCH as tokenPATCH, POST as tokenPOST } from "../src/app/api/gifts/[token]/publish+api";
 
 describe("editor shared publication contract", () => {
   beforeEach(() => {
@@ -54,6 +55,59 @@ describe("editor shared publication contract", () => {
     mockDeleteObjects.mockResolvedValue(undefined);
     mockCopyObject.mockResolvedValue(undefined);
     mockEnqueueCleanup.mockResolvedValue(undefined);
+    mockCreateUploadUrl.mockImplementation(async (input: { objectKey: string }) => `https://upload.test/${input.objectKey.split("/").at(-1)}`);
+  });
+
+  it("selects only requested server-owned upload keys for refresh", () => {
+    const payload = {
+      sourceMemoryId: "memory", title: "Trip", pages: [],
+      media: [
+        { position: 1, objectKey: "one", contentType: "image/jpeg", byteSize: 1, source: "upload" as const },
+        { position: 2, objectKey: "existing", contentType: "image/jpeg", byteSize: 1, source: "existing" as const },
+        { position: 3, objectKey: "three", contentType: "image/jpeg", byteSize: 1, source: "upload" as const },
+      ],
+      cover: { objectKey: "cover", contentType: "image/jpeg", byteSize: 1 },
+    };
+    expect(selectRefreshableUploads({ publicationId: "publication-1", positions: [1, 3], cover: true }, payload)).toEqual({
+      media: [payload.media[0], payload.media[2]], cover: payload.cover,
+    });
+    expect(() => selectRefreshableUploads({ publicationId: "publication-1", positions: [2] }, payload)).toThrow(ApiError);
+    expect(() => selectRefreshableUploads({ publicationId: "publication-1", positions: [1, 1] }, payload)).toThrow(ApiError);
+    expect(() => selectRefreshableUploads({ publicationId: "publication-1", positions: [-1] }, payload)).toThrow(ApiError);
+    expect(() => selectRefreshableUploads({ publicationId: "publication-1", positions: [99] }, payload)).toThrow(ApiError);
+  });
+
+  it.each([
+    ["invited", (req: Request) => PATCH(req, { id: "gift-1" })],
+    ["owned", (req: Request) => ownedPATCH(req, { id: "gift-1" })],
+    ["token", (req: Request) => tokenPATCH(req, { token: "token" })],
+  ] as const)("refreshes only selected %s publication uploads with a scoped lookup", async (_name, invoke) => {
+    mockGetPayload.mockResolvedValueOnce({
+      sourceMemoryId: "memory", title: "Trip", pages: [],
+      media: [
+        { position: 1, objectKey: "gifts/gift-1/session/one", contentType: "image/jpeg", byteSize: 1, source: "upload" },
+        { position: 3, objectKey: "gifts/gift-1/session/three", contentType: "image/jpeg", byteSize: 1, source: "upload" },
+      ],
+      cover: { objectKey: "gifts/gift-1/session/cover", contentType: "image/jpeg", byteSize: 1 },
+    });
+    const response = await invoke(request("PATCH", { publicationId: "publication-1", positions: [1, 3], cover: true, objectKey: "attacker-key" }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      uploads: [
+        { position: 1, uploadUrl: "https://upload.test/one" },
+        { position: 3, uploadUrl: "https://upload.test/three" },
+      ],
+      coverUpload: { uploadUrl: "https://upload.test/cover" },
+    });
+    expect(mockGetPayload).toHaveBeenLastCalledWith(expect.anything(), "publication-1", "gift-1", expect.any(String), expect.any(String));
+    expect(mockCreateUploadUrl).not.toHaveBeenCalledWith(expect.objectContaining({ objectKey: "attacker-key" }));
+  });
+
+  it("returns publication_unavailable when refresh lookup is expired", async () => {
+    mockGetPayload.mockResolvedValueOnce(null);
+    const response = await PATCH(request("PATCH", { publicationId: "expired", positions: [1], cover: false }), { id: "gift-1" });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.objectContaining({ code: "gift_publication_unavailable" }) }));
   });
 
   const request = (method: string, body: unknown) => new Request("http://localhost/api/gifts/invited/gift-1/publish", { method, headers: { Authorization: "Bearer session", "Content-Type": "application/json" }, body: JSON.stringify(body) });

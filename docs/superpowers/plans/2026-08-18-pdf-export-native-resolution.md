@@ -1,5 +1,7 @@
 # PDF Export Native Resolution Implementation Plan
 
+> Superseded on 2026-09-06 by `docs/superpowers/plans/2026-09-06-large-album-export-and-gift-publishing.md`. Do not implement the 360×480 scale-1 capture; the replacement uses load-aware 720×960 JPEG capture and covers gift publishing.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Export every PDF page at the original 360 by 480 canvas resolution in both Expo Go and TestFlight.

@@ -2,7 +2,7 @@ import { fireEvent, render } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 
-import { CanvasPage } from "../src/features/canvas/canvas-page";
+import { CanvasPage, listCanvasRasterAssetIds } from "../src/features/canvas/canvas-page";
 import { CanvasToolbar } from "../src/features/canvas/canvas-toolbar";
 import type { CanvasImageElement, CanvasLayout, CanvasTextElement } from "../src/types/memory";
 
@@ -66,6 +66,46 @@ describe("CanvasPage", () => {
 
     expect(screen.getByLabelText("本地照片缺失")).toBeTruthy();
     expect(screen.queryByTestId("canvas-cover-image")).toBeNull();
+  });
+
+  it("lists and reports every rendered raster asset exactly once", () => {
+    const tracked: CanvasLayout = {
+      aspectRatio: 0.75,
+      coverImage: "file:///cover.jpg",
+      elements: [
+        { id: "photo", type: "image", uri: "file:///photo.jpg", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 0 },
+        { id: "sticker", type: "sticker", stickerId: "sticker1-01", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 1 },
+        { id: "frame", type: "frame", frameId: "frame1-01", x: 0, y: 0, width: 1, height: 1, rotation: 0, zIndex: 2 },
+      ],
+    };
+    expect(listCanvasRasterAssetIds(tracked)).toEqual([
+      "cover", "image:photo", "sticker:sticker", "frame:frame",
+    ]);
+    const onAssetEvent = jest.fn();
+    const screen = render(<CanvasPage interactive={false} layout={tracked} onAssetEvent={onAssetEvent} />);
+
+    for (const testID of ["canvas-cover-image", "canvas-image-photo", "canvas-sticker-sticker", "canvas-frame-frame"]) {
+      fireEvent(screen.getByTestId(testID), "onDisplay");
+      fireEvent(screen.getByTestId(testID), "onDisplay");
+    }
+    expect(onAssetEvent.mock.calls.map(([event]) => event)).toEqual([
+      { id: "cover", outcome: "displayed" },
+      { id: "image:photo", outcome: "displayed" },
+      { id: "sticker:sticker", outcome: "displayed" },
+      { id: "frame:frame", outcome: "displayed" },
+    ]);
+  });
+
+  it("reports background and image failures with stable ids", () => {
+    expect(listCanvasRasterAssetIds(layout)).toEqual(["background:background-01", "image:photo-1", "sticker:sticker-1"]);
+    const onAssetEvent = jest.fn();
+    const screen = render(<CanvasPage interactive={false} layout={layout} onAssetEvent={onAssetEvent} />);
+    fireEvent(screen.getByTestId("canvas-background-background-01"), "onError", { nativeEvent: { error: "missing" } });
+    fireEvent(screen.getByTestId("canvas-image-photo-1"), "onError", { nativeEvent: { error: "missing" } });
+    expect(onAssetEvent.mock.calls.map(([event]) => event)).toEqual([
+      { id: "background:background-01", outcome: "error" },
+      { id: "image:photo-1", outcome: "error" },
+    ]);
   });
 
   it("renders elements and selects an interactive element only after a double press", () => {

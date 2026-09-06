@@ -101,6 +101,22 @@ describe("backend client", () => {
     expect(request).toHaveBeenCalledWith("/api/my-gifts/gift-1/manage", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session" }) }));
   });
 
+  it("refreshes upload URLs with only the publication selection", async () => {
+    const request = jest.fn().mockResolvedValue(new Response(JSON.stringify({ uploads: [], coverUpload: null }), { status: 200 }));
+    const client = new BackendApiClient(request);
+    const selection = { publicationId: "publication-1", positions: [1, 3], cover: true };
+
+    await client.refreshOwnedGiftPublishUploads("session", "gift-1", selection);
+    await client.refreshInvitedGiftPublishUploads("gift-1", "session", selection);
+    await client.refreshGiftPublishUploads("token", "session", selection);
+
+    expect(request.mock.calls.map(([url, init]) => [url, init.method, JSON.parse(init.body as string)])).toEqual([
+      ["/api/my-gifts/gift-1/publish", "PATCH", selection],
+      ["/api/gifts/invited/gift-1/publish", "PATCH", selection],
+      ["/api/gifts/token/publish", "PATCH", selection],
+    ]);
+  });
+
   it("lists invited gifts and reads an invited album from the real endpoints", async () => {
     const request = jest.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ giftId: "gift-1", role: "viewer", album: { title: "A shared trip", travelDate: "2026-07-24", albumId: "album-1", publishedAt: "2026-07-24T00:00:00.000Z", version: 1, cover: { readUrl: "https://cdn.test/cover.jpg", contentType: "image/jpeg", byteSize: 24 } } }] }), { status: 200 }))
