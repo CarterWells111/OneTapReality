@@ -40,6 +40,14 @@ type Props = {
   onReload?: (cursor: { pageId: string; index: number }) => void | Promise<void>;
 };
 
+function imageContentType(uri: string) {
+  const lower = uri.split("?")[0].toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".heic") || lower.endsWith(".heif")) return "image/heic";
+  return "image/jpeg";
+}
+
 const PREPARE_SAVE_PENDING_MESSAGE = "正在完成编辑，请稍后重试。";
 const STAGED_MESSAGE = "修改已暂存在当前编辑会话，尚未发布。";
 let sharedPhotoSessionSequence = 0;
@@ -240,7 +248,7 @@ export function SharedAlbumEditor({
         optimizedCount += 1;
         setMessage(`正在优化照片 ${optimizedCount}/${newSources.length}…`);
         try {
-          const derivative = await createGiftImageDerivative(source.uri, "image/jpeg");
+          const derivative = await createGiftImageDerivative(source.uri, imageContentType(source.uri));
           derivatives.push(derivative);
           derivativesByPosition.set(position, derivative);
         } catch {

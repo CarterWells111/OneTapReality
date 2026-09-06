@@ -58,6 +58,21 @@ describe("PageCaptureProvider", () => {
     expect(mockCaptureRef).not.toHaveBeenCalled();
   });
 
+  it("remounts raster tracking when consecutive pages reuse the same element id", async () => {
+    mockCaptureRef.mockResolvedValueOnce("data:image/jpeg;base64,first").mockResolvedValueOnce("data:image/jpeg;base64,second");
+    render(<PageCaptureProvider><></></PageCaptureProvider>);
+    let result!: Promise<(string | null)[]>;
+    act(() => { result = capturePagesAsImages([imagePage("first"), imagePage("second")], 360, 480); });
+    fireEvent(screen.getByTestId("canvas-image-photo"), "onDisplay");
+    await flushCompositionFrames();
+    expect(mockCaptureRef).toHaveBeenCalledTimes(1);
+
+    fireEvent(screen.getByTestId("canvas-image-photo"), "onDisplay");
+    await flushCompositionFrames();
+
+    await expect(result).resolves.toEqual(["data:image/jpeg;base64,first", "data:image/jpeg;base64,second"]);
+  });
+
   it("captures an asset-free layout after two frames and times out missing assets", async () => {
     render(<PageCaptureProvider><></></PageCaptureProvider>);
     const empty: StoryPage = { ...imagePage(), layout: { aspectRatio: 0.75, elements: [] } };

@@ -80,6 +80,7 @@ jest.mock("../src/features/canvas/book-canvas-editor", () => {
       <Button title="add local photo" onPress={() => onPagesChange([...pages, { ...pages[0], id: "new-page", position: 1, photoUri: "file:///new.jpg" }], "structure")} />
       <Button title="set local page cover" onPress={() => onPagesChange([{ ...pages[0], layout: { aspectRatio: 0.75, elements: [], coverImage: "file:///new.jpg" } }], "structure")} />
       <Button title="set local top cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.jpg" }], "structure")} />
+      <Button title="set local png cover" onPress={() => onPagesChange([{ ...pages[0], coverImage: "file:///new.png" }], "structure")} />
       <Button title="add two local photos" onPress={() => onPagesChange([
         { ...pages[0], id: "new-a", photoUri: "file:///a.jpg" },
         { ...pages[0], id: "new-b", position: 1, photoUri: "file:///b.jpg" },
@@ -129,7 +130,7 @@ describe("SharedAlbumEditor", () => {
     mockFinishOwned.mockResolvedValue({ albumId: "album-1" });
     mockRefresh.mockResolvedValue({ uploads: [], coverUpload: null });
     mockRefreshOwned.mockResolvedValue({ uploads: [], coverUpload: null });
-    mockCreateDerivative.mockImplementation(async (uri: string) => ({ uri: `file:///cache/${uri.split("/").at(-1)}`, contentType: "image/jpeg", byteSize: uri.endsWith("a.jpg") ? 200 : uri.endsWith("b.jpg") ? 300 : 300, width: 1200, height: 900 }));
+    mockCreateDerivative.mockImplementation(async (uri: string, contentType: string) => ({ uri: `file:///cache/${uri.split("/").at(-1)}`, contentType: contentType === "image/png" ? "image/png" : "image/jpeg", byteSize: uri.endsWith("a.jpg") ? 200 : uri.endsWith("b.jpg") ? 300 : 300, width: 1200, height: 900 }));
     mockRemoveDerivatives.mockResolvedValue(undefined);
     mockUploadFiles.mockResolvedValue(undefined);
     global.fetch = jest.fn(async (url: any) => url === "file:///new.jpg"
@@ -374,6 +375,17 @@ describe("SharedAlbumEditor", () => {
     const payload = mockStart.mock.calls[0][2];
     expect(payload.pages[0].page.coverImage).toBe("shared-position:0");
     expect(JSON.stringify(payload.pages)).not.toContain("file:///new.jpg");
+  });
+
+  it("preserves PNG transparency for newly added shared images", async () => {
+    const noMediaAlbum = { ...album, media: [], pages: [{ ...album.pages[0], page: { ...album.pages[0].page, photoSlot: undefined } }] };
+    mockStart.mockResolvedValueOnce({ publicationId: "pub-png", uploads: [{ position: 0, uploadUrl: "https://upload.test/png" }], coverUpload: null });
+    render(<SharedAlbumEditor accessToken="token" album={noMediaAlbum} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
+    fireEvent.press(screen.getByText("set local png cover"));
+    fireEvent.press(screen.getByText("发布新版本"));
+    await waitFor(() => expect(mockFinish).toHaveBeenCalled());
+    expect(mockCreateDerivative).toHaveBeenCalledWith("file:///new.png", "image/png");
+    expect(mockStart.mock.calls[0][2].media).toEqual([{ position: 0, contentType: "image/png", byteSize: 300 }]);
   });
 
   it("prepares new derivatives serially and does not finish after uploader failure", async () => {

@@ -285,6 +285,7 @@ export function PageCaptureProvider({ children }: { children: React.ReactNode })
               flatEdges
               height={task.current!.pageHeight}
               interactive={false}
+              key={currentPage.id}
               layout={currentPage.layout}
               onAssetEvent={handleAssetEvent}
               width={task.current!.pageWidth}
