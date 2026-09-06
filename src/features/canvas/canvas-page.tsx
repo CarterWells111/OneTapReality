@@ -3,8 +3,8 @@ import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 
-import { canvasBackgrounds } from "./canvas-assets";
-import { CanvasElement, type CanvasElementStylePreview } from "./canvas-element";
+import { canvasBackgrounds, canvasFrames, canvasStickers } from "./canvas-assets";
+import { CanvasElement, type CanvasAssetEvent, type CanvasElementStylePreview } from "./canvas-element";
 import { colors } from "../../components/ui";
 import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-photo-placeholder";
 import { isMissingPhotoToken } from "../memories/photo-references";
@@ -47,6 +47,7 @@ type CanvasPageProps = {
   onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
   onTransformSettled?: () => void;
+  onAssetEvent?: (event: CanvasAssetEvent) => void;
   interactive?: boolean;
   pageSide?: "left" | "right";
   width?: number;
@@ -72,6 +73,7 @@ export function CanvasPage({
   onTransformStart,
   onTransformEnd,
   onTransformSettled,
+  onAssetEvent,
   interactive = true,
   pageSide,
   width: requestedWidth,
@@ -130,8 +132,10 @@ export function CanvasPage({
       testID="album-canvas">
       {coverColorPreview ? <CoverColorPreview value={coverColorPreview} /> : null}
       {background ? (
-        <Image
+        <TrackedPageImage
+          assetId={`background:${background.id}`}
           contentFit="cover"
+          onAssetEvent={onAssetEvent}
           pointerEvents="none"
           source={background.source}
           style={StyleSheet.absoluteFill}
@@ -145,6 +149,8 @@ export function CanvasPage({
         <CroppedImage
           crop={layout.coverCrop}
           imageTestID="canvas-cover-image"
+          onDisplay={() => onAssetEvent?.({ id: "cover", outcome: "displayed" })}
+          onError={() => onAssetEvent?.({ id: "cover", outcome: "error" })}
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
           testID="canvas-cover-image-viewport"
@@ -174,6 +180,7 @@ export function CanvasPage({
           onEdit={onEditElement}
           onInteract={onInteractElement}
           onCrop={onCropElement}
+          onAssetEvent={onAssetEvent}
           selectionContext={selectedElementId}
           stylePreview={element.id === stylePreview?.elementId ? stylePreview : undefined}
           onSelect={onSelectElement}
@@ -184,6 +191,31 @@ export function CanvasPage({
       ))}
     </Pressable>
   );
+}
+
+export type { CanvasAssetEvent } from "./canvas-element";
+
+export function listCanvasRasterAssetIds(layout: CanvasLayout): string[] {
+  const ids: string[] = [];
+  const background = canvasBackgrounds.find((asset) => asset.id === layout.backgroundId);
+  if (background) ids.push(`background:${background.id}`);
+  else if (layout.coverImage) ids.push("cover");
+  for (const element of layout.elements) {
+    if (element.type === "image" && element.uri) ids.push(`image:${element.id}`);
+    else if (element.type === "sticker" && canvasStickers.some((asset) => asset.id === element.stickerId)) ids.push(`sticker:${element.id}`);
+    else if (element.type === "frame" && canvasFrames.some((asset) => asset.id === element.frameId)) ids.push(`frame:${element.id}`);
+  }
+  return ids;
+}
+
+function TrackedPageImage({ assetId, onAssetEvent, ...props }: React.ComponentProps<typeof Image> & { assetId: string; onAssetEvent?: (event: CanvasAssetEvent) => void }) {
+  const reported = React.useRef(false);
+  const report = (outcome: CanvasAssetEvent["outcome"]) => {
+    if (reported.current) return;
+    reported.current = true;
+    onAssetEvent?.({ id: assetId, outcome });
+  };
+  return <Image {...props} onDisplay={() => report("displayed")} onError={() => report("error")} />;
 }
 
 function CoverColorPreview({ value }: { value: SharedValue<string> }) {

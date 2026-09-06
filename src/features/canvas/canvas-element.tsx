@@ -32,6 +32,11 @@ export type CanvasElementStylePreview = {
   fontSize?: SharedValue<number>;
 };
 
+export type CanvasAssetEvent = {
+  id: string;
+  outcome: "displayed" | "error";
+};
+
 type CanvasElementProps = {
   canvasHeight: number;
   canvasWidth: number;
@@ -49,6 +54,7 @@ type CanvasElementProps = {
   onTransformStart?: () => void;
   onTransformEnd?: (id: string, patch: ElementPatch) => void;
   onTransformSettled?: () => void;
+  onAssetEvent?: (event: CanvasAssetEvent) => void;
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -189,6 +195,7 @@ export function CanvasElement({
   onTransformStart,
   onTransformEnd,
   onTransformSettled,
+  onAssetEvent,
 }: CanvasElementProps) {
   const lastPressAt = React.useRef<number | null>(null);
   const transformCallbacksRef = React.useRef({ onTransformSettled, onTransformStart });
@@ -447,6 +454,7 @@ export function CanvasElement({
               contentScale={contentScale}
               element={element}
               fontScale={fontScale}
+              onAssetEvent={onAssetEvent}
               stylePreview={stylePreview}
             />
           ) : (
@@ -519,6 +527,7 @@ function ElementContent({
   contentScale,
   element,
   fontScale,
+  onAssetEvent,
   stylePreview,
 }: {
   canvasHeight: number;
@@ -526,18 +535,19 @@ function ElementContent({
   contentScale: number;
   element: CanvasElementModel;
   fontScale?: SharedValue<number>;
+  onAssetEvent?: (event: CanvasAssetEvent) => void;
   stylePreview?: CanvasElementStylePreview;
 }) {
   const resolvedFontFamily = useResolvedFontFamily(
     element.type === "text" ? element.fontStyle : undefined,
   );
   if (element.type === "image") {
-    return <ImageElement crop={element.crop} testID={`canvas-image-${element.id}`} uri={element.uri} />;
+    return <ImageElement assetId={`image:${element.id}`} crop={element.crop} onAssetEvent={onAssetEvent} testID={`canvas-image-${element.id}`} uri={element.uri} />;
   }
   if (element.type === "sticker") {
     const sticker = canvasStickers.find((candidate) => candidate.id === element.stickerId);
     return sticker ? (
-      <Image contentFit="contain" source={sticker.source} style={styles.image} testID={`canvas-sticker-${element.id}`} />
+      <TrackedImage assetId={`sticker:${element.id}`} contentFit="contain" onAssetEvent={onAssetEvent} source={sticker.source} testID={`canvas-sticker-${element.id}`} />
     ) : (
       <Text style={styles.stickerFallback}>✦</Text>
     );
@@ -545,7 +555,7 @@ function ElementContent({
   if (element.type === "frame") {
     const frame = canvasFrames.find((candidate) => candidate.id === element.frameId);
     return frame ? (
-      <Image contentFit="contain" source={frame.source} style={styles.image} testID={`canvas-frame-${element.id}`} />
+      <TrackedImage assetId={`frame:${element.id}`} contentFit="contain" onAssetEvent={onAssetEvent} source={frame.source} testID={`canvas-frame-${element.id}`} />
     ) : null;
   }
   return (
@@ -566,9 +576,39 @@ function ElementContent({
  * 照片元素：加载失败（文件已丢失/URI 失效）时显示占位，而不是静默空白。
  * 成功后不再重复检查，避免同一 URI 反复触发 onError。
  */
-function ImageElement({ crop, testID, uri }: { crop?: CanvasImageElement["crop"]; testID: string; uri: string }) {
+function TrackedImage({
+  assetId,
+  contentFit,
+  onAssetEvent,
+  source,
+  testID,
+}: {
+  assetId: string;
+  contentFit: "contain" | "cover";
+  onAssetEvent?: (event: CanvasAssetEvent) => void;
+  source: React.ComponentProps<typeof Image>["source"];
+  testID: string;
+}) {
+  const reported = React.useRef(false);
+  const report = (outcome: CanvasAssetEvent["outcome"]) => {
+    if (reported.current) return;
+    reported.current = true;
+    onAssetEvent?.({ id: assetId, outcome });
+  };
+  return <Image contentFit={contentFit} onDisplay={() => report("displayed")} onError={() => report("error")} source={source} style={styles.image} testID={testID} />;
+}
+
+function ImageElement({ assetId, crop, onAssetEvent, testID, uri }: { assetId: string; crop?: CanvasImageElement["crop"]; onAssetEvent?: (event: CanvasAssetEvent) => void; testID: string; uri: string }) {
   const [failed, setFailed] = React.useState(false);
-  if (isMissingPhotoToken(uri) || failed) {
+  const reported = React.useRef(false);
+  const report = (outcome: CanvasAssetEvent["outcome"]) => {
+    if (reported.current) return;
+    reported.current = true;
+    onAssetEvent?.({ id: assetId, outcome });
+  };
+  const missing = isMissingPhotoToken(uri);
+  React.useEffect(() => { if (missing) report("error"); }, [missing]);
+  if (missing || failed) {
     return (
       <View accessibilityLabel="本地照片缺失" accessibilityRole="image" accessible style={styles.imagePlaceholder} testID={isMissingPhotoToken(uri) ? "canvas-missing-image-placeholder" : "canvas-image-placeholder"}>
         <Text style={styles.imagePlaceholderGlyph}>🖼</Text>
@@ -580,7 +620,8 @@ function ImageElement({ crop, testID, uri }: { crop?: CanvasImageElement["crop"]
     <CroppedImage
       crop={crop}
       imageTestID={testID}
-      onError={() => setFailed(true)}
+      onDisplay={() => report("displayed")}
+      onError={() => { report("error"); setFailed(true); }}
       style={styles.image}
       testID={`${testID}-viewport`}
       uri={uri}
