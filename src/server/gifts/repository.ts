@@ -500,32 +500,69 @@ export async function getGiftPublishPayload(db: BackendDatabase, sessionId: stri
   return session ? session.payloadJson as GiftPublicationPayload : null;
 }
 
+export async function getGiftPublishCompletionReceipt(
+  db: BackendDatabase,
+  sessionId: string,
+  giftId: string,
+  ownerEmail: string,
+): Promise<{ albumId: string; version: number } | null> {
+  const [session] = await db.select({
+    albumId: giftPublishSessions.completedAlbumId,
+    version: giftPublishSessions.completedAlbumVersion,
+  }).from(giftPublishSessions).where(and(
+    eq(giftPublishSessions.id, sessionId),
+    eq(giftPublishSessions.giftId, giftId),
+    eq(giftPublishSessions.ownerEmail, normalizeEmail(ownerEmail)),
+    isNotNull(giftPublishSessions.completedAt),
+    isNotNull(giftPublishSessions.completedAlbumId),
+    isNotNull(giftPublishSessions.completedAlbumVersion),
+  )).limit(1);
+  return session?.albumId && Number.isInteger(session.version)
+    ? { albumId: session.albumId, version: session.version! }
+    : null;
+}
+
 export async function completeGiftPublishSession(
   db: BackendDatabase,
   input: { sessionId: string; ownerEmail: string; now: string; payload?: GiftPublicationPayload },
-): Promise<{ albumId: string; oldObjectKeys: string[] } | null> {
-  const [candidate] = await db.select({ giftId: giftPublishSessions.giftId }).from(giftPublishSessions).where(and(
+): Promise<{ albumId: string; version: number; oldObjectKeys: string[]; replayed: boolean } | null> {
+  const [candidate] = await db.select({
+    giftId: giftPublishSessions.giftId,
+    expiresAt: giftPublishSessions.expiresAt,
+    completedAt: giftPublishSessions.completedAt,
+    completedAlbumId: giftPublishSessions.completedAlbumId,
+    completedAlbumVersion: giftPublishSessions.completedAlbumVersion,
+  }).from(giftPublishSessions).where(and(
     eq(giftPublishSessions.id, input.sessionId),
     eq(giftPublishSessions.ownerEmail, normalizeEmail(input.ownerEmail)),
-    isNull(giftPublishSessions.completedAt),
-    gt(giftPublishSessions.expiresAt, input.now),
   )).limit(1);
   if (!candidate) return null;
+  if (candidate.completedAt) {
+    return candidate.completedAlbumId && Number.isInteger(candidate.completedAlbumVersion)
+      ? { albumId: candidate.completedAlbumId, version: candidate.completedAlbumVersion!, oldObjectKeys: [], replayed: true }
+      : null;
+  }
+  if (candidate.expiresAt <= input.now) return null;
 
   return withPublicationLock(candidate.giftId, () => db.transaction(async (tx) => {
     const email = normalizeEmail(input.ownerEmail);
-    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
-      .where(eq(users.email, email)).limit(1).for("update");
-    if (account && account.deletionState !== "active") return null;
     await tx.execute(sql`select id from gift_publish_sessions where id = ${input.sessionId} for update`);
     await tx.execute(sql`select id from gifts where id = ${candidate.giftId} for update`);
     const [session] = await tx.select().from(giftPublishSessions).where(and(
       eq(giftPublishSessions.id, input.sessionId),
       eq(giftPublishSessions.ownerEmail, email),
-      isNull(giftPublishSessions.completedAt),
-      gt(giftPublishSessions.expiresAt, input.now),
     )).limit(1);
     if (!session) return null;
+    if (session.completedAt) {
+      return session.completedAlbumId && Number.isInteger(session.completedAlbumVersion)
+        ? { albumId: session.completedAlbumId, version: session.completedAlbumVersion!, oldObjectKeys: [], replayed: true }
+        : null;
+    }
+    if (session.expiresAt <= input.now) return null;
+
+    const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
+      .where(eq(users.email, email)).limit(1).for("update");
+    if (account && account.deletionState !== "active") return null;
 
     const [liveGift] = await tx.select({ id: gifts.id }).from(gifts).where(and(eq(gifts.id, session.giftId), eq(gifts.status, "bound"))).limit(1);
     if (!liveGift) return null;
@@ -589,13 +626,17 @@ export async function completeGiftPublishSession(
       id: crypto.randomUUID(), giftId: session.giftId, objectKey, state: "pending", attempts: 0,
       nextAttemptAt: input.now, lastError: null, completedAt: null, createdAt: input.now,
     }))).onConflictDoNothing();
-    await tx.update(giftPublishSessions).set({ completedAt: input.now }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
-    return { albumId, oldObjectKeys };
+    await tx.update(giftPublishSessions).set({
+      completedAt: input.now,
+      completedAlbumId: albumId,
+      completedAlbumVersion: version,
+    }).where(and(eq(giftPublishSessions.id, session.id), isNull(giftPublishSessions.completedAt)));
+    return { albumId, version, oldObjectKeys, replayed: false };
   }));
 }
 
 export async function completeGiftPublishSessionResult(db: BackendDatabase, input: { sessionId: string; ownerEmail: string; now: string; payload?: GiftPublicationPayload }): Promise<
-  | { status: "success"; albumId: string; oldObjectKeys: string[] }
+  | { status: "success"; albumId: string; version: number; oldObjectKeys: string[]; replayed: boolean }
   | { status: "conflict" }
   | { status: "access_denied" }
 > {

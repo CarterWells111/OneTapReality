@@ -392,6 +392,8 @@ export const giftPublishSessions = pgTable(
     payloadJson: jsonb("payload_json").notNull(),
     expiresAt: text("expires_at").notNull(),
     completedAt: text("completed_at"),
+    completedAlbumId: text("completed_album_id"),
+    completedAlbumVersion: integer("completed_album_version"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [

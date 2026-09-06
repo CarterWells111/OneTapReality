@@ -113,6 +113,13 @@
       "when": 1788566400000,
       "tag": "0015_gift_card_display_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788739200000,
+      "tag": "0016_gift_publish_completion_receipt",
+      "breakpoints": true
     }
   ]
 }

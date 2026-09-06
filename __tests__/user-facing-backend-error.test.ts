@@ -11,6 +11,7 @@ describe("user-facing backend errors", () => {
     ["invalid_code", "验证码无效或已过期，请重新获取。"],
     ["email_code_rate_limited", "请求过于频繁，请稍后再试。"],
     ["gift_album_version_conflict", "共享相册已有新版本，请重新打开后再编辑。"],
+    ["gift_publication_retryable", "照片已上传，正在重试完成发布。"],
     ["gift_relationship_blocked", "你与该成员之间已停止共享，无法再次邀请或激活。"],
     ["gift_report_forbidden", "你目前无法举报此礼品，请刷新列表后重试。"],
     ["gift_report_no_snapshot", "此礼品尚无可举报的已发布内容。"],

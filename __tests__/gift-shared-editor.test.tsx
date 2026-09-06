@@ -163,6 +163,45 @@ describe("SharedAlbumEditor", () => {
     expect(onPublished).toHaveBeenCalledWith({ cursor: { pageId: "p2", index: 1 } });
   });
 
+  it("retries only invited-editor finalization after uploads finish", async () => {
+    let resolveFinish!: (value: { albumId: string; version: number }) => void;
+    const RetryableError = jest.requireMock("../src/services/backend/api-client").BackendApiError;
+    mockFinish
+      .mockRejectedValueOnce(new RetryableError(503, "gift_publication_retryable", "retry"))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFinish = resolve; }));
+    const onPublished = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("add local photo"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+
+    await screen.findByText("照片已上传，正在完成发布…");
+    await waitFor(() => expect(mockFinish).toHaveBeenCalledTimes(2), { timeout: 2_000 });
+    await act(async () => resolveFinish({ albumId: "album-1", version: 5 }));
+    await waitFor(() => expect(onPublished).toHaveBeenCalled());
+    expect(mockCreateDerivative).toHaveBeenCalledTimes(1);
+    expect(mockUploadFiles).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers invited editors a finalize-only manual retry after automatic retries are exhausted", async () => {
+    const RetryableError = jest.requireMock("../src/services/backend/api-client").BackendApiError;
+    mockFinish.mockRejectedValue(new RetryableError(503, "gift_publication_retryable", "retry"));
+    const onPublished = jest.fn();
+    render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={onPublished} />);
+    fireEvent.press(screen.getByText("add local photo"));
+    fireEvent.press(screen.getByText("保存并发布更新"));
+
+    await screen.findByText("照片已上传，但云端暂时未完成发布。请重试完成发布。", {}, { timeout: 4_000 });
+    expect(screen.getByText("重试完成发布")).toBeTruthy();
+    mockFinish.mockResolvedValue({ albumId: "album-1", version: 5 });
+    fireEvent.press(screen.getByText("重试完成发布"));
+    await waitFor(() => expect(onPublished).toHaveBeenCalled());
+    expect(mockFinish).toHaveBeenCalledTimes(4);
+    expect(mockCreateDerivative).toHaveBeenCalledTimes(1);
+    expect(mockUploadFiles).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+  });
+
   it("owns shared-session staged photos and locks publishing for the complete editor transaction", async () => {
     render(<SharedAlbumEditor accessToken="token" album={album} giftId="gift-1" onAccessLost={jest.fn()} onPublished={jest.fn()} />);
 

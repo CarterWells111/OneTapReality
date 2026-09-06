@@ -32,7 +32,7 @@ import { createDevice, getDeviceByInstallationId, listMemories } from "../src/se
 describe("backend API routes", () => {
   beforeEach(() => {
     mockDatabaseExecute.mockReset();
-    mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 15 }] });
+    mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 16 }] });
     delete process.env.API_WRITE_FREEZE;
   });
 
@@ -49,7 +49,7 @@ describe("backend API routes", () => {
       service: "onetapreality-api",
       contractVersion: 1,
       database: "ok",
-      schemaVersion: 15,
+      schemaVersion: 16,
       writeFreeze: false,
     });
     expect((await capabilities.json()).features.automaticSync).toBe(false);
@@ -65,13 +65,13 @@ describe("backend API routes", () => {
       service: "onetapreality-api",
       contractVersion: 1,
       database: "ok",
-      schemaVersion: 15,
+      schemaVersion: 16,
       writeFreeze: true,
     });
   });
 
-  it("rejects health when the database schema is version 14", async () => {
-    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 14 }] });
+  it("rejects health when the database schema is version 15", async () => {
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 15 }] });
 
     const response = await getHealth(new Request("http://localhost/api/health"));
 

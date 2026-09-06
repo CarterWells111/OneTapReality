@@ -1,5 +1,15 @@
 # 决策记录
 
+## 2026-09-06：礼品相册发布采用可续跑的确定性完成流程
+
+礼品相册继续支持最多 100 页、50 个媒体对象、一个可选封面，且每个上传对象不超过 25 MB。客户端图片副本的最长边 2560px、JPEG 0.82、PNG 透明度保留规则不变，本地原图不改写；R2 继续保持私有。本决策只取代此前把全部 R2 copy 与 HEAD 串行塞进 15 秒总预算的完成行为。
+
+- 同一 `publicationId` 为每个临时对象派生唯一且稳定的 final key。完成请求先验证已存在 final 对象；元数据匹配时复用，缺失或不匹配时重新复制并验证，因此中断后可用同一发布会话续跑。
+- 对象提升最多四路并发；临时对象存储故障按对象执行有限重试和退避，整个完成请求仅保留约 120 秒的安全上限。仍未完成时三条 owner、activated editor 与 token 发布 API 统一返回 `503 gift_publication_retryable` 和 `Retry-After`。
+- 发布会话持久化完成后的 album ID 与 version 回执。重复或并发的同一 PUT 返回同一结果，只允许一次原子版本切换；完成前的失败、超时、冲突、过期或权限撤销不得替换当前可读版本。
+- 已登记的 final 候选与临时对象继续由 durable cleanup 管理；成功后仍被当前相册引用的对象不得删除。日志只记录 phase/count/duration/outcome/errorCode，不记录邮箱、任何 ID、对象 key、URL、token、payload 或异常对象。
+- iOS 在上传全部完成后只重试最终 PUT，不重新优化或上传照片；自动重试耗尽时保留同一内存 publication，提供“重试完成发布”。发布顺序为兼容旧客户端的服务端与 migration 先部署到 staging，再进行 Development Build 的 1/10/30/50 张加封面真机验收；production 与 TestFlight 仍需单独批准。
+
 ## 2026-09-06：1.1.4 内部 TestFlight 原位更新
 
 - 当前营销版本从 `1.1.2` 更新为 `1.1.4`，基于已完成真机验收的 `a0b2b6d2de6e315c9111514e7700f0e90e999454` 创建仅版本与发布契约变更的新提交；iOS build number 继续由 EAS 远端单调递增管理。

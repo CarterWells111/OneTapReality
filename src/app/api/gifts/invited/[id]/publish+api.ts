@@ -3,8 +3,8 @@ import { getServerDatabase } from "../../../../../server/db/client";
 import { requireGiftSharingEnabled } from "../../../../../server/gifts/alpha-safety";
 import { getActivatedGiftMemberAccess } from "../../../../../server/gifts/member-access";
 import { getR2MediaStoreFromEnvironment } from "../../../../../server/gifts/r2-media";
-import { completeGiftPublishSessionResult, createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, GiftPublicationUnavailableError, resolveExistingGiftMedia } from "../../../../../server/gifts/repository";
-import { GIFT_PUBLICATION_LIFETIME_MS, prepareSharedPublication, promoteSharedPublicationDurably, selectRefreshableUploads, verifySharedPublication, type RefreshPublishUploadsBody, type SharedPublishBody } from "../../../../../server/gifts/shared-publication";
+import { createGiftPublishSession, getGiftPublishPayload, GiftAlbumVersionConflictError, GiftPublicationUnavailableError, resolveExistingGiftMedia } from "../../../../../server/gifts/repository";
+import { finalizeSharedPublication, GIFT_PUBLICATION_LIFETIME_MS, prepareSharedPublication, selectRefreshableUploads, type RefreshPublishUploadsBody, type SharedPublishBody } from "../../../../../server/gifts/shared-publication";
 import { ApiError, errorResponse } from "../../../../../server/http/errors";
 
 async function requireEditor(request: Request, giftId: string) {
@@ -35,16 +35,11 @@ export async function POST(request: Request, { id }: { id: string }) {
 
 export async function PUT(request: Request, { id }: { id: string }) {
   try {
-    const store = getR2MediaStoreFromEnvironment(); if (!store) throw new ApiError(503, "gift_media_unavailable", "Gift media storage is not configured");
     const { db, account } = await requireEditor(request, id);
     const { publicationId } = await request.json() as { publicationId?: string }; if (typeof publicationId !== "string") throw new ApiError(400, "validation_failed", "A publication id is required");
-    const now = new Date().toISOString(); const payload = await getGiftPublishPayload(db, publicationId, id, account.email, now);
-    if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
-    await verifySharedPublication(store, payload);
-    const promoted = await promoteSharedPublicationDurably({ store, db, giftId: id, sessionId: publicationId, ownerEmail: account.email, payload, now });
-    const result = await completeGiftPublishSessionResult(db, { sessionId: publicationId, ownerEmail: account.email, now, payload });
-    if (result.status !== "success") { await store.deleteObjects(promoted); if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began"); throw new ApiError(409, "gift_publication_unavailable", "Editor access was revoked or the publication expired"); }
-    return Response.json({ albumId: result.albumId }, { status: 201 });
+    const now = new Date().toISOString();
+    const result = await finalizeSharedPublication({ store: getR2MediaStoreFromEnvironment(), db, giftId: id, sessionId: publicationId, ownerEmail: account.email, now });
+    return Response.json(result, { status: 201 });
   } catch (error) { return errorResponse(error instanceof GiftAlbumVersionConflictError || error instanceof GiftPublicationUnavailableError ? new ApiError(409, error.code, error.message) : error); }
 }
 

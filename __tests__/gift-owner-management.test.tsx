@@ -44,6 +44,11 @@ jest.mock("../src/services/backend/api-client", () => ({
     refreshOwnedGiftPublishUploads: mockRefreshOwnedGiftPublishUploads,
     updateOwnedGiftMemberRole: mockUpdateOwnedGiftMemberRole,
   })),
+  BackendApiError: class BackendApiError extends Error {
+    status: number;
+    code: string;
+    constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
+  },
 }));
 jest.mock("../src/features/gifts/gift-image-derivative", () => ({
   createGiftImageDerivative: (...args: unknown[]) => mockCreateGiftImageDerivative(...args),
@@ -57,6 +62,7 @@ jest.mock("../src/features/gifts/publication-uploader", () => ({
 import GiftManagementScreen from "../src/app/gifts/[id]";
 import * as FileSystem from "expo-file-system/legacy";
 import { mapSharedAlbumToStoryPages } from "../src/features/gifts/shared-album-mapper";
+import { BackendApiError } from "../src/services/backend/api-client";
 
 const owner = { email: "owner@example.com", role: "owner" as const, createdAt: "2026-08-16T00:00:00.000Z" };
 const viewer = { email: "viewer@example.com", role: "viewer" as const, createdAt: "2026-08-16T00:00:00.000Z" };
@@ -140,6 +146,58 @@ describe("gift owner member management", () => {
       expect.objectContaining({ uri: expect.stringContaining("standalone-cover") }),
     ]));
     expect(memory).toEqual(original);
+  });
+
+  it("retries only the final PUT after upload completion", async () => {
+    const memory: any = {
+      id: "memory-1", title: "Trip", city: "London", travelDate: "2026-09-06", photoUris: [],
+      pages: [{ id: "p1", position: 0, kind: "photo", headline: "", body: "", photoUri: "file:///one.jpg" }],
+      createdAt: "2026-09-06T00:00:00Z", updatedAt: "2026-09-06T00:00:00Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({ publicationId: "publication-retry", uploads: [{ position: 0, uploadUrl: "https://upload.test/one" }], coverUpload: null });
+    let resolveFinish!: (value: { albumId: string; version: number }) => void;
+    mockFinishOwnedGiftPublish
+      .mockRejectedValueOnce(new BackendApiError(503, "gift_publication_retryable", "retry"))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFinish = resolve; }));
+
+    render(<GiftManagementScreen />);
+    await screen.findByText("Trip");
+    fireEvent.press(screen.getByText("Trip"));
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await screen.findByText("照片已上传，正在完成发布…");
+    await waitFor(() => expect(mockFinishOwnedGiftPublish).toHaveBeenCalledTimes(2), { timeout: 2_000 });
+    await act(async () => resolveFinish({ albumId: "album-1", version: 1 }));
+    await waitFor(() => expect(mockGetOwnedGiftManagement).toHaveBeenCalledTimes(2));
+    expect(mockCreateGiftImageDerivative).toHaveBeenCalledTimes(1);
+    expect(mockUploadPublicationFiles).toHaveBeenCalledTimes(1);
+    expect(mockStartOwnedGiftPublish).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers retry completion without optimizing or uploading again after automatic retries are exhausted", async () => {
+    const memory: any = {
+      id: "memory-1", title: "Trip", city: "London", travelDate: "2026-09-06", photoUris: [],
+      pages: [{ id: "p1", position: 0, kind: "photo", headline: "", body: "", photoUri: "file:///one.jpg" }],
+      createdAt: "2026-09-06T00:00:00Z", updatedAt: "2026-09-06T00:00:00Z",
+    };
+    mockMemories.mockReturnValue([memory]);
+    mockStartOwnedGiftPublish.mockResolvedValueOnce({ publicationId: "publication-retry", uploads: [{ position: 0, uploadUrl: "https://upload.test/one" }], coverUpload: null });
+    mockFinishOwnedGiftPublish.mockRejectedValue(new BackendApiError(503, "gift_publication_retryable", "retry"));
+
+    render(<GiftManagementScreen />);
+    await screen.findByText("Trip");
+    fireEvent.press(screen.getByText("Trip"));
+    fireEvent.press(screen.getByText("发布共享相册"));
+
+    await screen.findByText("照片已上传，但云端暂时未完成发布。请重试完成发布。", {}, { timeout: 4_000 });
+    expect(screen.getByText("重试完成发布")).toBeTruthy();
+    mockFinishOwnedGiftPublish.mockResolvedValue({ albumId: "album-1", version: 1 });
+    fireEvent.press(screen.getByText("重试完成发布"));
+    await waitFor(() => expect(mockFinishOwnedGiftPublish).toHaveBeenCalledTimes(4));
+    expect(mockCreateGiftImageDerivative).toHaveBeenCalledTimes(1);
+    expect(mockUploadPublicationFiles).toHaveBeenCalledTimes(1);
+    expect(mockStartOwnedGiftPublish).toHaveBeenCalledTimes(1);
   });
 
   it("publishes an existing local album only for the first shared version", async () => {

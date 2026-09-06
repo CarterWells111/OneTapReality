@@ -223,12 +223,9 @@ Create the migration:
 ```sql
 ALTER TABLE "gift_publish_sessions" ADD COLUMN "completed_album_id" text;
 ALTER TABLE "gift_publish_sessions" ADD COLUMN "completed_album_version" integer;
-ALTER TABLE "gift_publish_sessions" ADD CONSTRAINT "gift_publish_sessions_completed_album_id_shared_albums_id_fk"
-  FOREIGN KEY ("completed_album_id") REFERENCES "public"."shared_albums"("id")
-  ON DELETE SET NULL ON UPDATE NO ACTION;
 ```
 
-Mirror the columns and relation in `src/server/db/schema.ts`. Generate/update Drizzle metadata using the repository's established migration workflow; do not hand-edit a snapshot inconsistently.
+Mirror the nullable scalar columns in `src/server/db/schema.ts`. Do not attach `completed_album_id` to the replaceable `shared_albums` row: album replacement deletes and recreates that row, while an earlier publication receipt must remain replayable. Generate/update Drizzle metadata using the repository's established migration workflow; do not hand-edit a snapshot inconsistently.
 
 - [ ] **Step 4: Store and read the receipt atomically**
 

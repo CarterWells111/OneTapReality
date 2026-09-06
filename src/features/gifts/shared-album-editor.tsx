@@ -24,6 +24,7 @@ import {
 import { createPhotoStagingSession, type PhotoStagingSession } from "../memories/photo-persistence";
 import { mapSharedAlbumToEditablePages } from "./shared-album-mapper";
 import { createGiftImageDerivative, removeGiftImageDerivatives, type GiftImageDerivative } from "./gift-image-derivative";
+import { finalizePublicationWithRetry } from "./finalize-publication";
 import { collectPublicationSources, snapshotPagesForPublication } from "./publication-snapshot";
 import { uploadPublicationFile, uploadPublicationFiles, type PublicationUploadFile } from "./publication-uploader";
 
@@ -85,7 +86,12 @@ export function SharedAlbumEditor({
   const [accessLost, setAccessLost] = React.useState(false);
   const [transformPending, setTransformPending] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  const [pendingFinalization, setPendingFinalization] = React.useState<{
+    publicationId: string;
+    cursor: { pageId: string; index: number };
+  } | null>(null);
   const inFlight = React.useRef(false);
+  const finalizationAbortRef = React.useRef<AbortController | null>(null);
   const editorChangePendingRef = React.useRef(false);
   const mountedRef = React.useRef(true);
   const operationGeneration = React.useRef(0);
@@ -115,18 +121,19 @@ export function SharedAlbumEditor({
     onDirtyChange?.(nextDirty);
   }, [onDirtyChange]);
   const handlePagesChange = React.useCallback((nextPages: StoryPage[]) => {
-    if (inFlight.current || stale) return false;
+    if (inFlight.current || stale || pendingFinalization) return false;
     pagesRef.current = nextPages;
     setPages(nextPages);
     changeDirty(hasEffectiveChanges(nextPages, metadataRef.current, publishedBaseline.current));
     return true;
-  }, [changeDirty, stale]);
+  }, [changeDirty, pendingFinalization, stale]);
   const handleMetadataChange = React.useCallback((change: Partial<AlbumMetadataValue>) => {
+    if (pendingFinalization) return;
     const nextMetadata = { ...metadataRef.current, ...change };
     metadataRef.current = nextMetadata;
     setMetadata(nextMetadata);
     changeDirty(hasEffectiveChanges(pagesRef.current, nextMetadata, publishedBaseline.current));
-  }, [changeDirty]);
+  }, [changeDirty, pendingFinalization]);
 
   const cleanupPhotoStagingSession = React.useCallback(async () => {
     try {
@@ -156,9 +163,20 @@ export function SharedAlbumEditor({
     return () => {
       mountedRef.current = false;
       operationGeneration.current += 1;
+      finalizationAbortRef.current?.abort();
       mountedEditor?.releaseSaveLock();
     };
   }, []);
+
+  React.useEffect(() => {
+    operationGeneration.current += 1;
+    finalizationAbortRef.current?.abort();
+    finalizationAbortRef.current = null;
+    inFlight.current = false;
+    setPendingFinalization(null);
+    setBusy(false);
+    setBusyIntent(null);
+  }, [accessToken, album.version, giftId]);
 
   React.useEffect(() => {
     if (!accessLost || accessLostNotified.current) return;
@@ -168,8 +186,77 @@ export function SharedAlbumEditor({
     onAccessLost();
   }, [accessLost, onAccessLost]);
 
+  const completePublication = async (
+    cursor: { pageId: string; index: number },
+    current: () => boolean,
+  ) => {
+    if (!current()) return;
+    setPendingFinalization(null);
+    changeDirty(false);
+    if (!current()) return;
+    pagesRef.current = [];
+    setPages([]);
+    await cleanupPhotoStagingSession();
+    if (!current()) return;
+    await onPublished({ cursor });
+  };
+
+  const handlePublicationError = async (error: unknown, generation: number, current: () => boolean) => {
+    if (!current()) return;
+    setPendingFinalization(null);
+    if (error instanceof BackendApiError && error.status === 403) {
+      accessLostGeneration.current = generation;
+      setAccessLost(true);
+      pagesRef.current = [];
+      setPages([]);
+      const clearedMetadata = { title: "", travelDate: null };
+      metadataRef.current = clearedMetadata;
+      setMetadata(clearedMetadata);
+      changeDirty(false);
+      await cleanupPhotoStagingSession();
+    } else if (error instanceof BackendApiError && error.status === 409 && error.code === "gift_album_version_conflict") {
+      setStale(true);
+      setMessage("相册已有新版本，请重新加载后再编辑。");
+    } else if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") {
+      setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
+    } else if (error instanceof BackendApiError && error.code === "gift_upload_incomplete") {
+      setMessage("部分照片尚未完整上传，请重新发布；当前共享版本未改变。");
+    } else {
+      setMessage(toUserFacingOperationError(error, "发布失败，请检查网络后重试。"));
+    }
+  };
+
+  const finalizeSharedPublication = async (
+    publicationId: string,
+    cursor: { pageId: string; index: number },
+    current: () => boolean,
+  ) => {
+    setMessage("照片已上传，正在完成发布…");
+    const controller = new AbortController();
+    finalizationAbortRef.current?.abort();
+    finalizationAbortRef.current = controller;
+    try {
+      const result = await finalizePublicationWithRetry({
+        publicationId,
+        signal: controller.signal,
+        finalize: (currentPublicationId) => isOwner
+          ? client.finishOwnedGiftPublish(accessToken, giftId, currentPublicationId)
+          : client.finishInvitedGiftPublish(giftId, accessToken, currentPublicationId),
+      });
+      if (!current()) return;
+      if (result.status === "retryable") {
+        setPendingFinalization({ publicationId: result.publicationId, cursor });
+        setMessage("照片已上传，但云端暂时未完成发布。请重试完成发布。");
+        return;
+      }
+      await completePublication(cursor, current);
+    } finally {
+      if (finalizationAbortRef.current === controller) finalizationAbortRef.current = null;
+    }
+  };
+
   const stage = async () => {
-    if (inFlight.current || stale || editorChangePendingRef.current) return;
+    if (inFlight.current || stale || pendingFinalization || editorChangePendingRef.current) return;
     const generation = ++operationGeneration.current;
     const current = () => mountedRef.current && generation === operationGeneration.current;
     const operationEditor = editorRef.current;
@@ -204,7 +291,7 @@ export function SharedAlbumEditor({
   };
 
   const publish = async () => {
-    if (inFlight.current || stale || editorChangePendingRef.current) return;
+    if (inFlight.current || stale || pendingFinalization || editorChangePendingRef.current) return;
     const title = metadata.title.trim();
     if (!title) {
       setMessage("请输入纪念册标题");
@@ -300,38 +387,9 @@ export function SharedAlbumEditor({
         onProgress: (completed, total) => { if (current()) setMessage(`正在上传照片 ${completed}/${total}…`); },
       });
       if (!current()) return;
-      if (isOwner) await client.finishOwnedGiftPublish(accessToken, giftId, publication.publicationId);
-      else await client.finishInvitedGiftPublish(giftId, accessToken, publication.publicationId);
-      if (!current()) return;
-      changeDirty(false);
-      if (!current()) return;
-      pagesRef.current = [];
-      setPages([]);
-      await cleanupPhotoStagingSession();
-      if (!current()) return;
-      await onPublished({ cursor: publishCursor });
+      await finalizeSharedPublication(publication.publicationId, publishCursor, current);
     } catch (error) {
-      if (!current()) return;
-      if (error instanceof BackendApiError && error.status === 403) {
-        accessLostGeneration.current = generation;
-        setAccessLost(true);
-        pagesRef.current = [];
-        setPages([]);
-        const clearedMetadata = { title: "", travelDate: null };
-        metadataRef.current = clearedMetadata;
-        setMetadata(clearedMetadata);
-        changeDirty(false);
-        await cleanupPhotoStagingSession();
-      } else if (error instanceof BackendApiError && error.status === 409 && error.code === "gift_album_version_conflict") {
-        setStale(true);
-        setMessage("相册已有新版本，请重新加载后再编辑。");
-      } else if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") {
-        setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
-      } else if (error instanceof BackendApiError && error.code === "gift_upload_incomplete") {
-        setMessage("部分照片尚未完整上传，请重新发布；当前共享版本未改变。");
-      } else {
-        setMessage(toUserFacingOperationError(error, "发布失败，请检查网络后重试。"));
-      }
+      await handlePublicationError(error, generation, current);
     } finally {
       operationEditor?.releaseSaveLock();
       await removeGiftImageDerivatives(derivatives);
@@ -340,6 +398,28 @@ export function SharedAlbumEditor({
           console.warn("[gift-publish] 无法清理临时封面：", error);
         });
       }
+      inFlight.current = false;
+      if (current()) {
+        setBusy(false);
+        setBusyIntent(null);
+        onPublishBusyChange?.(false);
+      }
+    }
+  };
+
+  const retrySharedFinalization = async () => {
+    if (!pendingFinalization || inFlight.current) return;
+    const generation = ++operationGeneration.current;
+    const current = () => mountedRef.current && generation === operationGeneration.current;
+    inFlight.current = true;
+    onPublishBusyChange?.(true);
+    setBusy(true);
+    setBusyIntent("publish");
+    try {
+      await finalizeSharedPublication(pendingFinalization.publicationId, pendingFinalization.cursor, current);
+    } catch (error) {
+      await handlePublicationError(error, generation, current);
+    } finally {
       inFlight.current = false;
       if (current()) {
         setBusy(false);
@@ -362,12 +442,12 @@ export function SharedAlbumEditor({
 
   return <View style={{ gap: 12 }}>
     <AlbumMetadataEditor
-      disabled={busy || stale}
+      disabled={busy || stale || Boolean(pendingFinalization)}
       onChange={handleMetadataChange}
       title={metadata.title}
       travelDate={metadata.travelDate}
     />
-    <View pointerEvents={busy || stale ? "none" : "auto"}>
+    <View pointerEvents={busy || stale || pendingFinalization ? "none" : "auto"}>
       <BookCanvasEditor
         fallbackIndex={fallbackIndex}
         initialPageId={initialPageId}
@@ -381,16 +461,17 @@ export function SharedAlbumEditor({
     </View>
     {message ? <Text style={{ color: colors.muted, fontFamily: bodyFont }}>{message}</Text> : null}
     <AppButton
-      disabled={busy || stale || transformPending}
+      disabled={busy || stale || Boolean(pendingFinalization) || transformPending}
       label={busyIntent === "stage" ? "正在暂存…" : "暂存当前修改"}
       onPress={() => void stage()}
       tone="secondary"
     />
     <AppButton
-      disabled={busy || stale || transformPending}
+      disabled={busy || stale || Boolean(pendingFinalization) || transformPending}
       label={busyIntent === "publish" ? "正在发布…" : "保存并发布更新"}
       onPress={() => void publish()}
     />
+    {pendingFinalization ? <AppButton disabled={busy} label="重试完成发布" tone="warm" onPress={() => void retrySharedFinalization()} /> : null}
     {stale ? <AppButton disabled={busy || transformPending} label="重新加载最新版" tone="secondary" onPress={reload} /> : null}
   </View>;
 }
