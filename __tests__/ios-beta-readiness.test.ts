@@ -14,7 +14,7 @@ function validConfig(profile = "staging-testflight") {
   const variant = variantByProfile[profile];
   const baseExpo = require("../app.json").expo;
   return {
-    pkg: { version: "1.1.2" },
+    pkg: { version: "1.1.4" },
     productionServiceEnv: { APPLE_REVIEW_ACCESS_ENABLED: "false" },
     eas: {
       cli: { appVersionSource: "remote", requireCommit: true },
@@ -55,14 +55,10 @@ describe("iOS Beta readiness preflight", () => {
       }));
   });
 
-  it("retains external Beta placeholder isolation on the same staging backend", () => {
-    expect(checkIosBetaReadiness(validConfig("beta-external"), { profile: "beta-external" }))
-      .toEqual(expect.objectContaining({
-        variant: "external-beta-staging",
-        releaseAudience: "external-beta",
-        activationEntry: "activate-entry.tsx",
-        version: "1.1.2",
-      }));
+  it("keeps the 1.1.4 internal update out of the historical 1.1.2 external profile", () => {
+    expect(() =>
+      checkIosBetaReadiness(validConfig("beta-external"), { profile: "beta-external" }),
+    ).toThrow(/1\.1\.2/u);
   });
 
   it("accepts the existing alpha staging profile", () => {

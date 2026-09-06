@@ -1,5 +1,12 @@
 # 决策记录
 
+## 2026-09-06：1.1.4 内部 TestFlight 原位更新
+
+- 当前营销版本从 `1.1.2` 更新为 `1.1.4`，基于已完成真机验收的 `a0b2b6d2de6e315c9111514e7700f0e90e999454` 创建仅版本与发布契约变更的新提交；iOS build number 继续由 EAS 远端单调递增管理。
+- 本次只允许使用 `staging-testflight` store profile 原位更新 App Store Connect 既有应用 `6794186067` 与 Bundle ID `com.onereality.onetapreality`，继续连接 staging API / gift origins、保留内部管理员入口与 staging Universal Links。
+- 版本提交、EAS 云构建、App Store Connect 上传以及 TestFlight 群组分发仍是独立授权。此次版本确认不授权 `beta-external`、外部测试群组、公开 App Store、production、DNS/AASA 或任何云端部署。
+- 不删除现有 Beta 或 Development Build，不迁移、复制或覆盖 SQLite、SecureStore、照片目录、session 或本地旅行册；普通旅行册继续不自动上传。
+
 ## 2026-09-05：Beta 礼品恢复与独立 Development Build 并存
 
 现有外部 TestFlight Beta 的 `/activate` 占位页继续属于 external/public 构建边界；管理员 NFC 初始化只进入获准的 staging 内部构建。通过保持 `com.onereality.onetapreality`、`luyi.db`、SecureStore 键和本地照片目录规则不变的内部 TestFlight 构建原位更新 Beta，以恢复 staging 初始化、认领和主动发布；不得删除 App、迁移或覆盖现有本地旅行册。

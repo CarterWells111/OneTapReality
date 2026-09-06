@@ -108,8 +108,8 @@ describe("Expo Router production origin", () => {
     const expoConfig = require("../app.json").expo;
 
     expect(packageConfig.name).toBe("onetapreality");
-    expect(packageConfig.version).toBe("1.1.2");
-    expect(expoConfig.version).toBe("1.1.2");
+    expect(packageConfig.version).toBe("1.1.4");
+    expect(expoConfig.version).toBe("1.1.4");
   });
 
   it("keeps native export packages compatible with Expo SDK 57", () => {

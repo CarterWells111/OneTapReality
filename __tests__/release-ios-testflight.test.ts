@@ -28,7 +28,7 @@ describe("iOS TestFlight release guards", () => {
 
     try {
       writeFileSync(join(fixtureRoot, "app.json"), JSON.stringify({
-        expo: { version: "1.1.2" },
+        expo: { version: "1.1.4" },
       }));
       const writeEas = (variant?: string) => writeFileSync(
         join(fixtureRoot, "eas.json"),
@@ -47,7 +47,7 @@ describe("iOS TestFlight release guards", () => {
         giftOrigin: "https://staging.onetapreality.com",
         origin: "https://api-staging.onetapreality.com",
         variant: "staging-testflight",
-        version: "1.1.2",
+        version: "1.1.4",
       });
 
       writeEas("production");
