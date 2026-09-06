@@ -13,6 +13,7 @@
 const { spawnSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
+const { resolveBuildVariant } = require("./build-variants.cjs");
 const {
   auditExternalBetaRemoteEnvironments,
   assertBuildMatchesSubmission,
@@ -30,21 +31,13 @@ const POLL_INTERVAL_MS = 30_000;
 const POLL_TIMEOUT_MS = 90 * 60 * 1000;
 const EXTERNAL_BETA_PROFILE = "beta-external";
 const EXTERNAL_BETA_VERSION = "1.1.2";
-const STAGING_RELEASE_ORIGINS = Object.freeze({
-  api: "https://api-staging.onetapreality.com",
-  gift: "https://staging.onetapreality.com",
-});
-const PRODUCTION_RELEASE_ORIGINS = Object.freeze({
-  api: "https://api.onetapreality.com",
-  gift: "https://onetapreality.com",
-});
-const RELEASE_ORIGINS_BY_PROFILE = new Map([
-  ["development", PRODUCTION_RELEASE_ORIGINS],
-  ["preview", PRODUCTION_RELEASE_ORIGINS],
-  ["alpha", STAGING_RELEASE_ORIGINS],
-  ["staging-testflight", STAGING_RELEASE_ORIGINS],
-  [EXTERNAL_BETA_PROFILE, STAGING_RELEASE_ORIGINS],
-  ["production", PRODUCTION_RELEASE_ORIGINS],
+const EXPECTED_VARIANTS_BY_PROFILE = new Map([
+  ["development", "development-staging"],
+  ["preview", "production"],
+  ["alpha", "alpha-staging"],
+  ["staging-testflight", "staging-testflight"],
+  [EXTERNAL_BETA_PROFILE, "external-beta-staging"],
+  ["production", "production"],
 ]);
 
 function parseArgs(argv) {
@@ -162,26 +155,18 @@ function readReleaseContract(cwd, profile) {
   const appJson = JSON.parse(readFileSync(join(cwd, "app.json"), "utf8")).expo;
   const buildProfile = easJson.build?.[profile];
   if (!buildProfile) throw new Error(`eas.json build.${profile} is not configured`);
-  const origin = buildProfile.env?.EXPO_PUBLIC_API_ORIGIN;
-  const giftOrigin = buildProfile.env?.EXPO_PUBLIC_GIFT_ORIGIN;
-  if (!origin) {
-    throw new Error(`eas.json build.${profile}.env.EXPO_PUBLIC_API_ORIGIN is not set`);
-  }
-  if (!giftOrigin) {
-    throw new Error(`eas.json build.${profile}.env.EXPO_PUBLIC_GIFT_ORIGIN is not set`);
-  }
-  const expectedOrigins = RELEASE_ORIGINS_BY_PROFILE.get(profile);
-  if (
-    !expectedOrigins
-    || expectedOrigins.api !== origin
-    || expectedOrigins.gift !== giftOrigin
-  ) {
-    throw new Error(`${profile} API/gift origins are not an allowed environment pair`);
+  const variant = buildProfile.env?.APP_VARIANT;
+  if (!variant) throw new Error(`eas.json build.${profile}.env.APP_VARIANT is not set`);
+  const resolved = resolveBuildVariant(variant);
+  const expectedVariant = EXPECTED_VARIANTS_BY_PROFILE.get(profile);
+  if (!expectedVariant || expectedVariant !== variant) {
+    throw new Error(`${profile} must use APP_VARIANT ${expectedVariant ?? "from the approved registry"}`);
   }
   return {
-    origin,
-    giftOrigin,
-    audience: buildProfile.env?.EXPO_PUBLIC_RELEASE_AUDIENCE ?? "internal",
+    origin: resolved.apiOrigin,
+    giftOrigin: resolved.giftUrlOrigin,
+    audience: resolved.releaseAudience,
+    variant,
     version: appJson?.version,
   };
 }
@@ -195,14 +180,12 @@ function readProjectId(cwd) {
 
 // The router origin is injected at config-evaluation time by app.config.ts, so
 // it is only correct when the public origins match the build profile.
-function verifyExpoConfig(cwd, { origin, giftOrigin, audience, version }) {
+function verifyExpoConfig(cwd, { origin, giftOrigin, audience, variant, version }) {
   const result = spawnPortable("npx", ["expo", "config", "--json"], {
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      EXPO_PUBLIC_API_ORIGIN: origin,
-      EXPO_PUBLIC_GIFT_ORIGIN: giftOrigin,
-      EXPO_PUBLIC_RELEASE_AUDIENCE: audience,
+      APP_VARIANT: variant,
     },
   });
   if (result.status !== 0) throw new Error(`\`expo config\` failed:\n${result.stderr}`);
@@ -219,6 +202,9 @@ function verifyExpoConfig(cwd, { origin, giftOrigin, audience, version }) {
     projectId: config.extra?.eas?.projectId,
     routerOrigin: resolvedOrigin,
     releaseAudience: config.extra?.releaseAudience,
+    apiOrigin: config.extra?.buildEnvironment?.apiOrigin,
+    giftUrlOrigin: config.extra?.buildEnvironment?.giftUrlOrigin,
+    variant: config.extra?.buildEnvironment?.variant,
     nonExemptEncryption: config.ios?.infoPlist?.ITSAppUsesNonExemptEncryption,
   };
   for (const [key, value] of Object.entries(facts)) console.log(`  ${key.padEnd(20)} ${value}`);
@@ -237,6 +223,9 @@ function verifyExpoConfig(cwd, { origin, giftOrigin, audience, version }) {
   }
   if (facts.releaseAudience !== audience) {
     problems.push(`releaseAudience ${facts.releaseAudience} != profile audience ${audience}`);
+  }
+  if (facts.apiOrigin !== origin || facts.giftUrlOrigin !== giftOrigin || facts.variant !== variant) {
+    problems.push("buildEnvironment does not match the selected APP_VARIANT");
   }
   if (facts.version !== version) {
     problems.push(`version ${facts.version} != app.json ${version}`);

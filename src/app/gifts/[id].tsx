@@ -7,6 +7,7 @@ import { LocalMissingPhotoPlaceholder } from "../../components/local-missing-pho
 import { AppButton, bodyFont, colors, PaperCard, ScreenTitle, Section, serifFont } from "../../components/ui";
 import { useAuth } from "../../features/auth/auth-provider";
 import { createGiftImageDerivative, removeGiftImageDerivatives, type GiftImageDerivative } from "../../features/gifts/gift-image-derivative";
+import { finalizePublicationWithRetry } from "../../features/gifts/finalize-publication";
 import { collectPublicationSources, snapshotPagesForPublication } from "../../features/gifts/publication-snapshot";
 import { uploadPublicationFile, uploadPublicationFiles, type PublicationUploadFile } from "../../features/gifts/publication-uploader";
 import { useMemories } from "../../features/memories/memories-provider";
@@ -49,9 +50,11 @@ export default function GiftManagementScreen() {
   const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteRole, setInviteRole] = React.useState<"viewer" | "editor">("viewer");
   const [busy, setBusy] = React.useState(false);
+  const [pendingFinalizationId, setPendingFinalizationId] = React.useState<string | null>(null);
   const [managementLoaded, setManagementLoaded] = React.useState(false);
   const [authorizedContextKey, setAuthorizedContextKey] = React.useState<string | null>(null);
   const operationInFlight = React.useRef(false);
+  const finalizationAbortRef = React.useRef<AbortController | null>(null);
   const requestGeneration = React.useRef(0);
   const managementContextKey = session && id ? `${id}\u0000${session.user.id}\u0000${session.accessToken}` : null;
   const managementContextKeyRef = React.useRef(managementContextKey);
@@ -92,9 +95,12 @@ export default function GiftManagementScreen() {
     const generation = requestGeneration.current + 1;
     requestGeneration.current = generation;
     operationInFlight.current = false;
+    finalizationAbortRef.current?.abort();
+    finalizationAbortRef.current = null;
+    setPendingFinalizationId(null);
     setBusy(false);
     void load(generation, () => active);
-    return () => { active = false; };
+    return () => { active = false; finalizationAbortRef.current?.abort(); };
   }, [load]);
   const retryLoad = () => {
     const generation = requestGeneration.current + 1;
@@ -131,6 +137,51 @@ export default function GiftManagementScreen() {
     if (!operationIsCurrent(operation)) return;
     operationInFlight.current = false;
     setBusy(false);
+  };
+
+  const finalizeOwnerPublication = async (publicationId: string, operation: { contextKey: string; generation: number }) => {
+    if (!session || !id) return false;
+    setMessage("照片已上传，正在完成发布…");
+    const controller = new AbortController();
+    finalizationAbortRef.current?.abort();
+    finalizationAbortRef.current = controller;
+    try {
+      const result = await finalizePublicationWithRetry({
+        publicationId,
+        signal: controller.signal,
+        finalize: (currentPublicationId) => client.finishOwnedGiftPublish(session.accessToken, id, currentPublicationId),
+      });
+      if (!operationIsCurrent(operation)) return false;
+      if (result.status === "retryable") {
+        setPendingFinalizationId(result.publicationId);
+        setMessage("照片已上传，但云端暂时未完成发布。请重试完成发布。");
+        return false;
+      }
+      setPendingFinalizationId(null);
+      setMessage("共享相册已发布。日后本机修改不会自动上传，请在此页面手动更新。");
+      await load(operation.generation, () => operationIsCurrent(operation));
+      return true;
+    } finally {
+      if (finalizationAbortRef.current === controller) finalizationAbortRef.current = null;
+    }
+  };
+
+  const retryOwnerFinalization = async () => {
+    if (!pendingFinalizationId) return;
+    const operation = beginOwnerOperation();
+    if (!operation) return;
+    try {
+      await finalizeOwnerPublication(pendingFinalizationId, operation);
+    } catch (error) {
+      if (operationIsCurrent(operation)) {
+        setPendingFinalizationId(null);
+        if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
+        else if (error instanceof BackendApiError && error.code === "gift_upload_incomplete") setMessage("部分照片尚未完整上传，请重新发布；当前共享版本未改变。");
+        else setMessage(toUserFacingOperationError(error, "发布失败，可重试；当前已发布相册不会变化。"));
+      }
+    } finally {
+      finishOwnerOperation(operation);
+    }
   };
 
   const publish = async () => {
@@ -193,10 +244,7 @@ export default function GiftManagementScreen() {
         },
       });
       if (!operationIsCurrent(operation)) return;
-      await client.finishOwnedGiftPublish(session.accessToken, id, publication.publicationId);
-      if (!operationIsCurrent(operation)) return;
-      setMessage("共享相册已发布。日后本机修改不会自动上传，请在此页面手动更新。");
-      await load(operation.generation, () => operationIsCurrent(operation));
+      await finalizeOwnerPublication(publication.publicationId, operation);
     } catch (error) {
       if (operationIsCurrent(operation)) {
         if (error instanceof BackendApiError && error.code === "gift_publication_unavailable") setMessage("本次发布已超时，请重新发布；当前共享版本未改变。");
@@ -352,10 +400,11 @@ export default function GiftManagementScreen() {
               />
             )) : <Text style={styles.hint}>请先返回主页创建本地旅行册，再回来完成首次发布。</Text>}
             <AppButton
-              disabled={busy || !selectedMemory}
+              disabled={busy || !selectedMemory || Boolean(pendingFinalizationId)}
               label="发布共享相册"
               onPress={() => void publish()}
             />
+            {pendingFinalizationId ? <AppButton disabled={busy} label="重试完成发布" tone="warm" onPress={() => void retryOwnerFinalization()} /> : null}
           </>
         )}
       </PaperCard>

@@ -294,6 +294,24 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.ok).toBe(true);
   });
 
+  it("rejects a directly reachable Development-only gift link implementation", () => {
+    const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
+    if (!scanExternalBetaSurface) return;
+    const root = createFixture({
+      "src/app/index.tsx":
+        "import { DevelopmentGiftLinkEntry } from '@/features/gifts/development-gift-link-entry.development'; export default DevelopmentGiftLinkEntry;",
+      "src/features/gifts/development-gift-link-entry.development.tsx":
+        "export const DevelopmentGiftLinkEntry = () => null;",
+    });
+
+    const report = scanExternalBetaSurface(root);
+    expect(report.forbiddenModules).toContainEqual({
+      file: "src/features/gifts/development-gift-link-entry.development.tsx",
+      reason: "development-only gift link module",
+    });
+    expect(report.ok).toBe(false);
+  });
+
   it("rejects a reachable admin gift-card client or endpoint literal", () => {
     const scanExternalBetaSurface = requireGuard("scanExternalBetaSurface");
     if (!scanExternalBetaSurface) return;
@@ -378,6 +396,12 @@ describe("external Beta static route and module graph guards", () => {
     expect(report.forbiddenModules).toEqual([]);
     expect(report.forbiddenReferences).toEqual([]);
     expect(report.unresolvedLocalSpecifiers).toEqual([]);
+    expect(report.reachableModules).toContain(
+      "src/features/gifts/development-gift-link-entry.tsx",
+    );
+    expect(report.reachableModules).not.toContain(
+      "src/features/gifts/development-gift-link-entry.development.tsx",
+    );
     expect(report.ok).toBe(true);
   });
 });

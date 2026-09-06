@@ -4,6 +4,8 @@
 
 NFC 深链业务矩阵的本地生成、临时邮箱、清理和 PR 门禁见 `NFC-STAGING-LAB.md`；实体卡验收仍见 `IOS-NFC-CARD-TEST.md`。
 
+Beta 原位更新与独立 Development Build 并存测试必须按 [`DUAL-IOS-STAGING-TEST.md`](./DUAL-IOS-STAGING-TEST.md) 执行。仓库变更不授权 EAS 构建、TestFlight、App Store Connect、DNS/AASA 或实体卡写入；这些外部操作必须分别批准。
+
 ## 访问边界
 
 发布负责人独占 Railway、PostgreSQL、R2、Resend、EAS、DNS 与 App Store Connect 的写入权限。辅助开发、UI 和硬件协作者只通过 PR、测试结果和已脱敏的卡片编号协作，不获得任何生产或 staging secret。

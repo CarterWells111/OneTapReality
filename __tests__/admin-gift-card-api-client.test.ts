@@ -26,7 +26,7 @@ type AdminClient = {
   ) => Promise<{ retired: true }>;
 };
 
-type AdminClientConstructor = new (request?: typeof fetch) => AdminClient;
+type AdminClientConstructor = new (request?: typeof fetch, origin?: string) => AdminClient;
 
 const adminClientModule = (() => {
   try {
@@ -59,7 +59,7 @@ describe("admin gift-card API client", () => {
       expiresAt: "2026-07-24T00:15:00.000Z",
     }), { status: 201 }));
 
-    await expect(new Client(request).reserveGiftCard("gift-session", "July batch")).resolves.toEqual(
+    await expect(new Client(request, "").reserveGiftCard("gift-session", "July batch")).resolves.toEqual(
       expect.objectContaining({ cardId: "card-1", displayNumber: 1, cardCode: "CARD-001" }),
     );
     expect(request).toHaveBeenCalledWith("/api/admin/gift-cards", expect.objectContaining({
@@ -77,7 +77,7 @@ describe("admin gift-card API client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ card: { id: "card-1", displayNumber: 1, name: "Launch", note: null, state: "active" } })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ activated: true })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ retired: true })));
-    const client = new Client(request);
+    const client = new Client(request, "");
 
     await expect(client.listAdminGiftCards("gift-session", { state: "active", search: "Launch" })).resolves.toEqual([
       expect.objectContaining({ id: "card-1" }),

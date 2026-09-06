@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { colors, serifFont } from "../components/ui";
+import { BuildEnvironmentBanner } from "../components/build-environment-banner";
 import { PageCaptureProvider } from "../features/export/page-capture-provider";
 import { AuthProvider } from "../features/auth/auth-provider";
 import { LocalLibraryProvider } from "../features/auth/local-library-provider";
@@ -20,6 +21,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
+        <BuildEnvironmentBanner />
         <FontLoadingProvider>
         <SQLiteProvider databaseName="luyi.db" onInit={migrateDbIfNeeded}>
           <AuthProvider>

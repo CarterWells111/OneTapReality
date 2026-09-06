@@ -1,5 +1,5 @@
 import { createBackendTestDatabase, migrateBackendDatabase } from "../src/server/db/test-database";
-import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftPublishPayload, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
+import { addGiftMember, activateGiftViewerByTokenHash, claimGiftByTokenHash, completeGiftPublishSession, createGift, createGiftPublishSession, disableGift, getActivatedGiftAccessByGiftId, getGiftAccessByTokenHash, getGiftPublishCompletionReceipt, getGiftPublishPayload, getGiftStatusByTokenHash, getOwnedGiftById, getSharedAlbumSnapshot, listGiftMediaCleanupJobs, listGiftMembers, listInvitedGifts, listOwnedGifts, removeGiftMember, updateGiftMemberRole } from "../src/server/gifts/repository";
 import { users } from "../src/server/db/schema";
 
 describe("gift repository", () => {
@@ -85,9 +85,52 @@ describe("gift repository", () => {
       await createGiftPublishSession(db, { id: "publish-1", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, createdAt: "2026-07-24T00:02:00.000Z", expiresAt: "2026-07-24T00:12:00.000Z", payload: { sourceMemoryId: "memory-1", title: "Summer", pages: [{ position: 0, page: { headline: "Hello" } }], media: [{ position: 0, objectKey: "gifts/gift-1/photo.jpg", contentType: "image/jpeg", byteSize: 42 }] } });
 
       const result = await completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:03:00.000Z" });
-      expect(result).toEqual(expect.objectContaining({ oldObjectKeys: [] }));
+      expect(result).toEqual(expect.objectContaining({ oldObjectKeys: [], version: 1, replayed: false }));
       await expect(getSharedAlbumSnapshot(db, result!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ title: "Summer", version: 1 }), media: [expect.objectContaining({ objectKey: "gifts/gift-1/photo.jpg" })] }));
-      await expect(completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:04:00.000Z" })).resolves.toBeNull();
+      await expect(completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-07-24T00:04:00.000Z" })).resolves.toEqual(expect.objectContaining({
+        albumId: result!.albumId, version: 1, replayed: true,
+      }));
+    } finally { await close(); }
+  });
+
+  it("returns one completion receipt for concurrent finalization of the same publication session", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-09-06T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-09-06T00:01:00.000Z");
+      await createGiftPublishSession(db, {
+        id: "publish-1", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0,
+        createdAt: "2026-09-06T00:02:00.000Z", expiresAt: "2026-09-06T00:32:00.000Z",
+        payload: { sourceMemoryId: "memory", title: "Trip", pages: [], media: [] },
+      });
+
+      const results = await Promise.all([
+        completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-09-06T00:03:00.000Z" }),
+        completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-09-06T00:03:01.000Z" }),
+      ]);
+
+      expect(results[0]).toEqual(expect.objectContaining({ albumId: expect.any(String), version: 1 }));
+      expect(results[1]).toEqual(expect.objectContaining({ albumId: results[0]!.albumId, version: 1 }));
+      await expect(getSharedAlbumSnapshot(db, results[0]!.albumId)).resolves.toEqual(expect.objectContaining({ album: expect.objectContaining({ version: 1 }) }));
+    } finally { await close(); }
+  });
+
+  it("retains an earlier completion receipt after the album is replaced again", async () => {
+    const { db, close } = createBackendTestDatabase();
+    try {
+      await migrateBackendDatabase(db);
+      await createGift(db, { id: "gift-1", tokenHash: "known", createdAt: "2026-09-06T00:00:00.000Z" });
+      await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-09-06T00:01:00.000Z");
+      await createGiftPublishSession(db, { id: "publish-1", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 0, createdAt: "2026-09-06T00:02:00.000Z", expiresAt: "2026-09-06T00:32:00.000Z", payload: { sourceMemoryId: "memory", title: "One", pages: [], media: [] } });
+      const first = await completeGiftPublishSession(db, { sessionId: "publish-1", ownerEmail: "owner@example.com", now: "2026-09-06T00:03:00.000Z" });
+      await createGiftPublishSession(db, { id: "publish-2", giftId: "gift-1", ownerEmail: "owner@example.com", baseVersion: 1, createdAt: "2026-09-06T00:04:00.000Z", expiresAt: "2026-09-06T00:34:00.000Z", payload: { sourceMemoryId: "memory", title: "Two", pages: [], media: [] } });
+      await completeGiftPublishSession(db, { sessionId: "publish-2", ownerEmail: "owner@example.com", now: "2026-09-06T00:05:00.000Z" });
+
+      await expect(getGiftPublishCompletionReceipt(db, "publish-1", "gift-1", "owner@example.com")).resolves.toEqual({
+        albumId: first!.albumId,
+        version: 1,
+      });
     } finally { await close(); }
   });
 

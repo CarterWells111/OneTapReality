@@ -84,3 +84,21 @@ test('release privacy states publisher, activation, and deletion lifecycle preci
   assert.doesNotMatch(privacy, /只有礼品拥有者.*上传/);
   assert.doesNotMatch(privacy, /停用会删除.*共享快照和媒体/);
 });
+
+test('dual iOS staging runbook preserves local Beta data and separates link ownership', async () => {
+  const runbook = await read('docs/operations/DUAL-IOS-STAGING-TEST.md');
+  for (const required of [
+    '不要删除 Beta',
+    '更新前',
+    '更新后',
+    '本地旅行册数量',
+    'Beta 独占 staging Universal Link',
+    'Development Build 使用手动粘贴',
+    '同一套 staging API、PostgreSQL 和私有媒体存储',
+    '不复制本地容器',
+    '不增加普通旅行册自动云同步',
+    '单独批准',
+  ]) {
+    assert.match(runbook, new RegExp(required, 'u'));
+  }
+});

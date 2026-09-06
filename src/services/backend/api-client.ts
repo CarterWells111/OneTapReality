@@ -6,6 +6,7 @@ import type {
   DeviceRegistrationResponse,
   HealthResponse,
 } from "./contracts";
+import { getBuildEnvironment } from "../../config/build-environment";
 
 export type AuthenticatedAccountUser = { id: string; email: string; isAdmin: boolean };
 export type AuthenticatedAccountSession = { accessToken: string; user: AuthenticatedAccountUser };
@@ -77,19 +78,22 @@ export function isBackendSessionInvalidError(error: unknown): boolean {
 }
 export function resolveBackendRequestUrl(
   path: string,
-  origin = process.env.EXPO_PUBLIC_API_ORIGIN,
+  origin = getBuildEnvironment().apiOrigin,
 ): string {
   const normalizedOrigin = origin?.replace(/\/+$/u, "");
   return normalizedOrigin ? `${normalizedOrigin}${path}` : path;
 }
 
 export class BackendApiClient {
-  constructor(private readonly request: typeof fetch = fetch) {}
+  constructor(
+    private readonly request: typeof fetch = fetch,
+    private readonly origin = getBuildEnvironment().apiOrigin,
+  ) {}
 
   protected async send<T>(path: string, options?: RequestInit): Promise<T> {
     let response: Response;
     try {
-      response = await this.request(resolveBackendRequestUrl(path), options);
+      response = await this.request(resolveBackendRequestUrl(path, this.origin), options);
     } catch {
       throw new BackendApiError(0, "network_unavailable", "Network unavailable");
     }
@@ -165,7 +169,7 @@ export class BackendApiClient {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
-  finishGiftPublish(token: string, accessToken: string, publicationId: string): Promise<{ albumId: string }> {
+  finishGiftPublish(token: string, accessToken: string, publicationId: string): Promise<{ albumId: string; version: number }> {
     return this.send(`/api/gifts/${encodeURIComponent(token)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 
@@ -205,7 +209,7 @@ export class BackendApiClient {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
-  finishOwnedGiftPublish(accessToken: string, id: string, publicationId: string): Promise<{ albumId: string }> {
+  finishOwnedGiftPublish(accessToken: string, id: string, publicationId: string): Promise<{ albumId: string; version: number }> {
     return this.send(`/api/my-gifts/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 
@@ -274,7 +278,7 @@ export class BackendApiClient {
     return this.send<{ publicationId: string; uploads: { position: number; objectKey: string; uploadUrl: string }[]; coverUpload: { uploadUrl: string } | null; expiresAt: string }>(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(payload) });
   }
 
-  finishInvitedGiftPublish(id: string, accessToken: string, publicationId: string): Promise<{ albumId: string }> {
+  finishInvitedGiftPublish(id: string, accessToken: string, publicationId: string): Promise<{ albumId: string; version: number }> {
     return this.send(`/api/gifts/invited/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ publicationId }) });
   }
 

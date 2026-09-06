@@ -169,7 +169,7 @@ describe("backend PostgreSQL migrations", () => {
       expect(storedTravelDate.rows).toEqual([{ travel_date: null }]);
 
       const schemaMeta = await db.execute(sql`select version from app_schema_meta where key = 'database'`);
-      expect(schemaMeta.rows).toEqual([{ version: 15 }]);
+      expect(schemaMeta.rows).toEqual([{ version: 16 }]);
 
       const cardColumns = await db.execute(sql`
         select column_name from information_schema.columns
@@ -178,6 +178,19 @@ describe("backend PostgreSQL migrations", () => {
       `);
       expect(cardColumns.rows).toEqual([{ column_name: "display_number" }, { column_name: "name" }]);
       expect(readFileSync("drizzle/0015_gift_card_display_numbers.sql", "utf8")).toContain("gift_cards_display_number_unique");
+
+      const publishReceiptColumns = await db.execute(sql`
+        select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'gift_publish_sessions'
+          and column_name in ('completed_album_id', 'completed_album_version')
+        order by column_name
+      `);
+      expect(publishReceiptColumns.rows).toEqual([
+        { column_name: "completed_album_id" },
+        { column_name: "completed_album_version" },
+      ]);
+      const receiptMigration = readFileSync("drizzle/0016_gift_publish_completion_receipt.sql", "utf8");
+      expect(receiptMigration).not.toMatch(/completed_album_(?:id|version)[^;]*NOT NULL/iu);
 
       const deletionMigration = readFileSync("drizzle/0012_external_beta_accounts_and_safety.sql", "utf8");
       expect(deletionMigration).toContain("account_deletion_challenges");

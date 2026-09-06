@@ -6,6 +6,8 @@
 
 > 本文只覆盖 TestFlight 分发。不要点击 App Store Connect 的「添加以供审核」，那是公开上架流程。
 
+保留现有 Beta 本地旅行册并安装独立 Development Build 的顺序见 [`../operations/DUAL-IOS-STAGING-TEST.md`](../operations/DUAL-IOS-STAGING-TEST.md)。仓库配置本身不授权云构建、提交、分组或安装，所有外部操作必须单独批准。
+
 ## 一条命令
 
 ```
@@ -92,7 +94,7 @@ node scripts/release-ios-testflight.cjs --profile=beta-external --build-id=<appr
 3. **lockfile 跨平台完整性检查** — 见下方「为什么这一步在前面」。
 4. **外测 profile 预检** — `beta-external` 额外核对 1.1.2、staging origin、`external-beta` audience、无 server Secret、无 submit groups、Bundle ID、Associated Domains、TAG-only NFC 与加密声明。
 5. **lint / typecheck / test:ci / build:server** — 四道质量闸；外测不能跳过。
-6. **Expo 配置解析核对** — 用该 profile 的 `EXPO_PUBLIC_API_ORIGIN` 与 `EXPO_PUBLIC_RELEASE_AUDIENCE` 跑 `expo config`，核对版本、bundle ID、EAS projectId、expo-router origin、构建受众与出口合规字段是否一致。
+6. **Expo 配置解析核对** — 用该 profile 唯一的 `APP_VARIANT` 跑 `expo config`，核对版本、bundle ID、EAS projectId、expo-router origin、构建环境、构建受众与出口合规字段是否一致。
 7. **远端变量名审计** — 外测以 short format 只读检查 `preview` 的 project/account scopes；两处都必须明确返回无变量，命令或格式异常同样中止。
 8. **commit 与 fingerprint** — 外测记录干净提交 SHA，并用相同 profile 生成 EAS fingerprint。
 9. **EAS 账号与构建号** — `whoami` 确认登录，`build:version:get` 读取远端构建号（`appVersionSource: remote` + `autoIncrement`，构建号由 EAS 自增，不要手改）。

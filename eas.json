@@ -6,28 +6,23 @@
   },
   "build": {
     "development": {
-      "autoIncrement": true,
+      "distribution": "internal",
       "developmentClient": true,
+      "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
+        "APP_VARIANT": "development-staging"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
+        "APP_VARIANT": "production"
       }
     },
     "alpha": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
+        "APP_VARIANT": "alpha-staging"
       }
     },
     "staging-testflight": {
@@ -35,9 +30,7 @@
       "environment": "preview",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "internal"
+        "APP_VARIANT": "staging-testflight"
       }
     },
     "beta-external": {
@@ -45,26 +38,17 @@
       "environment": "preview",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api-staging.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://staging.onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "external-beta"
+        "APP_VARIANT": "external-beta-staging"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_ORIGIN": "https://api.onetapreality.com",
-        "EXPO_PUBLIC_GIFT_ORIGIN": "https://onetapreality.com",
-        "EXPO_PUBLIC_RELEASE_AUDIENCE": "public"
+        "APP_VARIANT": "production"
       }
     }
   },
   "submit": {
-    "development": {
-      "ios": {
-        "ascAppId": "6794186067"
-      }
-    },
     "staging-testflight": {
       "ios": {
         "ascAppId": "6794186067",

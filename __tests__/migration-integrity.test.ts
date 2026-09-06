@@ -1,3 +1,5 @@
+const { readFileSync } = require("node:fs");
+
 const {
   compareMigrationSummaries,
   orphanChecks,
@@ -17,6 +19,13 @@ const complete = {
 };
 
 describe("migration integrity summary", () => {
+  it("adds durable nullable gift publication completion receipts without a mutable album foreign key", () => {
+    const migration = readFileSync("drizzle/0016_gift_publish_completion_receipt.sql", "utf8");
+    expect(migration).toContain('ADD COLUMN "completed_album_id" text');
+    expect(migration).toContain('ADD COLUMN "completed_album_version" integer');
+    expect(migration).not.toContain('FOREIGN KEY ("completed_album_id")');
+  });
+
   it("accepts equal source and target summaries without orphans", () => {
     expect(compareMigrationSummaries(complete, structuredClone(complete))).toEqual([]);
   });

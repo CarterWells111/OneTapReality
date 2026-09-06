@@ -5,9 +5,10 @@ const mockReplace = jest.fn();
 const mockRequestCode = jest.fn();
 const mockVerifyCode = jest.fn();
 const mockUseAuth = jest.fn();
+let mockReturnTo = "/gifts";
 
 jest.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ returnTo: "/gifts" }),
+  useLocalSearchParams: () => ({ returnTo: mockReturnTo }),
   useRouter: () => ({ replace: mockReplace }),
 }));
 jest.mock("../src/features/auth/auth-provider", () => ({
@@ -19,6 +20,7 @@ import LoginScreen, { handleEmailSubmit } from "../src/app/login";
 describe("LoginScreen account memory", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReturnTo = "/gifts";
     mockRequestCode.mockResolvedValue({ email: "owner@example.com" });
     mockVerifyCode.mockResolvedValue(undefined);
     mockUseAuth.mockReturnValue({
@@ -27,6 +29,23 @@ describe("LoginScreen account memory", () => {
       requestCode: mockRequestCode,
       verifyCode: mockVerifyCode,
     });
+  });
+
+  it("returns to the complete gift route after successful verification", async () => {
+    const token = "Abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE";
+    mockReturnTo = `/gift/${token}`;
+    const screen = render(<LoginScreen />);
+
+    fireEvent.press(screen.getByText("发送验证码"));
+    const codeInput = await screen.findByLabelText("登录验证码");
+    fireEvent.changeText(codeInput, "123456");
+    fireEvent.press(screen.getByText("验证并登录"));
+
+    await waitFor(() => expect(mockVerifyCode).toHaveBeenCalledWith(
+      "owner@example.com",
+      "123456",
+    ));
+    expect(mockReplace).toHaveBeenCalledWith(`/gift/${token}`);
   });
 
   afterEach(() => {

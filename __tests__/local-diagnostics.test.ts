@@ -7,15 +7,15 @@ import {
 describe("local canvas recovery diagnostics", () => {
   it("enables development and staging diagnostics but disables production", () => {
     expect(isLocalDiagnosticsEnabled({
-      apiOrigin: "https://api.onetapreality.com",
+      environmentId: "production",
       isDevelopment: true,
     })).toBe(true);
     expect(isLocalDiagnosticsEnabled({
-      apiOrigin: "https://api-staging.onetapreality.com/",
+      environmentId: "staging",
       isDevelopment: false,
     })).toBe(true);
     expect(isLocalDiagnosticsEnabled({
-      apiOrigin: "https://api.onetapreality.com",
+      environmentId: "production",
       isDevelopment: false,
     })).toBe(false);
   });

@@ -15,6 +15,7 @@ const backendErrorMessages: Readonly<Record<string, string>> = {
   gift_member_not_found: "未找到该成员，请刷新后重试。",
   gift_media_unavailable: "照片服务暂时不可用，请稍后重试。",
   gift_publication_unavailable: "暂时无法发布共享相册，请稍后重试。",
+  gift_publication_retryable: "照片已上传，正在重试完成发布。",
   gift_owner_cannot_leave: "礼品拥有者不能直接退出；如需停止共享，请永久停用礼品。",
   gift_owner_cannot_report: "礼品拥有者不能举报自己发布的内容；如需停止共享，请永久停用礼品。",
   gift_relationship_blocked: "你与该成员之间已停止共享，无法再次邀请或激活。",

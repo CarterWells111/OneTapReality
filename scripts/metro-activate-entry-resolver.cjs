@@ -27,7 +27,7 @@ function resolveLocalModuleRequest(context, moduleName, projectRoot) {
   return null;
 }
 
-function createActivateEntryResolver({ projectRoot, releaseAudience }) {
+function createActivateEntryResolver({ projectRoot, releaseAudience, developmentEntryEnabled = false }) {
   const audience = normalizeReleaseAudience(releaseAudience);
   const publicEntryBase = path.resolve(
     projectRoot,
@@ -39,6 +39,18 @@ function createActivateEntryResolver({ projectRoot, releaseAudience }) {
   const publicEntry = `${publicEntryBase}.tsx`;
   const internalEntry = `${publicEntryBase}.internal.tsx`;
   const selectedEntry = audience === "internal" ? internalEntry : publicEntry;
+  const developmentLinkBase = path.resolve(
+    projectRoot,
+    "src",
+    "features",
+    "gifts",
+    "development-gift-link-entry",
+  );
+  const developmentLinkPublicEntry = `${developmentLinkBase}.tsx`;
+  const developmentLinkInternalEntry = `${developmentLinkBase}.development.tsx`;
+  const selectedDevelopmentLinkEntry = developmentEntryEnabled
+    ? developmentLinkInternalEntry
+    : developmentLinkPublicEntry;
 
   return (context, moduleName, platform) => {
     if (typeof context?.resolveRequest !== "function") {
@@ -51,7 +63,9 @@ function createActivateEntryResolver({ projectRoot, releaseAudience }) {
     );
     const target = localRequest === publicEntryBase || localRequest === publicEntry
       ? selectedEntry
-      : moduleName;
+      : localRequest === developmentLinkBase || localRequest === developmentLinkPublicEntry
+        ? selectedDevelopmentLinkEntry
+        : moduleName;
     return context.resolveRequest(context, target, platform);
   };
 }

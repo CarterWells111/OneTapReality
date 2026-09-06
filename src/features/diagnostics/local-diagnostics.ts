@@ -1,3 +1,5 @@
+import { getBuildEnvironment } from "../../config/build-environment";
+
 type StyleProperty = "color" | "coverColor" | "fontSize";
 type StyleOutcome = "cancel" | "commit" | "no_op";
 
@@ -35,11 +37,9 @@ type LocalDiagnostics = {
 };
 
 type DiagnosticEnvironment = {
-  apiOrigin?: string;
+  environmentId: "staging" | "production";
   isDevelopment: boolean;
 };
-
-const STAGING_API_ORIGIN = "https://api-staging.onetapreality.com";
 const INTERNAL_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const WARNING_EVENTS = new Set<LocalDiagnosticEvent>([
   "formal_persistence_failed",
@@ -109,8 +109,7 @@ function sanitizePayload(
 }
 
 export function isLocalDiagnosticsEnabled(environment: DiagnosticEnvironment) {
-  const normalizedOrigin = environment.apiOrigin?.replace(/\/+$/u, "");
-  return environment.isDevelopment || normalizedOrigin === STAGING_API_ORIGIN;
+  return environment.isDevelopment || environment.environmentId === "staging";
 }
 
 const consoleSink: LocalDiagnosticSink = {
@@ -141,10 +140,11 @@ export function createLocalDiagnostics({
 }
 
 const isDevelopmentBuild = typeof __DEV__ !== "undefined" && __DEV__;
+const isClientRuntime = typeof window !== "undefined";
 
 export const localDiagnostics = createLocalDiagnostics({
-  enabled: process.env.NODE_ENV !== "test" && isLocalDiagnosticsEnabled({
-    apiOrigin: process.env.EXPO_PUBLIC_API_ORIGIN,
+  enabled: process.env.NODE_ENV !== "test" && isClientRuntime && isLocalDiagnosticsEnabled({
+    environmentId: getBuildEnvironment().environmentId,
     isDevelopment: isDevelopmentBuild,
   }),
 });

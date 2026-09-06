@@ -1,6 +1,6 @@
 import type { PrivateMediaStore } from "./r2-media";
 import type { GiftPublicationPayload } from "./repository";
-import { reserveGiftPublicationPromotion } from "./repository";
+import { completeGiftPublishSessionResult, getGiftPublishCompletionReceipt, getGiftPublishPayload, reserveGiftPublicationPromotion } from "./repository";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
 
@@ -88,28 +88,52 @@ export async function verifySharedPublication(store: PrivateMediaStore, payload:
   if (!verified.every(Boolean)) throw new ApiError(409, "gift_upload_incomplete", "All photos must finish uploading before publishing");
 }
 
+type SharedPublicationPromotionItem = {
+  item: { objectKey: string; contentType: string; byteSize: number };
+  source: string;
+  final: string;
+};
+
 type SharedPublicationPromotionPlan = {
-  media: { item: GiftPublicationPayload["media"][number]; source: string; final: string }[];
-  cover: { item: NonNullable<GiftPublicationPayload["cover"]>; source: string; final: string } | null;
+  media: SharedPublicationPromotionItem[];
+  cover: SharedPublicationPromotionItem | null;
   finalObjectKeys: string[];
 };
 
-function planSharedPublicationPromotion(payload: GiftPublicationPayload): SharedPublicationPromotionPlan {
-  const attemptId = crypto.randomUUID();
+function finalObjectKey(source: string, sessionId: string): string {
+  const marker = `/${sessionId}/temp/`;
+  if (!source.includes(marker)) {
+    throw new ApiError(409, "gift_upload_incomplete", "Uploaded media does not belong to this publication");
+  }
+  return source.replace(marker, `/${sessionId}/final/`);
+}
+
+function planSharedPublicationPromotion(payload: GiftPublicationPayload, sessionId: string): SharedPublicationPromotionPlan {
   const media = payload.media.filter(item => item.source !== "existing").map(item => ({
-    item, source: item.objectKey, final: item.objectKey.replace("/temp/", `/final/${attemptId}/`),
+    item, source: item.objectKey, final: finalObjectKey(item.objectKey, sessionId),
   }));
   const cover = payload.cover ? {
-    item: payload.cover, source: payload.cover.objectKey, final: payload.cover.objectKey.replace("/temp/", `/final/${attemptId}/`),
+    item: payload.cover, source: payload.cover.objectKey, final: finalObjectKey(payload.cover.objectKey, sessionId),
   } : null;
   return { media, cover, finalObjectKeys: [...media.map(item => item.final), ...(cover ? [cover.final] : [])] };
 }
 
-const promotionTimeBudgetMs = 15_000;
-const promotionCleanupTimeBudgetMs = 5_000;
+export class GiftPublicationRetryableError extends Error {
+  readonly code = "gift_publication_retryable";
 
-function promotionAbortError(): Error {
-  return new Error("Promotion time budget exceeded");
+  constructor(message = "Gift publication finalization can be retried") {
+    super(message);
+    this.name = "GiftPublicationRetryableError";
+  }
+}
+
+const promotionTimeBudgetMs = 120_000;
+const promotionCleanupTimeBudgetMs = 5_000;
+const promotionConcurrency = 4;
+const promotionRetryDelaysMs = [250, 750] as const;
+
+function promotionAbortError(): GiftPublicationRetryableError {
+  return new GiftPublicationRetryableError("Gift publication finalization exceeded its safety budget");
 }
 
 function throwIfPromotionAborted(signal: AbortSignal): void {
@@ -135,6 +159,59 @@ async function bestEffortDeletePromotionObjects(store: PrivateMediaStore, object
   }
 }
 
+function metadataMatches(
+  metadata: { contentType: string; byteSize: number } | null,
+  item: { contentType: string; byteSize: number },
+): boolean {
+  return metadata?.contentType === item.contentType && metadata.byteSize === item.byteSize;
+}
+
+async function waitForPromotionRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  throwIfPromotionAborted(signal);
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      clearTimeout(timeout);
+      reject(promotionAbortError());
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    (timeout as unknown as { unref?: () => void }).unref?.();
+  });
+  throwIfPromotionAborted(signal);
+}
+
+async function verifyOrCopyPromotionObject(
+  store: PrivateMediaStore,
+  promotion: SharedPublicationPromotionItem,
+  signal: AbortSignal,
+): Promise<void> {
+  for (let attempt = 0; attempt <= promotionRetryDelaysMs.length; attempt += 1) {
+    try {
+      throwIfPromotionAborted(signal);
+      const existing = await store.getObjectMetadata(promotion.final);
+      throwIfPromotionAborted(signal);
+      if (metadataMatches(existing, promotion.item)) return;
+
+      await store.copyObject(promotion.source, promotion.final, { abortSignal: signal });
+      throwIfPromotionAborted(signal);
+      const copied = await store.getObjectMetadata(promotion.final);
+      throwIfPromotionAborted(signal);
+      if (!metadataMatches(copied, promotion.item)) {
+        throw new ApiError(409, "gift_upload_incomplete", "Promoted media metadata changed before publication");
+      }
+      return;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      if (signal.aborted) throw promotionAbortError();
+      if (attempt >= promotionRetryDelaysMs.length) throw new GiftPublicationRetryableError();
+      await waitForPromotionRetry(promotionRetryDelaysMs[attempt], signal);
+    }
+  }
+}
+
 async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan: SharedPublicationPromotionPlan): Promise<string[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), promotionTimeBudgetMs);
@@ -143,22 +220,16 @@ async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan:
     controller.signal.addEventListener("abort", () => reject(promotionAbortError()), { once: true });
   });
   const execute = async (): Promise<string[]> => {
-    for (const media of plan.media) {
-      throwIfPromotionAborted(controller.signal);
-      await store.copyObject(media.source, media.final, { abortSignal: controller.signal });
-      throwIfPromotionAborted(controller.signal);
-      const metadata = await store.getObjectMetadata(media.final);
-      throwIfPromotionAborted(controller.signal);
-      if (metadata?.contentType !== media.item.contentType || metadata.byteSize !== media.item.byteSize) throw new ApiError(409, "gift_upload_incomplete", "Promoted photo metadata changed before publication");
-    }
-    if (plan.cover) {
-      throwIfPromotionAborted(controller.signal);
-      await store.copyObject(plan.cover.source, plan.cover.final, { abortSignal: controller.signal });
-      throwIfPromotionAborted(controller.signal);
-      const metadata = await store.getObjectMetadata(plan.cover.final);
-      throwIfPromotionAborted(controller.signal);
-      if (metadata?.contentType !== plan.cover.item.contentType || metadata.byteSize !== plan.cover.item.byteSize) throw new ApiError(409, "gift_upload_incomplete", "Promoted cover metadata changed before publication");
-    }
+    const items = [...plan.media, ...(plan.cover ? [plan.cover] : [])];
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(promotionConcurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex];
+        nextIndex += 1;
+        await verifyOrCopyPromotionObject(store, item, controller.signal);
+      }
+    });
+    await Promise.all(workers);
     for (const media of plan.media) media.item.objectKey = media.final;
     if (plan.cover) plan.cover.item.objectKey = plan.cover.final;
     return plan.finalObjectKeys;
@@ -166,7 +237,9 @@ async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan:
   try {
     return await Promise.race([execute(), aborted]);
   } catch (error) {
-    await bestEffortDeletePromotionObjects(store, plan.finalObjectKeys);
+    if (!(error instanceof GiftPublicationRetryableError)) {
+      await bestEffortDeletePromotionObjects(store, plan.finalObjectKeys);
+    }
     if (typeof error === "object" && error !== null) Object.assign(error, { attemptedFinalObjectKeys: [...plan.finalObjectKeys] });
     throw error;
   } finally {
@@ -174,8 +247,15 @@ async function executeSharedPublicationPromotion(store: PrivateMediaStore, plan:
   }
 }
 
-export async function promoteSharedPublication(store: PrivateMediaStore, payload: GiftPublicationPayload) {
-  return executeSharedPublicationPromotion(store, planSharedPublicationPromotion(payload));
+function inferPublicationId(payload: GiftPublicationPayload): string {
+  const source = payload.media.find(item => item.source !== "existing")?.objectKey ?? payload.cover?.objectKey;
+  const match = source?.match(/\/([^/]+)\/temp\/[^/]+$/u);
+  if (!match) throw new ApiError(409, "gift_upload_incomplete", "Uploaded media does not belong to a publication");
+  return match[1];
+}
+
+export async function promoteSharedPublication(store: PrivateMediaStore, payload: GiftPublicationPayload, sessionId = inferPublicationId(payload)) {
+  return executeSharedPublicationPromotion(store, planSharedPublicationPromotion(payload, sessionId));
 }
 
 export function getAttemptedFinalObjectKeys(error: unknown): string[] {
@@ -193,7 +273,7 @@ export async function promoteSharedPublicationDurably(input: {
   payload: GiftPublicationPayload;
   now: string;
 }): Promise<string[]> {
-  const plan = planSharedPublicationPromotion(input.payload);
+  const plan = planSharedPublicationPromotion(input.payload, input.sessionId);
   await reserveGiftPublicationPromotion(input.db, {
     giftId: input.giftId,
     sessionId: input.sessionId,
@@ -202,4 +282,74 @@ export async function promoteSharedPublicationDurably(input: {
     now: input.now,
   });
   return executeSharedPublicationPromotion(input.store, plan);
+}
+
+type FinalizeSharedPublicationResult = { albumId: string; version: number };
+
+function logPublicationFinalization(input: {
+  count: number;
+  durationMs: number;
+  outcome: "success" | "retryable" | "conflict" | "invalid" | "internal_error";
+  errorCode: string | null;
+}): void {
+  console.info("gift_publication_finalize", {
+    phase: "finalize",
+    count: input.count,
+    durationMs: input.durationMs,
+    outcome: input.outcome,
+    errorCode: input.errorCode,
+  });
+}
+
+export async function finalizeSharedPublication(input: {
+  store: PrivateMediaStore | null;
+  db: BackendDatabase;
+  giftId: string;
+  sessionId: string;
+  ownerEmail: string;
+  now: string;
+}): Promise<FinalizeSharedPublicationResult> {
+  const startedAt = Date.now();
+  let count = 0;
+  try {
+    const receipt = await getGiftPublishCompletionReceipt(input.db, input.sessionId, input.giftId, input.ownerEmail);
+    if (receipt) {
+      logPublicationFinalization({ count, durationMs: Date.now() - startedAt, outcome: "success", errorCode: null });
+      return receipt;
+    }
+    if (!input.store) throw new ApiError(503, "gift_media_unavailable", "Gift media storage is not configured");
+
+    const payload = await getGiftPublishPayload(input.db, input.sessionId, input.giftId, input.ownerEmail, input.now);
+    if (!payload) throw new ApiError(409, "gift_publication_unavailable", "This publication has expired or was already submitted");
+    count = payload.media.length + (payload.cover ? 1 : 0);
+    const promoted = await promoteSharedPublicationDurably({ ...input, store: input.store, payload });
+    const result = await completeGiftPublishSessionResult(input.db, {
+      sessionId: input.sessionId,
+      ownerEmail: input.ownerEmail,
+      now: input.now,
+      payload,
+    });
+    if (result.status !== "success") {
+      await bestEffortDeletePromotionObjects(input.store, promoted);
+      if (result.status === "conflict") throw new ApiError(409, "gift_album_version_conflict", "The shared album changed after this edit began");
+      throw new ApiError(409, "gift_publication_unavailable", "Publishing access was revoked or the publication expired");
+    }
+    const response = { albumId: result.albumId, version: result.version };
+    logPublicationFinalization({ count, durationMs: Date.now() - startedAt, outcome: "success", errorCode: null });
+    return response;
+  } catch (error) {
+    const mapped = error instanceof GiftPublicationRetryableError
+      ? new ApiError(503, error.code, error.message, undefined, { "Retry-After": "2" })
+      : error;
+    const errorCode = mapped instanceof ApiError ? mapped.code : "internal_error";
+    const outcome = errorCode === "gift_publication_retryable"
+      ? "retryable"
+      : errorCode === "gift_album_version_conflict"
+        ? "conflict"
+        : mapped instanceof ApiError && mapped.status < 500
+          ? "invalid"
+          : "internal_error";
+    logPublicationFinalization({ count, durationMs: Date.now() - startedAt, outcome, errorCode });
+    throw mapped;
+  }
 }

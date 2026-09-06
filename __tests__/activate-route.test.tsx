@@ -39,5 +39,9 @@ describe("NFC activation route", () => {
     expect(readFileSync(internalEntryPath, "utf8")).toMatch(
       /DeveloperNfcConsole|developer-nfc-console/u,
     );
+    expect(readFileSync(
+      join(process.cwd(), "src/features/gifts/developer-nfc-console.tsx"),
+      "utf8",
+    )).toContain('/login?returnTo=/activate');
   });
 });
