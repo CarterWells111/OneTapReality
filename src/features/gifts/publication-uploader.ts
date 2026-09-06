@@ -50,6 +50,7 @@ export async function uploadPublicationFiles(input: {
   const wait = input.delay ?? defaultDelay;
   let nextIndex = 0;
   let completed = 0;
+  let uploadFailed = false;
   input.onProgress?.(0, input.files.length);
 
   const uploadOne = async (initialFile: PublicationUploadFile) => {
@@ -93,14 +94,24 @@ export async function uploadPublicationFiles(input: {
 
   const worker = async () => {
     while (true) {
+      if (uploadFailed) return;
       const index = nextIndex;
       nextIndex += 1;
       if (index >= input.files.length) return;
-      await uploadOne(input.files[index]);
+      try {
+        await uploadOne(input.files[index]);
+      } catch (error) {
+        uploadFailed = true;
+        throw error;
+      }
       completed += 1;
       input.onProgress?.(completed, input.files.length);
     }
   };
 
-  await Promise.all(Array.from({ length: Math.min(2, input.files.length) }, () => worker()));
+  const results = await Promise.allSettled(
+    Array.from({ length: Math.min(2, input.files.length) }, () => worker()),
+  );
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
 }

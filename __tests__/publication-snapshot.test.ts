@@ -100,7 +100,7 @@ describe("gift publication snapshots", () => {
     );
   });
 
-  it("strips a mapped legacy photoUri and rejects every unmapped reference", () => {
+  it("replaces a mapped legacy photoUri with its stable reference and rejects every unmapped reference", () => {
     const legacy: StoryPage = {
       id: "legacy",
       position: 0,
@@ -110,7 +110,10 @@ describe("gift publication snapshots", () => {
       photoUri: "ph://legacy",
     };
     const snapshot = snapshotPagesForPublication([legacy], [{ uri: "ph://legacy", position: 0 }]);
-    expect(snapshot[0].page).not.toHaveProperty("photoUri");
+    expect(snapshot[0].page.photoUri).toBe("shared-position:0");
+
+    const existingSnapshot = snapshotPagesForPublication([legacy], [{ uri: "ph://legacy", position: 4, existingId: "media-7" }]);
+    expect(existingSnapshot[0].page.photoUri).toBe("shared-media:media-7");
 
     expect(() => snapshotPagesForPublication([legacy], [])).toThrow(PublicationSnapshotError);
     expect(() => snapshotPagesForPublication([legacy], [])).toThrow(/legacy/);

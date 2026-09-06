@@ -68,10 +68,13 @@ export function snapshotPagesForPublication(
   };
 
   return pages.map((page, position) => {
-    if (page.photoUri) requireReference(page, page.photoUri);
+    const photoReference = page.photoUri
+      ? stableReference(requireReference(page, page.photoUri))
+      : undefined;
     const { photoUri: _photoUri, coverImage, layout, ...safePage } = page;
     const snapshot: Record<string, unknown> = {
       ...safePage,
+      ...(photoReference ? { photoUri: photoReference } : {}),
       ...(coverImage ? { coverImage: stableReference(requireReference(page, coverImage)) } : {}),
     };
 

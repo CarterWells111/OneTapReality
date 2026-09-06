@@ -98,4 +98,41 @@ describe("publication uploader", () => {
     })).rejects.toThrow("封面");
     expect(progress).toEqual([0]);
   });
+
+  it("waits for started workers and stops dequeuing files after a permanent failure", async () => {
+    let releaseSecondUpload!: () => void;
+    const secondUpload = new Promise<void>((resolve) => {
+      releaseSecondUpload = resolve;
+    });
+    const uploadFile = jest.fn(async (file: PublicationUploadFile) => {
+      if (file.position === 0) return { status: 400 };
+      await secondUpload;
+      return { status: 200 };
+    });
+    let settled = false;
+    const result = uploadPublicationFiles({
+      publicationId: "publication-1",
+      files: [media(0), media(1), media(2)],
+      uploadFile,
+      refreshUploads: jest.fn(),
+    }).then(
+      () => ({ status: "resolved" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    void result.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(uploadFile.mock.calls.map(([file]) => file.position)).toEqual([0, 1]);
+
+    releaseSecondUpload();
+    await expect(result).resolves.toEqual(expect.objectContaining({
+      status: "rejected",
+      error: expect.objectContaining({ message: expect.stringContaining("第 1 张照片") }),
+    }));
+    expect(uploadFile).toHaveBeenCalledTimes(2);
+  });
 });

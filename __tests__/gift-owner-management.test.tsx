@@ -289,7 +289,7 @@ describe("gift owner member management", () => {
       { position: 1, contentType: "image/jpeg", byteSize: 1500 },
       { position: 2, contentType: "image/jpeg", byteSize: 1500 },
     ]);
-    expect(payload.pages[0].page).not.toHaveProperty("photoUri");
+    expect(payload.pages[0].page.photoUri).toBe("shared-position:0");
     expect(payload.pages[0].page.layout.elements.filter((element: { type: string }) => element.type === "image")).toEqual([
       expect.objectContaining({ uri: "", mediaPosition: 1 }),
       expect.objectContaining({ uri: "", mediaPosition: 2 }),
