@@ -10,6 +10,7 @@ describe("Metro configuration", () => {
     const output = execFileSync(process.execPath, ["-e", program], {
       cwd: process.cwd(),
       encoding: "utf8",
+      env: { ...process.env, APP_VARIANT: "production" },
     });
     const extensions = JSON.parse(output) as { assetExts: string[]; sourceExts: string[] };
 
@@ -21,10 +22,11 @@ describe("Metro configuration", () => {
   });
 
   it.each([
-    ["internal", "activate-entry.internal.tsx"],
-    ["external-beta", "activate-entry.tsx"],
-    ["public", "activate-entry.tsx"],
-  ] as const)("selects the %s activation entry with Metro's resolver", (audience, fileName) => {
+    ["development-staging", "activate-entry.internal.tsx"],
+    ["staging-testflight", "activate-entry.internal.tsx"],
+    ["external-beta-staging", "activate-entry.tsx"],
+    ["production", "activate-entry.tsx"],
+  ] as const)("selects the %s activation entry with Metro's resolver", (variant, fileName) => {
     const program = [
       "const path = require('node:path');",
       "const config = require('./metro.config');",
@@ -40,7 +42,7 @@ describe("Metro configuration", () => {
     const output = execFileSync(process.execPath, ["-e", program], {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: { ...process.env, EXPO_PUBLIC_RELEASE_AUDIENCE: audience },
+      env: { ...process.env, APP_VARIANT: variant },
     });
     const result = JSON.parse(output) as {
       selected: { filePath: string; platform: string };
@@ -55,17 +57,43 @@ describe("Metro configuration", () => {
     expect(result?.unrelated.filePath).toBe("../components/ui");
   });
 
-  it("fails closed when Metro receives an unknown release audience", () => {
+  it("fails closed when Metro receives an unknown build variant", () => {
     expect(() => execFileSync(
       process.execPath,
       ["-e", "require('./metro.config')"],
       {
         cwd: process.cwd(),
         encoding: "utf8",
-        env: { ...process.env, EXPO_PUBLIC_RELEASE_AUDIENCE: "unexpected" },
+        env: { ...process.env, APP_VARIANT: "unexpected" },
         stdio: "pipe",
       },
     )).toThrow();
+  });
+
+  it.each([
+    ["development-staging", "development-gift-link-entry.development.tsx"],
+    ["staging-testflight", "development-gift-link-entry.tsx"],
+    ["external-beta-staging", "development-gift-link-entry.tsx"],
+    ["production", "development-gift-link-entry.tsx"],
+  ] as const)("selects the %s development link surface", (variant, fileName) => {
+    const program = [
+      "const path = require('node:path');",
+      "const config = require('./metro.config');",
+      "const context = {",
+      "  originModulePath: path.join(process.cwd(), 'src/app/(tabs)/index.tsx'),",
+      "  resolveRequest: (_context, moduleName, platform) => ({ filePath: moduleName, platform, type: 'sourceFile' }),",
+      "};",
+      "const selected = config.resolver.resolveRequest(context, '../../features/gifts/development-gift-link-entry', 'ios');",
+      "process.stdout.write(JSON.stringify(selected));",
+    ].join("\n");
+    const output = execFileSync(process.execPath, ["-e", program], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, APP_VARIANT: variant },
+    });
+    expect(JSON.parse(output).filePath).toBe(
+      join(process.cwd(), "src", "features", "gifts", fileName),
+    );
   });
 
   it("blocks generated and cache directories from Metro's file crawl", () => {
@@ -88,6 +116,7 @@ describe("Metro configuration", () => {
     const output = execFileSync(process.execPath, ["-e", program], {
       cwd: process.cwd(),
       encoding: "utf8",
+      env: { ...process.env, APP_VARIANT: "production" },
     });
 
     expect(JSON.parse(output)).toEqual([
@@ -100,7 +129,11 @@ describe("Metro configuration", () => {
     const target = join(process.cwd(), ".worktrees", "feature", "node_modules", "expo");
     const routerEntry = join(process.cwd(), "node_modules", "expo-router", "entry.js");
     const program = "const config = require('./metro.config'); process.stdout.write(JSON.stringify([config.resolver.blockList.test(" + JSON.stringify(target) + "), config.resolver.blockList.test(" + JSON.stringify(routerEntry) + ")]));";
-    const output = execFileSync(process.execPath, ["-e", program], { cwd: process.cwd(), encoding: "utf8" });
+    const output = execFileSync(process.execPath, ["-e", program], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, APP_VARIANT: "production" },
+    });
 
     expect(output).toBe(JSON.stringify([!process.cwd().split(sep).includes(".worktrees"), false]));
   });

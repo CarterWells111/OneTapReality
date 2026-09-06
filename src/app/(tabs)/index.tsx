@@ -10,6 +10,7 @@ import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
 import { GiftNfcScanner } from "../../features/gifts/gift-nfc-scanner";
+import { DevelopmentGiftLinkEntry } from "../../features/gifts/development-gift-link-entry";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
@@ -123,6 +124,8 @@ export default function MemoriesHomeScreen() {
           <Text selectable style={styles.heroLinkText}>先翻一册杭州示例 ›</Text>
         </Pressable>
       </PaperCard>
+
+      <DevelopmentGiftLinkEntry />
 
       {isAuthReady ? (
         <PaperCard style={styles.accountCard}>

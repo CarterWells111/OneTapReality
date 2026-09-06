@@ -289,6 +289,9 @@ function forbiddenModuleReasons(file, source) {
   if (/(?:^|\/)src\/features\/gifts\/developer-nfc-console(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|js|jsx)$/u.test(file)) {
     reasons.push("developer NFC console module");
   }
+  if (/(?:^|\/)src\/features\/gifts\/development-gift-link-entry\.development\.(?:ts|tsx|js|jsx)$/u.test(file)) {
+    reasons.push("development-only gift link module");
+  }
   if (/(?:^|\/)src\/services\/nfc\/nfc-url-writer(?:\.(?:native|ios|android|web))?\.(?:ts|tsx|js|jsx)$/u.test(file)) {
     reasons.push("NFC writer module");
   }

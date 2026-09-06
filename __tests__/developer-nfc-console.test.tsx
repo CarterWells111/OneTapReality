@@ -1133,7 +1133,8 @@ describe("developer NFC console", () => {
 
     expect(source).not.toContain("https://onetapreality.com/activate");
     expect(source).not.toMatch(/const\s+activationUrl/u);
-    expect(source).toContain("process.env.EXPO_PUBLIC_API_ORIGIN");
-    expect(source).toContain("process.env.EXPO_PUBLIC_GIFT_ORIGIN");
+    expect(source).toContain("getBuildEnvironment()");
+    expect(source).not.toContain("process.env.EXPO_PUBLIC_API_ORIGIN");
+    expect(source).not.toContain("process.env.EXPO_PUBLIC_GIFT_ORIGIN");
   });
 });
