@@ -35,3 +35,18 @@
 - [ ] 预计 10–20 位真实用户期间保持 0 个 P0、无超过 24 小时未处理的 P1，且无维护中断超过 2 小时、未解决死信、持续积压或账号删除超期。
 - [ ] 外部 Beta 始终只访问 staging；无 production 数据访问、Secret 泄漏或未批准的新费用项目。
 - [ ] 月末覆盖本地相册、登录、NFC、认领、owner/viewer/editor、发布、停用恢复、举报/屏蔽及账号删除，并形成继续、修复后继续或暂停的结论。
+
+## 每次后端发布的 Schema 与生效配置门禁
+
+每次发布重新核对以下项目；历史成功记录不能代替本次验收。2026-09-07 故障与修复见 [部署记录](operations/DEPLOYMENT-LOG.md#2026-09-07production-schema-14--16-与发布门禁修复)。
+
+- [ ] 根据公开域名确认实际服务和数据库连接关系；当前 production 为新加坡 `migration-sg-rehearsal / TapMigrationServer`，不要按旧环境名称猜测目标。
+- [ ] 记录待部署 SHA 与该版本健康契约最低 Schema，并确认适用 CI 已通过；检查实际服务 Wait for CI 开启。
+- [ ] 在 Railway 实际生效配置中确认预部署迁移和 `/api/health` 门禁。当前生产命令为 `env RUN_DB_MIGRATIONS=true node scripts/railway-predeploy.cjs`；仅有仓库 `railway.json` 或容器 Online 不算通过。迁移、克隆或重建服务时必须重新核对，不能假设配置随 Git 自动复制。
+- [ ] 涉及新迁移时先审查结构/数据影响、锁等待、恢复能力与应用回退兼容性；数据库写操作需要相应授权。不得仅提高 Schema 元数据版本掩盖缺失结构。
+- [ ] 部署日志确认迁移成功且没有跳过；平台健康门禁通过后，再验证公开健康接口 HTTP 200、database=ok、Schema 达到本次最低要求。保存 SHA、部署标识、时间和脱敏结果。
+- [ ] 维护、清理和删除任务另以现有运行证据验收，不由健康接口成功推断全部业务正常。每日自动任务仍不能运行迁移、维护 POST 或使用 production 数据库凭据。
+
+### 下次客户端构建
+
+EAS 上传或构建前必须再次向负责人确认，并从包含本次文档记录及所需功能的干净最新 main 准备构建；不得从旧本地分支或夹带无关未提交修改的工作区发布。Beta 继续连接 staging。生产 Schema 与 Railway 门禁是已生效的后端状态，不会由 EAS 客户端构建携带、复制或修复；不得为“带上修复”而改用 production。App Store Connect/TestFlight 提交仍需独立批准。

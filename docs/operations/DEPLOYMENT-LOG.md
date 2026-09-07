@@ -86,3 +86,17 @@
 - 验证：`GET /api/health` 返回 HTTP 200、`database=ok`、`schemaVersion=14`；此前不在四人开发者名单的受控邮箱成功收取验证码并登录，未在记录中保存邮箱、验证码或会话。服务端管理员与礼品访问隔离继续由自动测试覆盖，本次未使用真实未授权礼品做额外读取尝试。
 - production：只读核对确认未因本次操作重部署，当前 active deployment 仍为 PR #81；production 原本即未设置 `ALPHA_ALLOWED_EMAILS`，本次未修改其变量或服务。
 - 事件处置：紧急事件先设置 `GIFT_SHARING_ENABLED=false`。仍服务 external Beta 的同一 staging 不得直接恢复四人名单；只有先暂停 external Beta，或迁移至另一个单独批准的受限环境并记录新决策后，才允许恢复 allowlist。
+
+## 2026-09-07：production Schema 14 → 16 与发布门禁修复
+
+- 批准：负责人在本次交互任务中明确授权直接完成生产修复，允许极少量费用；未提供关联 Issue 编号，不补写或猜测。此授权不改变每日自动任务的只读权限。
+- 目标：生产域名 `api.onetapreality.com` 对应 Railway 新加坡环境 `migration-sg-rehearsal` / `TapMigrationServer`。旧 `production` / `TapProdServer` 不是当前生产域名目标。
+- 根因：实际生效配置缺少预部署迁移与健康检查；迁移开关严格等于 true 的检查结果为 false。应用已发布至 main `7090cc79a21893b1382bdb9d6c43d5455fdc0839`，但数据库 Schema=14，迁移日志计数=15（0000–0014），缺少 0015/0016。公开健康接口返回 503 / database_schema_outdated。
+- 执行：在已登录的正确生产应用容器中使用现有连接，仅读取 Schema/迁移聚合元数据；审查 0015/0016 后执行标准 `npm run db:migrate`，设置锁等待 5 秒、语句超时 60 秒。日志确认 migrations applied successfully；未通过手动提高版本号绕过检查。
+- 持久修复：实际服务的 Pre-deploy Command 设置为 `env RUN_DB_MIGRATIONS=true node scripts/railway-predeploy.cjs`，Healthcheck Path=`/api/health`，Wait for CI=开启。开关只作用于预部署命令，不修改或披露其他变量。
+- 发布证据：同一 PR #93 重新部署 `cb58804b-d582-48cf-88b4-67ad79f5e6c7`，最终 ACTIVE / Deployment successful；生效配置包含预部署与健康路径，日志显示迁移成功、监听 8080、平台健康 GET 200。构建日志显示 Exported: dist。
+- 最终外部验收：2026-09-07 北京时间 13:17:34 production HTTP 200、database=ok、schemaVersion=16、writeFreeze=false，1186 ms；staging 三次均 200/ok/16，中位 428 ms。
+- 回退边界：本次未触发回退。0015/0016 为增加结构及显示编号回填；如后续应用回退，先验证旧版本与现有 Schema 兼容，保留已迁移结构，不盲目执行反向 SQL、删列、降低版本号或切回旧生产数据库。本次未创建或验证新的备份/恢复点，不将历史备份当作本次验证。
+- 剩余观察：此前小时级维护接口返回 500；需下一次现有定时运行的成功证据才能宣布维护恢复。未主动执行维护 POST，健康通过不替代清理/删除任务验收。
+- 边界：未变更 staging 数据、套餐、资源规模、R2、Resend、Cloudflare、EAS 或 TestFlight。现有后端部署/运行可能产生少量按量费用，未新增付费服务。EAS 上传或构建前必须再次向负责人确认。
+- 最终状态：生产 Schema 与发布门禁修复成功；维护恢复待后续证据。后续每次发布须执行 [发布门禁复核](../EXECUTION-CHECKLIST.md#每次后端发布的-schema-与生效配置门禁)。
