@@ -76,8 +76,10 @@ function defaultNativeModuleLoader(): Promise<NativeNfcModule> {
 export class NfcTagMismatchError extends Error {
   readonly code = "NFC_TAG_MISMATCH";
 
-  constructor(expectedUrl: string | null, currentUrl: string | null) {
-    const message = expectedUrl
+  constructor(expectedUrl: string | null, currentUrl: string | null, containsProtectedData = false) {
+    const message = containsProtectedData
+      ? "This card already contains OneTapReality data and was not changed."
+      : expectedUrl
       ? "This card does not contain the expected activation URL. It was not changed."
       : currentUrl
         ? "This card already contains a URL and was not changed."
@@ -100,20 +102,35 @@ function defaultIsExpoGo() {
   return Platform.OS !== "web" && Constants.appOwnership === "expo";
 }
 
-function decodeHttpsUrl(
+function inspectNdefRecords(
   native: NativeNfcModule,
   records: { payload?: number[] }[] | undefined,
-): string | null {
+): { httpsUrl: string | null; containsOneTapRealityData: boolean } {
+  let httpsUrl: string | null = null;
+  let containsOneTapRealityData = false;
   for (const record of records ?? []) {
     if (!record.payload) continue;
     try {
       const url = native.ndef.uri.decodePayload(record.payload);
-      if (isHttpsUrl(url)) return url;
+      if (typeof url === "string") {
+        if (httpsUrl === null && isHttpsUrl(url)) httpsUrl = url;
+        if (url.toLowerCase().includes("onetapreality")) containsOneTapRealityData = true;
+      }
     } catch {
       // Non-URI NDEF records are not eligible gift-card URLs.
     }
+    if (String.fromCharCode(...record.payload).toLowerCase().includes("onetapreality")) {
+      containsOneTapRealityData = true;
+    }
   }
-  return null;
+  return { httpsUrl, containsOneTapRealityData };
+}
+
+function decodeHttpsUrl(
+  native: NativeNfcModule,
+  records: { payload?: number[] }[] | undefined,
+): string | null {
+  return inspectNdefRecords(native, records).httpsUrl;
 }
 
 class NativeNfcUrlWriter implements NfcUrlWriter {
@@ -130,10 +147,14 @@ class NativeNfcUrlWriter implements NfcUrlWriter {
 
     try {
       const tag = await native.getTag();
-      const currentUrl = decodeHttpsUrl(native, tag?.ndefMessage);
+      const inspection = inspectNdefRecords(native, tag?.ndefMessage);
+      const currentUrl = inspection.httpsUrl;
 
       if (currentUrl === url) return;
-      if (currentUrl !== expectedUrl || (!currentUrl && (tag?.ndefMessage?.length ?? 0) > 0)) {
+      if (expectedUrl === null && inspection.containsOneTapRealityData) {
+        throw new NfcTagMismatchError(expectedUrl, currentUrl, true);
+      }
+      if (expectedUrl !== null && currentUrl !== expectedUrl) {
         throw new NfcTagMismatchError(expectedUrl, currentUrl);
       }
 

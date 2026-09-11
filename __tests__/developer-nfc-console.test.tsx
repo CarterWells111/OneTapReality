@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { ScrollView } from "react-native";
 
 import { DeveloperNfcConsole } from "../src/features/gifts/developer-nfc-console";
 import { BackendApiError } from "../src/services/backend/api-client";
@@ -200,6 +201,15 @@ describe("developer NFC console", () => {
     expect(screen.getByText("Launch card")).toBeTruthy();
     expect(screen.getByText("July batch")).toBeTruthy();
     expect(screen.queryByText(/CARD-/u)).toBeNull();
+  });
+
+  it("keeps card metadata inputs visible when the iOS keyboard opens", async () => {
+    const view = renderConsole();
+    await screen.findByText("Card #1");
+
+    const scrollView = view.UNSAFE_getByType(ScrollView);
+    expect(scrollView.props.automaticallyAdjustKeyboardInsets).toBe(true);
+    expect(scrollView.props.keyboardShouldPersistTaps).toBe("handled");
   });
 
   it("edits a card name and note without exposing its internal code", async () => {
