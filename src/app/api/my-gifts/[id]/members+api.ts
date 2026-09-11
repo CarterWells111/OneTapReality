@@ -1,5 +1,8 @@
-import { addGiftMember, listGiftMembers, removeGiftMember, updateGiftMemberRole } from "../../../../server/gifts/repository";
+import { addGiftMember, listGiftMembers, removeGiftMember, rollbackGiftMemberInvitation, updateGiftMemberRole } from "../../../../server/gifts/repository";
 import { requireOwnedGift } from "../../../../server/gifts/owner-access";
+import { requireAlphaEmailAllowed } from "../../../../server/gifts/alpha-safety";
+import { normalizeGiftEmail } from "../../../../server/gifts/email-auth";
+import { sendGiftInvitationEmail } from "../../../../server/gifts/resend-email-sender";
 import { ApiError, errorResponse, isErrorWithCode } from "../../../../server/http/errors";
 import { scheduleOpportunisticGiftMaintenance } from "../../../../server/maintenance/opportunistic-gift-maintenance";
 
@@ -15,9 +18,20 @@ export async function POST(request: Request, { id }: { id: string }): Promise<Re
     const { email, db } = await requireOwnedGift(request, id);
     const body = await request.json() as { email?: string; role?: string };
     if (typeof body.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(body.email.trim())) throw new ApiError(400, "validation_failed", "A valid email is required");
-    if (body.email.trim().toLowerCase() === email) throw new ApiError(409, "gift_member_exists", "The owner already has access");
+    const invitedEmail = normalizeGiftEmail(body.email);
+    if (invitedEmail === email) throw new ApiError(409, "gift_member_exists", "The owner already has access");
     if (body.role !== "viewer" && body.role !== "editor") throw new ApiError(400, "validation_failed", "Role must be viewer or editor");
-    if (!await addGiftMember(db, id, body.email, new Date().toISOString(), body.role)) throw new ApiError(409, "gift_member_limit", "This gift already has three access emails or that email is listed");
+    requireAlphaEmailAllowed(invitedEmail);
+    const apiKey = process.env.RESEND_API_KEY;
+    const from = process.env.GIFT_EMAIL_FROM;
+    if (!apiKey || !from) throw new ApiError(503, "gift_invitation_unavailable", "Gift invitation email is not configured");
+    if (!await addGiftMember(db, id, invitedEmail, new Date().toISOString(), body.role)) throw new ApiError(409, "gift_member_limit", "This gift already has three access emails or that email is listed");
+    try {
+      await sendGiftInvitationEmail({ apiKey, from, email: invitedEmail, role: body.role });
+    } catch (error) {
+      await rollbackGiftMemberInvitation(db, id, invitedEmail);
+      throw error;
+    }
     const members = await listGiftMembers(db, id);
     scheduleOpportunisticGiftMaintenance();
     return Response.json({ members }, { status: 201 });

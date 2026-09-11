@@ -4,7 +4,6 @@ import type { BackendDatabase } from "../db/client";
 import type { GiftContentReportReason } from "../db/schema";
 import {
   giftContentReports,
-  giftMemberActivations,
   giftMembers,
   giftRelationshipTombstones,
   gifts,
@@ -89,11 +88,9 @@ export async function reportGiftContent(
 
     const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role })
       .from(giftMembers)
-      .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
         eq(giftMembers.giftId, input.giftId),
         eq(giftMembers.email, reporterEmail),
-        or(eq(giftMembers.role, "owner"), eq(giftMemberActivations.userId, input.reporterUserId)),
       ))
       .limit(1);
     if (!relationship) return { status: "forbidden" as const };
@@ -306,11 +303,9 @@ export async function blockGiftUser(
 
     const [actorRelationship] = await tx.select({ memberId: giftMembers.id })
       .from(giftMembers)
-      .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
         eq(giftMembers.giftId, input.giftId),
         eq(giftMembers.email, actorEmail),
-        or(eq(giftMembers.role, "owner"), eq(giftMemberActivations.userId, input.actorUserId)),
       ))
       .limit(1);
     if (!actorRelationship) {
@@ -380,13 +375,11 @@ export async function leaveGiftMembership(
       .returning({ id: gifts.id });
     if (!lockedGift.length) return { status: "forbidden" as const };
 
-    const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role, userId: giftMemberActivations.userId })
+    const [relationship] = await tx.select({ memberId: giftMembers.id, role: giftMembers.role })
       .from(giftMembers)
-      .leftJoin(giftMemberActivations, eq(giftMemberActivations.memberId, giftMembers.id))
       .where(and(
         eq(giftMembers.giftId, input.giftId),
         eq(giftMembers.email, email),
-        or(eq(giftMembers.role, "owner"), eq(giftMemberActivations.userId, input.userId)),
       ))
       .limit(1);
     if (!relationship) return { status: "forbidden" as const };
@@ -395,7 +388,7 @@ export async function leaveGiftMembership(
     await recordGiftRelationshipTombstone(tx, {
       giftId: input.giftId,
       email,
-      userId: relationship.userId,
+      userId: input.userId,
       createdAt: new Date().toISOString(),
     });
 

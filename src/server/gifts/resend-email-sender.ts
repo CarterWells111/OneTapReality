@@ -6,6 +6,14 @@ type SendGiftVerificationEmailInput = {
   request?: typeof fetch;
 };
 
+type SendGiftInvitationEmailInput = {
+  apiKey: string;
+  from: string;
+  email: string;
+  role: "viewer" | "editor";
+  request?: typeof fetch;
+};
+
 export async function sendGiftVerificationEmail({ apiKey, from, email, code, request = fetch }: SendGiftVerificationEmailInput): Promise<void> {
   const response = await request("https://api.resend.com/emails", {
     method: "POST",
@@ -18,6 +26,21 @@ export async function sendGiftVerificationEmail({ apiKey, from, email, code, req
     }),
   });
   if (!response.ok) throw new Error("Unable to send verification email");
+}
+
+export async function sendGiftInvitationEmail({ apiKey, from, email, role, request = fetch }: SendGiftInvitationEmailInput): Promise<void> {
+  const permission = role === "editor" ? "查看和编辑" : "查看";
+  const response = await request("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: "你收到了一触如初相册邀请",
+      text: `你已受邀${permission}一份云端相册。请打开一触如初 App，用这个邮箱登录，然后在“我的纪念品”中查看。无需接触实体礼品。`,
+    }),
+  });
+  if (!response.ok) throw new Error("Unable to send gift invitation email");
 }
 
 export async function sendAccountDeletionVerificationEmail({ apiKey, from, email, code, request = fetch }: SendGiftVerificationEmailInput): Promise<void> {

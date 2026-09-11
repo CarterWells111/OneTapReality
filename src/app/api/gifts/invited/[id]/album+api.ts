@@ -14,7 +14,7 @@ export async function GET(request: Request, { id }: { id: string }): Promise<Res
     requireAlphaEmailAllowed(account.email);
     const access = await getActivatedGiftMemberAccess(db, { giftId: id, userId: account.id, email: account.email });
     if (!access) {
-      throw new ApiError(403, "gift_access_denied", "This account does not have activated access to this gift");
+      throw new ApiError(403, "gift_access_denied", "This account is not invited to this gift");
     }
     if (!access.albumId) throw new ApiError(404, "gift_album_not_found", "No shared album has been published yet");
     const snapshot = await getSharedAlbumSnapshot(db, access.albumId);

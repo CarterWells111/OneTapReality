@@ -190,7 +190,7 @@ describe("gift repository", () => {
     } finally { await close(); }
   });
 
-  it("keeps viewer gifts private until token activation and revokes activation with membership", async () => {
+  it("grants invited accounts access without requiring the physical gift", async () => {
     const { db, close } = createBackendTestDatabase();
     try {
       await migrateBackendDatabase(db);
@@ -199,16 +199,17 @@ describe("gift repository", () => {
       await claimGiftByTokenHash(db, "known", "owner@example.com", "2026-07-24T00:01:00.000Z");
       await addGiftMember(db, "gift-1", "viewer@example.com", "2026-07-24T00:02:00.000Z");
 
-      await expect(listInvitedGifts(db, "viewer-user", "viewer@example.com")).resolves.toEqual([]);
-      await expect(getActivatedGiftAccessByGiftId(db, "gift-1", "viewer-user", "viewer@example.com")).resolves.toBeNull();
+      await expect(listInvitedGifts(db, "viewer-user", "viewer@example.com")).resolves.toEqual([expect.objectContaining({ giftId: "gift-1", role: "viewer" })]);
+      await expect(getActivatedGiftAccessByGiftId(db, "gift-1", "viewer-user", "viewer@example.com")).resolves.toEqual(expect.objectContaining({ role: "viewer" }));
       await expect(activateGiftViewerByTokenHash(db, "wrong", { id: "viewer-user", email: "viewer@example.com" }, "2026-07-24T00:03:00.000Z")).resolves.toBeNull();
       await expect(activateGiftViewerByTokenHash(db, "known", { id: "viewer-user", email: "other@example.com" }, "2026-07-24T00:03:00.000Z")).resolves.toBeNull();
       await expect(activateGiftViewerByTokenHash(db, "known", { id: "viewer-user", email: "viewer@example.com" }, "2026-07-24T00:03:00.000Z")).resolves.toEqual({ giftId: "gift-1", role: "viewer", albumPublished: false });
       await expect(listInvitedGifts(db, "viewer-user", "viewer@example.com")).resolves.toEqual([expect.objectContaining({ giftId: "gift-1", role: "viewer" })]);
 
       await removeGiftMember(db, "gift-1", "viewer@example.com");
-      await addGiftMember(db, "gift-1", "viewer@example.com", "2026-07-24T00:04:00.000Z");
       await expect(listInvitedGifts(db, "viewer-user", "viewer@example.com")).resolves.toEqual([]);
+      await addGiftMember(db, "gift-1", "viewer@example.com", "2026-07-24T00:04:00.000Z");
+      await expect(listInvitedGifts(db, "viewer-user", "viewer@example.com")).resolves.toEqual([expect.objectContaining({ giftId: "gift-1", role: "viewer" })]);
     } finally { await close(); }
   });
 

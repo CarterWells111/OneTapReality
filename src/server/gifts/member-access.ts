@@ -2,6 +2,7 @@ import type { BackendDatabase } from "../db/client";
 import type { GiftMemberRole } from "../db/schema";
 import { getActivatedGiftAccessByGiftId } from "./repository";
 
+/** Access follows the verified account email on the live membership; NFC is not required per invitee. */
 export async function getActivatedGiftMemberAccess(
   db: BackendDatabase,
   input: { giftId: string; userId: string; email: string; allowedRoles?: readonly GiftMemberRole[] },

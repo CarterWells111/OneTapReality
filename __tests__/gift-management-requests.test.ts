@@ -28,7 +28,7 @@ async function fixture() {
 }
 
 describe("gift management requests", () => {
-  it("allows only an activated current editor and deduplicates equivalent pending requests", async () => {
+  it("allows only an invited current editor and deduplicates equivalent pending requests", async () => {
     const { db, close } = await fixture();
     try {
       const first = await createGiftManagementRequest(db, { giftId: "gift-1", userId: "editor-user", email: "editor@example.com", action: "remove_member", targetEmail: "viewer@example.com", now: "2026-08-16T00:04:00.000Z" });
@@ -40,7 +40,7 @@ describe("gift management requests", () => {
     } finally { await close(); }
   });
 
-  it("lists only non-owner, non-self management targets for an activated editor", async () => {
+  it("lists only non-owner, non-self management targets for an invited editor", async () => {
     const { db, close } = await fixture();
     try {
       await expect(listGiftManagementTargetsForEditor(db, { giftId: "gift-1", userId: "editor-user", email: "EDITOR@example.com" })).resolves.toEqual([
@@ -49,7 +49,9 @@ describe("gift management requests", () => {
       await expect(listGiftManagementTargetsForEditor(db, { giftId: "gift-1", userId: "viewer-user", email: "viewer@example.com" })).resolves.toBeNull();
       await removeGiftMember(db, "gift-1", "editor@example.com");
       await addGiftMember(db, "gift-1", "editor@example.com", "2026-08-16T00:04:00.000Z", "editor");
-      await expect(listGiftManagementTargetsForEditor(db, { giftId: "gift-1", userId: "editor-user", email: "editor@example.com" })).resolves.toBeNull();
+      await expect(listGiftManagementTargetsForEditor(db, { giftId: "gift-1", userId: "editor-user", email: "editor@example.com" })).resolves.toEqual([
+        { email: "viewer@example.com", role: "viewer" },
+      ]);
     } finally { await close(); }
   });
 

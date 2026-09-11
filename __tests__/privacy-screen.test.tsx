@@ -74,7 +74,7 @@ describe("PrivacyScreen", () => {
     const screen = await render(<PrivacyScreen />);
 
     expect(screen.getByText(/只读成员或可编辑成员.*随时切换/)).toBeTruthy();
-    expect(screen.getByText(/受邀成员.*首次.*礼品激活.*完整相册预览/)).toBeTruthy();
+    expect(screen.getByText(/匹配邀请邮箱.*登录.*完整相册.*无需.*实体礼品/)).toBeTruthy();
     expect(screen.getByText(/可编辑成员.*页面编辑器.*新版本/)).toBeTruthy();
     expect(screen.getByText(/只修改云端共享快照.*本地原件/)).toBeTruthy();
     expect(screen.getByText(/整册删除、移除成员或修改权限.*礼品拥有者批准/)).toBeTruthy();
@@ -85,7 +85,7 @@ describe("PrivacyScreen", () => {
   it("distinguishes immediate access revocation from asynchronous media cleanup", async () => {
     const screen = await render(<PrivacyScreen />);
 
-    expect(screen.getByText(/礼品拥有者或已激活的可编辑成员.*主动发布.*共享版本/)).toBeTruthy();
+    expect(screen.getByText(/礼品拥有者或受邀的可编辑成员.*主动发布.*共享版本/)).toBeTruthy();
     expect(screen.getByText(/不会自动上传或修改.*本地原件/)).toBeTruthy();
     expect(screen.getByText(/访问和共享快照会立即撤销/)).toBeTruthy();
     expect(screen.getByText(/私有媒体.*后台安全删除.*失败.*重试/)).toBeTruthy();

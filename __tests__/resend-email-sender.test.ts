@@ -2,6 +2,7 @@ import {
   sendAccountDeletionFailureEmail,
   sendAccountDeletionVerificationEmail,
   sendGiftContentReportSupportEmail,
+  sendGiftInvitationEmail,
   sendGiftVerificationEmail,
 } from "../src/server/gifts/resend-email-sender";
 
@@ -26,6 +27,17 @@ describe("Resend gift email sender", () => {
       to: ["owner@example.com"],
       subject: "一触如初验证码：123456",
     }));
+  });
+
+  it("sends an app invitation that does not ask the member to scan the gift", async () => {
+    const request = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ id: "email-2" }), { status: 200 }));
+
+    await sendGiftInvitationEmail({ apiKey: "resend-key", from: "support@onetapreality.com", email: "viewer@example.com", role: "viewer", request });
+
+    const body = JSON.parse((request.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual(expect.objectContaining({ to: ["viewer@example.com"], subject: "你收到了一触如初相册邀请" }));
+    expect(body.text).toContain("用这个邮箱登录");
+    expect(body.text).toContain("无需接触实体礼品");
   });
 
   it("sends a sanitized deletion failure notice without account or object identifiers", async () => {
