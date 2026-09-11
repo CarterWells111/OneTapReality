@@ -200,6 +200,84 @@ describe("NFC URL writer", () => {
     expect(native.cancelTechnologyRequest).toHaveBeenCalledTimes(1);
   });
 
+  it("prepares a card by replacing unsupported existing NDEF records", async () => {
+    const native = createNativeModule();
+    native.decodePayload
+      .mockReturnValueOnce("")
+      .mockReturnValueOnce(activationUrl);
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await writer.replaceHttpsUrl(null, activationUrl);
+
+    expect(native.writeNdefMessage).toHaveBeenCalledWith([7, 8, 9]);
+    expect(native.getNdefMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not erase an existing OneTapReality record while preparing a card", async () => {
+    const native = createNativeModule();
+    native.decodePayload.mockReturnValue("https://staging.onetapreality.com/gift/existing");
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await expect(writer.replaceHttpsUrl(null, activationUrl)).rejects.toThrow(
+      "This card already contains OneTapReality data and was not changed.",
+    );
+    expect(native.writeNdefMessage).not.toHaveBeenCalled();
+  });
+
+  it("prepares a card by replacing an external URL", async () => {
+    const native = createNativeModule();
+    native.decodePayload
+      .mockReturnValueOnce("https://example.com/old-card-data")
+      .mockReturnValueOnce(activationUrl);
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await writer.replaceHttpsUrl(null, activationUrl);
+
+    expect(native.writeNdefMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not erase an existing OneTapReality custom-scheme record", async () => {
+    const native = createNativeModule();
+    native.decodePayload.mockReturnValue("onetapreality://gift/existing");
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await expect(writer.replaceHttpsUrl(null, activationUrl)).rejects.toThrow(
+      "This card already contains OneTapReality data and was not changed.",
+    );
+    expect(native.writeNdefMessage).not.toHaveBeenCalled();
+  });
+
+  it("still rejects the wrong existing URL during gift initialization", async () => {
+    const native = createNativeModule();
+    native.decodePayload.mockReturnValue("https://example.com/not-the-activation-url");
+    const writer = createNfcUrlWriter({
+      platform: "ios",
+      isExpoGo: false,
+      loadNativeModule: jest.fn().mockResolvedValue(native),
+    });
+
+    await expect(writer.replaceHttpsUrl(activationUrl, giftUrl)).rejects.toThrow(
+      "This card does not contain the expected activation URL. It was not changed.",
+    );
+    expect(native.writeNdefMessage).not.toHaveBeenCalled();
+  });
+
   it("does not load NFC in Expo Go and provides a clear native-build error", async () => {
     const loadNativeModule = jest.fn();
     const writer = createNfcUrlWriter({

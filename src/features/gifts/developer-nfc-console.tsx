@@ -761,7 +761,12 @@ export function DeveloperNfcConsole({
 
   if (access === "checking" || access === "noAccess") return <ScrollView contentContainerStyle={styles.screen}><PaperCard tone="paper" style={styles.card}><ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" /><Text style={styles.message}>{message}</Text>{access === "checking" ? <AppButton disabled={busy} label="Retry" onPress={() => void retryOrFilter()} /> : null}</PaperCard></ScrollView>;
 
-  return <ScrollView contentContainerStyle={styles.screen} style={{ backgroundColor: colors.background }}>
+  return <ScrollView
+    automaticallyAdjustKeyboardInsets
+    contentContainerStyle={styles.screen}
+    keyboardShouldPersistTaps="handled"
+    style={{ backgroundColor: colors.background }}
+  >
     <ScreenTitle title="Developer NFC Console" caption="DEVELOPER ONLY" />
     <Text style={styles.message}>{message}</Text>
     <PaperCard tone="paper" style={styles.card}>
