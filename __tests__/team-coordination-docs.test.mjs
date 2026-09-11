@@ -57,7 +57,7 @@ test('shared album coordination documents define collaboration and security boun
   const content = files.join('\n');
 
   assert.match(content, /viewer.*editor.*邀请/s);
-  assert.match(content, /viewer.*editor.*首次.*NFC.*完整.*预览/s);
+  assert.match(content, /viewer.*editor.*匹配.*邮箱.*无需.*实体礼品/s);
   assert.match(content, /editor.*完整.*Canvas.*新版本/s);
   assert.match(content, /baseVersion.*409.*gift_album_version_conflict.*重新加载/s);
   assert.match(content, /本地原件不会自动上传/);
@@ -73,12 +73,12 @@ test('shared album coordination documents define collaboration and security boun
   assert.doesNotMatch(content, /实时协作|自动合并|端到端加密/);
 });
 
-test('release privacy states publisher, activation, and deletion lifecycle precisely', async () => {
+test('release privacy states publisher, invitation access, and deletion lifecycle precisely', async () => {
   const privacy = await read('docs/release/PRIVACY.md');
 
-  assert.match(privacy, /owner 或已激活的 editor.*显式发布.*云端版本/s);
+  assert.match(privacy, /owner 或受邀 editor.*显式发布.*云端版本/s);
   assert.match(privacy, /不会自动.*上传.*本地原件/s);
-  assert.match(privacy, /匹配.*账号.*首次 NFC 激活/s);
+  assert.match(privacy, /匹配邀请邮箱.*登录.*无需.*实体礼品/s);
   assert.match(privacy, /访问.*共享快照.*立即撤销/s);
   assert.match(privacy, /私有 R2.*维护任务.*异步删除.*失败.*重试/s);
   assert.doesNotMatch(privacy, /只有礼品拥有者.*上传/);

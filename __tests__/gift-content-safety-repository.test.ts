@@ -36,14 +36,14 @@ const now = "2026-08-24T12:00:00.000Z";
 
 async function createSharedFixture(
   db: ReturnType<typeof createBackendTestDatabase>["db"],
-  input: { giftId: string; tokenHash: string; ownerEmail: string; memberEmail: string; role?: "viewer" | "editor"; version?: number },
+  input: { giftId: string; tokenHash: string; ownerEmail: string; memberEmail: string; role?: "viewer" | "editor"; version?: number; activate?: boolean },
 ) {
   const owner = await createOrGetUserByEmail(db, input.ownerEmail, now);
   const member = await createOrGetUserByEmail(db, input.memberEmail, now);
   await createGift(db, { id: input.giftId, tokenHash: input.tokenHash, createdAt: now });
   await claimGiftByTokenHash(db, input.tokenHash, owner.email, now);
   await addGiftMember(db, input.giftId, member.email, now, input.role ?? "viewer");
-  await activateGiftViewerByTokenHash(db, input.tokenHash, member, now);
+  if (input.activate !== false) await activateGiftViewerByTokenHash(db, input.tokenHash, member, now);
   await db.insert(sharedAlbums).values({
     id: `${input.giftId}-album`,
     giftId: input.giftId,
@@ -81,6 +81,7 @@ describe("gift content safety repository", () => {
         ownerEmail: "owner@example.com",
         memberEmail: "reporter@example.com",
         version: 7,
+        activate: false,
       });
 
       const first = await reportGiftContent(db, {
@@ -126,6 +127,7 @@ describe("gift content safety repository", () => {
         tokenHash: "token-owner-report",
         ownerEmail: "owner@example.com",
         memberEmail: "viewer@example.com",
+        activate: false,
       });
 
       await expect(reportGiftContent(db, {
@@ -471,6 +473,7 @@ describe("gift content safety repository", () => {
         tokenHash: "token-leave-viewer",
         ownerEmail: "owner-viewer@example.com",
         memberEmail: "viewer@example.com",
+        activate: false,
       });
       const editorFixture = await createSharedFixture(db, {
         giftId: "gift-leave-editor",
@@ -478,6 +481,7 @@ describe("gift content safety repository", () => {
         ownerEmail: "owner-editor@example.com",
         memberEmail: "editor@example.com",
         role: "editor",
+        activate: false,
       });
 
       expect(await leaveGiftMembership(db, {

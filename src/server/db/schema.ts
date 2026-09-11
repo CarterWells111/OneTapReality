@@ -269,7 +269,7 @@ export const sharedAlbums = pgTable(
   (table) => [uniqueIndex("shared_albums_gift_unique").on(table.giftId)],
 );
 
-/** A viewer must prove possession of the gift token before shared media is readable. */
+/** Legacy member activation receipts retained for compatibility; no longer an access prerequisite. */
 export const giftMemberActivations = pgTable(
   "gift_member_activations",
   {

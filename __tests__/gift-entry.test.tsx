@@ -87,31 +87,29 @@ describe("gift NFC entry", () => {
     await waitFor(() => expect(screen.getByText("你没有访问此礼品的权限。")).toBeTruthy());
   });
 
-  it("opens a published album directly after NFC activation", async () => {
+  it("opens a published album directly for an invited email without member activation", async () => {
     mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "user-1", email: "viewer@example.com", isAdmin: false } }, signOut: jest.fn() });
     mockClient.getGiftEntryStatus.mockResolvedValue({ status: "bound" });
     mockClient.getGiftAccess.mockResolvedValue({ id: "gift-1", status: "bound", role: "viewer", albumId: "album-1", albumTitle: "A shared trip", publishedAt: "2026-07-24T00:00:00.000Z", version: 1 });
-    mockClient.activateGiftViewer.mockResolvedValue({ giftId: "gift-1", role: "viewer", albumPublished: true });
     render(<GiftEntry token="gift-token" platform="native" />);
-    await waitFor(() => expect(mockClient.activateGiftViewer).toHaveBeenCalledWith("gift-token", "account-token"));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/gifts/shared/gift-1"));
+    expect(mockClient.activateGiftViewer).not.toHaveBeenCalled();
   });
 
   it("stays on the NFC status screen when the album is not published", async () => {
     mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "user-1", email: "viewer@example.com", isAdmin: false } }, signOut: jest.fn() });
     mockClient.getGiftEntryStatus.mockResolvedValue({ status: "bound" });
     mockClient.getGiftAccess.mockResolvedValue({ id: "gift-1", status: "bound", role: "viewer", albumId: null, albumTitle: null, publishedAt: null, version: null });
-    mockClient.activateGiftViewer.mockResolvedValue({ giftId: "gift-1", role: "viewer", albumPublished: false });
     render(<GiftEntry token="gift-token" platform="native" />);
-    await waitFor(() => expect(mockClient.activateGiftViewer).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("礼品拥有者尚未发布共享相册。")).toBeTruthy());
+    expect(mockClient.activateGiftViewer).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("encodes the activated gift id in the shared album route", async () => {
+  it("encodes the invited gift id in the shared album route", async () => {
     mockUseAuth.mockReturnValue({ isAuthReady: true, session: { accessToken: "account-token", user: { id: "user-1", email: "viewer@example.com", isAdmin: false } }, signOut: jest.fn() });
     mockClient.getGiftEntryStatus.mockResolvedValue({ status: "bound" });
-    mockClient.getGiftAccess.mockResolvedValue({ id: "gift-1", status: "bound", role: "viewer", albumId: "album-1", albumTitle: "Trip", publishedAt: "2026-08-16T00:00:00.000Z", version: 1 });
-    mockClient.activateGiftViewer.mockResolvedValue({ giftId: "gift/with space", role: "viewer", albumPublished: true });
+    mockClient.getGiftAccess.mockResolvedValue({ id: "gift/with space", status: "bound", role: "viewer", albumId: "album-1", albumTitle: "Trip", publishedAt: "2026-08-16T00:00:00.000Z", version: 1 });
     render(<GiftEntry token="gift-token" platform="native" />);
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/gifts/shared/gift%2Fwith%20space"));
   });

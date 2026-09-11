@@ -53,9 +53,8 @@ function NativeGiftEntry({ token }: { token: string }) {
       setStatus(access.albumId ? `这是你管理的礼品，已发布相册"${access.albumTitle}"。` : "这是你管理的礼品；请选择并发布一册本地旅行册。");
       return;
     }
-    const activation = await client.activateGiftViewer(token, accessToken);
-    if (!activation.albumPublished) { setStatus("礼品拥有者尚未发布共享相册。"); return; }
-    router.replace(`/gifts/shared/${encodeURIComponent(activation.giftId)}` as never);
+    if (!access.albumId) { setStatus("礼品拥有者尚未发布共享相册。"); return; }
+    router.replace(`/gifts/shared/${encodeURIComponent(access.id)}` as never);
   }, [client, router, token]);
 
   const refresh = React.useCallback(async () => {

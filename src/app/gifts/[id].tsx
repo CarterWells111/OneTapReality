@@ -261,7 +261,7 @@ export default function GiftManagementScreen() {
     if (!session || !id) return;
     const operation = beginOwnerOperation();
     if (!operation) return;
-    try { const result = await client.addOwnedGiftMember(session.accessToken, id, inviteEmail, inviteRole); if (!operationIsCurrent(operation)) return; setMembers(result.members); setInviteEmail(""); setMessage("已添加成员；对方需要先用 NFC 礼品完成首次激活。"); }
+    try { const result = await client.addOwnedGiftMember(session.accessToken, id, inviteEmail, inviteRole); if (!operationIsCurrent(operation)) return; setMembers(result.members); setInviteEmail(""); setMessage("邀请邮件已发送；对方用受邀邮箱登录即可查看，无需接触实体礼品。"); }
     catch (error) { if (operationIsCurrent(operation)) setMessage(toUserFacingBackendError(error, "无法添加访问邮箱，请检查邮箱后重试。")); }
     finally { finishOwnerOperation(operation); }
   };
@@ -443,7 +443,7 @@ export default function GiftManagementScreen() {
             ) : null}
           </View>
         ))}
-        <Text style={styles.activationHint}>只读和读写成员都需要先用 NFC 礼品完成首次激活。</Text>
+        <Text style={styles.activationHint}>成员收到邮件邀请后，用受邀邮箱登录即可查看；无需接触实体礼品。</Text>
         {members.length < 3 ? (
           <View style={styles.inviteArea}>
             <View style={styles.rolePicker}>

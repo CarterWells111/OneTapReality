@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { id }: { id: string }): Promise<R
     const result = await decideGiftManagementRequest(db, { giftId: id, requestId: body.requestId, ownerEmail: email, decision: body.decision, now: new Date().toISOString() });
     if (result.status === "forbidden") throw new ApiError(403, "gift_owner_required", "Only the gift owner can decide requests");
     if (result.status === "not_pending") throw new ApiError(409, "gift_management_request_not_pending", "This request is not pending");
-    if (result.status === "requester_ineligible") throw new ApiError(409, "gift_management_requester_ineligible", "The requester is no longer an activated editor");
+    if (result.status === "requester_ineligible") throw new ApiError(409, "gift_management_requester_ineligible", "The requester is no longer an editor");
     if (result.status === "invalid_target") throw new ApiError(409, "gift_management_target_invalid", "The request target is no longer eligible");
     if (result.status === "approved") scheduleOpportunisticGiftMaintenance();
     return Response.json({ status: result.status });

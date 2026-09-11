@@ -515,7 +515,7 @@ describe("gift owner member management", () => {
     expect(screen.queryByLabelText(`更改 ${owner.email} 的权限`)).toBeNull();
     expect(screen.getByLabelText(`更改 ${viewer.email} 的权限`)).toBeTruthy();
     expect(screen.getByLabelText(`更改 ${editor.email} 的权限`)).toBeTruthy();
-    expect(screen.getByText("只读和读写成员都需要先用 NFC 礼品完成首次激活。")).toBeTruthy();
+    expect(screen.getByText("成员收到邮件邀请后，用受邀邮箱登录即可查看；无需接触实体礼品。")).toBeTruthy();
   });
 
   it("invites with the explicitly selected viewer or editor role", async () => {
@@ -528,6 +528,7 @@ describe("gift owner member management", () => {
     fireEvent.press(screen.getByText("添加成员"));
 
     await waitFor(() => expect(mockAddOwnedGiftMember).toHaveBeenCalledWith("account-token", "gift-1", "new@example.com", "editor"));
+    await screen.findByText("邀请邮件已发送；对方用受邀邮箱登录即可查看，无需接触实体礼品。");
   });
 
   it("lets the owner switch a non-owner role only once while busy", async () => {
