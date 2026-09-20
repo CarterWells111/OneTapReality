@@ -10,6 +10,8 @@ import {
   distributePhotoUris,
   movePhotoToPage,
   MAX_PHOTOS_PER_PAGE_ERROR,
+  changePagePhotoCount,
+  reorderPagePhoto,
 } from "./photo-page-planner";
 import type { MemoryDraftPagePlan, PhotoTemplateFamilyId, PhotoTemplateId } from "../../types/memory";
 
@@ -78,7 +80,7 @@ function DraftPagePreview({ plan, pageIndex }: { plan: MemoryDraftPagePlan; page
 }
 
 export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoAllocationProps) {
-  const [mode, setMode] = React.useState<AllocationMode>("together");
+  const [mode, setMode] = React.useState<AllocationMode>("per-page");
   const [activePageIndex, setActivePageIndex] = React.useState(0);
   const [selectedFamily, setSelectedFamily] = React.useState<PhotoTemplateFamilyId>(
     () => familyFromPlans(value) ?? "classic",
@@ -125,6 +127,9 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
   };
 
   const activePlan = value[activePageIndex];
+  const canIncrease = !!activePlan && activePlan.photoUris.length < MAX_PHOTOS_PER_CANVAS_PAGE
+    && value.some((plan, index) => index > activePageIndex ? plan.photoUris.length > 0 : index < activePageIndex && plan.photoUris.length > 1);
+  const canDecrease = !!activePlan && activePlan.photoUris.length > 1;
 
   return (
     <PaperCard style={styles.card}>
@@ -257,6 +262,62 @@ export function DraftPhotoAllocation({ photoUris, value, onChange }: DraftPhotoA
             })}
           </View>
 
+          {activePlan ? (
+            <>
+              <View style={styles.pageCountRow}>
+                <Text selectable style={styles.pageCount}>当前页 {activePlan.photoUris.length} 张照片</Text>
+                <View style={styles.stepper}>
+                  {([-1, 1] as const).map((delta) => {
+                    const disabled = delta === -1 ? !canDecrease : !canIncrease;
+                    return (
+                      <Pressable
+                        key={delta}
+                        accessibilityRole="button"
+                        accessibilityLabel={delta === -1 ? "减少当前页照片数量" : "增加当前页照片数量"}
+                        accessibilityState={{ disabled }}
+                        disabled={disabled}
+                        style={[styles.stepperButton, disabled && styles.moveButtonDisabled]}
+                        onPress={() => {
+                          const result = changePagePhotoCount(value, activePageIndex, activePlan.photoUris.length + delta);
+                          if (!result.error) onChange(result.plans);
+                          setError(result.error ?? "");
+                        }}
+                      >
+                        <Text style={styles.stepperText}>{delta === -1 ? "−" : "＋"}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <Text selectable style={styles.hint}>减少数量时自动分配到其他页，必要时新增页面；增加数量可合并后续页。前面的页面至少保留一张。</Text>
+              <DraftPagePreview pageIndex={activePageIndex} plan={activePlan} />
+              <Text selectable style={styles.label}>照片槽位顺序</Text>
+              <Text selectable style={styles.hint}>前移或后移照片，调整它在模板中的位置。</Text>
+              {activePlan.photoUris.map((uri, index) => (
+                <View key={uri} style={styles.photoLabelRow}>
+                  <Image source={{ uri }} style={styles.photoThumbnail} resizeMode="cover" />
+                  <Text style={styles.photoItemNumber}>槽位 {index + 1} · 照片 {photoUris.indexOf(uri) + 1}</Text>
+                  {([-1, 1] as const).map((direction) => {
+                    const disabled = index + direction < 0 || index + direction >= activePlan.photoUris.length;
+                    return (
+                      <Pressable
+                        key={direction}
+                        accessibilityRole="button"
+                        accessibilityLabel={`槽位 ${index + 1} 的照片${direction === -1 ? "前移" : "后移"}`}
+                        accessibilityState={{ disabled }}
+                        disabled={disabled}
+                        style={[styles.modeButton, disabled && styles.moveButtonDisabled]}
+                        onPress={() => onChange(reorderPagePhoto(value, activePageIndex, index, direction))}
+                      >
+                        <Text style={styles.modeText}>{direction === -1 ? "前移" : "后移"}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+              <Text selectable style={styles.label}>从其他页面转入照片</Text>
+            </>
+          ) : null}
           <FlatList
             contentContainerStyle={styles.photoMoveList}
             data={photoUris}
@@ -393,7 +454,7 @@ const styles = StyleSheet.create({
   previewCount: { color: colors.muted, fontFamily: bodyFont, fontSize: 11, textAlign: "center" },
   progressRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   progressText: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
-  photoLabelRow: { alignItems: "center", flexDirection: "row", gap: 10 },
+  photoLabelRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 10 },
   photoThumbnail: { aspectRatio: 3 / 4, backgroundColor: colors.accentSoft, borderRadius: 8, height: 60, width: 45 },
   navigationRow: { flexDirection: "row", gap: 8, justifyContent: "space-between", marginTop: 2 },
   navigationButton: { alignItems: "center", borderColor: colors.line, borderRadius: 12, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 10 },
