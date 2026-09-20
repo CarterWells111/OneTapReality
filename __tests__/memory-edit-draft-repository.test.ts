@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import {
   clearMemoryEditDraft,
   getMemoryEditDraft,
+  getMemoryEditRecovery,
   migrateMemoryEditDrafts,
   saveMemoryEditDraft,
 } from "../src/storage/memory-edit-draft-repository";
@@ -221,6 +222,16 @@ describe("memory edit draft repository", () => {
       },
       { ...firstPage, position: 1 },
     ]);
+  });
+
+  it("restores an unfinished album title and travel date with its pages", async () => {
+    const { database } = createDraftDatabase();
+    await saveMemoryEditDraft(database, { ...baseMemory, title: "未保存标题", travelDate: "2026-08-11" }, [firstPage], "account:owner@example.com");
+    await expect(getMemoryEditRecovery(database, baseMemory, "account:owner@example.com")).resolves.toMatchObject({
+      title: "未保存标题",
+      travelDate: "2026-08-11",
+      pages: [expect.objectContaining({ id: firstPage.id })],
+    });
   });
 
   it("round trips a recovery full-bleed canvas element without shrinking it", async () => {

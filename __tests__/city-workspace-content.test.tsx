@@ -150,6 +150,6 @@ describe("CityWorkspaceContent", () => {
       />
     );
 
-    expect(screen.getByTestId("city-archive-hero-generic-tianjin")).toBeTruthy();
+    expect(screen.getByTestId("city-archive-hero-vector-tianjin")).toBeTruthy();
   });
 });

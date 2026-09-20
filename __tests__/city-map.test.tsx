@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { readFileSync } from "node:fs";
 import * as React from "react";
 
@@ -12,6 +12,16 @@ const stats: CityStats[] = [
 ];
 
 describe("CityMap", () => {
+  it("keeps the map attribution visible outside the artwork workspace", async () => {
+    const screen = await render(<CityMap stats={stats} variant="workspace" />);
+    expect(screen.getByText(/China map · cn-atlas/i)).toBeTruthy();
+    expect(within(screen.getByTestId("city-map-workspace")).queryByText(/China map · cn-atlas/i)).toBeNull();
+  });
+  it("keeps the map attribution below the overview artwork", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+    expect(screen.getByText(/China map · cn-atlas/i)).toBeTruthy();
+    expect(within(screen.getByTestId("city-map-overview")).queryByText(/China map · cn-atlas/i)).toBeNull();
+  });
   it("renders every local marker with its saved-memory count and visit-intensity token", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
 

@@ -102,6 +102,14 @@ describe("DraftReviewScreen", () => {
     }));
   });
 
+  it("leaves an unfinished album in the local draft box", async () => {
+    const screen = render(<DraftReviewScreen />);
+    await screen.findByText("退出并保留在草稿箱");
+    await act(async () => fireEvent.press(screen.getByText("退出并保留在草稿箱")));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+    expect(mockSaveDraft).not.toHaveBeenCalled();
+  });
+
   it("saves a loaded draft and opens its completed memory", async () => {
     const screen = render(<DraftReviewScreen />);
 

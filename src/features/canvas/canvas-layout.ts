@@ -35,7 +35,7 @@ function repairedTemplateRotations(
   return new Map(orderedImages.map(({ index }, slotIndex) => [index, template.slots[slotIndex].rotation]));
 }
 
-export const MAX_NORMALIZED_ELEMENT_SIZE = 1;
+export const MAX_NORMALIZED_ELEMENT_SIZE = 1.5;
 
 export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
   const ids = new Map<string, number>();
@@ -57,8 +57,8 @@ export function normalizeLayout(layout: CanvasLayout): CanvasLayout {
         id: occurrence === 1 ? element.id : `${element.id}-${occurrence}`,
         x: clamp(element.x, -0.95, 0.95),
         y: clamp(element.y, -0.95, 0.95),
-        width: clamp(element.width, 0.03, MAX_NORMALIZED_ELEMENT_SIZE),
-        height: clamp(element.height, 0.03, MAX_NORMALIZED_ELEMENT_SIZE),
+        width: clamp(element.width, 0.03, element.type === "sticker" || element.type === "frame" ? MAX_NORMALIZED_ELEMENT_SIZE : 1),
+        height: clamp(element.height, 0.03, element.type === "sticker" || element.type === "frame" ? MAX_NORMALIZED_ELEMENT_SIZE : 1),
         rotation: rotationRepairs.get(index) ?? element.rotation,
       } as CanvasElement;
       if (normalized.type === "image") {

@@ -58,7 +58,7 @@ export default function EditMemoryScreen() {
     clearMemoryEditDraft,
     getDraftById,
     getMemoryById,
-    getMemoryEditDraft,
+    getMemoryEditRecovery,
     persistSelectedPhoto,
     stageSelectedPhoto,
     saveMemoryEditDraft,
@@ -91,6 +91,8 @@ export default function EditMemoryScreen() {
   const [isRecoveryLoading, setIsRecoveryLoading] = React.useState(true);
   const [recoveryReadError, setRecoveryReadError] = React.useState(false);
   const [didRecover, setDidRecover] = React.useState(false);
+  const [pendingRecovery, setPendingRecovery] = React.useState<{ loadKey: string; pages: StoryPage[]; source: "memory" | "sqlite"; title: string; travelDate: string } | null>(null);
+  const [isClearingRecovery, setIsClearingRecovery] = React.useState(false);
   const [metadataDraft, setMetadataDraft] = React.useState<MetadataDraft | null>(null);
   const [editorSessionToken, setEditorSessionToken] = React.useState<number | null>(null);
   const [recoveryState, setRecoveryState] = React.useState<AutosaveQueueState>({ status: "saved" });
@@ -98,7 +100,7 @@ export default function EditMemoryScreen() {
   const editorRef = React.useRef<BookCanvasEditorHandle>(null);
   const clearMemoryEditDraftRef = React.useRef(clearMemoryEditDraft);
   const completedFormalSaveRef = React.useRef<CompletedFormalSave | null>(null);
-  const getMemoryEditDraftRef = React.useRef(getMemoryEditDraft);
+  const getMemoryEditRecoveryRef = React.useRef(getMemoryEditRecovery);
   const initializedLoadKeyRef = React.useRef<string | null>(null);
   const isMountedRef = React.useRef(true);
   const editorCommitLockedRef = React.useRef(false);
@@ -123,7 +125,7 @@ export default function EditMemoryScreen() {
 
   activePageRef.current = activePage;
   clearMemoryEditDraftRef.current = clearMemoryEditDraft;
-  getMemoryEditDraftRef.current = getMemoryEditDraft;
+  getMemoryEditRecoveryRef.current = getMemoryEditRecovery;
   memoryRef.current = memory;
   pagesRef.current = pages;
   saveMemoryEditDraftRef.current = saveMemoryEditDraft;
@@ -213,6 +215,7 @@ export default function EditMemoryScreen() {
     activePageRef.current = null;
     setActivePage(null);
     setDidRecover(false);
+    setPendingRecovery(null);
     setIsRecoveryLoading(true);
     setRecoveryReadError(false);
     setPages([]);
@@ -230,7 +233,10 @@ export default function EditMemoryScreen() {
     const saveRecoveryForSession = saveMemoryEditDraftRef.current;
     const queueLease = acquireMemoryEditRecoveryQueue(loadKey, async (snapshot) => {
       try {
-        await saveRecoveryForSession(loadedMemory, snapshot);
+        const metadata = queueLease.getMetadata();
+        await saveRecoveryForSession(metadata
+          ? { ...loadedMemory, title: metadata.title, travelDate: metadata.travelDate }
+          : loadedMemory, snapshot);
       } catch (error) {
         localDiagnostics.emit("recovery_write_failed", {
           code: "write_failed",
@@ -240,6 +246,7 @@ export default function EditMemoryScreen() {
       }
     });
     queueLeaseRef.current = queueLease;
+    if (!queueLease.getMetadata()) queueLease.setMetadata({ title: loadedMemory.title, travelDate: loadedMemory.travelDate });
     const queue = queueLease.queue;
     setRecoveryState(queue.getState());
     queueUnsubscribeRef.current = queue.subscribe((state) => {
@@ -251,39 +258,30 @@ export default function EditMemoryScreen() {
     const latestSnapshot = queueLease.getLatestSnapshot();
     if (latestSnapshot) {
       const initialPages = splitOverflowPhotoPages(canvasPages(latestSnapshot));
-      pagesRef.current = initialPages;
-      setPages(initialPages);
-      setDidRecover(true);
+      const metadata = queueLease.getMetadata() ?? loadedMemory;
+      setPendingRecovery({ loadKey, pages: initialPages, source: "memory", title: metadata.title, travelDate: metadata.travelDate });
       setIsRecoveryLoading(false);
-      setEditorSessionToken(sessionToken);
       retryRecoveryReadRef.current = null;
-      localDiagnostics.emit("recovery_restored", {
-        memoryId: loadedMemory.id,
-        source: "memory",
-      });
       return;
     }
 
-    const getRecoveryForSession = getMemoryEditDraftRef.current;
+    const getRecoveryForSession = getMemoryEditRecoveryRef.current;
     const readRecovery = () => {
       if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
       setIsRecoveryLoading(true);
       setRecoveryReadError(false);
-      void queue.waitForIdle().then(() => getRecoveryForSession(loadedMemory)).then((recoveredPages) => {
+      void queue.waitForIdle().then(() => getRecoveryForSession(loadedMemory)).then((recovery) => {
         if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
-        const initialPages = splitOverflowPhotoPages(canvasPages(recoveredPages ?? loadedMemory.pages));
-        pagesRef.current = initialPages;
-        setPages(initialPages);
-        setDidRecover(recoveredPages !== null);
-        setIsRecoveryLoading(false);
-        setEditorSessionToken(sessionToken);
-        retryRecoveryReadRef.current = null;
-        if (recoveredPages !== null) {
-          localDiagnostics.emit("recovery_restored", {
-            memoryId: loadedMemory.id,
-            source: "sqlite",
-          });
+        const initialPages = splitOverflowPhotoPages(canvasPages(recovery?.pages ?? loadedMemory.pages));
+        if (recovery !== null) {
+          setPendingRecovery({ loadKey, pages: initialPages, source: "sqlite", title: recovery.title, travelDate: recovery.travelDate });
+        } else {
+          pagesRef.current = initialPages;
+          setPages(initialPages);
+          setEditorSessionToken(sessionToken);
         }
+        setIsRecoveryLoading(false);
+        retryRecoveryReadRef.current = null;
       })
       .catch(() => {
         if (!isMountedRef.current || generation !== loadGenerationRef.current) return;
@@ -296,7 +294,7 @@ export default function EditMemoryScreen() {
       readRecovery();
     };
     readRecovery();
-  }, [isSavedMemory, loadKey, memory?.id]);
+  }, [isSavedMemory, loadIdentity, loadKey, memory?.id]);
 
   const changePages = React.useCallback((nextPages: StoryPage[]) => {
     if (!isMountedRef.current
@@ -358,6 +356,8 @@ export default function EditMemoryScreen() {
     };
     metadataDraftRef.current = next;
     setMetadataDraft(next);
+    queueLeaseRef.current?.setMetadata({ title: next.title, travelDate: next.travelDate });
+    if (isSavedMemory && next.title.trim()) queueLeaseRef.current?.enqueue(pagesRef.current);
   };
 
   if (!memory) {
@@ -365,6 +365,50 @@ export default function EditMemoryScreen() {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
         <Text selectable style={styles.muted}>正在读取可编辑的旅行册…</Text>
       </ScrollView>
+    );
+  }
+
+  if (pendingRecovery?.loadKey === loadKey) {
+    const chooseRecovery = async (useDraft: boolean) => {
+      if (isClearingRecovery) return;
+      if (!useDraft) {
+        setIsClearingRecovery(true);
+        setSaveError(null);
+        try {
+          await queueLeaseRef.current?.queue.clearAndWait();
+          await clearMemoryEditDraftRef.current(memory.id);
+          if (currentLoadKeyRef.current !== loadKey) return;
+          queueLeaseRef.current?.clearLatestSnapshot();
+        } catch {
+          if (currentLoadKeyRef.current === loadKey) setSaveError("无法清除旧草稿，请重试。");
+          return;
+        } finally {
+          if (currentLoadKeyRef.current === loadKey) setIsClearingRecovery(false);
+        }
+      }
+      const selectedPages = useDraft ? pendingRecovery.pages : splitOverflowPhotoPages(canvasPages(memory.pages));
+      if (useDraft) {
+        const restoredMetadata = { identity: loadIdentity, title: pendingRecovery.title, travelDate: pendingRecovery.travelDate };
+        metadataDraftRef.current = restoredMetadata;
+        setMetadataDraft(restoredMetadata);
+        queueLeaseRef.current?.setMetadata({ title: restoredMetadata.title, travelDate: restoredMetadata.travelDate });
+      }
+      pagesRef.current = selectedPages;
+      setPages(selectedPages);
+      setDidRecover(useDraft);
+      setPendingRecovery(null);
+      setEditorSessionToken(editorSessionGenerationRef.current);
+      if (useDraft) localDiagnostics.emit("recovery_restored", { memoryId: memory.id, source: pendingRecovery.source });
+    };
+    return (
+      <View style={styles.recoveryChoice}>
+        <Text selectable style={styles.recoveryTitle}>发现未保存的编辑</Text>
+        <Text selectable style={styles.muted}>要继续上次留在本机的草稿吗？</Text>
+        <Text selectable style={styles.muted}>使用已保存版本会丢弃这份未保存编辑。</Text>
+        {saveError ? <Text selectable style={styles.error}>{saveError}</Text> : null}
+        <AppButton disabled={isClearingRecovery} label="继续编辑草稿" onPress={() => void chooseRecovery(true)} />
+        <AppButton disabled={isClearingRecovery} label="使用已保存版本" tone="secondary" onPress={() => void chooseRecovery(false)} />
+      </View>
     );
   }
 
@@ -558,7 +602,7 @@ export default function EditMemoryScreen() {
         travelDate={currentMetadata.travelDate}
       />
       <Text selectable style={styles.muted} testID="memory-canvas-edit-instruction">
-        双击组件进入编辑；未选中时横滑书页可翻页。这里仍采用显式保存，点击下方按钮前不会写入旅行册。
+        双击组件进入编辑；未选中时横滑书页可翻页。修改会暂存在本机；点击下方保存按钮后才会写入旅行册。
       </Text>
       {didRecover ? (
         <Text accessibilityLiveRegion="polite" role="status" selectable style={styles.recovered}>
@@ -626,6 +670,8 @@ function parseFallbackIndex(value: string | string[] | undefined) {
 }
 
 const styles = StyleSheet.create({
+  recoveryChoice: { flex: 1, gap: 16, justifyContent: "center", padding: 24 },
+  recoveryTitle: { color: colors.ink, fontSize: 22, fontWeight: "700" },
   screen: { flex: 1 },
   content: { gap: 16, paddingBottom: 28, paddingTop: 14 },
   muted: { color: colors.muted, lineHeight: 22, paddingHorizontal: 20 },

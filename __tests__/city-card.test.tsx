@@ -14,11 +14,19 @@ describe("CityCard", () => {
     expect(StyleSheet.flatten(screen.getByTestId("city-card-visual-shanghai").props.style)).toMatchObject({ height: 100, width: 112 });
   });
 
-  it("uses the same card design with the formal generic illustration for unfeatured cities", async () => {
+  it("uses city-labelled local vector artwork for unfeatured cities", async () => {
     const screen = await render(<CityCard city="chengdu" onPress={jest.fn()} variant="unvisited" />);
 
     expect(screen.getByText("尚未打卡")).toBeTruthy();
-    expect(screen.getByTestId("city-card-generic-chengdu")).toBeTruthy();
+    expect(screen.getByTestId("city-card-vector-chengdu")).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId("city-archive-card-chengdu").props.style)).toMatchObject({ flexDirection: "row" });
+  });
+
+  it("alternates deliberate colors across adjacent list cards", async () => {
+    const first = await render(<CityCard city="chengdu" listIndex={0} onPress={jest.fn()} variant="unvisited" />);
+    const second = await render(<CityCard city="lhasa" listIndex={1} onPress={jest.fn()} variant="unvisited" />);
+    const firstColor = StyleSheet.flatten(first.getByTestId("city-archive-card-chengdu").props.style).backgroundColor;
+    const secondColor = StyleSheet.flatten(second.getByTestId("city-archive-card-lhasa").props.style).backgroundColor;
+    expect(firstColor).not.toBe(secondColor);
   });
 });

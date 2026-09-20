@@ -62,6 +62,8 @@ jest.mock("../src/storage/memory-repository", () => ({
   getDraft: (...args: unknown[]) => mockGetDraft(...args),
   listDiscardedMemories: jest.fn(),
   listMemories: (...args: unknown[]) => mockListMemories(...args),
+  listDrafts: jest.fn(async () => []),
+  trimOldDrafts: jest.fn(async () => []),
   restoreDiscardedMemory: jest.fn(),
   saveDraft: jest.fn(),
   saveMemory: jest.fn(),

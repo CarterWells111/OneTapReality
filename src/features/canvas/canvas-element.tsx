@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { canvasFrames, canvasStickers } from "./canvas-assets";
 import { resolveCanvasElementGeometry, type CanvasDimensions } from "./canvas-element-geometry";
+import { MAX_NORMALIZED_ELEMENT_SIZE } from "./canvas-layout";
 import { SelectionHandles } from "./selection-handles";
 import { useResolvedFontFamily } from "../typography/font-loading-provider";
 import { isMissingPhotoToken } from "../memories/photo-references";
@@ -90,10 +91,12 @@ export function calculateCanvasTransformFromAbsolute(
   const { width: canvasWidth, height: canvasHeight } = canvasDimensions;
   const hasCanvasWidth = Number.isFinite(canvasWidth) && canvasWidth > 0;
   const hasCanvasHeight = Number.isFinite(canvasHeight) && canvasHeight > 0;
+  const canOverhang = element.type === "sticker" || element.type === "frame";
+  const sizeLimit = canOverhang ? MAX_NORMALIZED_ELEMENT_SIZE : 1;
   const persistedX = clamp(finiteOr(element.x, 0), -0.95, 0.95);
   const persistedY = clamp(finiteOr(element.y, 0), -0.95, 0.95);
-  const persistedWidth = clamp(finiteOr(element.width, 0.03), 0.03, 1);
-  const persistedHeight = clamp(finiteOr(element.height, 0.03), 0.03, 1);
+  const persistedWidth = clamp(finiteOr(element.width, 0.03), 0.03, sizeLimit);
+  const persistedHeight = clamp(finiteOr(element.height, 0.03), 0.03, sizeLimit);
   const rawWidth = hasCanvasWidth && Number.isFinite(absoluteWidth)
     ? absoluteWidth / canvasWidth
     : persistedWidth;
@@ -101,10 +104,10 @@ export function calculateCanvasTransformFromAbsolute(
     ? absoluteHeight / canvasHeight
     : persistedHeight;
   const width = hasCanvasWidth && Number.isFinite(absoluteWidth)
-    ? clamp(rawWidth, 0.03, persistedWidth >= 1 && rawWidth >= 1 ? 1 : 0.95)
+    ? clamp(rawWidth, 0.03, canOverhang ? sizeLimit : persistedWidth >= 1 && rawWidth >= 1 ? 1 : 0.95)
     : persistedWidth;
   const height = hasCanvasHeight && Number.isFinite(absoluteHeight)
-    ? clamp(rawHeight, 0.03, persistedHeight >= 1 && rawHeight >= 1 ? 1 : 0.95)
+    ? clamp(rawHeight, 0.03, canOverhang ? sizeLimit : persistedHeight >= 1 && rawHeight >= 1 ? 1 : 0.95)
     : persistedHeight;
   const x = hasCanvasWidth && Number.isFinite(absoluteX)
     ? clamp(absoluteX / canvasWidth, -0.95, 0.95)

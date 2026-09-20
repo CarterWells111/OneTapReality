@@ -49,6 +49,15 @@ describe("calculateCanvasTransformFromAbsolute", () => {
     expect(result).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
   });
 
+  it("lets a sticker extend beyond the page while keeping a finite ceiling", () => {
+    const sticker = { x: 0, y: 0, width: 0.9, height: 0.9, rotation: 0, type: "sticker" } as any;
+    const expanded = calculateCanvasTransformFromAbsolute(sticker, 0, 0, 390, 520, 0, { width: 300, height: 400 });
+    const excessive = calculateCanvasTransformFromAbsolute(sticker, 0, 0, 3000, 4000, 0, { width: 300, height: 400 });
+    expect(expanded).toMatchObject({ width: 1.3, height: 1.3 });
+    expect(excessive.width).toBeLessThanOrEqual(1.5);
+    expect(excessive.height).toBeLessThanOrEqual(1.5);
+  });
+
   it("returns the finite persisted frame when canvas dimensions cannot be divided", () => {
     const element = { x: 0.9, y: -0.9, width: 0.2, height: 0.3, rotation: 0.4 } as any;
 
