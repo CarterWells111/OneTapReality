@@ -1293,3 +1293,40 @@ describe("BookCanvasEditor", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("whole book layout transaction", () => {
+  it("cancels without changing pages and applies one undoable change", () => {
+    const onChange = jest.fn();
+    const onPendingChange = jest.fn();
+    const screen = render(<EditorHarness initialPages={photoPages} onChange={onChange} onPendingChange={onPendingChange} />);
+    fireEvent.press(screen.getByText("再次编辑全部页面"));
+    expect(onPendingChange).toHaveBeenLastCalledWith(true);
+    fireEvent.press(screen.getByText("第 2 页"));
+    fireEvent.press(screen.getByLabelText("槽位 1 的照片后移"));
+    fireEvent.press(screen.getByText("取消整册配置"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    fireEvent.press(screen.getByText("再次编辑全部页面"));
+    fireEvent.press(screen.getByText("第 2 页"));
+    fireEvent.press(screen.getByLabelText("槽位 1 的照片后移"));
+    fireEvent.press(screen.getByText("应用全部页面"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][1]).toBe("structure");
+    const images = (onChange.mock.calls[0][0] as StoryPage[])[1].layout!.elements.filter(e => e.type === "image");
+    expect(images.map(e => e.id)).toEqual(["old-two", "old-one"]);
+    fireEvent.press(screen.getByText("↩"));
+    const restored = (onChange.mock.calls.at(-1)![0] as StoryPage[])[1].layout!.elements.filter(e => e.type === "image");
+    expect(restored.map(e => e.id)).toEqual(["old-one", "old-two"]);
+  });
+  it("refuses save preparation while the book configuration is pending", async () => {
+    const editorRef = React.createRef<BookCanvasEditorHandle>();
+    const screen = render(<SaveBoundaryHarness editorRef={editorRef} />);
+    fireEvent.press(screen.getByText("再次编辑全部页面"));
+    let snapshot: unknown;
+    await act(async () => { snapshot = await editorRef.current!.prepareSave(); });
+    expect(snapshot).toBeNull();
+    fireEvent.press(screen.getByText("取消整册配置"));
+    await act(async () => { snapshot = await editorRef.current!.prepareSave(); });
+    expect(snapshot).not.toBeNull();
+  });
+});
