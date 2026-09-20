@@ -40,7 +40,6 @@ const COVER_COLORS = [
 ] as const;
 
 
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }

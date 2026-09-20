@@ -46,8 +46,10 @@ describe("new memory photo planning", () => {
     for (const index of [1, 2, 3, 4]) {
       fireEvent(screen.getByTestId(`new-memory-photo-${index}`), "load");
     }
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     await waitFor(() => expect(screen.getByText("2 个内容页")).toBeTruthy());
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     fireEvent.press(screen.getByText("杂志侧栏", { exact: true }));
     fireEvent.press(screen.getByText("应用到全部页面", { exact: true }));
     fireEvent.press(screen.getByText("生成旅行册草稿"));
@@ -121,6 +123,7 @@ describe("new memory photo planning", () => {
     const screen = render(<NewMemoryScreen />);
     await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
     for (const index of [1, 2, 3, 4]) fireEvent(screen.getByTestId(`new-memory-photo-${index}`), "load");
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     fireEvent.press(screen.getByText("杂志侧栏", { exact: true }));
     fireEvent.press(screen.getByText("应用到全部页面", { exact: true }));
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({ canceled: true });
@@ -163,5 +166,28 @@ describe("new memory photo planning", () => {
     expect(screen.getByText("正在载入照片，已完成 0 / 4 张")).toBeTruthy();
     act(() => staleLoad());
     expect(screen.getByText("正在载入照片，已完成 0 / 4 张")).toBeTruthy();
+  });
+
+  it("preserves per-page count and slot choices through append, removal, and generation", async () => {
+    const screen = render(<NewMemoryScreen />);
+    await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
+    for (const index of [1, 2, 3, 4]) fireEvent(screen.getByTestId(`new-memory-photo-${index}`), "load");
+    expect(screen.getByRole("button", { name: "逐页配置" }).props.accessibilityState).toMatchObject({ selected: true });
+    fireEvent.press(screen.getByLabelText("增加当前页照片数量"));
+    fireEvent.press(screen.getByLabelText("槽位 3 的照片前移"));
+    fireEvent.press(screen.getByLabelText("杂志侧栏三图模板"));
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file://five.jpg" }] });
+    await act(async () => fireEvent.press(screen.getByText("继续添加照片")));
+    fireEvent(screen.getByTestId("new-memory-photo-5"), "load");
+    fireEvent.press(screen.getByLabelText("移除照片 2"));
+    fireEvent.press(screen.getByText("生成旅行册草稿"));
+    await waitFor(() => expect(mockCreateDraft).toHaveBeenCalledTimes(1));
+    const input = mockCreateDraft.mock.calls[0][0];
+    expect(input.pagePlans).toEqual([
+      { photoUris: ["file://one.jpg", "file://three.jpg"], photoTemplateId: "magazine-2" },
+      { photoUris: ["file://four.jpg"], photoTemplateId: "classic-1" },
+      { photoUris: ["file://five.jpg"], photoTemplateId: "classic-1" },
+    ]);
+    expect(areDraftPhotoPlansValid(input.photoUris, input.pagePlans)).toBe(true);
   });
 });

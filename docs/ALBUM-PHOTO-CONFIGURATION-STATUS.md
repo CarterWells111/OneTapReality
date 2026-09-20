@@ -1,8 +1,10 @@
-# 纪念册照片配置任务状态
+# 纪念册照片配置验收
 
 - 基线：origin/main 1c0fb21；汇总分支 codex/album-photo-configuration。
-- 范围：初选照片追加/单张移除；默认逐页；每页数量与位置配置。
-- 分工：独立项目会话负责 new.tsx 与 allocation/planner，主会话整合验收。
-- 待办：整合实现、审查照片不丢失/重复与加载状态、lint/typecheck/test:ci/build:server。
-- 验证：尚未运行；使用本机 Node 22.23.2，默认 Node 20 不满足仓库要求。
-- 基线验证完成：npm ci、lint、typecheck、test:ci 均通过（具体统计见 baseline-tests.log）；两个实现会话仍在应用工作区准备阶段。
+- 完成：初选照片继续追加/单张移除、URI及assetId去重、稳定加载标识；默认逐页；每页模板、数量、槽位顺序与预览；自动拆页与后续空页合并。
+- 两个项目会话提交：41c0b0f（照片增减，dd88）；a013aed（逐页排版，fcaf）。主会话独立工作区整合并修正旧模式断言，添加连续操作集成测试。
+- 数量边界：每页1–8张；前面页至少保留一张以保持当前页索引，后续页可并入当前页；槽位前移/后移改变模板位置，未增加自由拖拽坐标编辑。
+- 证据：Node 22.23.2，npm ci成功；主线基线227套件/1771测试及29项Node检查通过。
+- 最终验收：lint、typecheck、test:ci（227套件/1780测试及29项Node检查）、build:server均退出0；36项针对性与连续操作测试通过；git diff --check通过。
+- 集成测试先确认逐页模式未选中而失败，整合后通过。日志保存在本工作区忽略目录 .data/album-photo-validation/。
+- 未做iPhone真机操作验证；未push、未合并main、未发布。
