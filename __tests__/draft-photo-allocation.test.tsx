@@ -1,3 +1,4 @@
+import * as React from "react";
 import { act, fireEvent, render } from "@testing-library/react-native";
 import { FlatList, StyleSheet } from "react-native";
 
@@ -8,6 +9,41 @@ const photos = ["file://one.jpg", "file://two.jpg", "file://three.jpg", "file://
 const thirteenPhotos = Array.from({ length: 13 }, (_, index) => `file://photo-${index + 1}.jpg`);
 
 describe("DraftPhotoAllocation", () => {
+  it("defaults to per-page editing and persists counts, templates and slot previews across navigation", () => {
+    function Harness() {
+      const [plans, setPlans] = React.useState(createBalancedPhotoPagePlans(photos));
+      return <DraftPhotoAllocation photoUris={photos} value={plans} onChange={setPlans} />;
+    }
+    const screen = render(<Harness />);
+    expect(screen.getByRole("button", { name: "逐页配置" }).props.accessibilityState).toMatchObject({ selected: true });
+    fireEvent.press(screen.getByLabelText("杂志侧栏双图模板"));
+    fireEvent.press(screen.getByLabelText("增加当前页照片数量"));
+    expect(screen.getByLabelText("第 1 页预览，3 张照片，杂志侧栏模板")).toBeTruthy();
+    expect(screen.getByLabelText("增加当前页照片数量").props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(screen.getByLabelText("槽位 1 的照片后移"));
+    expect(screen.getByTestId("draft-photo-preview-1-image-1").props.source.uri).toBe(photos[1]);
+    fireEvent.press(screen.getByText("保存当前页，继续"));
+    expect(screen.getByLabelText("减少当前页照片数量").props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByLabelText("返回上一页"));
+    expect(screen.getByTestId("draft-photo-preview-1-image-1").props.source.uri).toBe(photos[1]);
+    fireEvent.press(screen.getByLabelText("减少当前页照片数量"));
+    expect(screen.getByLabelText("第 1 页预览，2 张照片，杂志侧栏模板")).toBeTruthy();
+    expect(screen.getByLabelText("编辑第 2 页，2 张照片")).toBeTruthy();
+  });
+
+  it("splits and merges pages from the count controls while keeping the current page", () => {
+    function Harness() {
+      const [plans, setPlans] = React.useState(createBalancedPhotoPagePlans(photos.slice(0, 3)));
+      return <DraftPhotoAllocation photoUris={photos.slice(0, 3)} value={plans} onChange={setPlans} />;
+    }
+    const screen = render(<Harness />);
+    fireEvent.press(screen.getByLabelText("减少当前页照片数量"));
+    expect(screen.getByLabelText("编辑第 2 页，1 张照片")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("增加当前页照片数量"));
+    expect(screen.getByText("第 1 页，共 1 页")).toBeTruthy();
+    expect(screen.getByLabelText("第 1 页预览，3 张照片，经典留白模板")).toBeTruthy();
+  });
+
   it("reduces two pages to one free-layout page and respects increment boundaries", () => {
     const onChange = jest.fn();
     const screen = render(
@@ -18,6 +54,7 @@ describe("DraftPhotoAllocation", () => {
       />,
     );
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     expect(screen.getByText("2 个内容页")).toBeTruthy();
     expect(screen.getByLabelText("减少内容页数")).toBeTruthy();
     expect(screen.getByLabelText("增加内容页数")).toBeTruthy();
@@ -36,6 +73,7 @@ describe("DraftPhotoAllocation", () => {
     const plans = createBalancedPhotoPagePlans(photos);
     const screen = render(<DraftPhotoAllocation onChange={onChange} photoUris={photos} value={plans} />);
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     fireEvent.press(screen.getByText("杂志侧栏", { exact: true }));
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.press(screen.getByText("应用到全部页面", { exact: true }));
@@ -60,6 +98,7 @@ describe("DraftPhotoAllocation", () => {
       />,
     );
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     fireEvent.press(screen.getByText("杂志侧栏", { exact: true }));
     fireEvent.press(screen.getByText("应用到全部页面", { exact: true }));
     expect(screen.getByText("第 1、2 页保持自由排版")).toBeTruthy();
@@ -96,8 +135,8 @@ describe("DraftPhotoAllocation", () => {
     fireEvent.press(screen.getByLabelText("编辑第 2 页，2 张照片"));
     fireEvent.press(screen.getByLabelText("把照片 1 分配到第 2 页"));
     expect(onChange).toHaveBeenCalledWith([
-      { photoUris: [photos[1]], photoTemplateId: undefined },
-      { photoUris: [photos[2], photos[3], photos[0]], photoTemplateId: undefined },
+      { photoUris: [photos[1]], photoTemplateId: "classic-1" },
+      { photoUris: [photos[2], photos[3], photos[0]], photoTemplateId: "classic-3" },
     ]);
 
     onChange.mockClear();
@@ -130,6 +169,7 @@ describe("DraftPhotoAllocation", () => {
     fireEvent.press(screen.getByText("逐页配置", { exact: true }));
     fireEvent.press(screen.getByText("一起配置", { exact: true }));
     expect(onChange).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     expect(screen.getByText("2 个内容页")).toBeTruthy();
   });
 
@@ -143,6 +183,7 @@ describe("DraftPhotoAllocation", () => {
       />,
     );
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     const decrement = screen.getByLabelText("减少内容页数");
     expect(decrement.props.accessibilityState).toMatchObject({ disabled: true });
     fireEvent.press(decrement);
@@ -183,6 +224,7 @@ describe("DraftPhotoAllocation", () => {
       />,
     );
 
+    fireEvent.press(screen.getByText("一起配置", { exact: true }));
     expect(screen.getByText("共 6 张照片")).toBeTruthy();
     expect(screen.getByText("建议均衡分配：第 1 页 2 张，第 2 页 4 张")).toBeTruthy();
     const previewList = screen.UNSAFE_getByType(FlatList);

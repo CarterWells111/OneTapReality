@@ -3,6 +3,9 @@ import {
   createBalancedPhotoPagePlans,
   distributePhotoUris,
   movePhotoToPage,
+  changePagePhotoCount,
+  reorderPagePhoto,
+  areDraftPhotoPlansValid,
 } from "../src/features/memories/photo-page-planner";
 import type { MemoryDraftPagePlan, PhotoTemplateFamilyId } from "../src/types/memory";
 
@@ -75,7 +78,7 @@ describe("photo page planner", () => {
     expect(plans[0].photoTemplateId).toBe("classic-3");
   });
 
-  it("moves a photo to another page, appending it and clearing only changed templates", () => {
+  it("moves a photo to another page and adapts changed templates", () => {
     const plans: MemoryDraftPagePlan[] = [
       { photoUris: ["one", "two"], photoTemplateId: "classic-2" },
       { photoUris: ["three"], photoTemplateId: "classic-1" },
@@ -86,7 +89,7 @@ describe("photo page planner", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.plans.map((plan) => plan.photoUris)).toEqual([["two"], ["three", "one"], ["four"]]);
-    expect(result.plans.map((plan) => plan.photoTemplateId)).toEqual([undefined, undefined, "classic-1"]);
+    expect(result.plans.map((plan) => plan.photoTemplateId)).toEqual(["classic-1", "classic-2", "classic-1"]);
   });
 
   it("rejects moving the last photo from a page with the exact error", () => {
@@ -133,5 +136,60 @@ describe("photo page planner", () => {
     expect(applied.plans[0].photoUris).not.toBe(plans[0].photoUris);
     expect(moved.plans).not.toBe(plans);
     expect(moved.plans[0].photoUris).not.toBe(plans[0].photoUris);
+  });
+});
+
+describe("per-page counts and slots", () => {
+  it("transfers photos across pages, adapts families and preserves every photo without mutation", () => {
+    const plans = createBalancedPhotoPagePlans(photos, "magazine");
+    const original = JSON.parse(JSON.stringify(plans));
+    const increased = changePagePhotoCount(plans, 0, 5);
+    expect(increased.error).toBeUndefined();
+    expect(increased.plans.map((p) => p.photoUris.length)).toEqual([5, 1, 2]);
+    expect(increased.plans.map((p) => p.photoTemplateId)).toEqual([undefined, "magazine-1", "magazine-2"]);
+    expect(areDraftPhotoPlansValid(photos, increased.plans)).toBe(true);
+    const decreased = changePagePhotoCount(plans, 0, 1);
+    expect(decreased.plans.map((p) => p.photoUris.length)).toEqual([1, 5, 2]);
+    expect(decreased.plans[0].photoTemplateId).toBe("magazine-1");
+    expect(areDraftPhotoPlansValid(photos, decreased.plans)).toBe(true);
+    expect(plans).toEqual(original);
+  });
+
+  it("rejects impossible counts atomically and respects full and singleton pages", () => {
+    const plans = [{ photoUris: ["a", "b"] }, { photoUris: ["c"] }];
+    for (const count of [0, 4, 9, 1.5]) {
+      const result = changePagePhotoCount(plans, 0, count);
+      expect(result.error).toBeTruthy();
+      expect(result.plans).toEqual(plans);
+    }
+    const full = [{ photoUris: ["a", "b"] }, { photoUris: photos }];
+    const split = changePagePhotoCount(full, 0, 1);
+    expect(split.plans.map((p) => p.photoUris)).toEqual([["a"], photos, ["b"]]);
+    expect(changePagePhotoCount([{ photoUris: photos }], 0, 7).plans.map((p) => p.photoUris.length)).toEqual([7, 1]);
+  });
+
+  it("splits a single page and merges later singleton pages without moving the active page", () => {
+    const single = [{ photoUris: photos.slice(0, 3), photoTemplateId: "magazine-3" as const }];
+    const split = changePagePhotoCount(single, 0, 1);
+    expect(split.plans).toEqual([
+      { photoUris: [photos[0]], photoTemplateId: "magazine-1" },
+      { photoUris: photos.slice(1, 3), photoTemplateId: "magazine-2" },
+    ]);
+    expect(changePagePhotoCount(split.plans, 0, 3).plans).toEqual(single);
+    const three = photos.slice(0, 3).map((uri) => ({ photoUris: [uri], photoTemplateId: "classic-1" as const }));
+    const merged = changePagePhotoCount(three, 1, 2);
+    expect(merged.plans).toEqual([three[0], { photoUris: photos.slice(1, 3), photoTemplateId: "classic-2" }]);
+    expect(changePagePhotoCount(three, 2, 2).error).toBeTruthy();
+  });
+
+  it("changes slot order while retaining the template and other page configurations", () => {
+    const plans = createBalancedPhotoPagePlans(photos);
+    const reordered = reorderPagePhoto(plans, 0, 0, 1);
+    expect(reordered[0].photoUris).toEqual([photos[1], photos[0], photos[2]]);
+    expect(reordered[0].photoTemplateId).toBe("classic-3");
+    expect(reordered.slice(1)).toEqual(plans.slice(1));
+    expect(areDraftPhotoPlansValid(photos, reordered)).toBe(true);
+    expect(reorderPagePhoto(plans, 0, 0, -1)).toEqual(plans);
+    expect(plans[0].photoUris).toEqual(photos.slice(0, 3));
   });
 });
