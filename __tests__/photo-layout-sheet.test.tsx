@@ -8,7 +8,7 @@ import { PhotoLayoutSheet } from "../src/features/canvas/photo-layout-sheet";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("PhotoLayoutSheet", () => {
-  it("adds one photo from the trailing plus tile and keeps the template family", () => {
+  it("opens photo addition from the trailing plus tile", () => {
     const onAddPhoto = jest.fn();
     const onConfirm = jest.fn();
     const screen = render(
@@ -23,9 +23,29 @@ describe("PhotoLayoutSheet", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    fireEvent.press(screen.getByLabelText("添加照片"));
 
     expect(onAddPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves stable photos between numbered template slots and updates the preview", () => {
+    const original = [{ id: "one", uri: "file:///one.jpg", crop: { focusX: 0.2, focusY: 0.8, zoom: 2 } }, { id: "two", uri: "file:///two.jpg" }];
+    const changed = jest.fn();
+    function Harness() {
+      const [photos, setPhotos] = React.useState<React.ComponentProps<typeof PhotoLayoutSheet>["photos"]>(original);
+      return <PhotoLayoutSheet action="edit" photos={photos} selectedTemplateId="magazine-2" onCancel={() => undefined} onConfirm={() => undefined} onPhotosChange={(next) => { changed(next); setPhotos(next); }} />;
+    }
+    const screen = render(<Harness />);
+    expect(screen.getByText("照片槽位顺序")).toBeTruthy();
+    expect(screen.getByText("编号对应下方预览位置。前移、后移或长按拖动照片可调整本页模板位置；点击照片可裁剪。" )).toBeTruthy();
+    expect(screen.getByLabelText("槽位 1 的照片前移").props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText("槽位 2 的照片后移").props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByLabelText("槽位 2 的照片前移"));
+    expect(changed).toHaveBeenLastCalledWith([original[1], original[0]]);
+    expect(screen.getByTestId("photo-layout-preview-image-1-content").props.source).toEqual([{ uri: original[1].uri }]);
+    expect(screen.getByTestId("photo-layout-preview-image-2-content").props.source).toEqual([{ uri: original[0].uri }]);
+    fireEvent.press(screen.getByLabelText("槽位 1 的照片后移"));
+    expect(changed).toHaveBeenLastCalledWith(original);
   });
 
   it("disables the trailing plus tile at eight photos", () => {
@@ -41,7 +61,7 @@ describe("PhotoLayoutSheet", () => {
       />,
     );
 
-    const add = screen.getByLabelText("添加一张照片");
+    const add = screen.getByLabelText("添加照片");
     expect(add.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
     fireEvent.press(add);
     expect(onAddPhoto).not.toHaveBeenCalled();
@@ -107,6 +127,31 @@ describe("PhotoLayoutSheet", () => {
     expect(screen.queryByTestId("photo-layout-trash-zone")).toBeNull();
   });
 
+  it("keeps long-press drag reorder equivalent to the slot buttons", async () => {
+    const onPhotosChange = jest.fn();
+    const photos = [{ id: "one", uri: "file:///one.jpg" }, { id: "two", uri: "file:///two.jpg" }];
+    render(<PhotoLayoutSheet action="edit" photos={photos} onCancel={() => undefined} onConfirm={() => undefined} onPhotosChange={onPhotosChange} />);
+    const drag = getByGestureTestId("photo-layout-drag-one") as unknown as {
+      handlers: { onEnd: (event: { translationX: number; translationY: number; absoluteY: number }) => void };
+    };
+    await act(async () => {
+      drag.handlers.onEnd({ translationX: 82, translationY: 0, absoluteY: 100 });
+      await Promise.resolve();
+    });
+    expect(onPhotosChange).toHaveBeenCalledWith([photos[1], photos[0]]);
+  });
+
+  it("blocks slot buttons while photo persistence is busy", () => {
+    const onPhotosChange = jest.fn();
+    const screen = render(<PhotoLayoutSheet action="edit" busy photos={[{ id: "one", uri: "one" }, { id: "two", uri: "two" }]} onCancel={() => undefined} onConfirm={() => undefined} onPhotosChange={onPhotosChange} />);
+    for (const label of ["槽位 1 的照片后移", "槽位 2 的照片前移"]) {
+      const button = screen.getByLabelText(label);
+      expect(button.props.accessibilityState.disabled).toBe(true);
+      fireEvent.press(button);
+    }
+    expect(onPhotosChange).not.toHaveBeenCalled();
+  });
+
   it("offers accessible reorder and delete equivalents for drag gestures", () => {
     const onPhotosChange = jest.fn();
     const screen = render(
@@ -160,7 +205,7 @@ describe("PhotoLayoutSheet", () => {
 
     const confirm = screen.getByLabelText("创建页面");
     expect(screen.getByText("已选择图片")).toBeTruthy();
-    expect(screen.getByLabelText("添加一张照片")).toBeTruthy();
+    expect(screen.getByLabelText("添加照片")).toBeTruthy();
     expect(confirm.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
     fireEvent.press(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -187,7 +232,7 @@ describe("PhotoLayoutSheet", () => {
       width: 72,
     }));
     expect(screen.getByLabelText("照片 1，点击裁剪")).toBeTruthy();
-    expect(selectionControls.props.children.at(-1).props.accessibilityLabel).toBe("添加一张照片");
+    expect(selectionControls.props.children.at(-1).props.accessibilityLabel).toBe("添加照片");
   });
 
   it("updates the large layout preview immediately when selecting a template", () => {
@@ -202,7 +247,7 @@ describe("PhotoLayoutSheet", () => {
       />,
     );
     const preview = screen.getByLabelText("布局效果预览");
-    const firstPreviewPhoto = screen.getByLabelText("布局效果预览照片 1");
+    const firstPreviewPhoto = screen.getByTestId("photo-layout-preview-slot-1");
 
     expect(StyleSheet.flatten(preview.props.style)).toEqual(expect.objectContaining({ aspectRatio: 0.75 }));
     expect(screen.getByTestId("photo-layout-preview-image-1-content").props.source).toEqual([{ uri: "file:///one.jpg" }]);
@@ -213,7 +258,7 @@ describe("PhotoLayoutSheet", () => {
 
     fireEvent.press(screen.getByLabelText("竖向切片双图模板"));
 
-    expect(StyleSheet.flatten(screen.getByLabelText("布局效果预览照片 1").props.style)).toEqual(expect.objectContaining({
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-slot-1").props.style)).toEqual(expect.objectContaining({
       height: "84%", left: "8%", top: "8%", width: "39%",
     }));
   });
@@ -230,7 +275,7 @@ describe("PhotoLayoutSheet", () => {
     );
 
     expect(screen.getByLabelText("布局效果预览")).toBeTruthy();
-    expect(StyleSheet.flatten(screen.getByLabelText("布局效果预览照片 1").props.style)).toEqual(expect.objectContaining({
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-slot-1").props.style)).toEqual(expect.objectContaining({
       height: "40%", left: "8%", top: "8%", width: "84%",
     }));
   });
@@ -274,10 +319,10 @@ describe("PhotoLayoutSheet", () => {
     expect(StyleSheet.flatten(preview.props.style)).toEqual(expect.objectContaining({ aspectRatio: 0.75 }));
     const positioned = screen.getAllByLabelText(/布局效果预览照片/);
     expect(positioned).toHaveLength(4);
-    expect(StyleSheet.flatten(positioned[0].props.style)).toEqual(expect.objectContaining({
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-slot-1").props.style)).toEqual(expect.objectContaining({
       height: "40%", left: "8%", top: "8%", width: "40%",
     }));
-    expect(StyleSheet.flatten(positioned[3].props.style)).toEqual(expect.objectContaining({
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-slot-4").props.style)).toEqual(expect.objectContaining({
       height: "40%", left: "51%", top: "52%", width: "40%",
     }));
     fireEvent.press(screen.getByLabelText("创建自由排版页面"));
@@ -346,7 +391,7 @@ describe("PhotoLayoutSheet", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    fireEvent.press(screen.getByLabelText("添加照片"));
     fireEvent.press(screen.getByLabelText("取消照片布局"));
 
     expect(onReplacePhotos).toHaveBeenCalledTimes(1);
@@ -373,7 +418,7 @@ describe("PhotoLayoutSheet", () => {
     expect(screen.getByTestId("photo-layout-sheet").props.accessibilityState).toEqual(
       expect.objectContaining({ busy: true }),
     );
-    for (const label of ["应用照片与模板", "添加一张照片"]) {
+    for (const label of ["应用照片与模板", "添加照片"]) {
       const button = screen.getByLabelText(label);
       expect(button.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
       fireEvent.press(button);

@@ -237,8 +237,8 @@ export function PhotoLayoutSheet({
                 />
               ))}
               <Pressable
-                accessibilityHint={photoCount >= MAX_PHOTOS_PER_CANVAS_PAGE ? `每页最多 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片` : undefined}
-                accessibilityLabel="添加一张照片"
+                accessibilityHint={photoCount >= MAX_PHOTOS_PER_CANVAS_PAGE ? `每页最多 ${MAX_PHOTOS_PER_CANVAS_PAGE} 张照片` : `可多选，最多再添加 ${MAX_PHOTOS_PER_CANVAS_PAGE - photoCount} 张照片`}
+                accessibilityLabel="添加照片"
                 accessibilityRole="button"
                 accessibilityState={{ disabled: busy || photoCount >= MAX_PHOTOS_PER_CANVAS_PAGE }}
                 disabled={busy || photoCount >= MAX_PHOTOS_PER_CANVAS_PAGE}
@@ -250,6 +250,34 @@ export function PhotoLayoutSheet({
             </View>
             {photoCount === 0 ? <Text selectable style={styles.hint}>当前页暂无照片，可点击＋添加。</Text> : null}
           </View>
+
+          {photoCount > 0 ? (
+            <View style={styles.selectedPhotoSection}>
+              <Text selectable style={styles.sectionTitle}>照片槽位顺序</Text>
+              <Text selectable style={styles.hint}>编号对应下方预览位置。前移、后移或长按拖动照片可调整本页模板位置；点击照片可裁剪。</Text>
+              {resolvedPhotos.map((photo, index) => (
+                <View key={photo.id} style={styles.slotRow}>
+                  <Text selectable style={styles.slotLabel}>槽位 {index + 1}</Text>
+                  {([-1, 1] as const).map((direction) => {
+                    const disabled = busy || !onPhotosChange || index + direction < 0 || index + direction >= photoCount;
+                    return (
+                      <Pressable
+                        accessibilityLabel={`槽位 ${index + 1} 的照片${direction === -1 ? "前移" : "后移"}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled }}
+                        disabled={disabled}
+                        key={direction}
+                        onPress={() => onPhotosChange?.(movePhotoLayoutDraftItem(resolvedPhotos, photo.id, index + direction))}
+                        style={[styles.moveButton, disabled && styles.disabled]}
+                      >
+                        <Text style={styles.cancelText}>{direction === -1 ? "前移" : "后移"}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           {busy ? <Text accessibilityLiveRegion="polite" selectable style={styles.progress}>正在保存照片…</Text> : null}
           {canUseTemplate ? (
@@ -266,10 +294,9 @@ export function PhotoLayoutSheet({
               <Text selectable style={styles.sectionTitle}>布局效果预览</Text>
               <View accessibilityLabel="布局效果预览" accessibilityRole="image" style={[styles.layoutPreview, { aspectRatio: previewLayout.aspectRatio }]}>
                 {previewLayout.elements.map((element, index) => element.type === "image" ? (
-                  <CroppedImage
-                    accessibilityLabel={`布局效果预览照片 ${index + 1}`}
-                    crop={resolvedPhotos[index]?.crop}
+                  <View
                     key={element.id}
+                    testID={`photo-layout-preview-slot-${index + 1}`}
                     style={{
                       height: percent(element.height),
                       left: percent(element.x),
@@ -278,9 +305,18 @@ export function PhotoLayoutSheet({
                       transform: [{ rotate: `${element.rotation}rad` }],
                       width: percent(element.width),
                     }}
-                    testID={`photo-layout-preview-${element.id}`}
-                    uri={element.uri}
-                  />
+                  >
+                    <CroppedImage
+                      accessibilityLabel={`布局效果预览照片 ${index + 1}`}
+                      crop={resolvedPhotos[index]?.crop}
+                      style={StyleSheet.absoluteFill}
+                      testID={`photo-layout-preview-${element.id}`}
+                      uri={element.uri}
+                    />
+                    <View pointerEvents="none" style={styles.photoNumberBadge}>
+                      <Text style={styles.photoNumberText}>{index + 1}</Text>
+                    </View>
+                  </View>
                 ) : null)}
               </View>
             </View>
@@ -332,12 +368,15 @@ const styles = StyleSheet.create({
   photoNumberText: { color: "#FFFFFF", fontFamily: bodyFont, fontSize: 10, fontWeight: "800" },
   addTile: { alignItems: "center", backgroundColor: colors.surface, borderColor: colors.line, borderRadius: 12, borderStyle: "dashed", borderWidth: 1, height: TILE_SIZE, justifyContent: "center", width: TILE_SIZE },
   addGlyph: { color: colors.muted, fontFamily: bodyFont, fontSize: 34, fontWeight: "300" },
+  slotRow: { alignItems: "center", flexDirection: "row", gap: 10 },
+  slotLabel: { color: colors.ink, flex: 1, fontFamily: bodyFont, fontSize: 14 },
+  moveButton: { backgroundColor: colors.surface, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 16 },
   templateSection: { gap: 10 },
   sectionTitle: { color: colors.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
   warning: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
   previewSection: { gap: 12 },
   layoutPreview: { alignSelf: "center", backgroundColor: colors.paper, borderColor: colors.line, borderRadius: 12, borderWidth: 1, overflow: "hidden", width: "72%" },
-  hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14 },
+  hint: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
   progress: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, textAlign: "center" },
   confirmButton: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 14, justifyContent: "center", minHeight: 48, paddingHorizontal: 16 },
   confirmText: { color: colors.background, fontFamily: bodyFont, fontSize: 15, fontWeight: "800" },

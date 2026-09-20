@@ -57,6 +57,8 @@ import {
   type CanvasTextStyleDraft,
 } from "./editor-save-transaction";
 import { PageManagerSheet } from "./page-manager-sheet";
+import { BookLayoutSheet } from "./book-layout-sheet";
+import { createBookLayoutDraft, applyBookLayoutDraft, type BookLayoutDraft } from "./book-layout-draft";
 import { PhotoLayoutSheet } from "./photo-layout-sheet";
 import type { PhotoLayoutDraftItem } from "./photo-layout-draft";
 import { PhotoCropModal } from "./photo-crop-modal";
@@ -324,6 +326,8 @@ export function BookCanvasEditor({
   const [assetTrayMode, setAssetTrayMode] = React.useState<"sticker" | "frame" | "background" | "cover">("sticker");
   const [managerMounted, setManagerMounted] = React.useState(false);
   const [managerVisible, setManagerVisible] = React.useState(false);
+  const [bookLayoutDraft, setBookLayoutDraft] = React.useState<BookLayoutDraft | null>(null);
+  const bookLayoutDraftRef = React.useRef<BookLayoutDraft | null>(null);
   const [pendingPhotoLayout, setPendingPhotoLayout] = React.useState<PendingPhotoLayout | null>(null);
   const pendingPhotoLayoutRef = React.useRef<PendingPhotoLayout | null>(null);
   const [photoLayoutBusy, setPhotoLayoutBusy] = React.useState(false);
@@ -352,7 +356,7 @@ export function BookCanvasEditor({
     pendingPhotoLayoutRef.current = next;
     setPendingPhotoLayout(next);
   }, []);
-  const photoLayoutTransactionPending = pendingPhotoLayout !== null || photoOperationCount > 0;
+  const photoLayoutTransactionPending = bookLayoutDraft !== null || pendingPhotoLayout !== null || photoOperationCount > 0;
   const editorChangePending = gestureTransformPending || photoLayoutTransactionPending;
 
   React.useEffect(() => {
@@ -490,7 +494,7 @@ export function BookCanvasEditor({
 
   React.useImperativeHandle(ref, () => ({
     async prepareSave() {
-      if (saveBoundaryLockedRef.current) return null;
+      if (saveBoundaryLockedRef.current || bookLayoutDraftRef.current) return null;
       saveBoundaryLockedRef.current = true;
       const settled = await transformSettleGateRef.current.wait();
       if (!settled) {
@@ -970,7 +974,10 @@ export function BookCanvasEditor({
   const addStagedPhoto = async () => {
     const previous = pendingPhotoLayoutRef.current;
     if (!previous || previous.photos.length >= MAX_PHOTOS_PER_CANVAS_PAGE) return;
-    const batch = await pickAndStagePhotos({ multiple: false, selectionLimit: 1 });
+    const batch = await pickAndStagePhotos({
+      multiple: true,
+      selectionLimit: MAX_PHOTOS_PER_CANVAS_PAGE - previous.photos.length,
+    });
     if (!batch) return;
     try {
       if (pendingPhotoLayoutRef.current !== previous) {
@@ -1161,6 +1168,23 @@ export function BookCanvasEditor({
           }}
           pages={pages}
           visible={managerVisible}
+        />
+      ) : null}
+
+      {bookLayoutDraft ? (
+        <BookLayoutSheet
+          draft={bookLayoutDraft}
+          onCancel={() => { bookLayoutDraftRef.current = null; setBookLayoutDraft(null); }}
+          onApply={(plans) => {
+            try {
+              const next = applyBookLayoutDraft(pagesRef.current, bookLayoutDraft, plans);
+              if (next !== pagesRef.current && !changePages(next, "structure")) return false;
+              bookLayoutDraftRef.current = null;
+              setBookLayoutDraft(null);
+              setSelectedElementId(undefined);
+              return true;
+            } catch { return false; }
+          }}
         />
       ) : null}
 
@@ -1423,6 +1447,13 @@ export function BookCanvasEditor({
           <View style={styles.addAssetsGroup} testID="canvas-add-assets">
             <SmallButton active={false} label="添加文字" onPress={addText} />
             <SmallButton active={false} label="照片与模板" onPress={editPhotoLayout} />
+            <SmallButton active={false} label="再次编辑全部页面" onPress={() => {
+              if (saveBoundaryLockedRef.current || editorChangePending) return;
+              discardPendingText();
+              const draft = createBookLayoutDraft(pagesRef.current);
+              bookLayoutDraftRef.current = draft;
+              setBookLayoutDraft(draft);
+            }} />
           </View>
           <SmallButton
             active={assetTrayMode === "sticker"}
