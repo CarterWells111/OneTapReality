@@ -309,7 +309,7 @@ export function PhotoLayoutSheet({
                     <CroppedImage
                       accessibilityLabel={`布局效果预览照片 ${index + 1}`}
                       crop={resolvedPhotos[index]?.crop}
-                      style={StyleSheet.absoluteFillObject}
+                      style={StyleSheet.absoluteFill}
                       testID={`photo-layout-preview-${element.id}`}
                       uri={element.uri}
                     />
