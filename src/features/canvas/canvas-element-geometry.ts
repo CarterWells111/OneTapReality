@@ -1,4 +1,5 @@
 import type { CanvasElement } from "../../types/memory";
+import { MAX_NORMALIZED_ELEMENT_SIZE } from "./canvas-layout";
 
 export type CanvasDimensions = { width: number; height: number };
 
@@ -27,17 +28,18 @@ const finiteProduct = (left: number, right: number) => {
 
 /** Resolve persisted normalized geometry into native-safe pixel values. */
 export function resolveCanvasElementGeometry(
-  element: Pick<CanvasElement, "x" | "y" | "width" | "height" | "rotation" | "zIndex">,
+  element: Pick<CanvasElement, "type" | "x" | "y" | "width" | "height" | "rotation" | "zIndex">,
   canvasDimensions: CanvasDimensions,
 ): CanvasElementGeometry {
   const canvasWidth = finiteCanvasSize(canvasDimensions.width);
   const canvasHeight = finiteCanvasSize(canvasDimensions.height);
+  const sizeLimit = element.type === "sticker" || element.type === "frame" ? MAX_NORMALIZED_ELEMENT_SIZE : 1;
 
   return {
     left: finiteProduct(clamp(finiteOr(element.x, 0), -0.95, 0.95), canvasWidth),
     top: finiteProduct(clamp(finiteOr(element.y, 0), -0.95, 0.95), canvasHeight),
-    width: finiteProduct(clamp(finiteOr(element.width, 0.03), 0.03, 1), canvasWidth),
-    height: finiteProduct(clamp(finiteOr(element.height, 0.03), 0.03, 1), canvasHeight),
+    width: finiteProduct(clamp(finiteOr(element.width, 0.03), 0.03, sizeLimit), canvasWidth),
+    height: finiteProduct(clamp(finiteOr(element.height, 0.03), 0.03, sizeLimit), canvasHeight),
     rotation: finiteOr(element.rotation, 0),
     zIndex: finiteOr(element.zIndex, 0),
   };

@@ -756,6 +756,7 @@ function WorkspaceCityMap({
   }), [mapHeight, mapWidth, scale, translateX, translateY]);
 
   return (
+    <View style={styles.workspaceFrame}>
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch, Gesture.Exclusive(doubleTap, cityTap))}>
       <View
         accessibilityLabel="离线中国城市旅行地图工作区"
@@ -815,21 +816,22 @@ function WorkspaceCityMap({
             }) : null}
         </View>
 
-        <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
       </View>
     </GestureDetector>
+    <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   attribution: {
-    bottom: 8,
+    alignSelf: "flex-end",
     color: colors.muted,
     fontSize: 9,
-    left: 10,
-    position: "absolute",
-    zIndex: 4,
+    paddingHorizontal: 10,
+    paddingTop: 4,
   },
+  workspaceFrame: { flex: 1, minHeight: 0 },
   prefectureLabel: {
     position: "absolute",
   },

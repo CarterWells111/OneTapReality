@@ -3,12 +3,13 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 const mockPush = jest.fn();
 const mockUseAuth = jest.fn();
 const mockUseLocalLibrary = jest.fn();
+const mockUseMemories = jest.fn();
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../src/features/auth/auth-provider", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("../src/features/auth/local-library-provider", () => ({ useLocalLibrary: () => mockUseLocalLibrary() }));
 jest.mock("../src/features/memories/memories-provider", () => ({
-  useMemories: () => ({ memories: [], isReady: true, discardMemory: jest.fn() }),
+  useMemories: () => mockUseMemories(),
 }));
 jest.mock("../src/features/export/share-action-sheet", () => ({ showShareActionSheet: jest.fn() }));
 
@@ -17,6 +18,7 @@ import MemoriesHomeScreen from "../src/app/(tabs)";
 describe("home account entry", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseMemories.mockReturnValue({ memories: [], drafts: [], isReady: true, discardMemory: jest.fn() });
     mockUseLocalLibrary.mockReturnValue({
       continueWithGuest: jest.fn(),
       isReady: true,
@@ -25,6 +27,18 @@ describe("home account entry", () => {
       needsMigrationChoice: false,
       owner: "guest",
     });
+  });
+
+  it("opens an unfinished album from the local draft box", () => {
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: null });
+    mockUseMemories.mockReturnValue({
+      memories: [], isReady: true, discardMemory: jest.fn(),
+      drafts: [{ id: "draft-one", title: "西湖草稿", updatedAt: "2026-09-20T00:00:00Z" }],
+    });
+    const screen = render(<MemoriesHomeScreen />);
+    expect(screen.getByText("草稿箱 · 1/4")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("home-draft-draft-one"));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: "/memory/review/[id]", params: { id: "draft-one" } });
   });
 
   it("shows login registration to a signed-out user and preserves the home return path", () => {

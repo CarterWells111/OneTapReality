@@ -1,31 +1,22 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Path } from "react-native-svg";
 
 import { colors, serifFont } from "../../components/ui";
 import type { City } from "../../types/city";
 import { cityContent } from "./city-content";
 import { getCityCardVisual } from "./city-illustrations";
+import { CityVectorArtwork } from "./city-vector-artwork";
 
 type CityCardProps = {
   readonly city: City;
   readonly visitCount?: number;
   readonly onPress: () => void;
   readonly variant: "visited" | "unvisited";
+  readonly listIndex?: number;
 };
 
-function GenericCityIllustration({ city }: { readonly city: City }) {
-  return (
-    <View style={styles.genericIllustration} testID={`city-card-generic-${city}`}>
-      <Svg height="100%" viewBox="0 0 118 92" width="100%">
-        <Circle cx="88" cy="24" fill="none" r="10" stroke={colors.accent} strokeWidth="1.5" />
-        <Path d="M10 69C25 54 36 58 48 47C60 36 68 53 80 45C92 37 100 43 109 31" fill="none" stroke={colors.accent} strokeLinecap="round" strokeWidth="1.8" />
-        <Path d="M11 77H108M23 61V77M48 52V77M73 57V77M96 48V77" fill="none" stroke={colors.muted} strokeLinecap="round" strokeWidth="1.2" />
-      </Svg>
-    </View>
-  );
-}
+const listColors = ["#DDEBDD", "#F3E1D8", "#DDEBF4", "#E8E0F0"] as const;
 
-export function CityCard({ city, visitCount = 0, onPress, variant }: CityCardProps) {
+export function CityCard({ city, visitCount = 0, onPress, variant, listIndex }: CityCardProps) {
   const content = cityContent[city];
   const visual = getCityCardVisual(city);
   const isVisited = variant === "visited";
@@ -37,7 +28,7 @@ export function CityCard({ city, visitCount = 0, onPress, variant }: CityCardPro
       accessibilityLabel={`${content.name}城市卡片`}
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [styles.card, { backgroundColor: content.color }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.card, { backgroundColor: listIndex === undefined ? content.color : listColors[listIndex % listColors.length] }, pressed && styles.pressed]}
       testID={`city-archive-card-${city}`}
     >
       <View style={styles.copy}>
@@ -55,7 +46,7 @@ export function CityCard({ city, visitCount = 0, onPress, variant }: CityCardPro
         {visual.kind === "illustration" ? (
           <Image accessibilityLabel={`${content.name}插画`} resizeMode="cover" source={visual.source} style={styles.illustration} testID={`city-card-illustration-${city}`} />
         ) : (
-          <GenericCityIllustration city={city} />
+          <CityVectorArtwork city={city} />
         )}
       </View>
     </Pressable>
@@ -86,6 +77,5 @@ const styles = StyleSheet.create({
   detail: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   visual: { flexShrink: 0, height: 100, justifyContent: "center", width: 112 },
   illustration: { borderColor: "rgba(85, 70, 54, 0.12)", borderRadius: 12, borderWidth: 1, height: 100, width: "100%" },
-  genericIllustration: { alignItems: "center", backgroundColor: colors.paper, borderColor: colors.paperEdge, borderRadius: 12, borderWidth: 1, height: 100, justifyContent: "center", overflow: "hidden", width: "100%" },
   pressed: { opacity: 0.85 },
 });

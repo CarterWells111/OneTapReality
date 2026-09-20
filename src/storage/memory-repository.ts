@@ -207,6 +207,28 @@ export async function listMemories(db: SQLiteDatabase, accountKey: LocalLibraryO
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
 
+export async function listDrafts(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<Memory[]> {
+  const rows = await db.getAllAsync<MemoryRow>(
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT 4",
+    accountKey,
+  );
+  return Promise.all(rows.map((row) => hydrateMemory(db, row)));
+}
+
+/** Only new album drafts count towards the four-slot draft box. */
+export async function trimOldDrafts(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<string[]> {
+  const old = await db.getAllAsync<{ id: string }>(
+    "SELECT id FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT -1 OFFSET 4",
+    accountKey,
+  );
+  const removed: string[] = [];
+  for (const { id } of old) {
+    const result = await db.runAsync("DELETE FROM memories WHERE id = ? AND ownerAccountKey = ? AND status = 'draft'", id, accountKey);
+    if (result.changes > 0) removed.push(id);
+  }
+  return removed;
+}
+
 export async function getMemory(
   db: SQLiteDatabase,
   id: string,

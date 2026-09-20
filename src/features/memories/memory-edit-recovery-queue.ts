@@ -6,6 +6,7 @@ const ERROR_RETENTION_MS = 5 * 60 * 1000;
 type RegistryEntry = {
   errorCleanupTimer: ReturnType<typeof setTimeout> | null;
   latestSnapshot: StoryPage[] | null;
+  latestMetadata: { title: string; travelDate: string } | null;
   owners: number;
   queue: AutosaveQueue<StoryPage[]>;
 };
@@ -14,6 +15,8 @@ export type MemoryEditRecoveryQueueLease = {
   clearLatestSnapshot: () => void;
   enqueue: (snapshot: StoryPage[]) => void;
   getLatestSnapshot: () => StoryPage[] | null;
+  getMetadata: () => { title: string; travelDate: string } | null;
+  setMetadata: (metadata: { title: string; travelDate: string }) => void;
   queue: AutosaveQueue<StoryPage[]>;
   release: () => void;
 };
@@ -49,6 +52,7 @@ export function acquireMemoryEditRecoveryQueue(
     entry = {
       errorCleanupTimer: null,
       latestSnapshot: null,
+      latestMetadata: null,
       owners: 0,
       queue: new AutosaveQueue(writer),
     };
@@ -63,7 +67,10 @@ export function acquireMemoryEditRecoveryQueue(
 
   return {
     clearLatestSnapshot: () => {
-      if (registry.get(key) === entry) entry!.latestSnapshot = null;
+      if (registry.get(key) === entry) {
+        entry!.latestSnapshot = null;
+        entry!.latestMetadata = null;
+      }
     },
     enqueue: (snapshot) => {
       const safeSnapshot = cloneSnapshot(snapshot);
@@ -73,6 +80,8 @@ export function acquireMemoryEditRecoveryQueue(
     getLatestSnapshot: () => (
       entry!.latestSnapshot ? cloneSnapshot(entry!.latestSnapshot) : null
     ),
+    getMetadata: () => entry!.latestMetadata ? { ...entry!.latestMetadata } : null,
+    setMetadata: (metadata) => { entry!.latestMetadata = { ...metadata }; },
     queue: entry.queue,
     release: () => {
       if (released) return;

@@ -14,6 +14,12 @@ type MemoryEditDraftRow = {
   updated_at: string;
 };
 
+export type MemoryEditRecovery = {
+  pages: StoryPage[];
+  title: string;
+  travelDate: string;
+};
+
 const migrationPromises = new WeakMap<object, Promise<void>>();
 const VALID_HEX_COLOR = /^#[0-9A-F]{6}$/i;
 // Pinch transforms can exceed the toolbar slider range. This ceiling only rejects
@@ -204,7 +210,7 @@ export async function saveMemoryEditDraft(
         base_updated_at = excluded.base_updated_at,
         pages_json = excluded.pages_json,
         updated_at = excluded.updated_at`,
-    JSON.stringify(normalizedPages),
+    JSON.stringify({ pages: normalizedPages, title: memory.title, travelDate: memory.travelDate }),
     new Date().toISOString(),
     memory.id,
     accountKey,
@@ -240,11 +246,11 @@ async function discardObservedDraft(
   }
 }
 
-export async function getMemoryEditDraft(
+export async function getMemoryEditRecovery(
   db: SQLiteDatabase,
   memory: Memory,
   accountKey: LocalLibraryOwner,
-): Promise<StoryPage[] | null> {
+): Promise<MemoryEditRecovery | null> {
   await migrateMemoryEditDrafts(db);
   const row = await db.getFirstAsync<MemoryEditDraftRow>(
     `SELECT base_updated_at, pages_json, updated_at
@@ -274,7 +280,7 @@ export async function getMemoryEditDraft(
     });
     return null;
   }
-  const pages = parseAndNormalizePages(parsed);
+  const pages = parseAndNormalizePages(isRecord(parsed) ? parsed.pages : parsed);
   if (!pages) {
     await discardObservedDraft(db, memory.id, accountKey, row);
     localDiagnostics.emit("recovery_discarded", {
@@ -283,7 +289,21 @@ export async function getMemoryEditDraft(
     });
     return null;
   }
-  return pages;
+  return {
+    pages,
+    title: isRecord(parsed) && typeof parsed.title === "string" && parsed.title.trim()
+      ? parsed.title : memory.title,
+    travelDate: isRecord(parsed) && typeof parsed.travelDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.travelDate)
+      ? parsed.travelDate : memory.travelDate,
+  };
+}
+
+export async function getMemoryEditDraft(
+  db: SQLiteDatabase,
+  memory: Memory,
+  accountKey: LocalLibraryOwner,
+): Promise<StoryPage[] | null> {
+  return (await getMemoryEditRecovery(db, memory, accountKey))?.pages ?? null;
 }
 
 export async function clearMemoryEditDraft(

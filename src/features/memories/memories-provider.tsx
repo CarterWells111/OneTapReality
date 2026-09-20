@@ -9,7 +9,9 @@ import { deleteAccountPhotoDirectoryStrict, deleteMemoryPhotoDirectory, ensureMe
 import {
   clearMemoryEditDraft as clearMemoryEditDraftInDb,
   getMemoryEditDraft as getMemoryEditDraftFromDb,
+  getMemoryEditRecovery as getMemoryEditRecoveryFromDb,
   saveMemoryEditDraft as saveMemoryEditDraftInDb,
+  type MemoryEditRecovery,
 } from "../../storage/memory-edit-draft-repository";
 import {
   clearMemories,
@@ -19,7 +21,9 @@ import {
   discardMemory as discardMemoryInDb,
   getDraft,
   listDiscardedMemories,
+  listDrafts,
   listMemories,
+  trimOldDrafts,
   restoreDiscardedMemory,
   saveDraft as saveDraftInDb,
   saveMemory,
@@ -32,6 +36,7 @@ import { validateMemoryDraft } from "./validation";
 
 type MemoriesContextValue = {
   memories: Memory[];
+  drafts: Memory[];
   isReady: boolean;
   createMemory: (input: MemoryDraftInput) => Promise<Memory>;
   createDraft: (input: MemoryDraftInput) => Promise<Memory>;
@@ -42,6 +47,7 @@ type MemoriesContextValue = {
   updatePages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   updateDraftPages: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   getMemoryEditDraft: (memory: Memory) => Promise<StoryPage[] | null>;
+  getMemoryEditRecovery: (memory: Memory) => Promise<MemoryEditRecovery | null>;
   saveMemoryEditDraft: (memory: Memory, pages: StoryPage[]) => Promise<void>;
   clearMemoryEditDraft: (memoryId: string) => Promise<void>;
   persistSelectedPhoto: (memoryId: string, uri: string) => Promise<string>;
@@ -130,6 +136,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
   const { isReady: isLibraryReady, owner: accountKey, runWrite } = useLocalLibrary();
   const [memories, setMemories] = React.useState<Memory[]>([]);
+  const [drafts, setDrafts] = React.useState<Memory[]>([]);
   const [memoriesOwner, setMemoriesOwner] = React.useState<LocalLibraryOwner | null>(null);
   const [isReady, setIsReady] = React.useState(false);
   const refreshGeneration = React.useRef(0);
@@ -174,9 +181,13 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     const runtimeMemories = await Promise.all(
       (await listMemories(db, owner)).map((memory) => hydrateForRuntime(memory, owner)),
     );
+    const runtimeDrafts = await Promise.all(
+      (await listDrafts(db, owner)).map((draft) => hydrateForRuntime(draft, owner)),
+    );
     assertActive();
     if (generation === refreshGeneration.current && currentAccountKey.current === owner) {
       setMemories(runtimeMemories);
+      setDrafts(runtimeDrafts);
       setMemoriesOwner(owner);
       setIsReady(true);
     }
@@ -186,6 +197,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     refreshGeneration.current += 1;
     missingPhotoBaselines.current.clear();
     setMemories([]);
+    setDrafts([]);
     setMemoriesOwner(null);
     if (!isLibraryReady) {
       setIsReady(false);
@@ -262,6 +274,13 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         assertActive();
         await createDraftInDb(db, hydrated.storageMemory, owner);
         stagedPhotos.forEach((photo) => photo.commit());
+        try {
+          const oldDraftIds = await trimOldDrafts(db, owner);
+          await Promise.all(oldDraftIds.map((oldId) => deleteMemoryPhotoDirectory(owner, oldId)));
+        } catch (error) {
+          console.warn("[memories-provider] 无法清理旧草稿：", error);
+        }
+        await refresh(owner, assertActive);
         return { ...hydrated.runtimeMemory, status: "draft" as const };
       } catch (error) {
         for (const staged of stagedPhotos) {
@@ -274,7 +293,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         throw error;
       }
     }),
-    [db, hydrateForStorage, runWrite]
+    [db, hydrateForStorage, refresh, runWrite]
   );
 
   const getDraftById = React.useCallback(async (id: string) => runWrite(async (owner, assertActive) => {
@@ -355,6 +374,11 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       if (!await replaceMemoryMediaSnapshot(db, hydrated.storageMemory, owner)) {
         throw new Error("Album no longer belongs to the active account");
       }
+      assertActive();
+      setDrafts((current) => currentAccountKey.current === owner
+        ? current.map((draft) => draft.id === memory.id ? { ...hydrated.runtimeMemory, status: "draft" as const } : draft)
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        : current);
     }),
     [baselineFor, db, hydrateForStorage, runWrite]
   );
@@ -372,6 +396,21 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     }
     assertActive();
     return hydrated.runtimeMemory.pages;
+  }), [baselineFor, db, hydrateForStorage, runWrite]);
+
+  const getMemoryEditRecovery = React.useCallback(async (memory: Memory) => runWrite(async (owner, assertActive) => {
+    const recovery = await getMemoryEditRecoveryFromDb(db, memory, owner);
+    if (!recovery) return null;
+    const hydrated = await hydrateForStorage(
+      restoreKnownMissingPhotoTokens({ ...memory, pages: recovery.pages }, baselineFor(owner, memory.id)),
+      owner,
+    );
+    if (hydrated.changed) {
+      assertActive();
+      await saveMemoryEditDraftInDb(db, { ...memory, title: recovery.title, travelDate: recovery.travelDate }, hydrated.storageMemory.pages, owner);
+    }
+    assertActive();
+    return { ...recovery, pages: hydrated.runtimeMemory.pages };
   }), [baselineFor, db, hydrateForStorage, runWrite]);
 
   const saveMemoryEditDraft = React.useCallback(
@@ -458,11 +497,16 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     () => (memoriesOwner === accountKey && isLibraryReady ? memories : []),
     [accountKey, isLibraryReady, memories, memoriesOwner],
   );
+  const visibleDrafts = React.useMemo(
+    () => (memoriesOwner === accountKey && isLibraryReady ? drafts : []),
+    [accountKey, drafts, isLibraryReady, memoriesOwner],
+  );
   const visibleReady = isReady && memoriesOwner === accountKey && isLibraryReady;
 
   const value = React.useMemo<MemoriesContextValue>(
     () => ({
       memories: visibleMemories,
+      drafts: visibleDrafts,
       isReady: visibleReady,
       createMemory,
       createDraft,
@@ -473,6 +517,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       updatePages,
       updateDraftPages,
       getMemoryEditDraft,
+      getMemoryEditRecovery,
       saveMemoryEditDraft,
       clearMemoryEditDraft,
       persistSelectedPhoto,
@@ -493,9 +538,11 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       discardDraft,
       getDraftById,
       getMemoryEditDraft,
+      getMemoryEditRecovery,
       visibleReady,
       listDiscarded,
       visibleMemories,
+      visibleDrafts,
       restoreMemory,
       retryDraft,
       saveDraft,

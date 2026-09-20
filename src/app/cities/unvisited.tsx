@@ -36,7 +36,7 @@ export default function UnvisitedCitiesScreen() {
           </PaperCard>
         ) : (
           <View style={styles.list}>
-            {unvisitedCities.map(({ city }) => <CityCard city={city} key={city} onPress={() => goToCity(city)} variant="unvisited" />)}
+            {unvisitedCities.map(({ city }, index) => <CityCard city={city} key={city} listIndex={index} onPress={() => goToCity(city)} variant="unvisited" />)}
           </View>
         )}
       </Section>

@@ -53,9 +53,9 @@ export default function CitiesScreen() {
           也可从这份档案里，翻看每座城市已经收进册子的旅行记忆。
         </Text>
         <View style={styles.list}>
-          {archiveCities.map((city) => {
+          {archiveCities.map((city, index) => {
             const stat = cityStatsByCity.get(city)!;
-            return <CityCard city={city} key={city} onPress={() => goToCity(city)} variant={stat.isVisited ? "visited" : "unvisited"} visitCount={stat.visitCount} />;
+            return <CityCard city={city} key={city} listIndex={index} onPress={() => goToCity(city)} variant={stat.isVisited ? "visited" : "unvisited"} visitCount={stat.visitCount} />;
           })}
           <Pressable
             accessibilityRole="button"

@@ -24,7 +24,7 @@ import {
 } from "../../../features/memories/travel-date";
 import type { Memory, StoryPage } from "../../../types/memory";
 
-type Action = "save" | "retry" | "discard" | null;
+type Action = "save" | "exit" | "retry" | "discard" | null;
 
 export default function DraftReviewScreen() {
   const router = useRouter();
@@ -224,6 +224,24 @@ export default function DraftReviewScreen() {
     }
   };
 
+  const leaveDraft = async () => {
+    if (editorChangePending || action !== null) return;
+    if (!draftRef.current?.title.trim()) {
+      setError("请输入纪念册标题");
+      return;
+    }
+    setAction("exit");
+    setError("");
+    try {
+      await flushAutosave();
+      router.replace("/");
+    } catch {
+      setError("草稿尚未保存到本机，请重试后退出。");
+    } finally {
+      setAction(null);
+    }
+  };
+
   const supersedeAutosave = async () => {
     clearTextDebounce();
     await queueRef.current?.clearAndWait();
@@ -363,6 +381,12 @@ export default function DraftReviewScreen() {
         </ScrollView>
 
         <View style={styles.footer}>
+          <AppButton
+            disabled={isActing}
+            label={action === "exit" ? "正在保存草稿…" : "退出并保留在草稿箱"}
+            onPress={() => void leaveDraft()}
+            tone="secondary"
+          />
           <AppButton
             disabled={isActing}
             label={action === "save" ? "正在保留…" : "保留草稿"}

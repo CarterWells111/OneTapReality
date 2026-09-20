@@ -1,6 +1,5 @@
 import * as React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Path } from "react-native-svg";
 
 import { MemoryCard } from "../../components/memory-card";
 import { colors, PaperCard, Section, serifFont } from "../../components/ui";
@@ -9,6 +8,7 @@ import { cityRegistry, type City } from "../../types/city";
 import type { Memory } from "../../types/memory";
 import { cityContent } from "./city-content";
 import { getCityCardVisual } from "./city-illustrations";
+import { CityVectorArtwork } from "./city-vector-artwork";
 
 type CityWorkspaceContentProps = {
   readonly city: City;
@@ -21,19 +21,6 @@ type CityWorkspaceContentProps = {
   readonly width?: number;
   readonly allMemories?: readonly Memory[];
 };
-
-function CityArchiveGenericIllustration({ city }: { readonly city: City }) {
-  return (
-    <View style={styles.lineArt} testID={`city-archive-hero-generic-${city}`}>
-      <Svg height="100%" viewBox="0 0 280 170" width="100%">
-        <Circle cx="222" cy="41" fill="none" r="21" stroke={colors.warmAccent} strokeWidth="2" />
-        <Path d="M18 126C54 94 78 110 108 79C138 49 165 98 195 71C221 48 242 73 267 42" fill="none" stroke={colors.accent} strokeLinecap="round" strokeWidth="3" />
-        <Path d="M20 145H264M48 112V145M90 96V145M132 107V145M174 88V145M216 102V145" fill="none" stroke={colors.muted} strokeLinecap="round" strokeWidth="2" />
-        <Path d="M31 65C54 48 79 50 98 65M139 55C156 42 182 42 199 55" fill="none" stroke={colors.ink} strokeLinecap="round" strokeWidth="1.5" />
-      </Svg>
-    </View>
-  );
-}
 
 function CityArchiveHero({ city }: { readonly city: City }) {
   const content = cityContent[city];
@@ -57,7 +44,7 @@ function CityArchiveHero({ city }: { readonly city: City }) {
           testID={`city-archive-hero-illustration-${city}`}
         />
       ) : (
-        <CityArchiveGenericIllustration city={city} />
+        <View style={styles.lineArt}><CityVectorArtwork city={city} large /></View>
       )}
     </PaperCard>
   );

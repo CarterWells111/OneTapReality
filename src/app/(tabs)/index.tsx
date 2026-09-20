@@ -14,7 +14,7 @@ import { DevelopmentGiftLinkEntry } from "../../features/gifts/development-gift-
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, isReady, discardMemory } = useMemories();
+  const { memories, drafts, isReady, discardMemory } = useMemories();
   const { isAuthReady, user } = useAuth();
   const {
     continueWithGuest,
@@ -163,6 +163,24 @@ export default function MemoriesHomeScreen() {
         </PaperCard>
       ) : null}
 
+      {isReady && drafts?.length > 0 ? (
+        <Section title={`草稿箱 · ${drafts.length}/4`} caption="LOCAL DRAFTS">
+          <Text selectable style={styles.mutedText}>未正式保存的旅行册保留在此设备。新草稿进入时，最旧的一份会移出草稿箱。</Text>
+          {drafts.map((draft) => (
+            <Pressable
+              accessibilityRole="button"
+              key={draft.id}
+              onPress={() => router.push({ pathname: "/memory/review/[id]", params: { id: draft.id } })}
+              style={({ pressed }) => [styles.draftCard, pressed && styles.pressed]}
+              testID={`home-draft-${draft.id}`}
+            >
+              <Text selectable style={styles.draftTitle}>{draft.title}</Text>
+              <Text selectable style={styles.mutedText}>继续编辑 ›</Text>
+            </Pressable>
+          ))}
+        </Section>
+      ) : null}
+
       <Section
         title={isReady && memories.length > 0 ? `我的旅行册 · ${memories.length}` : "我的旅行册"}
         caption="MY TRAVEL ALBUMS"
@@ -254,6 +272,8 @@ export default function MemoriesHomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  draftCard: { backgroundColor: colors.paper, borderColor: colors.paperEdge, borderRadius: 14, borderWidth: 1, gap: 5, padding: 16 },
+  draftTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "700" },
   screen: { backgroundColor: colors.background },
   content: { gap: 22, padding: 20, paddingTop: 12, paddingBottom: 36 },
   hero: { gap: 10 },

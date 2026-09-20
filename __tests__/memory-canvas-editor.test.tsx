@@ -44,6 +44,7 @@ let mockRouteId = "memory-1";
 let mockRoutePageId: string | undefined;
 let mockRoutePageIndex: string | undefined;
 let mockBookCanvasStageSelectedPhoto: ((uri: string) => Promise<unknown>) | undefined;
+let mockRecoveredMetadata: { title: string; travelDate: string } | null = null;
 let mockDatePickerProps: {
   maximumDate?: Date;
   minimumDate?: Date;
@@ -150,6 +151,10 @@ jest.mock("../src/features/memories/memories-provider", () => ({
     getDraftById: mockGetDraftById,
     getMemoryById: mockGetMemoryById,
     getMemoryEditDraft: mockGetMemoryEditDraft,
+    getMemoryEditRecovery: async (memory: Memory) => {
+      const pages = await mockGetMemoryEditDraft(memory);
+      return pages ? { pages, title: mockRecoveredMetadata?.title ?? memory.title, travelDate: mockRecoveredMetadata?.travelDate ?? memory.travelDate } : null;
+    },
     persistSelectedPhoto: mockPersistSelectedPhoto,
     stageSelectedPhoto: mockStageSelectedPhoto,
     saveMemoryEditDraft: mockSaveMemoryEditDraft,
@@ -282,6 +287,7 @@ describe("EditMemoryScreen", () => {
     mockPrepareSaveReturnsNull = false;
     mockDatePickerProps = null;
     mockBookCanvasStageSelectedPhoto = undefined;
+    mockRecoveredMetadata = null;
     mockGetMemoryById.mockReturnValue(memory);
     mockGetDraftById.mockResolvedValue(null);
     mockGetMemoryEditDraft.mockResolvedValue(null);
@@ -304,6 +310,8 @@ describe("EditMemoryScreen", () => {
 
     expect(screen.getByText("正在读取未保存的编辑…")).toBeTruthy();
     await act(async () => resolveLookup?.(recoveredPages));
+    expect(await screen.findByText("发现未保存的编辑")).toBeTruthy();
+    fireEvent.press(screen.getByText("继续编辑草稿"));
     expect(await screen.findByTestId("current-headline")).toHaveTextContent("恢复的编辑");
     const status = screen.getByText("已恢复上次未保存的编辑");
     expect(status.props.role).toBe("status");
@@ -319,6 +327,27 @@ describe("EditMemoryScreen", () => {
 
     expect(await screen.findByTestId("current-headline")).toHaveTextContent("杭州周末");
     expect(mockBookCanvasStageSelectedPhoto).toEqual(expect.any(Function));
+  });
+
+  it("persists recovered title and date when continuing a saved album draft", async () => {
+    mockGetMemoryEditDraft.mockResolvedValue(legacyPages);
+    mockRecoveredMetadata = { title: "未保存的标题", travelDate: "2026-08-21" };
+    const screen = render(<EditMemoryScreen />);
+    fireEvent.press(await screen.findByText("继续编辑草稿"));
+    await screen.findByTestId("album-canvas");
+    fireEvent.press(screen.getByText("edit first page"));
+    await act(async () => undefined);
+
+    expect(mockSaveMemoryEditDraft.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining(mockRecoveredMetadata));
+  });
+
+  it("lets the user keep the saved version when an edit draft exists", async () => {
+    mockGetMemoryEditDraft.mockResolvedValue(legacyPages.map((page, index) => index === 0 ? { ...page, headline: "旧草稿" } : page));
+    const screen = render(<EditMemoryScreen />);
+    fireEvent.press(await screen.findByText("使用已保存版本"));
+    expect(await screen.findByTestId("current-headline")).toHaveTextContent("杭州周末");
+    expect(screen.queryByText("已恢复上次未保存的编辑")).toBeNull();
+    expect(mockClearMemoryEditDraft).toHaveBeenCalledWith("memory-1");
   });
 
   it("does not reset local edits when the provider refreshes the memory identity", async () => {
@@ -364,6 +393,7 @@ describe("EditMemoryScreen", () => {
 
     first.unmount();
     const second = render(<EditMemoryScreen />);
+    fireEvent.press(await second.findByText("继续编辑草稿"));
     expect(await second.findByTestId("current-headline")).toHaveTextContent("最新编辑");
   });
 
@@ -414,6 +444,7 @@ describe("EditMemoryScreen", () => {
     first.unmount();
 
     const remounted = render(<EditMemoryScreen />);
+    fireEvent.press(await remounted.findByText("继续编辑草稿"));
     expect(await remounted.findByTestId("current-headline")).toHaveTextContent("最新编辑");
     expect(mockEmitDiagnostic).toHaveBeenCalledWith("recovery_restored", {
       memoryId: "memory-1",
@@ -435,9 +466,34 @@ describe("EditMemoryScreen", () => {
     remounted.unmount();
     await act(async () => undefined);
     const restored = render(<EditMemoryScreen />);
+    fireEvent.press(await restored.findByText("继续编辑草稿"));
     expect(await restored.findByTestId("current-headline")).toHaveTextContent("跨重挂载最新 C");
     expect(mockGetMemoryEditDraft).toHaveBeenCalledTimes(2);
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("persists the latest title after a rapid editor remount", async () => {
+    let resolveFirstWrite: (() => void) | undefined;
+    mockSaveMemoryEditDraft
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirstWrite = resolve; }))
+      .mockResolvedValue(undefined);
+    const first = render(<EditMemoryScreen />);
+    await first.findByTestId("album-canvas");
+    fireEvent.press(first.getByText("edit first page"));
+    expect(mockSaveMemoryEditDraft).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    const remounted = render(<EditMemoryScreen />);
+    fireEvent.press(await remounted.findByText("继续编辑草稿"));
+    await remounted.findByTestId("album-canvas");
+    const title = remounted.getByLabelText("双击修改旅行册名称");
+    fireEvent.press(title);
+    fireEvent.press(title);
+    fireEvent.changeText(remounted.getByLabelText("纪念册标题"), "跨重挂载标题");
+    fireEvent.press(remounted.getByText("edit latest page"));
+    await act(async () => resolveFirstWrite?.());
+
+    expect(mockSaveMemoryEditDraft.mock.calls.at(-1)?.[0].title).toBe("跨重挂载标题");
   });
 
   it("saves the latest queued snapshot after a same-key remount", async () => {
@@ -452,6 +508,7 @@ describe("EditMemoryScreen", () => {
     first.unmount();
 
     const remounted = render(<EditMemoryScreen />);
+    fireEvent.press(await remounted.findByText("继续编辑草稿"));
     expect(await remounted.findByTestId("current-headline")).toHaveTextContent("最新编辑");
     await act(async () => fireEvent.press(remounted.getByText("保存并退出画布")));
     expect(mockUpdatePages).not.toHaveBeenCalled();
@@ -484,6 +541,8 @@ describe("EditMemoryScreen", () => {
     expect(mockUpdatePages).not.toHaveBeenCalled();
     expect(mockClearMemoryEditDraft).not.toHaveBeenCalled();
     await act(async () => fireEvent.press(retry));
+
+    fireEvent.press(await screen.findByText("继续编辑草稿"));
 
     expect(await screen.findByTestId("current-headline")).toHaveTextContent("重试恢复");
     expect(screen.getByText("已恢复上次未保存的编辑")).toBeTruthy();

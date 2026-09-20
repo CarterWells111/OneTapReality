@@ -2,6 +2,8 @@ import { act, render, waitFor } from "@testing-library/react-native";
 
 const mockDatabase = { name: "local" };
 const mockListMemories = jest.fn();
+const mockListDrafts = jest.fn();
+const mockReplaceMemoryMediaSnapshot = jest.fn();
 const mockUseAuth = jest.fn();
 const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
@@ -56,9 +58,12 @@ jest.mock("../src/storage/memory-repository", () => ({
   getDraft: jest.fn(),
   listDiscardedMemories: jest.fn(),
   listMemories: (...args: unknown[]) => mockListMemories(...args),
+  listDrafts: (...args: unknown[]) => mockListDrafts(...args),
+  trimOldDrafts: jest.fn(async () => []),
   restoreDiscardedMemory: jest.fn(),
   saveDraft: jest.fn(),
   saveMemory: jest.fn(),
+  replaceMemoryMediaSnapshot: (...args: unknown[]) => mockReplaceMemoryMediaSnapshot(...args),
   updateMemoryPages: jest.fn(),
   updateMemoryPhotos: jest.fn(),
 }));
@@ -74,6 +79,8 @@ describe("MemoriesProvider account gate", () => {
     jest.clearAllMocks();
     captured = undefined;
     mockListMemories.mockResolvedValue([]);
+    mockListDrafts.mockResolvedValue([]);
+    mockReplaceMemoryMediaSnapshot.mockResolvedValue(true);
     mockDeleteAccountPhotoDirectory.mockResolvedValue(undefined);
     mockDeleteAccountPhotoDirectoryStrict.mockResolvedValue(undefined);
   });
@@ -122,6 +129,30 @@ describe("MemoriesProvider account gate", () => {
 
     await act(async () => { resolveFirst?.([{ id: "a-memory", pages: [], photoUris: [] }]); });
     expect(captured?.memories).toEqual([expect.objectContaining({ id: "b-memory" })]);
+  });
+
+  it("does not replace the next account's draft after an old draft save finishes", async () => {
+    const sharedId = "imported-draft";
+    const pages: StoryPage[] = [{ id: "page-1", position: 0, kind: "cover", headline: "封面", body: "" }];
+    const draftA: Memory = { id: sharedId, title: "A 的草稿", city: "hangzhou", travelDate: "2026-09-20", photoUris: [], pages, createdAt: "2026-09-20T00:00:00.000Z", updatedAt: "2026-09-20T00:00:00.000Z", status: "draft" };
+    const draftB: Memory = { ...draftA, title: "B 的草稿" };
+    let completeOldSave: (() => void) | undefined;
+    mockReplaceMemoryMediaSnapshot.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      completeOldSave = () => resolve(true);
+    }));
+    mockListDrafts.mockImplementation(async (_db, owner: string) => owner === "account:a@example.com" ? [draftA] : [draftB]);
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: { id: "a", email: "a@example.com", isAdmin: false } });
+    const screen = render(<MemoriesProvider><Capture /></MemoriesProvider>);
+    await waitFor(() => expect(captured?.drafts[0]?.title).toBe("A 的草稿"));
+
+    const oldSave = captured!.updateDraftPages(draftA, pages);
+    await waitFor(() => expect(mockReplaceMemoryMediaSnapshot).toHaveBeenCalledTimes(1));
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: { id: "b", email: "b@example.com", isAdmin: false } });
+    screen.rerender(<MemoriesProvider><Capture /></MemoriesProvider>);
+    await waitFor(() => expect(captured?.drafts[0]?.title).toBe("B 的草稿"));
+
+    await act(async () => { completeOldSave?.(); await oldSave; });
+    expect(captured?.drafts[0]?.title).toBe("B 的草稿");
   });
 
   it("scopes every recovery draft operation to the normalized current account", async () => {

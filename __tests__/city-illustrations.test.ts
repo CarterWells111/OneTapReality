@@ -8,7 +8,9 @@ describe("city card visuals", () => {
     }
   });
 
-  it("uses the shared formal illustration for non-featured cities", () => {
-    expect(getCityCardVisual("chengdu")).toEqual({ kind: "generic" });
+  it("gives non-featured cities their own locally rendered artwork", () => {
+    expect(getCityCardVisual("chengdu")).toMatchObject({ kind: "vector", city: "chengdu" });
+    expect(getCityCardVisual("lhasa")).toMatchObject({ kind: "vector", city: "lhasa" });
+    expect(getCityCardVisual("chengdu")).not.toEqual(getCityCardVisual("lhasa"));
   });
 });
