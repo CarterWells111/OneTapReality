@@ -276,6 +276,7 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
   }, []);
 
   return (
+    <View style={styles.overviewFrame}>
     <View
       accessibilityLabel="离线中国城市旅行地图概览"
       onLayout={onOverviewLayout}
@@ -363,7 +364,8 @@ function OverviewCityMap({ stats, interactive = false, onCityPress, onMapPress }
           <Text selectable style={{ color: colors.accent, fontSize: 13, fontWeight: "800" }}>全屏查看</Text>
         </Pressable>
       ) : null}
-      <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
+    </View>
+    <Text selectable style={styles.attribution}>{chinaMapAttribution}</Text>
     </View>
   );
 }
@@ -832,6 +834,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   workspaceFrame: { flex: 1, minHeight: 0 },
+  overviewFrame: { width: "100%" },
   prefectureLabel: {
     position: "absolute",
   },

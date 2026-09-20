@@ -17,6 +17,11 @@ describe("CityMap", () => {
     expect(screen.getByText(/China map · cn-atlas/i)).toBeTruthy();
     expect(within(screen.getByTestId("city-map-workspace")).queryByText(/China map · cn-atlas/i)).toBeNull();
   });
+  it("keeps the map attribution below the overview artwork", async () => {
+    const screen = await render(<CityMap stats={stats} variant="overview" />);
+    expect(screen.getByText(/China map · cn-atlas/i)).toBeTruthy();
+    expect(within(screen.getByTestId("city-map-overview")).queryByText(/China map · cn-atlas/i)).toBeNull();
+  });
   it("renders every local marker with its saved-memory count and visit-intensity token", async () => {
     const screen = await render(<CityMap stats={stats} variant="overview" />);
 
