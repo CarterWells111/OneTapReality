@@ -9,7 +9,7 @@ import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../com
 import { ColorPicker } from "../../components/ColorPicker";
 import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
-import { areDraftPhotoPlansValid, createBalancedPhotoPagePlans } from "../../features/memories/photo-page-planner";
+import { areDraftPhotoPlansValid } from "../../features/memories/photo-page-planner";
 import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
 import { useMemories } from "../../features/memories/memories-provider";
 import {
@@ -18,7 +18,7 @@ import {
   toIsoTravelDate,
 } from "../../features/memories/travel-date";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
-import type { MemoryDraftPagePlan } from "../../types/memory";
+import { initialNewMemoryPhotos, newMemoryPhotosReducer } from "../../features/memories/new-memory-photos";
 
 const cityGroupLabels: Record<CityKind, string> = {
   "autonomous-region-capital": "自治区首府",
@@ -39,7 +39,7 @@ const COVER_COLORS = [
   "#C7B79C",
 ] as const;
 
-type PhotoLoadState = "loading" | "loaded" | "failed";
+
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -57,13 +57,16 @@ export default function NewMemoryScreen() {
   const [coverColor, setCoverColor] = React.useState<string>(COVER_COLORS[0]);
   const [coverImage, setCoverImage] = React.useState<string | undefined>(undefined);
   const [showColorPicker, setShowColorPicker] = React.useState(false);
-  const [photoUris, setPhotoUris] = React.useState<string[]>([]);
-  const [photoLoadStates, setPhotoLoadStates] = React.useState<PhotoLoadState[]>([]);
+  const [{ photos, pagePlans }, dispatchPhotos] = React.useReducer(newMemoryPhotosReducer, initialNewMemoryPhotos);
+  const photoUris = photos.map((photo) => photo.uri);
+  const photoLoadStates = photos.map((photo) => photo.loadState);
+  const pickingPhotos = React.useRef(false);
+  const [isPickingPhotos, setIsPickingPhotos] = React.useState(false);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
   const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
-  const [pagePlans, setPagePlans] = React.useState<MemoryDraftPagePlan[]>([]);
+
 
   React.useEffect(() => {
     setCity(presetCity);
@@ -96,34 +99,26 @@ export default function NewMemoryScreen() {
   };
 
   const selectPhotos = async () => {
-    setError("");
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: true,
-      mediaTypes: ["images"],
-    });
-    if (!result.canceled) {
-      const nextPhotoUris = result.assets.map((asset) => asset.uri);
-      setPhotoUris(nextPhotoUris);
-      setPhotoLoadStates(nextPhotoUris.map(() => "loading"));
-      try {
-        setPagePlans(createBalancedPhotoPagePlans(nextPhotoUris));
-      } catch {
-        setPagePlans([]);
-        setError("无法安排照片，请减少选择数量后重试。");
+    if (pickingPhotos.current || isSaving) return;
+    pickingPhotos.current = true;
+    setIsPickingPhotos(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: true,
+        mediaTypes: ["images"],
+      });
+      if (!result.canceled) {
+        dispatchPhotos({ type: "append", assets: result.assets });
+        setError("");
+        void Haptics.selectionAsync();
       }
-      void Haptics.selectionAsync();
+    } catch {
+      setError("无法选择照片，请重试。");
+    } finally {
+      pickingPhotos.current = false;
+      setIsPickingPhotos(false);
     }
   };
-
-  const markPhotoLoadState = (index: number, state: PhotoLoadState) => {
-    setPhotoLoadStates((current) => {
-      if (!current[index] || current[index] === state) return current;
-      const next = [...current];
-      next[index] = state;
-      return next;
-    });
-  };
-
   const pickCoverImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: false,
@@ -262,17 +257,16 @@ export default function NewMemoryScreen() {
       </Section>
 
       <Section title="选择照片" caption="PHOTOS">
-        <AppButton label={photoUris.length ? `已选 ${photoUris.length} 张，重新选择` : "从相册选择照片"} tone="secondary" onPress={() => void selectPhotos()} />
+        <AppButton label={photoUris.length ? "继续添加照片" : "从相册选择照片"} disabled={isPickingPhotos || isSaving} tone="secondary" onPress={() => void selectPhotos()} />
         {photoUris.length > 0 ? (
           <ScrollView horizontal contentContainerStyle={styles.photoStrip} showsHorizontalScrollIndicator={false}>
-            {photoUris.map((uri, index) => {
+            {photos.map(({ uri, id }, index) => {
               const loadState = photoLoadStates[index] ?? "loading";
               const statusLabel = loadState === "loaded" ? "已载入" : loadState === "failed" ? "载入失败" : "正在载入";
               return (
                 <View
                   accessibilityLabel={`照片 ${index + 1}，${statusLabel}`}
-                  accessible
-                  key={`${index}-${uri}`}
+                  key={id}
                   style={styles.photoPreviewSlot}
                 >
                   {loadState !== "loaded" ? (
@@ -286,12 +280,21 @@ export default function NewMemoryScreen() {
                   ) : null}
                   <Image
                     accessible={false}
-                    onError={() => markPhotoLoadState(index, "failed")}
-                    onLoad={() => markPhotoLoadState(index, "loaded")}
+                    onError={() => dispatchPhotos({ type: "load", id, loadState: "failed" })}
+                    onLoad={() => dispatchPhotos({ type: "load", id, loadState: "loaded" })}
                     source={{ uri }}
                     style={[styles.photoPreview, loadState !== "loaded" && styles.photoPreviewLoading]}
                     testID={`new-memory-photo-${index + 1}`}
                   />
+                  <Pressable
+                    accessibilityLabel={`移除照片 ${index + 1}`}
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    onPress={() => dispatchPhotos({ type: "remove", id })}
+                    style={styles.photoRemove}
+                  >
+                    <Text style={styles.photoRemoveText}>×</Text>
+                  </Pressable>
                 </View>
               );
             })}
@@ -300,20 +303,20 @@ export default function NewMemoryScreen() {
         {photoUris.length > 0 ? (
           <Text accessibilityLiveRegion="polite" selectable style={[styles.photoLoadStatus, failedPhotoCount > 0 && styles.photoLoadError]}>
             {failedPhotoCount > 0
-              ? `有 ${failedPhotoCount} 张照片无法载入，请重新选择。`
+              ? `有 ${failedPhotoCount} 张照片无法载入，请移除后重新添加。`
               : allPhotosReady
                 ? `${photoUris.length} 张照片已载入`
                 : `正在载入照片，已完成 ${loadedPhotoCount} / ${photoUris.length} 张`}
           </Text>
         ) : null}
         {allPhotosReady ? (
-          <DraftPhotoAllocation onChange={setPagePlans} photoUris={photoUris} value={pagePlans} />
+          <DraftPhotoAllocation onChange={(nextPlans) => dispatchPhotos({ type: "plans", pagePlans: nextPlans })} photoUris={photoUris} value={pagePlans} />
         ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
       {photoUris.length > 0 ? (
-        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving || !canGenerate} onPress={() => void generate()} />
+        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving || isPickingPhotos || !canGenerate} onPress={() => void generate()} />
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}
@@ -447,6 +450,8 @@ const styles = StyleSheet.create({
     width: 92,
   },
   photoPreview: { ...StyleSheet.absoluteFill },
+  photoRemove: { position: "absolute", right: 0, top: 0, width: 44, height: 44, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(38, 49, 62, 0.75)", borderBottomLeftRadius: 12 },
+  photoRemoveText: { color: "#FFFFFF", fontSize: 24 },
   photoPreviewLoading: { opacity: 0 },
   photoPreviewPlaceholder: {
     ...StyleSheet.absoluteFill,
