@@ -970,7 +970,10 @@ export function BookCanvasEditor({
   const addStagedPhoto = async () => {
     const previous = pendingPhotoLayoutRef.current;
     if (!previous || previous.photos.length >= MAX_PHOTOS_PER_CANVAS_PAGE) return;
-    const batch = await pickAndStagePhotos({ multiple: false, selectionLimit: 1 });
+    const batch = await pickAndStagePhotos({
+      multiple: true,
+      selectionLimit: MAX_PHOTOS_PER_CANVAS_PAGE - previous.photos.length,
+    });
     if (!batch) return;
     try {
       if (pendingPhotoLayoutRef.current !== previous) {

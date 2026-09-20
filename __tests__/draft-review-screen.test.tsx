@@ -293,8 +293,8 @@ describe("DraftReviewScreen", () => {
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
     fireEvent.press(screen.getByText("照片与模板"));
-    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    await waitFor(() => expect(screen.getByLabelText("添加照片")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
 
     expect(mockStageSelectedPhoto).toHaveBeenCalledWith("draft-1", "file:///temporary.jpg");
     expect(mockPersistSelectedPhoto).not.toHaveBeenCalled();
@@ -315,8 +315,8 @@ describe("DraftReviewScreen", () => {
     await waitFor(() => expect(screen.getByTestId("album-canvas")).toBeTruthy());
 
     fireEvent.press(screen.getByText("照片与模板"));
-    await waitFor(() => expect(screen.getByLabelText("添加一张照片")).toBeTruthy());
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    await waitFor(() => expect(screen.getByLabelText("添加照片")).toBeTruthy());
+    fireEvent.press(screen.getByLabelText("添加照片"));
     await act(async () => undefined);
 
     expect(screen.getByRole("button", { name: "保留草稿" }).props.accessibilityState.disabled).toBe(true);

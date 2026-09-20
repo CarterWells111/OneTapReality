@@ -150,7 +150,7 @@ async function dismissPageManagerForAdd(screen: ReturnType<typeof render>) {
 
 async function addOnePhoto(screen: ReturnType<typeof render>) {
   await act(async () => {
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    fireEvent.press(screen.getByLabelText("添加照片"));
     await Promise.resolve();
   });
 }
@@ -243,7 +243,7 @@ describe("BookCanvasEditor", () => {
     fireEvent.press(screen.getByText("照片与模板"));
     expect(screen.getByText("当前页暂无照片，可点击＋添加。")).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("添加一张照片"));
+      fireEvent.press(screen.getByLabelText("添加照片"));
     });
     fireEvent.press(screen.getByLabelText("竖向切片单图模板"));
     fireEvent.press(screen.getByLabelText("应用照片与模板"));
@@ -281,7 +281,7 @@ describe("BookCanvasEditor", () => {
 
     expect(screen.queryByText("📷 添加照片")).toBeNull();
     fireEvent.press(screen.getByText("照片与模板"));
-    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
 
     expect(screen.getByLabelText("照片 3，点击裁剪")).toBeTruthy();
     expect(screen.getByLabelText("经典留白三图模板").props.accessibilityState).toEqual(
@@ -296,6 +296,47 @@ describe("BookCanvasEditor", () => {
       "file:///permanent-added.jpg",
     ]);
     expect(added.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["confirm", "cancel"])("stages a bounded multi-photo addition and handles %s atomically", async (action) => {
+    const onChange = jest.fn();
+    const handles = Array.from({ length: 7 }, (_, index) => stagedPhoto(`file:///added-${index}.jpg`));
+    const stageSelectedPhoto = jest.fn(async (uri: string) => handles.find((handle) => handle.uri === uri)!);
+    launchImageLibraryMock.mockResolvedValueOnce({ canceled: false, assets: handles.map(({ uri }) => ({ uri })) });
+    const screen = render(<EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
+    fireEvent.press(screen.getByText("照片与模板"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
+    expect(launchImageLibraryMock).toHaveBeenLastCalledWith(expect.objectContaining({ allowsMultipleSelection: true, selectionLimit: 6 }));
+    expect(stageSelectedPhoto).toHaveBeenCalledTimes(6);
+    expect(screen.getByText("8 / 8 张照片")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.press(screen.getByLabelText(action === "confirm" ? "应用照片与模板" : "取消照片布局")); });
+    for (const handle of handles.slice(0, 6)) {
+      expect(handle.commit).toHaveBeenCalledTimes(action === "confirm" ? 1 : 0);
+      expect(handle.rollback).toHaveBeenCalledTimes(action === "cancel" ? 1 : 0);
+    }
+    if (action === "confirm") {
+      const updated = (onChange.mock.calls[0][0] as StoryPage[]).find((page) => page.id === "photo-page")!;
+      expect(updated.layout?.elements.filter((element) => element.type === "image").map((element) => element.uri)).toEqual([
+        "file:///old-one.jpg", "file:///old-two.jpg", ...handles.slice(0, 6).map(({ uri }) => uri),
+      ]);
+    } else expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("rolls back the partial batch when a later photo fails without changing the existing page", async () => {
+    const onChange = jest.fn();
+    const first = stagedPhoto("file:///added-first.jpg");
+    const stageSelectedPhoto = jest.fn().mockResolvedValueOnce(first).mockRejectedValueOnce(new Error("storage full"));
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    launchImageLibraryMock.mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///first.jpg" }, { uri: "file:///second.jpg" }] });
+    const screen = render(<EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />);
+    fireEvent.press(screen.getByText("照片与模板"));
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
+    expect(first.rollback).toHaveBeenCalledTimes(1);
+    expect(first.commit).not.toHaveBeenCalled();
+    expect(screen.getByText("2 / 8 张照片")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith("照片保存失败", expect.any(String));
   });
 
   it("applies a canvas photo crop through the floating control as one structural change", () => {
@@ -885,11 +926,11 @@ describe("BookCanvasEditor", () => {
       await dismissPageManagerForAdd(screen);
     });
     await addOnePhoto(screen);
-    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
 
     expect(launchImageLibraryMock).toHaveBeenCalledWith(expect.objectContaining({
-      allowsMultipleSelection: false,
-      selectionLimit: 1,
+      allowsMultipleSelection: true,
+      selectionLimit: 7,
     }));
     expect(stageSelectedPhoto.mock.calls.map(([uri]) => uri)).toEqual([
       "file:///temporary-one.jpg",
@@ -960,7 +1001,7 @@ describe("BookCanvasEditor", () => {
     });
     await addOnePhoto(screen);
     for (let index = 0; index < 3; index += 1) {
-      await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+      await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
     }
 
     expect(screen.getByText("模板仅支持 3 张及以内照片，仍可自行排版")).toBeTruthy();
@@ -987,7 +1028,7 @@ describe("BookCanvasEditor", () => {
       await dismissPageManagerForAdd(screen);
     });
     await addOnePhoto(screen);
-    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
 
     expect(stageSelectedPhoto).toHaveBeenCalledTimes(2);
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("iCloud"));
@@ -1010,7 +1051,7 @@ describe("BookCanvasEditor", () => {
     fireEvent.press(screen.getByLabelText("打开页面管理"));
     await act(async () => { await dismissPageManagerForAdd(screen); });
     await addOnePhoto(screen);
-    await act(async () => { fireEvent.press(screen.getByLabelText("添加一张照片")); });
+    await act(async () => { fireEvent.press(screen.getByLabelText("添加照片")); });
 
     expect(first.rollback).not.toHaveBeenCalled();
     expect(first.commit).not.toHaveBeenCalled();
@@ -1152,13 +1193,13 @@ describe("BookCanvasEditor", () => {
       <EditorHarness initialPageId="photo-page" initialPages={photoPages} onChange={onChange} stageSelectedPhoto={stageSelectedPhoto} />,
     );
     fireEvent.press(screen.getByText("照片与模板"));
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    fireEvent.press(screen.getByLabelText("添加照片"));
     await act(async () => undefined);
     expect(screen.getByText("正在保存照片…")).toBeTruthy();
     expect(screen.getByLabelText("应用照片与模板").props.accessibilityState.disabled).toBe(true);
     fireEvent.press(screen.getByLabelText("应用照片与模板"));
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByLabelText("添加一张照片"));
+    fireEvent.press(screen.getByLabelText("添加照片"));
     expect(launchImageLibraryMock).toHaveBeenCalledTimes(1);
     await act(async () => { resolveStage(stagedPhoto("file:///owned-new.jpg")); await pendingStage; });
   });
@@ -1204,13 +1245,13 @@ describe("BookCanvasEditor", () => {
 
     fireEvent.press(screen.getByText("照片与模板"));
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("添加一张照片"));
+      fireEvent.press(screen.getByLabelText("添加照片"));
     });
     expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
     expect(onChange).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("添加一张照片"));
+      fireEvent.press(screen.getByLabelText("添加照片"));
     });
     expect(alert).toHaveBeenCalledWith("照片保存失败", expect.stringContaining("存储空间"));
     expect(screen.getByLabelText("经典留白双图模板").props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
