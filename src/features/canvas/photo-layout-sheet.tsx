@@ -16,7 +16,7 @@ import {
 } from "./photo-layout-draft";
 import { PhotoCropModal } from "./photo-crop-modal";
 import { PhotoTemplatePicker } from "./photo-template-picker";
-import { createPhotoTemplateLayout, resolvePhotoTemplate } from "./photo-templates";
+import { createPhotoTemplateLayout, PHOTO_TEMPLATE_SAMPLE_TEXT, resolvePhotoTemplate } from "./photo-templates";
 
 export type PhotoLayoutSheetProps = {
   action: "add" | "edit";
@@ -318,6 +318,12 @@ export function PhotoLayoutSheet({
                     </View>
                   </View>
                 ) : null)}
+                {selection && resolvePhotoTemplate(selection) ? <Text numberOfLines={1} pointerEvents="none"
+                  testID="photo-layout-preview-caption" style={{ color: colors.ink, fontFamily: bodyFont, fontSize: 10,
+                    height: percent(resolvePhotoTemplate(selection)!.caption.height),
+                    left: percent(resolvePhotoTemplate(selection)!.caption.x), position: "absolute",
+                    top: percent(resolvePhotoTemplate(selection)!.caption.y),
+                    width: percent(resolvePhotoTemplate(selection)!.caption.width) }}>{PHOTO_TEMPLATE_SAMPLE_TEXT}</Text> : null}
               </View>
             </View>
           ) : null}

@@ -2,7 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } fr
 
 import { bodyFont, colors } from "../../components/ui";
 import type { PhotoTemplateId } from "../../types/memory";
-import { getPhotoTemplatesForCount } from "./photo-templates";
+import { getPhotoTemplatesForCount, PHOTO_TEMPLATE_SAMPLE_TEXT } from "./photo-templates";
 
 const countLabels = {
   1: "单图",
@@ -61,6 +61,17 @@ export function PhotoTemplatePicker({ photoCount, selectedTemplateId, onSelect }
                       testID={`photo-template-slot-${template.id}-${index + 1}`}
                     />
                   ))}
+                  <Text
+                    numberOfLines={1}
+                    pointerEvents="none"
+                    style={[styles.caption, {
+                      height: percentage(template.caption.height),
+                      left: percentage(template.caption.x),
+                      top: percentage(template.caption.y),
+                      width: percentage(template.caption.width),
+                    }]}
+                    testID={`photo-template-caption-${template.id}`}
+                  >{PHOTO_TEMPLATE_SAMPLE_TEXT}</Text>
                   {selected ? (
                     <View style={styles.check} testID={`photo-template-check-${template.id}`}>
                       <Text style={styles.checkText}>✓</Text>
@@ -108,6 +119,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     position: "absolute",
   },
+  caption: { color: colors.ink, fontFamily: bodyFont, fontSize: 7, lineHeight: 9, position: "absolute" },
   label: { color: colors.ink, fontFamily: bodyFont, fontSize: 12, textAlign: "center" },
   check: {
     alignItems: "center",

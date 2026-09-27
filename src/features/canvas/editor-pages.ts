@@ -1,6 +1,6 @@
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { createLegacyLayout, normalizeLayout } from "./canvas-layout";
-import { createPhotoTemplateLayout, resolvePhotoTemplate } from "./photo-templates";
+import { createPhotoTemplateCaption, createPhotoTemplateLayout, placeManagedTemplateCaption, resolvePhotoTemplate } from "./photo-templates";
 import { bodyFontFamily } from "../typography/fonts";
 import type { CanvasBackgroundId, CanvasElement, CanvasFrameId, CanvasImageElement, CanvasLayout, CanvasStickerId, PhotoCropState, PhotoTemplateId, StoryPage } from "../../types/memory";
 
@@ -104,9 +104,11 @@ export function addCanvasPage(pages: StoryPage[], inputPhotos: (string | CanvasP
         }
       : element),
   };
-  const textElements = legacy.elements
-    .filter((element) => element.type === "text")
-    .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
+  const textElements = photoLayout.photoTemplateId
+    ? [createPhotoTemplateCaption(photoLayout.photoTemplateId, `${id}:caption`, photoLayout.elements.length + 1)!]
+    : legacy.elements
+      .filter((element) => element.type === "text")
+      .map((element, index) => ({ ...element, zIndex: photoLayout.elements.length + index + 1 }));
   const next = pages.map(withLayout);
   const insertionIndex = next.at(-1)?.kind === "closing" ? next.length - 1 : next.length;
   next.splice(insertionIndex, 0, {
@@ -324,9 +326,16 @@ export function updateCanvasElement(
 ) {
   return updatePage(pages, pageId, (page) => {
     const current = page.layout!.elements.find((element) => element.id === elementId);
-    const nextElements = page.layout!.elements.map((element) =>
-      element.id === elementId ? ({ ...element, ...patch } as CanvasElement) : element,
-    );
+    const nextElements = page.layout!.elements.map((element) => {
+      if (element.id !== elementId) return element;
+      const next = { ...element, ...patch } as CanvasElement;
+      if (element.type !== "text" || !element.templateCaption || next.type !== "text") return next;
+      const geometryChanged = (["x", "y", "width", "height", "rotation"] as const)
+        .some((key) => patch[key] !== undefined && patch[key] !== element[key]);
+      if (!geometryChanged) return next;
+      const { templateCaption: _caption, ...unmanaged } = next;
+      return unmanaged as CanvasElement;
+    });
     const next = nextElements.find((element) => element.id === elementId);
     const imageChanged = current?.type === "image" && next?.type === "image" && (
       current.x !== next.x ||
@@ -351,17 +360,19 @@ export function duplicateCanvasElement(pages: StoryPage[], pageId: string, eleme
     if (source.type === "image" && page.layout!.elements.filter((element) => element.type === "image").length >= MAX_PHOTOS_PER_CANVAS_PAGE) {
       return page;
     }
+    const copy = {
+      ...source,
+      id: copyId,
+      x: Math.min(source.x + 0.05, 1 - source.width),
+      y: Math.min(source.y + 0.05, 1 - source.height),
+      zIndex: maxLayer(page.layout!.elements) + 1,
+    } as CanvasElement;
+    if (copy.type === "text") delete copy.templateCaption;
     return {
       ...page,
       layout: preserveLayoutMeta(page.layout!, [
           ...page.layout!.elements,
-          {
-            ...source,
-            id: copyId,
-            x: Math.min(source.x + 0.05, 1 - source.width),
-            y: Math.min(source.y + 0.05, 1 - source.height),
-            zIndex: maxLayer(page.layout!.elements) + 1,
-          },
+          copy,
         ], source.type === "image" ? "clear" : "preserve"),
     };
   });
@@ -426,7 +437,7 @@ export function applyPhotoTemplateToPage(pages: StoryPage[], pageId: string, tem
         nextLayout,
         nextLayout.elements.map((element) => {
           const slot = element.type === "image" ? slotById.get(element.id) : undefined;
-          return slot ? { ...element, ...slot } : element;
+          return slot ? { ...element, ...slot } : placeManagedTemplateCaption(element, template);
         }),
         template.id,
       ),
@@ -479,7 +490,7 @@ export function replacePagePhotos(
     let imageIndex = 0;
     const elements = previousLayout.elements
       .map((element) => {
-        if (element.type !== "image") return element;
+        if (element.type !== "image") return useTemplate && template ? placeManagedTemplateCaption(element, template) : element;
         const replacement = generated[imageIndex];
         imageIndex += 1;
         return replacement;

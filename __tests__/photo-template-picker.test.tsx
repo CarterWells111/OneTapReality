@@ -62,12 +62,14 @@ describe("PhotoTemplatePicker", () => {
     expect(previewStyle).toMatchObject({ aspectRatio: 0.75 });
     expect(slotStyle).toMatchObject({
       left: "8%",
-      top: "11%",
+      top: "10%",
       width: "56%",
-      height: "48%",
+      height: "39%",
       transform: [{ rotate: `${-Math.PI / 60}rad` }],
       borderColor: colors.accent,
     });
+    const captionStyle = StyleSheet.flatten(screen.getByTestId("photo-template-caption-collage-2").props.style);
+    expect(captionStyle).toMatchObject({ left: "10%", top: "85%", width: "80%", height: "7%" });
   });
 
   it("keeps every template option at least 44 points and shows a selected border", () => {

@@ -2,7 +2,7 @@ import type { MemoryDraftInput, StoryPage } from "../../types/memory";
 import { cityRegistry, type City } from "../../types/city";
 import { createLegacyLayout } from "../../features/canvas/canvas-layout";
 import { createPhotoLayout } from "../../features/canvas/auto-layout";
-import { createPhotoTemplateLayout } from "../../features/canvas/photo-templates";
+import { createPhotoTemplateCaption, createPhotoTemplateLayout } from "../../features/canvas/photo-templates";
 
 export interface DraftGenerator {
   generate(input: MemoryDraftInput): Promise<StoryPage[]>;
@@ -59,12 +59,11 @@ export class DemoDraftGenerator implements DraftGenerator {
         const imageLayout = (plan.photoTemplateId
           ? createPhotoTemplateLayout(plan.photoUris, plan.photoTemplateId)
           : null) ?? createPhotoLayout(plan.photoUris);
-        const legacyTextElements = createLegacyLayout(photoPage).elements
-          .filter((element) => element.type === "text")
-          .map((element, index) => ({
-            ...element,
-            zIndex: imageLayout.elements.length + index + 1,
-          }));
+        const legacyTextElements = imageLayout.photoTemplateId
+          ? [createPhotoTemplateCaption(imageLayout.photoTemplateId, `${photoPage.id}:caption`, imageLayout.elements.length + 1)!]
+          : createLegacyLayout(photoPage).elements
+            .filter((element) => element.type === "text")
+            .map((element, index) => ({ ...element, zIndex: imageLayout.elements.length + index + 1 }));
         pages.push({
           ...photoPage,
           layout: {

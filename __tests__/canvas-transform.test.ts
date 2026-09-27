@@ -102,15 +102,14 @@ describe("calculateCanvasTransformFromAbsolute", () => {
     }
   });
 
-  it("does not emit an invalid font size from a corrupt text element during a valid scale", () => {
+  it("does not create a font-size patch from text frame scaling, even when the saved size is invalid", () => {
     const result = calculateCanvasTransformFromAbsolute(
       { x: 0, y: 0, width: 0.2, height: 0.2, rotation: 0, type: "text", fontSize: Number.NaN } as any,
       0, 0, 120, 80, 0,
       { width: 300, height: 400 },
-      2,
     );
 
-    expect(result.fontSize).toBe(32);
+    expect(result).not.toHaveProperty("fontSize");
     expect(Object.values(result).every((value) => typeof value === "number" && Number.isFinite(value))).toBe(true);
   });
 
@@ -121,7 +120,7 @@ describe("calculateCanvasTransformFromAbsolute", () => {
       .toEqual({ fontSize: 68, lineHeight: 80 });
   });
 
-  it("bases persisted text size on the clamped text frame instead of an out-of-bounds pinch value", () => {
+  it("clamps an out-of-bounds text frame without changing its persisted font size", () => {
     const result = calculateCanvasTransformFromAbsolute(
       {
         type: "text",
@@ -134,11 +133,25 @@ describe("calculateCanvasTransformFromAbsolute", () => {
       } as any,
       30, 40, 400, 400, 0,
       { width: 300, height: 400 },
-      2,
     );
 
     expect(result.width).toBe(0.95);
     expect(result.height).toBe(0.95);
-    expect(result.fontSize).toBe(24);
+    expect(result).not.toHaveProperty("fontSize");
+  });
+
+  it.each([
+    { width: 120, height: 80 },
+    { width: 60, height: 160 },
+    { width: 120, height: 160 },
+  ])("changes only text geometry for a resized frame %#", ({ width, height }) => {
+    const result = calculateCanvasTransformFromAbsolute(
+      { type: "text", x: 0, y: 0, width: 0.2, height: 0.2, rotation: 0, fontSize: 16 } as any,
+      0, 0, width, height, 0,
+      { width: 300, height: 400 },
+    );
+
+    expect(result).toMatchObject({ width: width / 300, height: height / 400 });
+    expect(result).not.toHaveProperty("fontSize");
   });
 });

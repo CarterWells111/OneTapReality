@@ -3,7 +3,7 @@ import { FlatList, Image, Pressable, StyleSheet, Text, View, type DimensionValue
 
 import { colors, bodyFont, PaperCard, serifFont } from "../../components/ui";
 import { PhotoTemplatePicker } from "../canvas/photo-template-picker";
-import { createPhotoTemplateLayout, PHOTO_TEMPLATE_FAMILIES, resolvePhotoTemplate } from "../canvas/photo-templates";
+import { createPhotoTemplateLayout, PHOTO_TEMPLATE_FAMILIES, PHOTO_TEMPLATE_SAMPLE_TEXT, resolvePhotoTemplate } from "../canvas/photo-templates";
 import { createPhotoLayout, MAX_PHOTOS_PER_CANVAS_PAGE } from "../canvas/auto-layout";
 import {
   applyTemplateFamilyToPlans,
@@ -72,6 +72,10 @@ function DraftPagePreview({ plan, pageIndex }: { plan: MemoryDraftPagePlan; page
             testID={`draft-photo-preview-${pageIndex + 1}-${element.id}`}
           />
         ) : null)}
+        {templateLayout && template ? <Text numberOfLines={1} pointerEvents="none" testID={`draft-photo-preview-caption-${pageIndex + 1}`}
+          style={{ color: colors.ink, fontFamily: bodyFont, fontSize: 7, height: percentage(template.caption.height),
+            left: percentage(template.caption.x), position: "absolute", top: percentage(template.caption.y),
+            width: percentage(template.caption.width) }}>{PHOTO_TEMPLATE_SAMPLE_TEXT}</Text> : null}
       </View>
       <Text selectable style={styles.previewPageLabel}>第 {pageIndex + 1} 页</Text>
       <Text selectable style={styles.previewCount}>{plan.photoUris.length} 张照片 · {layoutLabel}</Text>

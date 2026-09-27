@@ -41,7 +41,8 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
   };
   if (value.type === "text" && typeof value.text === "string" && typeof value.fontStyle === "string"
     && typeof value.color === "string" && isFiniteNumber(value.fontSize)) {
-    return { ...base, type: "text", text: value.text, fontStyle: value.fontStyle, color: value.color, fontSize: value.fontSize };
+    return { ...base, type: "text", text: value.text, fontStyle: value.fontStyle, color: value.color, fontSize: value.fontSize,
+      ...(value.templateCaption === true ? { templateCaption: true as const } : {}) };
   }
   if (value.type === "sticker" && typeof value.stickerId === "string") return { ...base, type: "sticker", stickerId: value.stickerId };
   if (value.type === "frame" && typeof value.frameId === "string") return { ...base, type: "frame", frameId: value.frameId };

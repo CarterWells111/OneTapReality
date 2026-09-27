@@ -52,6 +52,47 @@ const pageWithPhotos = (count: number, templateId?: string): StoryPage => ({
 });
 
 describe("editor photo templates", () => {
+  it("moves only an untouched managed caption when changing templates", () => {
+    const created = addCanvasPage([], ["file:///one.jpg", "file:///two.jpg"], "new-page", "magazine-2");
+    const original = created[0].layout!.elements.find((element) => element.type === "text")!;
+    expect(created[0].layout!.elements.filter((element) => element.type === "text")).toHaveLength(1);
+    expect(created[0]).toMatchObject({ headline: "新的回忆", body: "点击文字，写下这一刻。" });
+    expect(original).toMatchObject({ templateCaption: true, text: "写下这一刻" });
+    const edited = updateCanvasElement(created, "new-page", original.id, { text: "我的旅程" });
+    const switched = applyPhotoTemplateToPage(edited, "new-page", "story-2");
+    const caption = switched[0].layout!.elements.find((element) => element.id === original.id)!;
+    expect(caption).toMatchObject({ templateCaption: true, text: "我的旅程", x: 0.09, y: 0.84 });
+  });
+
+  it("leaves manually placed and legacy text untouched on template changes", () => {
+    const created = addCanvasPage([], ["file:///one.jpg"], "new-page", "classic-1");
+    const caption = created[0].layout!.elements.find((element) => element.type === "text")!;
+    const placed = updateCanvasElement(created, "new-page", caption.id, { x: 0.2, y: 0.3 });
+    const switched = applyPhotoTemplateToPage(placed, "new-page", "story-1");
+    expect(switched[0].layout!.elements.find((element) => element.id === caption.id)).toMatchObject({ x: 0.2, y: 0.3 });
+    expect(switched[0].layout!.elements.find((element) => element.id === caption.id)).not.toHaveProperty("templateCaption");
+    const legacy = pageWithPhotos(1);
+    expect(applyPhotoTemplateToPage([legacy], "page-1", "story-1")[0].layout!.elements.find((element) => element.id === "caption")).toBe(legacy.layout!.elements.find((element) => element.id === "caption"));
+  });
+
+  it("repositions managed text when replacing photos with a new matching template", () => {
+    const created = addCanvasPage([], ["file:///one.jpg", "file:///two.jpg"], "new-page", "classic-2");
+    const text = created[0].layout!.elements.find((element) => element.type === "text")!;
+    const next = replacePagePhotos(created, "new-page", [{ id: "new-1", uri: "file:///three.jpg" }], "story-1");
+    expect(next[0].layout!.elements.find((element) => element.id === text.id)).toMatchObject({
+      templateCaption: true, text: text.type === "text" ? text.text : "", x: 0.07, y: 0.1,
+    });
+  });
+
+  it("treats a duplicated template caption as user text", () => {
+    const created = addCanvasPage([], ["file:///one.jpg"], "new-page", "classic-1");
+    const caption = created[0].layout!.elements.find((element) => element.type === "text")!;
+    const duplicated = duplicateCanvasElement(created, "new-page", caption.id, "copied-caption");
+    const copy = duplicated[0].layout!.elements.find((element) => element.id === "copied-caption")!;
+    expect(copy).not.toHaveProperty("templateCaption");
+    const switched = applyPhotoTemplateToPage(duplicated, "new-page", "story-1");
+    expect(switched[0].layout!.elements.find((element) => element.id === "copied-caption")).toEqual(copy);
+  });
   it("inserts a templated photo page before a trailing closing page without mutating inputs", () => {
     const pages: StoryPage[] = [
       { id: "cover", position: 0, kind: "cover", headline: "封面", body: "" },
@@ -66,8 +107,8 @@ describe("editor photo templates", () => {
     expect(next[1]).toMatchObject({ kind: "photo", photoUri: "file:///one.jpg" });
     expect(next[1].layout).toMatchObject({ aspectRatio: 3 / 4, photoTemplateId: "magazine-2" });
     expect(next[1].layout!.elements.filter((element) => element.type === "image")).toEqual([
-      expect.objectContaining({ uri: "file:///one.jpg", x: 0.08, y: 0.09, width: 0.52, height: 0.82 }),
-      expect.objectContaining({ uri: "file:///two.jpg", x: 0.64, y: 0.18, width: 0.28, height: 0.57 }),
+      expect.objectContaining({ uri: "file:///one.jpg", x: 0.08, y: 0.08, width: 0.52, height: 0.70 }),
+      expect.objectContaining({ uri: "file:///two.jpg", x: 0.64, y: 0.16, width: 0.28, height: 0.52 }),
     ]);
     expect(next[0]).toMatchObject({ id: "cover", kind: "cover", headline: "封面", body: "" });
     expect(next[2]).toMatchObject({ id: "closing", kind: "closing", headline: "结束", body: "" });
@@ -137,8 +178,8 @@ describe("editor photo templates", () => {
     const photos = nextPage.layout!.elements.filter((element) => element.type === "image").sort((left, right) => left.zIndex - right.zIndex);
 
     expect(photos).toEqual([
-      expect.objectContaining({ id: "old-2", uri: "file:///old-2.jpg", zIndex: 1, x: 0.08, y: 0.09, width: 0.52, height: 0.82, rotation: 0 }),
-      expect.objectContaining({ id: "old-1", uri: "file:///old-1.jpg", zIndex: 2, x: 0.64, y: 0.18, width: 0.28, height: 0.57, rotation: 0 }),
+      expect.objectContaining({ id: "old-2", uri: "file:///old-2.jpg", zIndex: 1, x: 0.08, y: 0.08, width: 0.52, height: 0.70, rotation: 0 }),
+      expect.objectContaining({ id: "old-1", uri: "file:///old-1.jpg", zIndex: 2, x: 0.64, y: 0.16, width: 0.28, height: 0.52, rotation: 0 }),
     ]);
     expect(nextPage.layout).toMatchObject({ photoTemplateId: "magazine-2", schemaVersion: 7, customMeta: { source: "editor-test" } });
     expect(nextPage.layout!.elements.find((element) => element.id === "caption")).toEqual(original[0].layout!.elements.find((element) => element.id === "caption"));

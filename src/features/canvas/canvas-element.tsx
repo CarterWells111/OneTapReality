@@ -25,7 +25,6 @@ type ElementPatch = {
   width: number;
   height: number;
   rotation: number;
-  fontSize?: number;
 };
 
 export type CanvasElementStylePreview = {
@@ -75,8 +74,7 @@ export function resolveCanvasInteractionZIndex(isSelected: boolean, interactionZ
 /**
  * 根据手势结束后的绝对位置和尺寸计算元素新状态。
  * 元素允许越界（部分超出画布），保留最小尺寸防止消失。
- * 对于文字元素，仅在双指捏合/旋转等整体缩放操作时同步 fontSize；
- * 角落手柄拖拽（cornerResize）只改变文本框尺寸，不改变字体大小。
+ * 文字元素的手势只改变文本框几何；字号由独立的字号控件修改。
  */
 export function calculateCanvasTransformFromAbsolute(
   element: CanvasElementModel,
@@ -86,7 +84,6 @@ export function calculateCanvasTransformFromAbsolute(
   absoluteHeight: number,
   absoluteRotation: number,
   canvasDimensions: CanvasDimensions,
-  textFontScale?: number,
 ): ElementPatch {
   const { width: canvasWidth, height: canvasHeight } = canvasDimensions;
   const hasCanvasWidth = Number.isFinite(canvasWidth) && canvasWidth > 0;
@@ -122,17 +119,6 @@ export function calculateCanvasTransformFromAbsolute(
     height,
     rotation: finiteOr(absoluteRotation, finiteOr(element.rotation, 0)),
   };
-  // 文字缩放以最终已钳制的文本框计算，避免越界捏合后框体与字号比例跳变。
-  if (element.type === "text") {
-    const frameScale = Math.min(width / persistedWidth, height / persistedHeight);
-    const requestedScale = Number.isFinite(textFontScale) ? textFontScale as number : frameScale;
-    const scaleRatio = Number.isFinite(element.fontSize)
-      ? Math.min(requestedScale, frameScale)
-      : requestedScale;
-    if (scaleRatio > 0 && Math.abs(scaleRatio - 1) > 0.005) {
-      patch.fontSize = Math.max(8, Math.round(finiteOr(element.fontSize, 16) * scaleRatio));
-    }
-  }
   return patch;
 }
 
@@ -242,14 +228,10 @@ export function CanvasElement({
   const baseRotation = useSharedValue(baseGeometry.rotation);
   const rotationStartOffset = useSharedValue(0);
   const gestureGeneration = useSharedValue(0);
-  const pendingTextFontScale = useSharedValue(1);
-  const pinchStartFontScale = useSharedValue(1);
   const activeGestureCount = useSharedValue(0);
   const panStarted = useSharedValue(false);
   const pinchStarted = useSharedValue(false);
   const rotationStarted = useSharedValue(false);
-  // 文字实时缩放因子：捏合时同步驱动 fontSize，实现所见即所得
-  const fontScale = useSharedValue(1);
 
   // 手势开始时记录起始位置，用于增量平移
   const panStartX = useSharedValue(0);
@@ -268,13 +250,9 @@ export function CanvasElement({
     gestureRotation.value = 0;
     baseRotation.value = baseGeometry.rotation;
     rotationStartOffset.value = 0;
-    pendingTextFontScale.value = 1;
-    pinchStartFontScale.value = 1;
-    fontScale.value = 1;
   }, [baseGeometry.left, baseGeometry.top, baseGeometry.width, baseGeometry.height, baseGeometry.rotation,
       posX, posY, elemW, elemH, gestureScale, pinchStartScale, gestureRotation, baseRotation, rotationStartOffset,
-      pendingTextFontScale, pinchStartFontScale,
-      fontScale, activeGestureCount]);
+      activeGestureCount]);
 
   const acknowledgeTransformStart = () => {
     if (!transformMountedRef.current || transformOwnershipRef.current) return;
@@ -296,7 +274,6 @@ export function CanvasElement({
     absoluteWidth: number, absoluteHeight: number,
     absoluteRotation: number,
     commitGeneration = gestureGeneration.value,
-    textFontScale = 1,
   ) => {
     if (!transformMountedRef.current) {
       acknowledgeTransformSettled();
@@ -309,7 +286,6 @@ export function CanvasElement({
     const patch = calculateCanvasTransformFromAbsolute(
       element, absoluteX, absoluteY, absoluteWidth, absoluteHeight, absoluteRotation,
       { width: canvasWidth, height: canvasHeight },
-      textFontScale,
     );
     const committedGeometry = resolveCanvasElementGeometry(
       { ...element, ...patch },
@@ -324,9 +300,6 @@ export function CanvasElement({
     baseRotation.value = committedGeometry.rotation;
     gestureRotation.value = 0;
     rotationStartOffset.value = 0;
-    pendingTextFontScale.value = 1;
-    pinchStartFontScale.value = 1;
-    fontScale.value = 1;
     onTransformEnd?.(element.id, patch);
     acknowledgeTransformSettled();
   };
@@ -365,9 +338,8 @@ export function CanvasElement({
     const finalH = elemH.value * gestureScale.value;
     const finalRot = baseRotation.value + gestureRotation.value;
     const commitGeneration = gestureGeneration.value;
-    const textFontScale = pendingTextFontScale.value;
     // 不需要重置共享值 —— React 重渲染时会通过 useEffect 同步
-    runOnJS(commitTransform)(finalX, finalY, finalW, finalH, finalRot, commitGeneration, textFontScale);
+    runOnJS(commitTransform)(finalX, finalY, finalW, finalH, finalRot, commitGeneration);
   };
 
   // ── 手势定义 ──
@@ -386,14 +358,10 @@ export function CanvasElement({
     .enabled(interactive && isSelected)
     .onBegin(() => {
       pinchStartScale.value = gestureScale.value;
-      pinchStartFontScale.value = pendingTextFontScale.value;
       beginGesture(pinchStarted);
     })
     .onUpdate((event) => {
       gestureScale.value = composeCanvasGestureScale(pinchStartScale.value, event.scale);
-      pendingTextFontScale.value = composeCanvasGestureScale(pinchStartFontScale.value, event.scale);
-      // 实时驱动文字缩放，实现所见即所得的预览
-      fontScale.value = pendingTextFontScale.value;
     })
     .onFinalize(() => finalizeGesture(pinchStarted));
 
@@ -456,7 +424,6 @@ export function CanvasElement({
               canvasWidth={canvasWidth}
               contentScale={contentScale}
               element={element}
-              fontScale={fontScale}
               onAssetEvent={onAssetEvent}
               stylePreview={stylePreview}
             />
@@ -467,7 +434,6 @@ export function CanvasElement({
                 canvasWidth={canvasWidth}
                 contentScale={contentScale}
                 element={element}
-                fontScale={fontScale}
                 onAssetEvent={onAssetEvent}
                 stylePreview={stylePreview}
               />
@@ -510,7 +476,6 @@ export function CanvasElement({
               elemH.value * gestureScale.value,
               baseRotation.value + gestureRotation.value,
               commitGeneration,
-              pendingTextFontScale.value,
             )}
             onHandleDragStart={() => {
               acknowledgeTransformStart();
@@ -530,7 +495,6 @@ function ElementContent({
   canvasWidth,
   contentScale,
   element,
-  fontScale,
   onAssetEvent,
   stylePreview,
 }: {
@@ -538,7 +502,6 @@ function ElementContent({
   canvasWidth: number;
   contentScale: number;
   element: CanvasElementModel;
-  fontScale?: SharedValue<number>;
   onAssetEvent?: (event: CanvasAssetEvent) => void;
   stylePreview?: CanvasElementStylePreview;
 }) {
@@ -567,7 +530,6 @@ function ElementContent({
       color={element.color}
       contentScale={contentScale}
       fontFamily={resolvedFontFamily}
-      fontScale={fontScale}
       fontSize={element.fontSize}
       previewColor={stylePreview?.color}
       previewFontSize={stylePreview?.fontSize}
@@ -634,15 +596,13 @@ function ImageElement({ assetId, crop, onAssetEvent, testID, uri }: { assetId: s
 }
 
 /**
- * 文字元素组件 —— 使用共享值驱动的 fontSize，实现缩放时的实时预览。
- * 通过 useAnimatedStyle 返回 fontSize 样式，在 UI 线程直接驱动。
+ * 文字字号只来自已保存样式或字号控件预览；contentScale 统一适配画布显示比例。
  */
 function AnimatedText({
   color,
   contentScale,
   fontFamily,
   fontSize,
-  fontScale,
   previewColor,
   previewFontSize,
   text,
@@ -651,14 +611,13 @@ function AnimatedText({
   contentScale: number;
   fontFamily?: string;
   fontSize: number;
-  fontScale?: SharedValue<number>;
   previewColor?: SharedValue<string>;
   previewFontSize?: SharedValue<number>;
   text: string;
 }) {
   const animatedTextStyle = useAnimatedStyle(() => {
     const resolvedFontSize = previewFontSize?.value ?? fontSize;
-    const scaledFontSize = resolvedFontSize * (fontScale?.value ?? 1) * contentScale;
+    const scaledFontSize = resolvedFontSize * contentScale;
     return {
       color: previewColor?.value ?? color,
       fontSize: scaledFontSize,

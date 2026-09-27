@@ -72,10 +72,9 @@ describe("DemoDraftGenerator", () => {
       "file://two.jpg",
     ]);
     expect(pages[1].layout?.elements.filter((element) => element.type === "text").map((element) => element.text)).toEqual([
-      "把这一刻留住",
-      "这一页收录了 2 张照片。",
+      "写下这一刻",
     ]);
-    expect(pages[1].layout?.elements.map((element) => element.zIndex)).toEqual([1, 2, 3, 4]);
+    expect(pages[1].layout?.elements.map((element) => element.zIndex)).toEqual([1, 2, 3]);
   });
 
   it("generates collage pages with canvas radians on the first draft", async () => {
@@ -95,6 +94,19 @@ describe("DemoDraftGenerator", () => {
 
     expect(rotations?.[0]).toBeCloseTo(-Math.PI / 60);
     expect(rotations?.[1]).toBeCloseTo(Math.PI / 60);
+  });
+
+  it("uses one editable managed line for a templated page while retaining its headline and body", async () => {
+    const pages = await new DemoDraftGenerator().generate({
+      title: "模板文字", city: "hangzhou", travelDate: "2026-07-24",
+      photoUris: ["file://one.jpg", "file://two.jpg"],
+      pagePlans: [{ photoUris: ["file://one.jpg", "file://two.jpg"], photoTemplateId: "classic-2" }],
+    });
+    const page = pages[1];
+    const text = page.layout!.elements.filter((element) => element.type === "text");
+    expect(text).toHaveLength(1);
+    expect(page).toMatchObject({ headline: "把这一刻留住", body: "这一页收录了 2 张照片。" });
+    expect(text[0]).toMatchObject({ templateCaption: true, text: "写下这一刻" });
   });
 
   it("falls back to freeform layout and omits a bad or count-mismatched template", async () => {

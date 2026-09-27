@@ -1,5 +1,6 @@
 import { act, render } from "@testing-library/react-native";
 import * as React from "react";
+import { StyleSheet } from "react-native";
 import { State } from "react-native-gesture-handler";
 import { fireGestureHandler, getByGestureTestId } from "react-native-gesture-handler/jest-utils";
 
@@ -10,6 +11,7 @@ import type { CanvasLayout } from "../src/types/memory";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockRunOnJSQueue: Array<() => void> = [];
+const mockAnimatedStyleUpdaters: Array<() => Record<string, unknown>> = [];
 
 jest.mock("react-native-reanimated", () => {
   const actual = jest.requireActual("react-native-reanimated/mock");
@@ -17,6 +19,10 @@ jest.mock("react-native-reanimated", () => {
     ...actual,
     runOnJS: (callback: (...args: any[]) => void) => (...args: any[]) => {
       mockRunOnJSQueue.push(() => callback(...args));
+    },
+    useAnimatedStyle: (updater: () => Record<string, unknown>) => {
+      mockAnimatedStyleUpdaters.push(updater);
+      return actual.useAnimatedStyle(updater);
     },
   };
 });
@@ -96,7 +102,10 @@ function performTextGesture(kind: "handle" | "pan" | "pinch" | "rotation") {
 }
 
 describe("overlapping canvas transforms", () => {
-  beforeEach(() => mockRunOnJSQueue.splice(0));
+  beforeEach(() => {
+    mockRunOnJSQueue.splice(0);
+    mockAnimatedStyleUpdaters.splice(0);
+  });
 
   it("releases transform ownership when an element unmounts before native finalize reaches JS", () => {
     const gate = createTransformSettleGate();
@@ -264,7 +273,7 @@ describe("overlapping canvas transforms", () => {
     expect(onTransformEnd.mock.calls[0][1]).not.toHaveProperty("fontSize");
   });
 
-  it("scales text from the resized box baseline when a real pinch follows a delayed handle commit", () => {
+  it("keeps text size after a real pinch follows a delayed handle commit", () => {
     const onTransformEnd = jest.fn();
     render(<CanvasPage interactive layout={textLayout} onTransformEnd={onTransformEnd} selectedElementId="text-1" width={300} />);
 
@@ -287,17 +296,17 @@ describe("overlapping canvas transforms", () => {
 
     expect(onTransformEnd).toHaveBeenCalledTimes(1);
     expect(onTransformEnd.mock.calls[0][1].width).toBeCloseTo(0.36);
-    expect(onTransformEnd.mock.calls[0][1].fontSize).toBe(19);
+    expect(onTransformEnd.mock.calls[0][1]).not.toHaveProperty("fontSize");
   });
 
   it.each([
-    { name: "pinch then handle", gestures: ["pinch", "handle"] as const, width: 0.36, fontSize: 19 },
-    { name: "handle then pinch", gestures: ["handle", "pinch"] as const, width: 0.36, fontSize: 19 },
-    { name: "handle then pan", gestures: ["handle", "pan"] as const, width: 0.3, fontSize: undefined },
-    { name: "pinch then pan", gestures: ["pinch", "pan"] as const, width: 0.24, fontSize: 19 },
-    { name: "pinch then rotation", gestures: ["pinch", "rotation"] as const, width: 0.24, fontSize: 19 },
-    { name: "two pinches", gestures: ["pinch", "pinch"] as const, width: 0.288, fontSize: 23 },
-  ])("commits independent text geometry and font provenance for $name", ({ gestures, width, fontSize }) => {
+    { name: "pinch then handle", gestures: ["pinch", "handle"] as const, width: 0.36 },
+    { name: "handle then pinch", gestures: ["handle", "pinch"] as const, width: 0.36 },
+    { name: "handle then pan", gestures: ["handle", "pan"] as const, width: 0.3 },
+    { name: "pinch then pan", gestures: ["pinch", "pan"] as const, width: 0.24 },
+    { name: "pinch then rotation", gestures: ["pinch", "rotation"] as const, width: 0.24 },
+    { name: "two pinches", gestures: ["pinch", "pinch"] as const, width: 0.288 },
+  ])("commits text geometry without font-size changes for $name", ({ gestures, width }) => {
     const onTransformEnd = jest.fn();
     render(<CanvasPage interactive layout={textLayout} onTransformEnd={onTransformEnd} selectedElementId="text-1" width={300} />);
 
@@ -308,10 +317,32 @@ describe("overlapping canvas transforms", () => {
 
     expect(onTransformEnd).toHaveBeenCalledTimes(1);
     expect(onTransformEnd.mock.calls[0][1].width).toBeCloseTo(width);
-    if (fontSize === undefined) {
-      expect(onTransformEnd.mock.calls[0][1]).not.toHaveProperty("fontSize");
-    } else {
-      expect(onTransformEnd.mock.calls[0][1].fontSize).toBe(fontSize);
-    }
+    expect(onTransformEnd.mock.calls[0][1]).not.toHaveProperty("fontSize");
+  });
+
+  it("keeps the live text size and saved read-only size during and after a pinch", () => {
+    const onTransformEnd = jest.fn();
+    const screen = render(<CanvasPage interactive layout={textLayout} onTransformEnd={onTransformEnd} selectedElementId="text-1" width={300} />);
+
+    fireGestureHandler(getByGestureTestId("canvas-element-pinch-text-1"), [
+      { state: State.BEGAN, scale: 1 },
+      { state: State.ACTIVE, scale: 1 },
+      { scale: 1.5 },
+      { state: State.END, scale: 1.5 },
+    ]);
+
+    const liveTextStyle = mockAnimatedStyleUpdaters.map((updater) => updater()).find((style) => "fontSize" in style);
+    expect(liveTextStyle).toMatchObject({ fontSize: 16 });
+    flushRunOnJSQueue();
+
+    const patch = onTransformEnd.mock.calls[0][1];
+    expect(patch).not.toHaveProperty("fontSize");
+    const savedLayout: CanvasLayout = {
+      ...textLayout,
+      elements: [{ ...textLayout.elements[0], ...patch }],
+    };
+    screen.rerender(<CanvasPage contentScale={0.5} layout={savedLayout} width={150} height={200} />);
+    expect(StyleSheet.flatten(screen.getByText("Corner resize").props.style)).toMatchObject({ fontSize: 8 });
+    expect(StyleSheet.flatten(screen.getByTestId("canvas-element-frame-text-1").props.style)).toMatchObject({ width: 45 });
   });
 });
