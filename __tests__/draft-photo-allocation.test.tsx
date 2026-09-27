@@ -248,6 +248,12 @@ describe("DraftPhotoAllocation", () => {
     expect(firstImageStyle.transform).toEqual([{ rotate: `${-Math.PI / 60}rad` }]);
   });
 
+  it("shows template text only when the plan has a matching photo count", () => {
+    const screen = render(<DraftPhotoAllocation onChange={jest.fn()} photoUris={photos.slice(0, 2)}
+      value={[{ photoUris: photos.slice(0, 2), photoTemplateId: "classic-1" }]} />);
+    expect(screen.queryByTestId("draft-photo-preview-caption-1")).toBeNull();
+  });
+
   it("shows per-page progress and advances or returns without changing controlled plans", () => {
     const onChange = jest.fn();
     const screen = render(

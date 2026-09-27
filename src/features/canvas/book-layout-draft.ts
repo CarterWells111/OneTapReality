@@ -2,7 +2,7 @@ import type { CanvasImageElement, MemoryDraftPagePlan, StoryPage } from "../../t
 import { createLegacyLayout } from "./canvas-layout";
 import { MAX_PHOTOS_PER_CANVAS_PAGE } from "./auto-layout";
 import { preserveLayoutMeta } from "./editor-pages";
-import { resolvePhotoTemplate } from "./photo-templates";
+import { placeManagedTemplateCaption, resolvePhotoTemplate } from "./photo-templates";
 
 export function createBookLayoutDraft(pages: StoryPage[]) {
   const photos = new Map<string, CanvasImageElement>();
@@ -40,7 +40,7 @@ export function applyBookLayoutDraft(pages: StoryPage[], draft: BookLayoutDraft,
     const oldPhotos = layout.elements.filter((element): element is CanvasImageElement => element.type === "image");
     let slotIndex = 0;
     const elements = layout.elements.map(element => {
-      if (element.type !== "image") return element;
+      if (element.type !== "image") return template ? placeManagedTemplateCaption(element, template) : element;
       const photo = draft.photos.get(plan.photoUris[slotIndex])!;
       const slot = template?.slots[slotIndex] ?? oldPhotos[slotIndex];
       slotIndex += 1;

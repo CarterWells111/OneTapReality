@@ -70,6 +70,8 @@ export type CanvasImageElement = CanvasElementBase & {
 
 export type CanvasTextElement = CanvasElementBase & {
   type: "text";
+  /** New template caption follows template changes until manually positioned. */
+  templateCaption?: true;
   text: string;
   fontStyle: CanvasFontStyle;
   color: string;

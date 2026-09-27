@@ -1,4 +1,5 @@
 import { createBookLayoutDraft, applyBookLayoutDraft } from "../src/features/canvas/book-layout-draft";
+import { addCanvasPage } from "../src/features/canvas/editor-pages";
 import type { StoryPage } from "../src/types/memory";
 
 const pages: StoryPage[] = [
@@ -51,4 +52,13 @@ it("updates the legacy first-photo reference when slot order changes", () => {
   const draft = createBookLayoutDraft(original);
   const result = applyBookLayoutDraft(original, draft, [{ ...draft.plans[0], photoUris: [...draft.plans[0].photoUris].reverse() }]);
   expect(result[0].photoUri).toBe("second.jpg");
+});
+
+it("moves only managed template text in whole-book template previews and applications", () => {
+  const created = addCanvasPage([], ["one.jpg"], "new-page", "classic-1");
+  const draft = createBookLayoutDraft(created);
+  const plans = [{ ...draft.plans[0], photoTemplateId: "story-1" as const }];
+  const result = applyBookLayoutDraft(created, draft, plans);
+  expect(result[0].layout!.elements.find(e => e.type === "text")).toMatchObject({ templateCaption: true, x: 0.07, y: 0.10 });
+  expect(created[0].layout!.elements.find(e => e.type === "text")).toMatchObject({ x: 0.10, y: 0.015 });
 });

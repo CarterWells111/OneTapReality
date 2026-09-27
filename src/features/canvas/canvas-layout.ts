@@ -21,18 +21,18 @@ function repairedTemplateRotations(
     .sort((left, right) => left.element.zIndex - right.element.zIndex || left.index - right.index);
   if (orderedImages.length !== template.photoCount) return new Map();
 
-  const matchesTemplate = orderedImages.every(({ element }, slotIndex) => {
-    const slot = template.slots[slotIndex];
+  const matchedSlots = [template.slots, template.legacySlots].find((slots) => slots && orderedImages.every(({ element }, slotIndex) => {
+    const slot = slots[slotIndex];
     return approximatelyEqual(element.x, slot.x)
       && approximatelyEqual(element.y, slot.y)
       && approximatelyEqual(element.width, slot.width)
       && approximatelyEqual(element.height, slot.height)
       && (approximatelyEqual(element.rotation, slot.rotation)
         || approximatelyEqual(element.rotation, radiansToDegrees(slot.rotation)));
-  });
-  if (!matchesTemplate) return new Map();
+  }));
+  if (!matchedSlots) return new Map();
 
-  return new Map(orderedImages.map(({ index }, slotIndex) => [index, template.slots[slotIndex].rotation]));
+  return new Map(orderedImages.map(({ index }, slotIndex) => [index, matchedSlots[slotIndex].rotation]));
 }
 
 export const MAX_NORMALIZED_ELEMENT_SIZE = 1.5;

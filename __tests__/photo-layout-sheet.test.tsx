@@ -253,13 +253,16 @@ describe("PhotoLayoutSheet", () => {
     expect(screen.getByTestId("photo-layout-preview-image-1-content").props.source).toEqual([{ uri: "file:///one.jpg" }]);
     expect(screen.getByTestId("photo-layout-preview-image-2-content").props.source).toEqual([{ uri: "file:///two.jpg" }]);
     expect(StyleSheet.flatten(firstPreviewPhoto.props.style)).toEqual(expect.objectContaining({
-      height: "82%", left: "8%", top: "9%", width: "52%",
+      height: "70%", left: "8%", top: "8%", width: "52%",
+    }));
+    expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-caption").props.style)).toEqual(expect.objectContaining({
+      height: "7%", left: "8%", top: "84%", width: "84%",
     }));
 
     fireEvent.press(screen.getByLabelText("竖向切片双图模板"));
 
     expect(StyleSheet.flatten(screen.getByTestId("photo-layout-preview-slot-1").props.style)).toEqual(expect.objectContaining({
-      height: "84%", left: "8%", top: "8%", width: "39%",
+      height: "71%", left: "8%", top: "8%", width: "39%",
     }));
   });
 
