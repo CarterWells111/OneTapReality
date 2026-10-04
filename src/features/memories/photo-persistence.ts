@@ -62,8 +62,8 @@ function isAccountScopedPhotoUri(uri: string): boolean {
 export async function deleteMemoryPhotoDirectory(accountKey: LocalLibraryOwner, memoryId: string): Promise<void> {
   try {
     await FileSystem.deleteAsync(`${getAccountPhotosDirectory(accountKey)}${encodeURIComponent(memoryId)}/`, { idempotent: true });
-  } catch (error) {
-    console.warn("[photo-persistence] 无法清理相册照片目录：", error);
+  } catch {
+    console.warn("[photo-persistence] 无法清理相册照片目录");
   }
 }
 
@@ -190,8 +190,8 @@ async function stagePhotoUriInDirectoryStrict(uri: string, directory: string): P
   } catch (error) {
     try {
       await FileSystem.deleteAsync(destination, { idempotent: true });
-    } catch (cleanupError) {
-      console.warn("[photo-persistence] 无法清理复制失败的照片：", cleanupError);
+    } catch {
+      console.warn("[photo-persistence] 无法清理复制失败的照片");
     }
     throw error;
   }

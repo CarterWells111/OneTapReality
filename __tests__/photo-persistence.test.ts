@@ -132,6 +132,21 @@ describe("persistPhotoUri", () => {
     )).rejects.toThrow("no space");
   });
 
+  it("keeps the original copy error without logging private cleanup details", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const copyError = new Error("ENOSPC");
+    copyAsyncMock.mockRejectedValueOnce(copyError);
+    deleteAsyncMock.mockRejectedValueOnce(new Error("file:///private/owner@example.com/memory-private-id.jpg"));
+    try {
+      await expect(stagePhotoUriStrict("file:///temporary.jpg", "account:owner@example.com", "memory-1"))
+        .rejects.toBe(copyError);
+      expect(warning).toHaveBeenCalledWith("[photo-persistence] 无法清理复制失败的照片");
+      expect(JSON.stringify(warning.mock.calls)).not.toMatch(/private|owner@example|memory-private-id/);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   it("rejects and removes a partial destination when copy succeeds but verification fails", async () => {
     getInfoAsyncMock
       .mockResolvedValueOnce({ exists: false, isDirectory: false })
@@ -172,6 +187,19 @@ describe("photo directory cleanup", () => {
       "file:///data/user/0/com.app/documents/photos/accounts/owner%40example.com/memory%2F1/",
       { idempotent: true },
     );
+  });
+
+  it("does not log private details when cleaning an old draft directory fails", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => {});
+    deleteAsyncMock.mockRejectedValueOnce(new Error("file:///private/owner@example.com/old-draft-private-id/"));
+    try {
+      await expect(deleteMemoryPhotoDirectory("account:owner@example.com", "memory-1"))
+        .resolves.toBeUndefined();
+      expect(warning).toHaveBeenCalledWith("[photo-persistence] 无法清理相册照片目录");
+      expect(JSON.stringify(warning.mock.calls)).not.toMatch(/private|owner@example|old-draft-private-id/);
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it("never deletes pre-account legacy sandbox files during account-scoped migration", async () => {
