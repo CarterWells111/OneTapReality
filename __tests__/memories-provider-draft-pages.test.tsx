@@ -12,8 +12,9 @@ const mockHydrateMemoryPhotoReferences = jest.fn();
 const mockReplaceMemoryMediaSnapshot = jest.fn();
 const mockGetMemoryEditDraft = jest.fn();
 const mockSaveMemoryEditDraft = jest.fn();
+const mockAssertActive = jest.fn();
 const mockRunWrite = (operation: (owner: string, assertActive: () => void) => Promise<unknown>) => (
-  operation("account:owner@example.com", () => undefined)
+  operation("account:owner@example.com", mockAssertActive)
 );
 const mockStagePhotoUriStrict = jest.fn();
 const mockGenerate = jest.fn();
@@ -108,6 +109,7 @@ describe("MemoriesProvider draft page persistence", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockStagePhotoUriStrict.mockReset();
+    mockAssertActive.mockReset();
     capturedMemories = undefined;
     mockListMemories.mockResolvedValue([]);
     mockHydrateMemoryPhotoReferences.mockImplementation(async (memory) => ({
@@ -376,7 +378,7 @@ describe("MemoriesProvider draft page persistence", () => {
       city: "hangzhou",
       travelDate: "2026-07-23",
       photoUris: ["file:///temporary-one.jpg", "file:///temporary-two.jpg"],
-    })).rejects.toThrow("iCloud unavailable");
+    })).rejects.toMatchObject({ stage: "photo-import", photoNumber: 2 });
 
     expect(first.rollback).toHaveBeenCalledTimes(1);
     expect(first.commit).not.toHaveBeenCalled();
@@ -398,7 +400,7 @@ describe("MemoriesProvider draft page persistence", () => {
       travelDate: "2026-07-23",
       photoUris: ["file:///temporary-photo.jpg"],
       coverImage: "file:///temporary-cover.jpg",
-    })).rejects.toThrow("cover unavailable");
+    })).rejects.toMatchObject({ stage: "photo-import", isCover: true });
 
     expect(mockStagePhotoUriStrict).toHaveBeenNthCalledWith(
       2,
@@ -481,7 +483,7 @@ describe("MemoriesProvider draft page persistence", () => {
       travelDate: "2026-07-23",
       photoUris: ["file:///temporary-photo.jpg"],
       coverImage: "file:///temporary-cover.jpg",
-    })).rejects.toThrow("repository failed");
+    })).rejects.toMatchObject({ stage: "storage" });
 
     expect(photo.rollback).toHaveBeenCalledTimes(1);
     expect(cover.rollback).toHaveBeenCalledTimes(1);
@@ -505,7 +507,7 @@ describe("MemoriesProvider draft page persistence", () => {
       city: "hangzhou",
       travelDate: "2026-07-23",
       photoUris: ["file:///temporary-one.jpg", "file:///temporary-two.jpg"],
-    })).rejects.toThrow(`${failure} failed`);
+    })).rejects.toMatchObject({ stage: failure === "generation" ? "layout" : "storage" });
 
     handles.forEach((handle) => {
       expect(handle.rollback).toHaveBeenCalledTimes(1);
@@ -550,6 +552,86 @@ describe("MemoriesProvider draft page persistence", () => {
     expect(second.commit).toHaveBeenCalledTimes(1);
     expect(first.rollback).not.toHaveBeenCalled();
     expect(second.rollback).not.toHaveBeenCalled();
+  });
+
+  it("returns the committed draft with a warning when refreshing the list fails", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+    mockListMemories.mockRejectedValueOnce(new Error("refresh failed"));
+
+    const created = await capturedMemories!.createDraft({
+      title: "已保存草稿",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+    });
+
+    expect(created).toMatchObject({ status: "draft", creationWarning: "list-refresh" });
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    expect(photo.commit).toHaveBeenCalledTimes(1);
+    expect(photo.rollback).not.toHaveBeenCalled();
+  });
+
+  it("does not insert a draft when its newly copied photo references cannot be resolved", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+    mockHydrateMemoryPhotoReferences.mockImplementationOnce(async (memory) => ({
+      runtimeMemory: memory,
+      storageMemory: memory,
+      changed: false,
+      unresolved: [{ token: "missing-local-photo://test", location: { kind: "memory-photo", position: 0 }, storedReference: photo.uri }],
+    }));
+
+    await expect(capturedMemories!.createDraft({
+      title: "照片引用失败",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+    })).rejects.toMatchObject({ stage: "photo-reference" });
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect(photo.commit).not.toHaveBeenCalled();
+    expect(photo.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not turn an account switch after insertion into a harmless refresh warning", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+    mockListMemories.mockImplementationOnce(async () => {
+      mockAssertActive.mockImplementation(() => { throw new Error("本机旅行册已经切换，请重新操作"); });
+      throw new Error("refresh failure");
+    });
+
+    await expect(capturedMemories!.createDraft({
+      title: "切换保护",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+    })).rejects.toThrow("本机旅行册已经切换，请重新操作");
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    expect(photo.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back newly staged photos when resolving their references throws", async () => {
+    const photo = { uri: "file:///owned/photo.jpg", commit: jest.fn(), rollback: jest.fn(async () => undefined) };
+    mockStagePhotoUriStrict.mockResolvedValueOnce(photo);
+    render(<MemoriesProvider><CaptureMemories /></MemoriesProvider>);
+    await waitFor(() => expect(capturedMemories?.isReady).toBe(true));
+    mockHydrateMemoryPhotoReferences.mockRejectedValueOnce(new Error("reference failure with private path"));
+
+    await expect(capturedMemories!.createDraft({
+      title: "照片引用失败",
+      city: "hangzhou",
+      travelDate: "2026-07-23",
+      photoUris: ["file:///temporary-photo.jpg"],
+    })).rejects.toMatchObject({ stage: "photo-reference" });
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+    expect(photo.rollback).toHaveBeenCalledTimes(1);
   });
 
   it("passes reconstructed grouped plans into draft retry without persisting them", async () => {

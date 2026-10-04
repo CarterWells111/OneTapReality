@@ -190,8 +190,8 @@ async function stagePhotoUriInDirectoryStrict(uri: string, directory: string): P
   } catch (error) {
     try {
       await FileSystem.deleteAsync(destination, { idempotent: true });
-    } catch (cleanupError) {
-      console.warn("[photo-persistence] 无法清理复制失败的照片：", cleanupError);
+    } catch {
+      console.warn("[photo-persistence] 无法清理复制失败的照片");
     }
     throw error;
   }

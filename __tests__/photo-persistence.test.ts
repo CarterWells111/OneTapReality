@@ -132,6 +132,21 @@ describe("persistPhotoUri", () => {
     )).rejects.toThrow("no space");
   });
 
+  it("keeps the original copy error without logging private cleanup details", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const copyError = new Error("ENOSPC");
+    copyAsyncMock.mockRejectedValueOnce(copyError);
+    deleteAsyncMock.mockRejectedValueOnce(new Error("file:///private/owner@example.com/memory-private-id.jpg"));
+    try {
+      await expect(stagePhotoUriStrict("file:///temporary.jpg", "account:owner@example.com", "memory-1"))
+        .rejects.toBe(copyError);
+      expect(warning).toHaveBeenCalledWith("[photo-persistence] 无法清理复制失败的照片");
+      expect(JSON.stringify(warning.mock.calls)).not.toMatch(/private|owner@example|memory-private-id/);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   it("rejects and removes a partial destination when copy succeeds but verification fails", async () => {
     getInfoAsyncMock
       .mockResolvedValueOnce({ exists: false, isDirectory: false })

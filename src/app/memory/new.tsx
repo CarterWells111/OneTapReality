@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { ColorPicker } from "../../components/ColorPicker";
@@ -11,6 +11,7 @@ import { cityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { areDraftPhotoPlansValid } from "../../features/memories/photo-page-planner";
 import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
+import { getDraftCreationErrorMessage } from "../../features/memories/draft-creation-error";
 import { useMemories } from "../../features/memories/memories-provider";
 import {
   MIN_TRAVEL_DATE,
@@ -63,6 +64,10 @@ export default function NewMemoryScreen() {
   const [isPickingPhotos, setIsPickingPhotos] = React.useState(false);
   const [error, setError] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
+  const saving = React.useRef(false);
+  const savedDraft = React.useRef<Awaited<ReturnType<typeof createDraft>> | null>(null);
+  const [hasSavedDraft, setHasSavedDraft] = React.useState(false);
+  const formLocked = isSaving || hasSavedDraft;
   const [activeSheet, setActiveSheet] = React.useState<"city" | null>(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
 
@@ -98,7 +103,7 @@ export default function NewMemoryScreen() {
   };
 
   const selectPhotos = async () => {
-    if (pickingPhotos.current || isSaving) return;
+    if (pickingPhotos.current || formLocked) return;
     pickingPhotos.current = true;
     setIsPickingPhotos(true);
     try {
@@ -119,28 +124,53 @@ export default function NewMemoryScreen() {
     }
   };
   const pickCoverImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsMultipleSelection: false,
-      mediaTypes: ["images"],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setCoverImage(result.assets[0].uri);
-      void Haptics.selectionAsync();
+    if (pickingPhotos.current || formLocked) return;
+    pickingPhotos.current = true;
+    setIsPickingPhotos(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: false,
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setCoverImage(result.assets[0].uri);
+        setError("");
+        void Haptics.selectionAsync();
+      }
+    } catch {
+      setError("无法选择封面图片，请重试。");
+    } finally {
+      pickingPhotos.current = false;
+      setIsPickingPhotos(false);
     }
   };
 
   const generate = async () => {
-    if (!canGenerate) return;
+    if (saving.current || (!savedDraft.current && !canGenerate)) return;
+    saving.current = true;
     setError("");
     setIsSaving(true);
     try {
-      const memory = await createDraft({ title, city, travelDate, photoUris, pagePlans, coverColor, coverImage });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      let memory = savedDraft.current;
+      if (!memory) {
+        memory = await createDraft({ title, city, travelDate, photoUris, pagePlans, coverColor, coverImage });
+        savedDraft.current = memory;
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (memory.creationWarning === "list-refresh") {
+          Alert.alert("草稿已保存", "草稿已保存，但草稿箱刷新失败。你可以继续编辑，返回首页后再试。");
+        }
+      }
       router.replace({ pathname: "/memory/review/[id]", params: { id: memory.id } });
-    } catch {
-      setError("无法创建旅行册，请检查所选照片后重试。");
+    } catch (error) {
+      if (savedDraft.current) {
+        setHasSavedDraft(true);
+        setError("草稿已保存，但无法打开编辑页。请返回首页，从草稿箱打开。");
+      } else {
+        setError(getDraftCreationErrorMessage(error));
+      }
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   };
@@ -168,6 +198,7 @@ export default function NewMemoryScreen() {
             <Text selectable style={styles.formLabel}>名称</Text>
             <TextInput
               accessibilityLabel="纪念册标题"
+              editable={!formLocked}
               onChangeText={setTitle}
               placeholder="纪念册标题"
               placeholderTextColor={colors.muted}
@@ -178,6 +209,7 @@ export default function NewMemoryScreen() {
           <Pressable
             accessibilityLabel="选择旅行日期"
             accessibilityRole="button"
+            disabled={formLocked}
             onPress={openDatePicker}
             style={({ pressed }) => [styles.formRow, styles.formRowDivider, pressed && styles.pressed]}
           >
@@ -187,6 +219,7 @@ export default function NewMemoryScreen() {
           <Pressable
             accessibilityLabel="选择地点"
             accessibilityRole="button"
+            disabled={formLocked}
             onPress={() => setActiveSheet("city")}
             style={({ pressed }) => [styles.formRow, pressed && styles.pressed]}
           >
@@ -213,7 +246,7 @@ export default function NewMemoryScreen() {
           <View style={styles.coverHintCol}>
             <Text selectable style={styles.coverHint}>点选颜色或上传一张封面图。</Text>
             {coverImage ? (
-              <Pressable onPress={() => setCoverImage(undefined)} style={styles.coverClearLink}>
+              <Pressable disabled={formLocked} onPress={() => setCoverImage(undefined)} style={styles.coverClearLink}>
                 <Text style={styles.coverClearText}>移除封面图</Text>
               </Pressable>
             ) : null}
@@ -225,6 +258,7 @@ export default function NewMemoryScreen() {
               accessibilityLabel={`封面颜色 ${swatch}`}
               accessibilityRole="button"
               accessibilityState={{ selected: coverColor === swatch && !coverImage }}
+              disabled={formLocked}
               key={swatch}
               onPress={() => {
                 setCoverColor(swatch);
@@ -238,6 +272,7 @@ export default function NewMemoryScreen() {
           <Pressable
             accessibilityLabel="自定封面颜色"
             accessibilityRole="button"
+            disabled={formLocked}
             onPress={() => setShowColorPicker(true)}
             style={[styles.swatch, styles.toolSwatch]}
           >
@@ -247,6 +282,7 @@ export default function NewMemoryScreen() {
           <Pressable
             accessibilityLabel="上传封面图片"
             accessibilityRole="button"
+            disabled={formLocked || isPickingPhotos}
             onPress={() => void pickCoverImage()}
             style={[styles.swatch, styles.toolSwatch]}
           >
@@ -256,7 +292,7 @@ export default function NewMemoryScreen() {
       </Section>
 
       <Section title="选择照片" caption="PHOTOS">
-        <AppButton label={photoUris.length ? "继续添加照片" : "从相册选择照片"} disabled={isPickingPhotos || isSaving} tone="secondary" onPress={() => void selectPhotos()} />
+        <AppButton label={photoUris.length ? "继续添加照片" : "从相册选择照片"} disabled={isPickingPhotos || formLocked} tone="secondary" onPress={() => void selectPhotos()} />
         {photoUris.length > 0 ? (
           <ScrollView horizontal contentContainerStyle={styles.photoStrip} showsHorizontalScrollIndicator={false}>
             {photos.map(({ uri, id }, index) => {
@@ -288,7 +324,7 @@ export default function NewMemoryScreen() {
                   <Pressable
                     accessibilityLabel={`移除照片 ${index + 1}`}
                     accessibilityRole="button"
-                    disabled={isSaving}
+                    disabled={formLocked}
                     onPress={() => dispatchPhotos({ type: "remove", id })}
                     style={styles.photoRemove}
                   >
@@ -308,14 +344,15 @@ export default function NewMemoryScreen() {
                 : `正在载入照片，已完成 ${loadedPhotoCount} / ${photoUris.length} 张`}
           </Text>
         ) : null}
-        {allPhotosReady ? (
+        {allPhotosReady && !hasSavedDraft ? (
           <DraftPhotoAllocation onChange={(nextPlans) => dispatchPhotos({ type: "plans", pagePlans: nextPlans })} photoUris={photoUris} value={pagePlans} />
         ) : null}
       </Section>
 
       {error ? <Text selectable style={styles.errorText}>{error}</Text> : null}
+      {hasSavedDraft ? <Text selectable style={styles.footNote}>草稿已保存，后续修改请在编辑页完成。</Text> : null}
       {photoUris.length > 0 ? (
-        <AppButton label={isSaving ? "正在生成旅行册…" : "生成旅行册草稿"} tone="warm" disabled={isSaving || isPickingPhotos || !canGenerate} onPress={() => void generate()} />
+        <AppButton label={isSaving ? (hasSavedDraft ? "正在打开草稿…" : "正在生成旅行册…") : (hasSavedDraft ? "打开已保存草稿" : "生成旅行册草稿")} tone="warm" disabled={isSaving || isPickingPhotos || (!hasSavedDraft && !canGenerate)} onPress={() => void generate()} />
       ) : (
         <Text selectable style={styles.footNote}>选好照片后，这里会出现「生成旅行册草稿」。</Text>
       )}

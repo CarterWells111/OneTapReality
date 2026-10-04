@@ -33,13 +33,28 @@ import type { Memory, MemoryDraftInput, MemoryDraftPagePlan, StoryPage } from ".
 import { resolvePhotoTemplate } from "../canvas/photo-templates";
 import { createMemory as createMemoryRecord } from "./memory-factory";
 import { validateMemoryDraft } from "./validation";
+import { DraftCreationError, type DraftCreationStage } from "./draft-creation-error";
+
+type CreatedDraft = Memory & { creationWarning?: "list-refresh" };
+
+async function draftCreationStep<T>(
+  stage: DraftCreationStage,
+  operation: () => Promise<T>,
+  context?: { photoNumber?: number; isCover?: boolean },
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw error instanceof DraftCreationError ? error : new DraftCreationError(stage, error, context);
+  }
+}
 
 type MemoriesContextValue = {
   memories: Memory[];
   drafts: Memory[];
   isReady: boolean;
   createMemory: (input: MemoryDraftInput) => Promise<Memory>;
-  createDraft: (input: MemoryDraftInput) => Promise<Memory>;
+  createDraft: (input: MemoryDraftInput) => Promise<CreatedDraft>;
   getDraftById: (id: string) => Promise<Memory | null>;
   saveDraft: (id: string) => Promise<void>;
   retryDraft: (id: string) => Promise<Memory>;
@@ -247,7 +262,11 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
           ? [...input.photoUris, input.coverImage]
           : input.photoUris;
         for (const uri of new Set(inputUris)) {
-          const staged = await stagePhotoUriStrict(uri, owner, id);
+          const photoIndex = input.photoUris.indexOf(uri);
+          const staged = await draftCreationStep("photo-import", () => stagePhotoUriStrict(uri, owner, id), {
+            ...(photoIndex >= 0 ? { photoNumber: photoIndex + 1 } : {}),
+            isCover: photoIndex < 0 && uri === input.coverImage,
+          });
           stagedPhotos.push(staged);
           uriMap.set(uri, staged.uri);
         }
@@ -266,28 +285,52 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
               }
             : {}),
         };
-        const pages = await generator.generate(stagedInput);
-        const now = new Date().toISOString();
-        const memory = createMemoryRecord({ id, now, input: stagedInput, pages });
-        const persisted = await ensureMemoryPhotosPersisted(memory, owner);
-        const hydrated = await hydrateForStorage(persisted.memory, owner);
+        const memory = await draftCreationStep("layout", async () => {
+          const pages = await generator.generate(stagedInput);
+          return createMemoryRecord({ id, now: new Date().toISOString(), input: stagedInput, pages });
+        });
+        const hydrated = await draftCreationStep("photo-reference", async () => {
+          const persisted = await ensureMemoryPhotosPersisted(memory, owner);
+          const result = await hydrateForStorage(persisted.memory, owner);
+          const firstMissing = result.unresolved[0];
+          if (firstMissing) {
+            const location = firstMissing.location;
+            throw new DraftCreationError("photo-reference", new Error("Photo destination verification failed"), {
+              ...(location.kind === "memory-photo" ? { photoNumber: location.position + 1 } : {}),
+              isCover: location.kind === "memory-cover" || location.kind === "layout-cover",
+            });
+          }
+          return result;
+        });
         assertActive();
-        await createDraftInDb(db, hydrated.storageMemory, owner);
+        await draftCreationStep("storage", () => createDraftInDb(db, hydrated.storageMemory, owner));
         stagedPhotos.forEach((photo) => photo.commit());
         try {
           const oldDraftIds = await trimOldDrafts(db, owner);
           await Promise.all(oldDraftIds.map((oldId) => deleteMemoryPhotoDirectory(owner, oldId)));
-        } catch (error) {
-          console.warn("[memories-provider] 无法清理旧草稿：", error);
+        } catch {
+          console.warn("[memories-provider] 无法清理旧草稿");
         }
-        await refresh(owner, assertActive);
-        return { ...hydrated.runtimeMemory, status: "draft" as const };
+        let creationWarning: "list-refresh" | undefined;
+        try {
+          await refresh(owner, assertActive);
+        } catch {
+          // The database write and photo commits have already succeeded.
+          // Preserve account-switch protection while treating a list failure as a warning.
+          assertActive();
+          creationWarning = "list-refresh";
+        }
+        return {
+          ...hydrated.runtimeMemory,
+          status: "draft" as const,
+          ...(creationWarning ? { creationWarning } : {}),
+        };
       } catch (error) {
         for (const staged of stagedPhotos) {
           try {
             await staged.rollback();
-          } catch (cleanupError) {
-            console.warn("[memories-provider] 无法回滚草稿照片：", cleanupError);
+          } catch {
+            console.warn("[memories-provider] 无法回滚草稿照片");
           }
         }
         throw error;

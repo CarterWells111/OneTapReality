@@ -1,7 +1,9 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import * as ImagePicker from "expo-image-picker";
+import { Alert } from "react-native";
 
 import { areDraftPhotoPlansValid } from "../src/features/memories/photo-page-planner";
+import { DraftCreationError } from "../src/features/memories/draft-creation-error";
 
 const mockCreateDraft = jest.fn();
 const mockReplace = jest.fn();
@@ -19,6 +21,8 @@ import NewMemoryScreen from "../src/app/memory/new";
 describe("new memory photo planning", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReplace.mockReset();
+    mockCreateDraft.mockReset();
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset();
     mockCreateDraft.mockResolvedValue({ id: "draft-1" });
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
@@ -36,6 +40,112 @@ describe("new memory photo planning", () => {
   it("rejects a draft plan with more than eight photos on one page", () => {
     const nine = Array.from({ length: 9 }, (_, index) => `file://photo-${index + 1}.jpg`);
     expect(areDraftPhotoPlansValid(nine, [{ photoUris: nine }])).toBe(false);
+  });
+
+  async function readyToGenerate() {
+    const screen = render(<NewMemoryScreen />);
+    await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
+    for (const index of [1, 2, 3, 4]) {
+      fireEvent(screen.getByTestId(`new-memory-photo-${index}`), "load");
+    }
+    return screen;
+  }
+
+  it("shows a safe fallback without exposing an unknown creation error", async () => {
+    mockCreateDraft.mockRejectedValueOnce(new Error("file:///private/photo.jpg token=secret user@example.com"));
+    const screen = await readyToGenerate();
+
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(screen.getByText("无法创建旅行册草稿，请稍后重试；若仍失败，请联系支持。")).toBeTruthy();
+    expect(screen.queryByText(/private|secret|user@example/)).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("clears the previous error when a creation retry succeeds", async () => {
+    mockCreateDraft.mockRejectedValueOnce(new Error("unknown failure"));
+    const screen = await readyToGenerate();
+
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+    expect(screen.getByText("无法创建旅行册草稿，请稍后重试；若仍失败，请联系支持。")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(screen.queryByText("无法创建旅行册草稿，请稍后重试；若仍失败，请联系支持。")).toBeNull();
+    expect(mockCreateDraft).toHaveBeenCalledTimes(2);
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/memory/review/[id]", params: { id: "draft-1" } });
+  });
+
+  it.each([
+    { name: "photo import", error: new DraftCreationError("photo-import", new Error("unknown"), { photoNumber: 3 }), message: "导入第 3 张照片时失败。请重新选择该照片后重试；若仍失败，请联系支持。" },
+    { name: "layout", error: new DraftCreationError("layout", new Error("unknown")), message: "生成旅行册页面时失败。请调整页面布局后重试；若仍失败，请联系支持。" },
+    { name: "photo references", error: new DraftCreationError("photo-reference", new Error("unknown")), message: "准备旅行册照片时失败。请重新选择照片后重试；若仍失败，请联系支持。" },
+    { name: "storage", error: new DraftCreationError("storage", new Error("unknown")), message: "保存旅行册草稿时失败。请稍后重试；若仍失败，请联系支持。" },
+    { name: "invalid title", error: new Error("请输入纪念册标题"), message: "请输入纪念册标题。" },
+    { name: "library not ready", error: new Error("本机旅行册仍在准备中"), message: "本机旅行册仍在准备中，请稍后再试。" },
+    { name: "library switched", error: new Error("本机旅行册已经切换，请重新操作"), message: "本机旅行册已经切换，请重新打开创建页面后重试。" },
+  ])("shows the corresponding message for $name", async ({ error, message }) => {
+    mockCreateDraft.mockRejectedValueOnce(error);
+    const screen = await readyToGenerate();
+
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("opens the saved draft and reports a failed draft-list refresh", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    mockCreateDraft.mockResolvedValueOnce({ id: "draft-1", creationWarning: "list-refresh" });
+    const screen = await readyToGenerate();
+
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(alert).toHaveBeenCalledWith("草稿已保存", "草稿已保存，但草稿箱刷新失败。你可以继续编辑，返回首页后再试。");
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: "/memory/review/[id]", params: { id: "draft-1" } });
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  it("reports navigation failure as already saved and retries opening without creating a duplicate", async () => {
+    mockReplace.mockImplementationOnce(() => { throw new Error("Navigation failed for draft-private-id"); });
+    const screen = await readyToGenerate();
+
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(screen.getByText("草稿已保存，但无法打开编辑页。请返回首页，从草稿箱打开。")).toBeTruthy();
+    expect(screen.queryByText(/draft-private-id/)).toBeNull();
+    expect(screen.getByLabelText("纪念册标题").props.editable).toBe(false);
+    expect(screen.getByText("继续添加照片")).toBeDisabled();
+    expect(screen.queryByText("照片排版")).toBeNull();
+    await act(async () => fireEvent.press(screen.getByText("打开已保存草稿")));
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("草稿已保存，但无法打开编辑页。请返回首页，从草稿箱打开。")).toBeNull();
+  });
+
+  it("contains a cover-picker rejection and lets the user retry", async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockRejectedValueOnce(new Error("file:///private/cover.jpg"));
+    const screen = render(<NewMemoryScreen />);
+
+    await act(async () => fireEvent.press(screen.getByLabelText("上传封面图片")));
+
+    expect(screen.getByText("无法选择封面图片，请重试。")).toBeTruthy();
+    expect(screen.queryByText(/private\/cover/)).toBeNull();
+    await act(async () => fireEvent.press(screen.getByLabelText("上传封面图片")));
+    expect(screen.queryByText("无法选择封面图片，请重试。")).toBeNull();
+    expect(mockCreateDraft).not.toHaveBeenCalled();
+  });
+
+  it("shows a safe photo-picker error and clears it after choosing photos", async () => {
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockRejectedValueOnce(new Error("file:///private/photo.jpg"));
+    const screen = render(<NewMemoryScreen />);
+
+    await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
+
+    expect(screen.getByText("无法选择照片，请重试。")).toBeTruthy();
+    expect(screen.queryByText(/private\/photo/)).toBeNull();
+    await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
+    expect(screen.queryByText("无法选择照片，请重试。")).toBeNull();
   });
 
   it("sends two balanced plans with the magazine template when generating", async () => {
