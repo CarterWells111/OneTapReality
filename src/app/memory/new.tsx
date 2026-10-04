@@ -156,6 +156,7 @@ export default function NewMemoryScreen() {
       if (!memory) {
         memory = await createDraft({ title, city, travelDate, photoUris, pagePlans, coverColor, coverImage });
         savedDraft.current = memory;
+        setHasSavedDraft(true);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (memory.creationWarning === "list-refresh") {
           Alert.alert("草稿已保存", "草稿已保存，但草稿箱刷新失败。你可以继续编辑，返回首页后再试。");

@@ -38,6 +38,19 @@ describe("draft creation error messages", () => {
   );
 
   it.each([
+    { message: "Media Library permission is required to do this operation" },
+    { code: "ERR_FILE_NOT_READABLE", message: "native operation failed" },
+    { code: "ERR_FILE_NOT_WRITABLE", message: "native operation failed" },
+    { message: "File 'file:///private/photo.jpg' is not readable" },
+    { message: "File 'file:///private/photo.jpg' is not writable" },
+  ])("recognizes the installed iOS permission exception %j", (cause) => {
+    const error = new DraftCreationError("photo-import", cause, { photoNumber: 2 });
+    expect(error.reason).toBe("permission-denied");
+    expect(error.message).toBe("无法读取或保存第 2 张照片。请检查照片访问权限，重启应用后重试。");
+    expect(error.message).not.toContain("file://");
+  });
+
+  it.each([
     ["SQLITE_BUSY", "database-busy", "本机旅行册正在被占用，请稍后重试。"],
     ["SQLITE_LOCKED", "database-busy", "本机旅行册正在被占用，请稍后重试。"],
     ["database is locked", "database-busy", "本机旅行册正在被占用，请稍后重试。"],

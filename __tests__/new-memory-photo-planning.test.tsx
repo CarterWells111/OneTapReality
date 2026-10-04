@@ -123,6 +123,18 @@ describe("new memory photo planning", () => {
     expect(screen.queryByText("草稿已保存，但无法打开编辑页。请返回首页，从草稿箱打开。")).toBeNull();
   });
 
+  it("locks the saved draft while queued navigation has not left the screen", async () => {
+    const screen = await readyToGenerate();
+    await act(async () => fireEvent.press(screen.getByText("生成旅行册草稿")));
+
+    expect(screen.getByLabelText("纪念册标题").props.editable).toBe(false);
+    expect(screen.getByText("继续添加照片")).toBeDisabled();
+    expect(screen.getByText("草稿已保存，后续修改请在编辑页完成。")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByText("打开已保存草稿")));
+    expect(mockCreateDraft).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(2);
+  });
+
   it("contains a cover-picker rejection and lets the user retry", async () => {
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockRejectedValueOnce(new Error("file:///private/cover.jpg"));
     const screen = render(<NewMemoryScreen />);
@@ -255,7 +267,7 @@ describe("new memory photo planning", () => {
     ]);
   });
 
-  it("removes photos while preserving remaining loads and pages, ignores stale loads, and can start again", async () => {
+  it("removes photos, ignores stale loads, and can start again after creation fails", async () => {
     const screen = render(<NewMemoryScreen />);
     await act(async () => fireEvent.press(screen.getByText("从相册选择照片")));
     const staleLoad = screen.getByTestId("new-memory-photo-1").props.onLoad;
@@ -264,6 +276,7 @@ describe("new memory photo planning", () => {
     act(() => staleLoad());
     expect(screen.getByText("正在载入照片，已完成 1 / 3 张")).toBeTruthy();
     for (const index of [2, 3]) fireEvent(screen.getByTestId(`new-memory-photo-${index}`), "load");
+    mockCreateDraft.mockRejectedValueOnce(new Error("draft creation failed"));
     fireEvent.press(screen.getByText("生成旅行册草稿"));
     await waitFor(() => expect(mockCreateDraft).toHaveBeenCalledTimes(1));
     expect(mockCreateDraft.mock.calls[0][0].pagePlans).toEqual([

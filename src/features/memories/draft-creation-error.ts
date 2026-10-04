@@ -64,7 +64,8 @@ function classifyError(error: unknown): DraftCreationReason {
   if (/\b(?:ENOSPC|SQLITE_FULL)\b|disk (?:is )?full|no space left|out of (?:disk )?space|not enough (?:free )?space/i.test(details)) {
     return "storage-full";
   }
-  if (/\b(?:EACCES|EPERM)\b|permission denied|operation not permitted/i.test(details)) {
+  if (/\b(?:EACCES|EPERM|ERR_FILE_NOT_READABLE|ERR_FILE_NOT_WRITABLE)\b|permission denied|operation not permitted/i.test(details)
+    || /media library permission is required|file .+ is not (?:readable|writable)/i.test(details)) {
     return "permission-denied";
   }
   if (/\bSQLITE_(?:BUSY|LOCKED)(?:_\w+)?\b|database (?:is )?(?:busy|locked)|database table is locked/i.test(details)) {

@@ -189,6 +189,19 @@ describe("photo directory cleanup", () => {
     );
   });
 
+  it("does not log private details when cleaning an old draft directory fails", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => {});
+    deleteAsyncMock.mockRejectedValueOnce(new Error("file:///private/owner@example.com/old-draft-private-id/"));
+    try {
+      await expect(deleteMemoryPhotoDirectory("account:owner@example.com", "memory-1"))
+        .resolves.toBeUndefined();
+      expect(warning).toHaveBeenCalledWith("[photo-persistence] 无法清理相册照片目录");
+      expect(JSON.stringify(warning.mock.calls)).not.toMatch(/private|owner@example|old-draft-private-id/);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   it("never deletes pre-account legacy sandbox files during account-scoped migration", async () => {
     const legacyUnused = "file:///data/user/0/com.app/documents/photos/legacy-unused.jpg";
     const legacyReferenced = "file:///data/user/0/com.app/documents/photos/legacy-referenced.jpg";
