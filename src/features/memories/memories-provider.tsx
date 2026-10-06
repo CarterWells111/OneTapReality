@@ -19,10 +19,12 @@ import {
   deleteMemory as deleteMemoryFromDb,
   discardDraft as discardDraftInDb,
   discardMemory as discardMemoryInDb,
+  countDiscardedMemories,
   getDraft,
   listDiscardedMemories,
   listDrafts,
   listMemories,
+  purgeExpiredDiscardedMemories,
   trimOldDrafts,
   restoreDiscardedMemory,
   saveDraft as saveDraftInDb,
@@ -52,6 +54,8 @@ async function draftCreationStep<T>(
 type MemoriesContextValue = {
   memories: Memory[];
   drafts: Memory[];
+  /** 回收站当前条目数，供草稿箱末尾的回收站入口显示。 */
+  discardedCount: number;
   isReady: boolean;
   createMemory: (input: MemoryDraftInput) => Promise<Memory>;
   createDraft: (input: MemoryDraftInput) => Promise<CreatedDraft>;
@@ -152,6 +156,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   const { isReady: isLibraryReady, owner: accountKey, runWrite } = useLocalLibrary();
   const [memories, setMemories] = React.useState<Memory[]>([]);
   const [drafts, setDrafts] = React.useState<Memory[]>([]);
+  const [discardedCount, setDiscardedCount] = React.useState(0);
   const [memoriesOwner, setMemoriesOwner] = React.useState<LocalLibraryOwner | null>(null);
   const [isReady, setIsReady] = React.useState(false);
   const refreshGeneration = React.useRef(0);
@@ -193,16 +198,27 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
   ) => {
     assertActive();
     const generation = ++refreshGeneration.current;
+    // Retention runs before the lists are read, so an expired entry is never
+    // shown for a moment and then taken away.
+    try {
+      const purgedIds = await purgeExpiredDiscardedMemories(db, owner, new Date().toISOString());
+      await Promise.all(purgedIds.map((purgedId) => deleteMemoryPhotoDirectory(owner, purgedId)));
+    } catch {
+      console.warn("[memories-provider] 无法清理过期的回收站条目");
+    }
+    assertActive();
     const runtimeMemories = await Promise.all(
       (await listMemories(db, owner)).map((memory) => hydrateForRuntime(memory, owner)),
     );
     const runtimeDrafts = await Promise.all(
       (await listDrafts(db, owner)).map((draft) => hydrateForRuntime(draft, owner)),
     );
+    const discarded = await countDiscardedMemories(db, owner);
     assertActive();
     if (generation === refreshGeneration.current && currentAccountKey.current === owner) {
       setMemories(runtimeMemories);
       setDrafts(runtimeDrafts);
+      setDiscardedCount(discarded);
       setMemoriesOwner(owner);
       setIsReady(true);
     }
@@ -213,6 +229,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     missingPhotoBaselines.current.clear();
     setMemories([]);
     setDrafts([]);
+    setDiscardedCount(0);
     setMemoriesOwner(null);
     if (!isLibraryReady) {
       setIsReady(false);
@@ -306,10 +323,11 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
         await draftCreationStep("storage", () => createDraftInDb(db, hydrated.storageMemory, owner));
         stagedPhotos.forEach((photo) => photo.commit());
         try {
-          const oldDraftIds = await trimOldDrafts(db, owner);
-          await Promise.all(oldDraftIds.map((oldId) => deleteMemoryPhotoDirectory(owner, oldId)));
+          // Overflow drafts move into the recycle bin, so their photo directories
+          // must survive until the retention window actually deletes the record.
+          await trimOldDrafts(db, owner, new Date().toISOString());
         } catch {
-          console.warn("[memories-provider] 无法清理旧草稿");
+          console.warn("[memories-provider] 无法整理草稿箱");
         }
         let creationWarning: "list-refresh" | undefined;
         try {
@@ -550,6 +568,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
     () => ({
       memories: visibleMemories,
       drafts: visibleDrafts,
+      discardedCount,
       isReady: visibleReady,
       createMemory,
       createDraft,
@@ -577,6 +596,7 @@ export function MemoriesProvider({ children }: { children: React.ReactNode }) {
       createDraft,
       createMemory,
       deleteMemory,
+      discardedCount,
       discardMemory,
       discardDraft,
       getDraftById,

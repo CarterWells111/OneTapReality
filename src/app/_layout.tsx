@@ -52,7 +52,7 @@ export default function RootLayout() {
               <Stack.Screen name="city/[city]/manage" options={{ title: "管理城市旅行册" }} />
               <Stack.Screen name="city-map/index" options={{ headerShown: false, presentation: "fullScreenModal" }} />
               <Stack.Screen name="city-map/[city]" options={{ headerShown: false, presentation: "fullScreenModal" }} />
-              <Stack.Screen name="recycle-bin" options={{ headerShown: false }} />
+              <Stack.Screen name="recycle-bin" options={{ title: "回收站" }} />
               <Stack.Screen name="feedback/index" options={{ title: "意见反馈" }} />
               <Stack.Screen name="settings/index" options={{ title: "设置" }} />
               <Stack.Screen name="privacy/index" options={{ title: "数据与隐私" }} />

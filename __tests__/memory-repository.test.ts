@@ -25,6 +25,7 @@ type MemoryRow = {
   status?: "draft" | "saved" | "discarded";
   createdAt: string;
   updatedAt: string;
+  discardedAt?: string | null;
 };
 
 type StoryPageRow = {
@@ -221,13 +222,19 @@ function createMemoryDatabase(options?: {
       }
 
       if (statement.startsWith("UPDATE memories SET status")) {
+        // Discarding binds discardedAt in the SET clause, which shifts the WHERE
+        // parameters one place; restoring writes a literal NULL and does not.
+        const whereOffset = statement.includes("discardedAt = ?") ? 3 : 2;
         const row = rows.find(
           (candidate) =>
-            candidate.id === parameters[2] && candidate.status === parameters[3]
+            candidate.id === parameters[whereOffset] &&
+            candidate.status === parameters[whereOffset + 1]
         );
         if (row) {
           row.status = parameters[0] as MemoryRow["status"];
           row.updatedAt = String(parameters[1]);
+          if (whereOffset === 3) row.discardedAt = String(parameters[2]);
+          else if (statement.includes("discardedAt = NULL")) row.discardedAt = null;
         }
       }
 
