@@ -12,6 +12,7 @@ import {
   failGiftMediaCleanupJob,
   isGiftMediaObjectReferenced,
   purgeGiftMaintenanceData,
+  settleReferencedGiftMediaCleanupJob,
 } from "../gifts/repository";
 import { processPendingGiftContentReportNotifications, type GiftContentReportSupportNotice } from "../gifts/content-safety";
 import type { PrivateMediaStore } from "../gifts/r2-media";
@@ -160,9 +161,12 @@ export async function runGiftMaintenance(input: {
       const chunk = jobs.slice(offset, offset + concurrency);
       await Promise.all(chunk.map(async (job) => {
         try {
-          if (!await isGiftMediaObjectReferenced(input.db, job.objectKey)) {
-            await deleteObjectsWithinBudget(input.store, [job.objectKey], timeBudgetMs - (Date.now() - startedAt));
+          if (await isGiftMediaObjectReferenced(input.db, job.objectKey)) {
+            const state = await settleReferencedGiftMediaCleanupJob(input.db, job, nowText, leaseUntil);
+            if (state === "completed") stats.completedCleanupJobs += 1;
+            return;
           }
+          await deleteObjectsWithinBudget(input.store, [job.objectKey], timeBudgetMs - (Date.now() - startedAt));
           await completeGiftMediaCleanupJob(input.db, job.id, nowText);
           stats.completedCleanupJobs += 1;
         } catch {

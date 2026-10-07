@@ -1,5 +1,6 @@
 import { extractBearerToken, hashAccessToken } from "./device-auth";
 import { isGiftAdminEmail } from "../gifts/admin-auth";
+import { requireAlphaEmailAllowed } from "../gifts/alpha-safety";
 import type { BackendDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
 import { getAuthenticatedSessionByTokenHash, getAuthenticatedUserByTokenHash, type AuthenticatedUser } from "./repository";
@@ -15,9 +16,11 @@ export async function getAuthenticatedAccount(request: Request, db: BackendDatab
   return user ? { ...user, isAdmin: isGiftAdminEmail(user.email) } : null;
 }
 
+/** Business access rechecks eligibility; account deletion uses the session boundary below. */
 export async function requireAuthenticatedAccount(request: Request, db: BackendDatabase, now = new Date()): Promise<AuthenticatedAccount> {
   const account = await getAuthenticatedAccount(request, db, now);
   if (!account) throw new ApiError(401, "unauthorized", "A verified account session is required");
+  requireAlphaEmailAllowed(account.email);
   return account;
 }
 

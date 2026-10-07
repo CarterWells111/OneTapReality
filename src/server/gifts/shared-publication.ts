@@ -2,7 +2,7 @@ import type { PrivateMediaStore } from "./r2-media";
 import type { GiftPublicationPayload } from "./repository";
 import { completeGiftPublishSessionResult, getGiftPublishCompletionReceipt, getGiftPublishPayload, reserveGiftPublicationPromotion } from "./repository";
 import type { BackendDatabase } from "../db/client";
-import { ApiError } from "../http/errors";
+import { ApiError, isErrorWithCode } from "../http/errors";
 
 export type SharedPublishBody = { baseVersion?: number; sourceMemoryId?: string; title?: string; travelDate?: string | null; pages?: { position?: number; page?: unknown }[]; media?: ({ position?: number; mediaId: string } | { position?: number; contentType: string; byteSize: number })[]; cover?: { contentType?: string; byteSize?: number } | null };
 
@@ -338,7 +338,7 @@ export async function finalizeSharedPublication(input: {
     logPublicationFinalization({ count, durationMs: Date.now() - startedAt, outcome: "success", errorCode: null });
     return response;
   } catch (error) {
-    const mapped = error instanceof GiftPublicationRetryableError
+    const mapped = isErrorWithCode(error, "gift_publication_retryable")
       ? new ApiError(503, error.code, error.message, undefined, { "Retry-After": "2" })
       : error;
     const errorCode = mapped instanceof ApiError ? mapped.code : "internal_error";
