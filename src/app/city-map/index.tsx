@@ -8,17 +8,12 @@ import { CityMap } from "../../features/cities/city-map";
 import { getCityCheckinMapImage } from "../../features/cities/city-checkin-map-images";
 import { getCityStats } from "../../features/cities/city-stats";
 import { useMemories } from "../../features/memories/memories-provider";
-import { cityContent } from "../../features/cities/city-content";
-import { cityRegistry, type City } from "../../types/city";
+import { getGlobalSearchEntries } from '../../features/cities/global-map-search';
+import type { City } from "../../types/city";
 
 
 
-/** 城市搜索索引；搜索结果仅呈现正式中文城市名。 */
-const citySearchEntries = cityRegistry
-  .map((entry) => ({
-    id: entry.id as City,
-    name: cityContent[entry.id as City]?.name ?? entry.name,
-  }));
+type SearchEntries = ReturnType<typeof getGlobalSearchEntries>;
 
 export function resolveFullscreenMapInsets(
   insets: { readonly bottom: number; readonly top: number },
@@ -37,9 +32,10 @@ export default function FullscreenCityMapScreen() {
   const viewport = useWindowDimensions();
   const { memories } = useMemories();
   const cityStats = getCityStats(memories);
+  const citySearchEntries = React.useMemo(() => getGlobalSearchEntries(memories.map(m => m.city)), [memories]);
   const [targetCity, setTargetCity] = React.useState<City | undefined>(undefined);
   const [searchText, setSearchText] = React.useState("");
-  const [filteredCities, setFilteredCities] = React.useState<typeof citySearchEntries>([]);
+  const [filteredCities, setFilteredCities] = React.useState<SearchEntries>([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const searchInputRef = React.useRef<TextInput>(null);
 
@@ -61,12 +57,11 @@ export default function FullscreenCityMapScreen() {
     const term = text.trim().toLowerCase();
     const filtered = citySearchEntries.filter(
       (entry) =>
-        entry.name.toLowerCase().includes(term) ||
-        entry.id.toLowerCase().includes(term),
+        entry.terms.includes(term),
     );
     setFilteredCities(filtered);
     setShowDropdown(filtered.length > 0);
-  }, []);
+  }, [citySearchEntries]);
 
   const handleSelectCity = React.useCallback((city: City) => {
     setSearchText("");
@@ -82,7 +77,7 @@ export default function FullscreenCityMapScreen() {
       {/* 头部：标题 + 搜索框 + 关闭 */}
       <View style={styles.header} testID="fullscreen-city-map-header">
         <View style={styles.headerLeft}>
-          <Text selectable style={styles.headerTitle}>中国旅行地图</Text>
+          <Text selectable style={styles.headerTitle}>全球旅行地图</Text>
           <Text selectable style={styles.headerSubtitle}>点击城市标记，探索你的旅行足迹</Text>
         </View>
         <Pressable

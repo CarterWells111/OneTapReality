@@ -60,7 +60,7 @@ describe("FullscreenCityMapScreen", () => {
   it("routes every pressed city to its full-screen check-in map or the city collection page", async () => {
     const screen = await render(<FullscreenCityMapScreen />);
 
-    expect(cityRegistry).toHaveLength(36);
+    expect(cityRegistry.length).toBeGreaterThan(200);
 
     for (const city of cityRegistry) {
       const latestCityMapProps = mockCityMap.mock.calls.at(-1)?.[0] as {

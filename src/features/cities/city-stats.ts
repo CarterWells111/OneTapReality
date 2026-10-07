@@ -1,4 +1,5 @@
 import { cities, type City, type Memory } from "../../types/memory";
+import { resolveCityEntry } from '../../types/city';
 
 export type CityVisitIntensity = "none" | "light" | "medium" | "strong";
 
@@ -23,12 +24,12 @@ export function getCityStats(memories: readonly CityMemory[]): CityStats[] {
   const visitCounts = new Map<City, number>(cities.map((city) => [city, 0]));
 
   for (const memory of memories) {
-    if (memory.status !== "draft" && memory.status !== "discarded") {
+    if (memory.status !== "draft" && memory.status !== "discarded" && resolveCityEntry(memory.city)) {
       visitCounts.set(memory.city, (visitCounts.get(memory.city) ?? 0) + 1);
     }
   }
 
-  return cities.map((city) => {
+  return [...visitCounts.keys()].map((city) => {
     const visitCount = visitCounts.get(city) ?? 0;
     const isVisited = visitCount > 0;
     return { city, visitCount, unlocked: isVisited, isVisited, intensity: getCityVisitIntensity(visitCount) };

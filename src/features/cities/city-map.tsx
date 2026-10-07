@@ -13,6 +13,7 @@ import Animated, {
 import Svg, { Circle, G, Path, Rect } from "react-native-svg";
 
 import { colors } from "../../components/ui";
+import { GlobalCityMap } from './global-city-map';
 import type { City } from "../../types/memory";
 import { headingFontFamily } from "../typography/fonts";
 import {
@@ -31,7 +32,7 @@ import {
   chinaSouthSeaInset,
   type ChinaPrefectureLabel,
 } from "./china-map-data";
-import { cityContent } from "./city-content";
+import { getCityContent } from "./city-content";
 import type { CityStats, CityVisitIntensity } from "./city-stats";
 import {
   clampWorkspaceViewport,
@@ -45,6 +46,8 @@ import {
 
 type CityMapVariant = "overview" | "workspace";
 type CityMapProps = {
+  initialRegion?: import('./global-map-domain').GlobalRegion;
+  onViewportChange?: (region: import('./global-map-domain').GlobalRegion) => void;
   stats: readonly CityStats[];
   variant: CityMapVariant;
   initialCity?: City;
@@ -134,7 +137,7 @@ export function resolveChinaMapContentFrame(size: WorkspaceSize) {
 }
 
 function savedMemoryLabel(city: City, visitCount: number) {
-  return `${cityContent[city].name}，已保存 ${visitCount} 册旅行记忆`;
+  return `${getCityContent(city).name}，已保存 ${visitCount} 册旅行记忆`;
 }
 
 function focusViewport(focus: CityMapFocus, size: WorkspaceSize): WorkspaceViewport {
@@ -877,6 +880,10 @@ const styles = StyleSheet.create({
   },
 });
 
-export function CityMap(props: CityMapProps) {
+export function ChinaCityMap(props: CityMapProps) {
   return props.variant === "overview" ? <OverviewCityMap {...props} /> : <WorkspaceCityMap {...props} />;
+}
+
+export function CityMap(props: CityMapProps) {
+  return <GlobalCityMap {...props} />;
 }

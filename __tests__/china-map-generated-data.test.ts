@@ -8,7 +8,7 @@ import {
   chinaProvinces,
   chinaSouthSeaInset,
 } from "../src/features/cities/china-map-data";
-import { cities } from "../src/types/city";
+import { legacyCityRegistry } from "../src/types/city";
 
 function parseViewBox(viewBox: string) {
   const [minX, minY, width, height] = viewBox.split(/\s+/).map(Number);
@@ -137,7 +137,7 @@ describe("generated China map data", () => {
     expect(chinaPrefectureLabels).toHaveLength(341);
     expect(chinaPrefectureLabels.every(({ adcode }) => adcode.endsWith("00"))).toBe(true);
     expect(new Set(adcodes).size).toBe(adcodes.length);
-    expect(productCities).toEqual([...cities].sort());
+    expect(productCities).toEqual(legacyCityRegistry.map(c => c.id).sort());
     expect(Object.isFrozen(chinaPrefectureLabels)).toBe(true);
 
     for (const label of chinaPrefectureLabels) {

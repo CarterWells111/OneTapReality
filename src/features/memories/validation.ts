@@ -1,4 +1,5 @@
-import { cities, type MemoryDraftInput } from "../../types/memory";
+import type { MemoryDraftInput } from "../../types/memory";
+import { resolveCityEntry } from '../../types/city';
 
 export type ValidationResult = {
   issues: string[];
@@ -13,7 +14,7 @@ export function validateMemoryDraft(
     issues.push("请输入纪念册标题");
   }
 
-  if (!cities.includes(input.city)) {
+  if (!resolveCityEntry(input.city)) {
     issues.push("请选择支持的城市");
   }
 

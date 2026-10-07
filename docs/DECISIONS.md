@@ -922,3 +922,19 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 残余修复限定为：终态媒体清理任务可再次排入并保留租约/退避及引用保护，promotion 重试与进行中的对象清理互斥；页面封面规范持久化、旧缺图连续编辑/恢复及规范引用草稿重试；已有媒体再次发布后通过位置回退恢复顶层照片和封面；业务访问实时重验 Alpha 名单；健康检查当前 26 表实际列。身份恢复与账号删除使用独立会话边界，业务权限单独重验 Alpha；删除受理回执仅在该次删除触发的自身登出期间保留，其他账号或会话代数切换仍清除；保留访客/账号隔离、事务快照、可恢复上传、发布回执及 writeFreeze；不新增依赖、迁移、支付、分析或第三方服务。
 
 用户报告 iOS development build 真机检查无误，并授权再次复核后创建 PR、通过检查后合并到 main。PR 仅包含必要源码、回归测试与本决策记录；本机连接配置、运行日志与详细验收证据留在本地。该授权不包含手动云端构建、部署、数据库操作、真实邮件或对象存储操作。
+# 2026-10-07 Global Map
+
+- Scope: the chat assigns Global Map to JTST. Preserve album/editor/check-in UX; AI sorting, stickers, monetization and production deployment are excluded.
+- Replace China-only drawing in the offline renderer with bundled Natural Earth world land and populated-place data (public domain), retaining existing city IDs, China check-in illustrations and account isolation. Data generation is build-time only; no geocoding service or photo upload.
+- Store user-defined places as versioned, validated geographic city IDs in the existing TEXT city field. Names and WGS84 coordinates travel together without destructive migrations; all readers, routes, statistics and cloud validation must resolve them. Existing city IDs remain valid.
+- iPhone uses react-native-maps 1.27.2 (Expo SDK 57 recommended) with the platform default Apple MapKit provider for global-to-street browsing. No Google provider, API key, location permission or background location. Apple retrieves basemap data; album content remains local unless explicitly shared. Preserve the SDK attribution. Web/offline preview uses bundled vectors and makes no tile requests.
+- Fit saved places using a shortest longitude arc across the dateline. Keep zoom/pan under user control after initialization. Cluster nearby places in screen space; expand clusters on press. Invalid/non-finite coordinates are rejected and ±180 and polar inputs are supported.
+- Validate local persistence and legacy cloud payloads, global regions, dateline, clustering, routing, saved counts and original check-in navigation, then lint/typecheck/full tests/server build and an iOS bundle export. Native tile/gesture verification requires an iPhone or simulator; do not call mock tests native verification. EAS builds/TestFlight submission keep their existing separate approval gate.
+
+## 2026-10-07 国内地图风格应用到国际版
+
+- 用户要求对照现有国内地图总结风格并应用到国际版；PR #104 已推送但未合并，本次修订继续更新同一 PR。
+- 参照 `ChinaMapArtwork`、`AnimatedPrefectureLabel` 和 `city-label-layout.ts`：暖纸色底图、陶土色行政边界、8pt 足迹圆点与 44pt 点击区域、标题字体和半透明纸色标签、缩放后渐进显示城市名、边缘淡出和避让碰撞，沿用收藏数量对应的四档颜色。
+- 国际版默认显示同一绘制语言的旅行地图，加入本地国家轮廓与名称、逐级出现的城市名、较小的聚合圆点。iPhone 的街道底图保留为“街道地图”模式；切换模式保留当前浏览区域，海外地点保存和原有导航不变。
+- 原生系统底图不能直接使用原 SVG 省界样式，不能以调整外框颜色冒充风格匹配；国内样式由共享纸质地图渲染器在 iPhone 与 Web 使用，街道模式继续负责真实街道路网。
+- 使用既有 Natural Earth 公有领域数据源的国家边界，开发时生成并随包保存在本地；不新增运行时服务、依赖、数据库改动、AI 或贴纸功能。

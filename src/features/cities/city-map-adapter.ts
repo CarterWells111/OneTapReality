@@ -1,4 +1,4 @@
-import { cityRegistry, type City, type CityMapFocus, type RelativeMapCoordinate } from "../../types/city";
+import { legacyCityRegistry, type City, type CityMapFocus, type RelativeMapCoordinate } from "../../types/city";
 import { chinaMapMarkers } from "./china-map-data";
 
 export type { CityMapFocus, RelativeMapCoordinate } from "../../types/city";
@@ -47,7 +47,7 @@ const chinaOutline: LocalMapOutline = Object.freeze({
 
 /** 城市标记坐标：由真实经纬度经 Albers 投影归一化得到（见 china-map-data.ts）。 */
 const cityMarkers: readonly CityMapMarker[] = Object.freeze(
-  cityRegistry.map((city) => {
+  legacyCityRegistry.map((city) => {
     const projected = chinaMapMarkers.find((marker) => marker.city === city.id);
     return Object.freeze({
       city: city.id,

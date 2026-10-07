@@ -113,7 +113,7 @@ describe("CitiesScreen", () => {
     mockMemories.mockReturnValue([]);
     const screen = await render(<CitiesScreen />);
 
-    fireEvent.press(screen.getByLabelText("全屏查看中国地图"));
+    fireEvent.press(screen.getByLabelText("全屏查看全球地图"));
 
     expect(mockPush).toHaveBeenCalledWith("/city-map");
   });

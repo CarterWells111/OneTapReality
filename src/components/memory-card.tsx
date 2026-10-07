@@ -1,14 +1,14 @@
 import { Image } from "expo-image";
 import { Pressable, Text, View } from "react-native";
 
-import { cityContent } from "../features/cities/city-content";
+import { getCityContent } from "../features/cities/city-content";
 import { isMissingPhotoToken } from "../features/memories/photo-references";
 import { LocalMissingPhotoPlaceholder } from "./local-missing-photo-placeholder";
 import type { Memory } from "../types/memory";
 import { colors } from "./ui";
 
 export function MemoryCard({ memory, onPress }: { memory: Memory; onPress?: () => void }) {
-  const city = cityContent[memory.city];
+  const city = getCityContent(memory.city);
   const coverUri = memory.photoUris[0];
 
   return (

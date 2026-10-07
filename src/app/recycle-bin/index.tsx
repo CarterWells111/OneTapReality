@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { bodyFont, colors, Section, serifFont } from "../../components/ui";
-import { cityContent } from "../../features/cities/city-content";
+import { getCityContent } from "../../features/cities/city-content";
 import { useMemories } from "../../features/memories/memories-provider";
 import { recycleBinRetentionDays, remainingRetentionDays } from "../../storage/memory-repository";
 import type { Memory } from "../../types/memory";
@@ -74,7 +74,7 @@ export default function RecycleBinScreen() {
               <View key={memory.id} style={styles.card}>
                 <Text selectable style={styles.cardTitle}>{memory.title}</Text>
                 <Text selectable style={styles.cardLine}>
-                  {cityContent[memory.city].name} · {memory.travelDate} · 照片 {memory.photoUris.length} 张
+                  {getCityContent(memory.city).name} · {memory.travelDate} · 照片 {memory.photoUris.length} 张
                 </Text>
                 {(() => {
                   const daysLeft = remainingRetentionDays(memory.discardedAt, loadedAt);

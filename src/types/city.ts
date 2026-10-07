@@ -1,3 +1,6 @@
+import { worldPlaceData } from '../features/cities/world-place-data';
+import { isGeographicCoordinate, projectWorldCoordinate, type GeographicCoordinate } from '../features/cities/global-map-domain';
+
 export type RelativeMapCoordinate = {
   readonly x: number;
   readonly y: number;
@@ -8,7 +11,7 @@ export type CityMapFocus = {
   readonly zoom: number;
 };
 
-export type CityKind = "province-capital" | "autonomous-region-capital" | "municipality" | "legacy-city";
+export type CityKind = "province-capital" | "autonomous-region-capital" | "municipality" | "legacy-city" | "world-city";
 
 export type CityRegistryEntry = {
   readonly id: string;
@@ -17,9 +20,11 @@ export type CityRegistryEntry = {
   readonly region: string;
   readonly coordinate: RelativeMapCoordinate;
   readonly focus: CityMapFocus;
+  readonly geographic: GeographicCoordinate;
+  readonly aliases?: readonly string[];
 };
 
-type GeographicCoordinate = { readonly latitude: number; readonly longitude: number };
+export type { GeographicCoordinate } from '../features/cities/global-map-domain';
 
 const geographicCoordinates: Readonly<Record<string, GeographicCoordinate>> = Object.freeze({
   beijing: { longitude: 116.4074, latitude: 39.9042 },
@@ -31,6 +36,7 @@ const geographicCoordinates: Readonly<Record<string, GeographicCoordinate>> = Ob
   guangzhou: { longitude: 113.2644, latitude: 23.1291 },
   guiyang: { longitude: 106.6302, latitude: 26.647 },
   haikou: { longitude: 110.1983, latitude: 20.044 },
+  hongkong: { longitude: 114.1694, latitude: 22.3193 },
   hangzhou: { longitude: 120.1551, latitude: 30.2741 },
   harbin: { longitude: 126.6424, latitude: 45.756 },
   hefei: { longitude: 117.2272, latitude: 31.8206 },
@@ -78,7 +84,7 @@ function projectChinaSvgCoordinate({ longitude, latitude }: GeographicCoordinate
 }
 
 const location = (id: string, name: string, kind: CityKind, region: string, x: number, y: number, zoom = 2): CityRegistryEntry => {
-  const coordinate = geographicCoordinates[id] ? projectChinaSvgCoordinate(geographicCoordinates[id]) : Object.freeze({ x, y });
+  const coordinate = geographicCoordinates[id] && id !== 'hongkong' ? projectChinaSvgCoordinate(geographicCoordinates[id]) : Object.freeze({ x, y });
   return ({
   id,
   name,
@@ -86,10 +92,12 @@ const location = (id: string, name: string, kind: CityKind, region: string, x: n
   region,
   coordinate,
   focus: Object.freeze({ center: coordinate, zoom }),
+  geographic: Object.freeze(geographicCoordinates[id]),
+  aliases: Object.freeze([id === 'hongkong' ? 'Hong Kong' : id.charAt(0).toUpperCase() + id.slice(1)]),
 });
 };
 
-export const cityRegistry = Object.freeze([
+export const legacyCityRegistry = Object.freeze([
   location("urumqi", "乌鲁木齐", "autonomous-region-capital", "新疆维吾尔自治区", 0.17, 0.25),
   location("harbin", "哈尔滨", "province-capital", "黑龙江省", 0.75, 0.18),
   location("changchun", "长春", "province-capital", "吉林省", 0.72, 0.26),
@@ -128,6 +136,39 @@ export const cityRegistry = Object.freeze([
   location("haikou", "海口", "province-capital", "海南省", 0.54, 0.91),
 ] as const);
 
-export type City = (typeof cityRegistry)[number]["id"];
+const globalEntries: CityRegistryEntry[] = worldPlaceData
+  .filter(p => !legacyCityRegistry.some(c => Math.abs(c.geographic.latitude - p.latitude) < 0.2 && Math.abs(c.geographic.longitude - p.longitude) < 0.2))
+  .map(p => {
+    const geographic = Object.freeze({ latitude: p.latitude, longitude: p.longitude });
+    const coordinate = Object.freeze(projectWorldCoordinate(geographic));
+    return Object.freeze({ id: p.id, name: p.name, aliases: p.aliases, kind: 'world-city' as const, region: p.region,
+      geographic, coordinate, focus: Object.freeze({ center: coordinate, zoom: 32 }) });
+  });
+
+export const cityRegistry: readonly CityRegistryEntry[] = Object.freeze([...legacyCityRegistry, ...globalEntries]);
+export type City = string;
+const entriesById = new Map(cityRegistry.map(entry => [entry.id, entry]));
+
+/** Versioned location ID fits the existing TEXT field, surviving SQLite and cloud round trips. */
+export function createGeographicCity(place: GeographicCoordinate & { name: string }): City {
+  const name = place.name.trim().normalize('NFC');
+  if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/u.test(name) || !isGeographicCoordinate(place)) throw new Error('Invalid place name or coordinates');
+  return `geo:1:${place.latitude}:${place.longitude}:${encodeURIComponent(name)}`;
+}
+
+export function resolveCityEntry(city: string | undefined): CityRegistryEntry | undefined {
+  if (!city || city.length > 1400) return undefined;
+  const known = entriesById.get(city);
+  if (known) return known;
+  const match = /^geo:1:([^:]+):([^:]+):(.+)$/u.exec(city);
+  if (!match) return undefined;
+  try {
+    const geographic = { latitude: Number(match[1]), longitude: Number(match[2]) };
+    const name = decodeURIComponent(match[3]);
+    if (createGeographicCity({ ...geographic, name }) !== city) return undefined;
+    const coordinate = Object.freeze(projectWorldCoordinate(geographic));
+    return { id: city, name, kind: 'world-city', region: '自定义地点', geographic: Object.freeze(geographic), coordinate, focus: { center: coordinate, zoom: 32 } };
+  } catch { return undefined; }
+}
 
 export const cities: readonly City[] = Object.freeze(cityRegistry.map((city) => city.id));

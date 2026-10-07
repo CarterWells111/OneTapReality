@@ -1,5 +1,19 @@
 import "react-native-gesture-handler/jestSetup";
 
+// MapKit cannot run in Jest. Test camera commands/markers separately from native rendering.
+jest.mock('react-native-maps', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: React.forwardRef((props: unknown, ref: unknown) => {
+      React.useImperativeHandle(ref, () => ({ animateToRegion: jest.fn() }));
+      return React.createElement(View, props);
+    }),
+    Marker: View,
+  };
+});
+
 jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
 const Constants = require("expo-constants").default;
 Constants.expoConfig.extra = {

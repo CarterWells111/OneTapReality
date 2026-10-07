@@ -4,7 +4,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { bodyFont, colors, serifFont } from "../../components/ui";
-import { cityContent } from "../../features/cities/city-content";
+import { getCityContent } from "../../features/cities/city-content";
 import { getCityCheckinMapImage } from "../../features/cities/city-checkin-map-images";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 
@@ -13,7 +13,7 @@ export default function CityCheckinMapScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ city?: string }>();
   const city = resolveCityRouteParam(typeof params.city === "string" ? params.city : undefined);
-  const content = cityContent[city];
+  const content = getCityContent(city);
   const source = getCityCheckinMapImage(city);
 
   React.useEffect(() => {

@@ -1,5 +1,5 @@
-import { cities, type City } from "../../types/memory";
+import { resolveCityEntry, type City } from "../../types/city";
 
 export function resolveCityRouteParam(value: string | undefined): City {
-  return cities.includes(value as City) ? (value as City) : "hangzhou";
+  return resolveCityEntry(value) ? value! : "hangzhou";
 }

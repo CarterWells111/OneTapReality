@@ -5,7 +5,7 @@ import Svg, { Path } from "react-native-svg";
 
 import { IconButton } from "../../components/icon-button";
 import { AppButton, colors, Tag } from "../../components/ui";
-import { cityContent } from "../../features/cities/city-content";
+import { getCityContent } from "../../features/cities/city-content";
 import { PageReader } from "../../features/canvas/page-reader";
 import { PageManagerSheet } from "../../features/canvas/page-manager-sheet";
 import { useMemories } from "../../features/memories/memories-provider";
@@ -46,7 +46,7 @@ export default function MemoryDetailScreen() {
     );
   }
 
-  const city = cityContent[memory.city];
+  const city = getCityContent(memory.city);
   const fallbackIndex = parseFallbackIndex(pageIndex);
   const fallbackPage = memory.pages[fallbackIndex] ?? memory.pages[0];
   const restoredPreviewCursor = previewCursor?.memoryId === memory.id ? previewCursor : null;

@@ -11,7 +11,7 @@ import {
 } from "../../../features/canvas/book-canvas-editor";
 import { canvasPages } from "../../../features/canvas/editor-pages";
 import { splitOverflowPhotoPages } from "../../../features/canvas/photo-page-limit";
-import { cityContent } from "../../../features/cities/city-content";
+import { getCityContent } from "../../../features/cities/city-content";
 import {
   AutosaveQueue,
   type AutosaveQueueState,
@@ -322,7 +322,7 @@ export default function DraftReviewScreen() {
     );
   }
 
-  const city = cityContent[draft.city];
+  const city = getCityContent(draft.city);
 
   return (
     <>

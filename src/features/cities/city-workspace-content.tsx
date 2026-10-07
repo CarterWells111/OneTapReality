@@ -4,9 +4,9 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { MemoryCard } from "../../components/memory-card";
 import { colors, PaperCard, Section, serifFont } from "../../components/ui";
 import type { ResolvedCityCollection } from "../../storage/city-collection-repository";
-import { cityRegistry, type City } from "../../types/city";
+import { resolveCityEntry, type City } from "../../types/city";
 import type { Memory } from "../../types/memory";
-import { cityContent } from "./city-content";
+import { getCityContent } from "./city-content";
 import { getCityCardVisual } from "./city-illustrations";
 import { CityVectorArtwork } from "./city-vector-artwork";
 
@@ -23,8 +23,8 @@ type CityWorkspaceContentProps = {
 };
 
 function CityArchiveHero({ city }: { readonly city: City }) {
-  const content = cityContent[city];
-  const registryEntry = cityRegistry.find((candidate) => candidate.id === city)!;
+  const content = getCityContent(city);
+  const registryEntry = resolveCityEntry(city)!;
   const visual = getCityCardVisual(city);
 
   return (
@@ -52,7 +52,7 @@ function CityArchiveHero({ city }: { readonly city: City }) {
 
 export function CityWorkspaceContent({ city, collection, onCreate, onManage, onMemoryPress }: CityWorkspaceContentProps) {
   const [showAll, setShowAll] = React.useState(false);
-  const content = cityContent[city];
+  const content = getCityContent(city);
   const memories = collection.memories;
   const visitCount = memories.length;
   const featuredMemory = collection.featuredMemory;

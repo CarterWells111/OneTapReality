@@ -1,4 +1,4 @@
-import { cityRegistry, cities, type City } from "../../types/city";
+import { cityRegistry, cities, resolveCityEntry, type City } from "../../types/city";
 
 type CityContent = { name: string; subtitle: string; souvenir: string; color: string; discoverySlogan: string };
 type ExistingCityContent = Omit<CityContent, "discoverySlogan">;
@@ -56,6 +56,7 @@ const colorsByKind = {
   "legacy-city": "#DDEBF4",
   municipality: "#F3E1D8",
   "province-capital": "#DDEBDD",
+  "world-city": "#DDEBF4",
 } as const;
 
 export const cityContent: Record<City, CityContent> = Object.fromEntries(cities.map((city) => {
@@ -66,5 +67,12 @@ export const cityContent: Record<City, CityContent> = Object.fromEntries(cities.
     souvenir: `${entry.name}城市旅行纪念`,
     color: colorsByKind[entry.kind],
   };
-  return [city, { ...content, discoverySlogan: discoverySlogans[city] }];
+  return [city, { ...content, discoverySlogan: discoverySlogans[city] ?? `把${entry.name}的风景收进下一册旅行记忆。` }];
 })) as Record<City, CityContent>;
+
+export function getCityContent(city: City): CityContent {
+  const existing = Object.hasOwn(cityContent, city) ? cityContent[city] : undefined;
+  if (existing) return existing;
+  const name = resolveCityEntry(city)?.name ?? '旅行地点';
+  return { name, subtitle: `把${name}的旅行时光收进册页`, souvenir: `${name}旅行纪念`, color: colorsByKind['world-city'], discoverySlogan: `把${name}的风景收进下一册旅行记忆。` };
+}

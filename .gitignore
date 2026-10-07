@@ -58,4 +58,5 @@ example
 
 # generated local NFC staging lab (created and removed by npm scripts)
 /src/app/nfc-lab-local.tsx
+/.tmp-mapdata/global-map-*/
 /.data/nfc-staging/active.json

@@ -2,7 +2,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colors, serifFont } from "../../components/ui";
 import type { City } from "../../types/city";
-import { cityContent } from "./city-content";
+import { getCityContent } from "./city-content";
 import { getCityCardVisual } from "./city-illustrations";
 import { CityVectorArtwork } from "./city-vector-artwork";
 
@@ -17,7 +17,7 @@ type CityCardProps = {
 const listColors = ["#DDEBDD", "#F3E1D8", "#DDEBF4", "#E8E0F0"] as const;
 
 export function CityCard({ city, visitCount = 0, onPress, variant, listIndex }: CityCardProps) {
-  const content = cityContent[city];
+  const content = getCityContent(city);
   const visual = getCityCardVisual(city);
   const isVisited = variant === "visited";
   const state = isVisited ? `已保存 ${visitCount} 册旅行记忆` : "尚未打卡";
