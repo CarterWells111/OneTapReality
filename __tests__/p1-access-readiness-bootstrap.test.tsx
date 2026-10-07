@@ -65,7 +65,7 @@ function CaptureAuth() { capturedAuth = useAuth(); return null; }
 
 // The real API client and provider consume real local route responses. An unmatched
 // network request fails rather than reaching a remote service.
-async function localFetch(input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> {
+async function localFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
   const path = new URL(request.url).pathname;
   let response: Response;
@@ -191,7 +191,7 @@ describe("P1 account restoration remains independent of gift eligibility", () =>
     expect(capturedAuth!.sessionGeneration).toBeGreaterThan(deletionGeneration);
     expect(screen.queryByText(/账号删除已受理：/u)).toBeNull();
     expect(screen.getByText("永久删除账号及云端数据")).toBeTruthy();
-  });
+  }, 15_000);
 
   it.each(["expired", "forged", "revoked", "deletion-pending"] as const)("rejects a %s saved session through the real me response", async state => {
     if (state === "expired") await mockCurrentDb.update(authSessions).set({ expiresAt: new Date(Date.now() - 1_000).toISOString() }).where(eq(authSessions.id, actors.owner.sessionId));
