@@ -1,10 +1,10 @@
-import { cityRegistry, cities } from "../src/types/city";
+import { cityRegistry, cities, legacyCityRegistry } from "../src/types/city";
 import { resolveCityRouteParam } from "../src/features/cities/city-route";
 import { OfflineChinaMapAdapter, getCityStats } from "../src/features/cities";
 
 describe("city registry", () => {
   it("covers every first-batch capital and municipality with stable local metadata", () => {
-    expect(cities).toHaveLength(36);
+    expect(legacyCityRegistry).toHaveLength(36);
     expect(cities).toEqual(expect.arrayContaining([
       "beijing", "tianjin", "shanghai", "chongqing", "taipei",
       "hefei", "fuzhou", "lanzhou", "guangzhou", "guiyang", "haikou",
@@ -39,7 +39,7 @@ describe("city registry", () => {
     expect(resolveCityRouteParam("beijing")).toBe("beijing");
     expect(resolveCityRouteParam("taipei")).toBe("taipei");
     expect(resolveCityRouteParam("hongkong")).toBe("hongkong");
-    expect(adapter.markers.map((marker) => marker.city)).toEqual(cities);
+    expect(adapter.markers.map((marker) => marker.city)).toEqual(legacyCityRegistry.map(c => c.id));
     expect(getCityStats([])).toHaveLength(cities.length);
     expect(getCityStats([{ city: "beijing", status: "saved" }]).find((stat) => stat.city === "beijing")).toMatchObject({ visitCount: 1, unlocked: true });
     expect(getCityStats([{ city: "hongkong", status: "saved" }]).find((stat) => stat.city === "hongkong")).toMatchObject({ visitCount: 1, unlocked: true });

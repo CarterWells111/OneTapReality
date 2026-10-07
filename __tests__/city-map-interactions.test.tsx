@@ -98,7 +98,7 @@ jest.mock("react-native-gesture-handler", () => {
   };
 });
 
-import { CityMap, getWorkspaceTranslationLimits, type CityStats } from "../src/features/cities";
+import { ChinaCityMap as CityMap, getWorkspaceTranslationLimits, type CityStats } from "../src/features/cities";
 
 const stats: CityStats[] = [
   { city: "hangzhou", intensity: "none", isVisited: false, unlocked: false, visitCount: 0 },

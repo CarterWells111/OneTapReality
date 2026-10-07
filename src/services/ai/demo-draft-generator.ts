@@ -1,5 +1,5 @@
 import type { MemoryDraftInput, StoryPage } from "../../types/memory";
-import { cityRegistry, type City } from "../../types/city";
+import { cityRegistry, resolveCityEntry, type City } from "../../types/city";
 import { createLegacyLayout } from "../../features/canvas/canvas-layout";
 import { createPhotoLayout } from "../../features/canvas/auto-layout";
 import { createPhotoTemplateCaption, createPhotoTemplateLayout } from "../../features/canvas/photo-templates";
@@ -39,7 +39,7 @@ export class DemoDraftGenerator implements DraftGenerator {
       position: 0,
       kind: "cover",
       headline: input.title,
-      body: `${input.travelDate} · ${cityPhrases[input.city]}`,
+      body: `${input.travelDate} · ${(cityPhrases[input.city] ?? `在${resolveCityEntry(input.city)?.name ?? "旅行地点"}慢慢走过的这一天`)}`,
       coverColor,
       coverImage: input.coverImage,
     });

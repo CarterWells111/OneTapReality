@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Style
 
 import { AppButton, colors, PaperCard, Section, serifFont, Tag } from "../../components/ui";
 import { ColorPicker } from "../../components/ColorPicker";
-import { cityContent } from "../../features/cities/city-content";
+import { getCityContent } from "../../features/cities/city-content";
 import { resolveCityRouteParam } from "../../features/cities/city-route";
 import { areDraftPhotoPlansValid } from "../../features/memories/photo-page-planner";
 import { DraftPhotoAllocation } from "../../features/memories/draft-photo-allocation";
@@ -19,6 +19,7 @@ import {
   toIsoTravelDate,
 } from "../../features/memories/travel-date";
 import { cityRegistry, type City, type CityKind } from "../../types/city";
+import { GeographicPlaceForm } from '../../features/cities/geographic-place-form';
 import { initialNewMemoryPhotos, newMemoryPhotosReducer } from "../../features/memories/new-memory-photos";
 
 const cityGroupLabels: Record<CityKind, string> = {
@@ -26,6 +27,7 @@ const cityGroupLabels: Record<CityKind, string> = {
   "legacy-city": "既有城市",
   municipality: "直辖市",
   "province-capital": "省会",
+  "world-city": "全球城市",
 };
 
 /** 封面预设颜色（十六进制）。 */
@@ -80,7 +82,7 @@ export default function NewMemoryScreen() {
     const normalizedQuery = cityQuery.trim().toLocaleLowerCase();
     return (Object.keys(cityGroupLabels) as CityKind[]).map((kind) => ({
       kind,
-      cities: cityRegistry.filter((entry) => entry.kind === kind && (!normalizedQuery || [entry.id, entry.name, entry.region].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)))),
+      cities: cityRegistry.filter((entry) => entry.kind === kind && (!normalizedQuery || [entry.id, entry.name, entry.region, ...(entry.aliases ?? [])].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)))),
     })).filter((group) => group.cities.length > 0);
   }, [cityQuery]);
 
@@ -226,11 +228,11 @@ export default function NewMemoryScreen() {
           >
             <Text selectable style={styles.formLabel}>地点</Text>
             <Text
-              accessibilityLabel={`已选城市 ${cityContent[city].name}`}
+              accessibilityLabel={`已选城市 ${getCityContent(city).name}`}
               selectable
               style={styles.formValue}
             >
-              {cityContent[city].name} ›
+              {getCityContent(city).name} ›
             </Text>
           </Pressable>
         </View>
@@ -395,12 +397,13 @@ export default function NewMemoryScreen() {
             <TextInput
               accessibilityLabel="搜索城市"
               onChangeText={setCityQuery}
-              placeholder="搜索城市或省份"
+              placeholder="搜索城市、国家或地区"
               placeholderTextColor={colors.muted}
               style={styles.sheetInput}
               value={cityQuery}
             />
             <ScrollView contentContainerStyle={styles.cityList}>
+              <GeographicPlaceForm onSelect={pickCity} />
               {visibleCityGroups.map((group) => (
                 <View key={group.kind} style={styles.cityGroup}>
                   <Text selectable style={styles.sheetGroupLabel}>{cityGroupLabels[group.kind]}</Text>

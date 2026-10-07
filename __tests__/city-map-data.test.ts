@@ -4,7 +4,7 @@ import {
 } from "../src/features/cities";
 import { createMemory } from "../src/features/memories/memory-factory";
 import { chinaMapMarkers } from "../src/features/cities/china-map-data";
-import { cities } from "../src/types/city";
+import { cities, legacyCityRegistry } from "../src/types/city";
 
 describe("city map domain data", () => {
   it("returns zeroed statistics for every city when no saved memories exist", () => {
@@ -63,7 +63,7 @@ describe("city map domain data", () => {
 
     expect(adapter.outline).toMatchObject({ id: "china-simplified", coordinateSpace: "relative" });
     expect(adapter.outline.points.length).toBeGreaterThan(3);
-    expect(adapter.markers.map((marker) => marker.city)).toEqual(cities);
+    expect(adapter.markers.map((marker) => marker.city)).toEqual(legacyCityRegistry.map(c => c.id));
     const generatedBeijing = chinaMapMarkers.find((marker) => marker.city === "beijing");
     expect(adapter.markers.find((marker) => marker.city === "beijing")?.coordinate).toEqual({
       x: generatedBeijing?.x,

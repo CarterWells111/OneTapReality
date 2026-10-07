@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { cloudCities, cloudMemoryStatuses, type CloudMemoryPayload } from "../services/backend/contracts";
+import { cloudMemoryStatuses, type CloudMemoryPayload } from "../services/backend/contracts";
+import { resolveCityEntry } from '../types/city';
 
 const canvasElementBase = {
   id: z.string().min(1),
@@ -26,7 +27,7 @@ const canvasElement = z.discriminatedUnion("type", [
 
 export const cloudMemoryPayloadSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  city: z.enum(cloudCities),
+  city: z.string().max(1400).refine(city => Boolean(resolveCityEntry(city)), 'Unknown or invalid geographic place'),
   travelDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   status: z.enum(cloudMemoryStatuses),
   photoCount: z.number().int().min(0).max(500),

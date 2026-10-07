@@ -2,7 +2,7 @@ import { act, fireEvent, render, within } from "@testing-library/react-native";
 import { readFileSync } from "node:fs";
 import * as React from "react";
 
-import { CityMap, chinaMapCoordinateSpace, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerHit, type CityStats } from "../src/features/cities";
+import { ChinaCityMap as CityMap, chinaMapCoordinateSpace, getCityMapTransform, OfflineChinaMapAdapter, resolveChinaMapContentFrame, resolveChinaMapCoordinate, resolveCityMarkerLayout, resolveWorkspaceMarkerHit, type CityStats } from "../src/features/cities";
 import { resolveNormalizedMapScreenPoint } from "../src/features/cities/city-label-layout";
 
 const stats: CityStats[] = [

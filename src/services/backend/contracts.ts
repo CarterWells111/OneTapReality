@@ -1,7 +1,7 @@
+import { cities } from '../../types/city';
 export const backendContractVersion = 1 as const;
-
-export const cloudCities = ["hangzhou", "shanghai", "shenzhen"] as const;
-export type CloudCity = (typeof cloudCities)[number];
+export const cloudCities = cities;
+export type CloudCity = string;
 
 export const cloudMemoryStatuses = ["draft", "saved", "discarded"] as const;
 export type CloudMemoryStatus = (typeof cloudMemoryStatuses)[number];

@@ -913,3 +913,11 @@ NFC 礼品采用经过邮箱验证码的统一账户会话，而不复用匿名�
 残余修复限定为：终态媒体清理任务可再次排入并保留租约/退避及引用保护，promotion 重试与进行中的对象清理互斥；页面封面规范持久化、旧缺图连续编辑/恢复及规范引用草稿重试；已有媒体再次发布后通过位置回退恢复顶层照片和封面；业务访问实时重验 Alpha 名单；健康检查当前 26 表实际列。身份恢复与账号删除使用独立会话边界，业务权限单独重验 Alpha；删除受理回执仅在该次删除触发的自身登出期间保留，其他账号或会话代数切换仍清除；保留访客/账号隔离、事务快照、可恢复上传、发布回执及 writeFreeze；不新增依赖、迁移、支付、分析或第三方服务。
 
 用户报告 iOS development build 真机检查无误，并授权再次复核后创建 PR、通过检查后合并到 main。PR 仅包含必要源码、回归测试与本决策记录；本机连接配置、运行日志与详细验收证据留在本地。该授权不包含手动云端构建、部署、数据库操作、真实邮件或对象存储操作。
+# 2026-10-07 Global Map
+
+- Scope: the chat assigns Global Map to JTST. Preserve album/editor/check-in UX; AI sorting, stickers, monetization and production deployment are excluded.
+- Replace China-only drawing in the offline renderer with bundled Natural Earth world land and populated-place data (public domain), retaining existing city IDs, China check-in illustrations and account isolation. Data generation is build-time only; no geocoding service or photo upload.
+- Store user-defined places as versioned, validated geographic city IDs in the existing TEXT city field. Names and WGS84 coordinates travel together without destructive migrations; all readers, routes, statistics and cloud validation must resolve them. Existing city IDs remain valid.
+- iPhone uses react-native-maps 1.27.2 (Expo SDK 57 recommended) with the platform default Apple MapKit provider for global-to-street browsing. No Google provider, API key, location permission or background location. Apple retrieves basemap data; album content remains local unless explicitly shared. Preserve the SDK attribution. Web/offline preview uses bundled vectors and makes no tile requests.
+- Fit saved places using a shortest longitude arc across the dateline. Keep zoom/pan under user control after initialization. Cluster nearby places in screen space; expand clusters on press. Invalid/non-finite coordinates are rejected and ±180 and polar inputs are supported.
+- Validate local persistence and legacy cloud payloads, global regions, dateline, clustering, routing, saved counts and original check-in navigation, then lint/typecheck/full tests/server build and an iOS bundle export. Native tile/gesture verification requires an iPhone or simulator; do not call mock tests native verification. EAS builds/TestFlight submission keep their existing separate approval gate.

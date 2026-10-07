@@ -1,7 +1,7 @@
 import { StyleSheet, View } from "react-native";
 import Svg, { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
 
-import { cityRegistry, type City } from "../../types/city";
+import { cityRegistry, resolveCityEntry, type City } from "../../types/city";
 
 const palettes = [
   { sky: "#DCE9ED", ridge: "#8FAAB2", foreground: "#4D6D75" },
@@ -12,8 +12,8 @@ const palettes = [
 
 /** A local, city-labelled travel illustration for cities without a dedicated watercolor. */
 export function CityVectorArtwork({ city, large = false }: { readonly city: City; readonly large?: boolean }) {
-  const index = cityRegistry.findIndex((entry) => entry.id === city);
-  const entry = cityRegistry[index];
+  const index = Math.max(0, cityRegistry.findIndex((entry) => entry.id === city));
+  const entry = resolveCityEntry(city) ?? cityRegistry[index];
   const palette = palettes[index % palettes.length];
   const rise = 29 + index % 13;
   const sunX = 77 + index % 24;
