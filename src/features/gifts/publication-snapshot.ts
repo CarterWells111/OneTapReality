@@ -69,22 +69,30 @@ export function snapshotPagesForPublication(
 
   return pages.map((page, position) => {
     const photoReference = page.photoUri
-      ? stableReference(requireReference(page, page.photoUri))
+      ? requireReference(page, page.photoUri)
       : undefined;
     const { photoUri: _photoUri, coverImage, layout, ...safePage } = page;
+    const coverReference = coverImage ? requireReference(page, coverImage) : undefined;
     const snapshot: Record<string, unknown> = {
       ...safePage,
-      ...(photoReference ? { photoUri: photoReference } : {}),
-      ...(coverImage ? { coverImage: stableReference(requireReference(page, coverImage)) } : {}),
+      ...(photoReference ? { photoUri: stableReference(photoReference) } : {}),
+      // Completion rebuilds media row IDs, while publication positions stay stable.
+      ...(photoReference?.existingId ? { photoMediaPosition: photoReference.position } : {}),
+      ...(coverReference ? { coverImage: stableReference(coverReference) } : {}),
+      ...(coverReference?.existingId ? { coverMediaPosition: coverReference.position } : {}),
     };
 
     if (layout) {
       const { photoPlanVersion: _photoPlanVersion, ...shareableLayout } = layout;
+      const layoutCoverReference = shareableLayout.coverImage
+        ? requireReference(page, shareableLayout.coverImage)
+        : undefined;
       snapshot.layout = {
         ...shareableLayout,
-        ...(shareableLayout.coverImage
-          ? { coverImage: stableReference(requireReference(page, shareableLayout.coverImage)) }
+        ...(layoutCoverReference
+          ? { coverImage: stableReference(layoutCoverReference) }
           : {}),
+        ...(layoutCoverReference?.existingId ? { coverMediaPosition: layoutCoverReference.position } : {}),
         elements: shareableLayout.elements.map((element) => {
           if (element.type !== "image" || !element.uri) return { ...element };
           const reference = requireReference(page, element.uri);

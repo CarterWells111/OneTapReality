@@ -16,7 +16,7 @@ import {
 // 照片持久化：把选取器返回的 URI 复制进应用沙盒（documentDirectory），
 // 防止 ph:// / content:// / 缓存 file:// 在系统清理或授权过期后失效
 // （此前照片 URI 原样入库，重开后全部丢失）。
-// 所有操作 best-effort：失败一律返回原 URI，不打断用户流程。
+// 新照片严格复制并验证；遗留引用读取失败时保留存储引用与缺图 token。
 // ---------------------------------------------------------------------------
 
 /** 单张图片复制失败的并发上限（规范 §10：禁止裸 Promise.all）。 */
@@ -26,6 +26,7 @@ export type PhotoLocation =
   | { kind: "memory-photo"; position: number }
   | { kind: "memory-cover" }
   | { kind: "page-photo"; pageId: string }
+  | { kind: "page-cover"; pageId: string }
   | { kind: "layout-cover"; pageId: string }
   | { kind: "layout-image"; pageId: string; elementId: string };
 
@@ -259,7 +260,7 @@ export function createPhotoStagingSession(sessionId: string): PhotoStagingSessio
 
 /**
  * 把一张照片 URI 复制进应用沙盒，返回持久化后的 URI。
- * 已在沙盒内的直接返回；复制失败返回原 URI（调用方决定是否兜底）。
+ * 已在当前相册目录内的直接返回；复制或目标验证失败抛错。
  */
 export async function persistPhotoUriStrict(uri: string, accountKey: LocalLibraryOwner, memoryId: string): Promise<string> {
   const staged = await stagePhotoUriStrict(uri, accountKey, memoryId);
@@ -395,10 +396,11 @@ export async function hydrateMemoryPhotoReferences(
   const cover = mapUri(memory.coverImage, { kind: "memory-cover" });
   const pages = memory.pages.map((page) => {
     const pagePhoto = mapUri(page.photoUri, { kind: "page-photo", pageId: page.id });
+    const pageCover = mapUri(page.coverImage, { kind: "page-cover", pageId: page.id });
     if (!page.layout) {
       return {
-        runtime: { ...page, photoUri: pagePhoto.runtime },
-        storage: { ...page, photoUri: pagePhoto.storage },
+        runtime: { ...page, photoUri: pagePhoto.runtime, coverImage: pageCover.runtime },
+        storage: { ...page, photoUri: pagePhoto.storage, coverImage: pageCover.storage },
       };
     }
     const layoutCover = mapUri(page.layout.coverImage, { kind: "layout-cover", pageId: page.id });
@@ -414,11 +416,13 @@ export async function hydrateMemoryPhotoReferences(
       runtime: {
         ...page,
         photoUri: pagePhoto.runtime,
+        coverImage: pageCover.runtime,
         layout: { ...page.layout, coverImage: layoutCover.runtime, elements: elements.map((entry) => entry.runtime) },
       },
       storage: {
         ...page,
         photoUri: pagePhoto.storage,
+        coverImage: pageCover.storage,
         layout: { ...page.layout, coverImage: layoutCover.storage, elements: elements.map((entry) => entry.storage) },
       },
     };
@@ -460,6 +464,7 @@ function collectMemoryPhotoUris(memory: Memory): string[] {
   if (memory.coverImage) uris.push(memory.coverImage);
   for (const page of memory.pages) {
     if (page.photoUri) uris.push(page.photoUri);
+    if (page.coverImage) uris.push(page.coverImage);
     if (page.layout) uris.push(...collectLayoutUris(page.layout));
   }
   return uris;
@@ -485,13 +490,15 @@ export async function cleanupMigratedLegacyPhotoUris(
  * 持久化一个记忆内全部照片 URI（页面布局 image 元素、封面图、photoUris 列表），
  * 替换映射写回。返回持久化后的记忆与是否发生过变更。
  * 旧数据迁移入口：读取记忆后调用，变更时把结果写回数据库。
+ * 允许保留当前相册已核实的缺图引用；新选照片仍须严格复制。
  */
 export async function ensureMemoryPhotosPersisted(
   memory: Memory,
   accountKey: LocalLibraryOwner,
+  options: { preservedMissingReferences?: ReadonlySet<string> } = {},
 ): Promise<{ memory: Memory; changed: boolean }> {
   const allUris = collectMemoryPhotoUris(memory);
-  const uniqueUris = [...new Set(allUris)];
+  const uniqueUris = [...new Set(allUris)].filter((uri) => !options.preservedMissingReferences?.has(uri));
   const persisted = await persistPhotoUris(uniqueUris, accountKey, memory.id);
   const uriMap = new Map<string, string>();
   uniqueUris.forEach((uri, index) => {
@@ -515,7 +522,7 @@ export async function ensureMemoryPhotosPersisted(
       );
       layout = { ...layout, elements, coverImage: replace(layout.coverImage) };
     }
-    return { ...page, photoUri, layout };
+    return { ...page, photoUri, coverImage: replace(page.coverImage), layout };
   });
 
   return {

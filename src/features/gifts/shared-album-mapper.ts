@@ -49,7 +49,7 @@ function parseElement(value: unknown): (CanvasElement | SnapshotImageElement) | 
   return null;
 }
 
-function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elements: (CanvasElement | SnapshotImageElement)[] }) | undefined {
+function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { coverMediaPosition?: number; elements: (CanvasElement | SnapshotImageElement)[] }) | undefined {
   if (!isRecord(value) || !isFiniteNumber(value.aspectRatio) || value.aspectRatio <= 0 || !Array.isArray(value.elements)) return undefined;
   const elements = value.elements.map(parseElement).filter((element): element is CanvasElement | SnapshotImageElement => element !== null);
   const template = typeof value.photoTemplateId === "string"
@@ -64,6 +64,7 @@ function parseLayout(value: unknown): (Omit<CanvasLayout, "elements"> & { elemen
     ...(typeof value.backgroundId === "string" ? { backgroundId: value.backgroundId } : {}),
     ...(typeof value.coverColor === "string" ? { coverColor: value.coverColor } : {}),
     ...(typeof value.coverImage === "string" ? { coverImage: value.coverImage } : {}),
+    ...(isFiniteNumber(value.coverMediaPosition) ? { coverMediaPosition: value.coverMediaPosition } : {}),
     ...(value.coverCrop !== undefined ? { coverCrop: normalizePhotoCropState(value.coverCrop) } : {}),
     elements,
   };
@@ -96,14 +97,16 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
     return fallback;
   };
 
-  const resolveStableUri = (value: string | undefined) => {
-    if (!value) return value;
-    if (value.startsWith("shared-media:")) return mediaById.get(value.slice("shared-media:".length))?.readUrl;
-    if (value.startsWith("shared-position:")) {
+  const resolveStableUri = (value: string | undefined, fallbackPosition?: number) => {
+    let resolved;
+    if (value?.startsWith("shared-media:")) resolved = mediaById.get(value.slice("shared-media:".length));
+    else if (value?.startsWith("shared-position:")) {
       const position = Number(value.slice("shared-position:".length));
-      return Number.isInteger(position) ? mediaByPosition.get(position)?.readUrl : undefined;
-    }
-    return value;
+      resolved = Number.isInteger(position) ? mediaByPosition.get(position) : undefined;
+    } else if (typeof fallbackPosition !== "number") return value;
+    resolved ??= typeof fallbackPosition === "number" ? mediaByPosition.get(fallbackPosition) : undefined;
+    if (resolved) consumed.add(resolved.id);
+    return resolved?.readUrl;
   };
 
   return [...album.pages].sort((left, right) => left.position - right.position).map(({ position, page }) => {
@@ -112,11 +115,18 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
     const body = typeof raw.body === "string" ? raw.body : "";
     const kind = raw.kind === "cover" || raw.kind === "closing" ? raw.kind : "photo";
     const rawLayout = parseLayout(raw.layout);
+    const rawPhotoUri = typeof raw.photoUri === "string" ? raw.photoUri : undefined;
+    const photoMediaPosition = isFiniteNumber(raw.photoMediaPosition) ? raw.photoMediaPosition : undefined;
+    const hasStablePhotoReference = rawPhotoUri?.startsWith("shared-media:") || rawPhotoUri?.startsWith("shared-position:") || typeof photoMediaPosition === "number";
+    const resolvedPhotoUri = resolveStableUri(rawPhotoUri, photoMediaPosition);
+    const coverImage = resolveStableUri(typeof raw.coverImage === "string" ? raw.coverImage : undefined,
+      isFiniteNumber(raw.coverMediaPosition) ? raw.coverMediaPosition : undefined);
 
-    const { coverImage: rawLayoutCoverImage, ...layoutWithoutCover } = rawLayout ?? { elements: [], aspectRatio: 0.75 };
+    const { coverImage: rawLayoutCoverImage, coverMediaPosition: layoutCoverPosition, ...layoutWithoutCover } = rawLayout ?? { elements: [], aspectRatio: 0.75 };
+    const layoutCoverImage = resolveStableUri(rawLayoutCoverImage, layoutCoverPosition);
     const layout = rawLayout ? {
       ...layoutWithoutCover,
-      ...(resolveStableUri(rawLayoutCoverImage) ? { coverImage: resolveStableUri(rawLayoutCoverImage) } : {}),
+      ...(layoutCoverImage ? { coverImage: layoutCoverImage } : {}),
       elements: rawLayout.elements.map((element) => {
         if (element.type !== "image") return { ...element };
         const snapshotImage = element as SnapshotImageElement;
@@ -128,9 +138,6 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
       }),
     } : undefined;
 
-    const rawPhotoUri = typeof raw.photoUri === "string" ? raw.photoUri : undefined;
-    const hasStablePhotoReference = rawPhotoUri?.startsWith("shared-media:") || rawPhotoUri?.startsWith("shared-position:");
-    const resolvedPhotoUri = rawPhotoUri ? resolveStableUri(rawPhotoUri) : undefined;
     const legacyMedia = layout
       ? undefined
       : resolvedPhotoUri
@@ -145,9 +152,9 @@ export function mapSharedAlbumToStoryPages(album: InvitedGiftAlbum): StoryPage[]
       headline,
       body,
       ...(layout ? { layout } : {}),
-      ...(legacyMedia ? { photoUri: legacyMedia.readUrl } : {}),
+      ...(hasStablePhotoReference && resolvedPhotoUri ? { photoUri: resolvedPhotoUri } : legacyMedia ? { photoUri: legacyMedia.readUrl } : {}),
       ...(typeof raw.coverColor === "string" ? { coverColor: raw.coverColor } : {}),
-      ...(typeof raw.coverImage === "string" && resolveStableUri(raw.coverImage) ? { coverImage: resolveStableUri(raw.coverImage) } : {}),
+      ...(coverImage ? { coverImage } : {}),
     };
   });
 }

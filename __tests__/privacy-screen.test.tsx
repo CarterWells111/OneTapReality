@@ -221,7 +221,7 @@ describe("PrivacyScreen", () => {
     ));
   });
 
-  it("releases account-deletion busy state after its own sign-out removes the session", async () => {
+  it("preserves a receipt after the sign-out effect and clears it on a new signed-out generation", async () => {
     let finishLibraryCleanup: (() => void) | undefined;
     mockDeleteAccountLibrary.mockReturnValue(new Promise<void>((resolve) => {
       finishLibraryCleanup = resolve;
@@ -255,7 +255,16 @@ describe("PrivacyScreen", () => {
       expect.stringContaining("receipt-1"),
       expect.any(Array),
     ));
+    expect(screen.getByText(/账号删除已受理：receipt-1/u)).toBeTruthy();
     expect(screen.getByRole("button", { name: "删除本机旅行册" })).toBeEnabled();
+
+    mockUseAuth.mockReturnValue({
+      ...mockUseAuth(),
+      getSessionGeneration: () => 9,
+      sessionGeneration: 9,
+    });
+    screen.rerender(<PrivacyScreen />);
+    expect(screen.queryByText(/账号删除已受理：receipt-1/u)).toBeNull();
   });
 
   it("discards account A deletion UI and completion after switching to account B", async () => {

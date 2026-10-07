@@ -68,6 +68,7 @@ export default function PrivacyScreen() {
   const sessionStateIdentity = sessionIdentity ?? `signed-out:${sessionGeneration}`;
   const sessionIdentityRef = React.useRef<string | null>(sessionIdentity);
   const previousSessionStateIdentity = React.useRef(sessionStateIdentity);
+  const receiptSignedOutGeneration = React.useRef<number | null>(null);
   const operationSequence = React.useRef(0);
   const activeDeletionOperation = React.useRef<DeletionUiOperation | null>(null);
   const getSessionGenerationRef = React.useRef(getSessionGeneration);
@@ -113,7 +114,13 @@ export default function PrivacyScreen() {
     setCode("");
     setConfirmation("");
     setDeletionError("");
-    setReceipt(null);
+    // A completed deletion still owns its receipt after the operation finishes.
+    const isReceiptOwnedBySignedOutState = receiptSignedOutGeneration.current !== null
+      && sessionStateIdentity === `signed-out:${receiptSignedOutGeneration.current}`;
+    if (!isReceiptOwnedBySignedOutState) {
+      receiptSignedOutGeneration.current = null;
+      setReceipt(null);
+    }
 
     const operation = activeDeletionOperation.current;
     const isOwnedSignedOutCompletion = operation !== null
@@ -233,6 +240,7 @@ export default function PrivacyScreen() {
       }
       localCleanupComplete = localCleanupComplete && localSessionCleared && rememberedEmailCleared;
       if (canCommitDeletionUi(operation)) {
+        receiptSignedOutGeneration.current = operation.signedOutGeneration;
         setReceipt(nextReceipt);
         setChallenge(null);
         Alert.alert(

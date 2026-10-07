@@ -1,4 +1,17 @@
+import { getTableColumns, getTableName } from "drizzle-orm";
+import { PgTable } from "drizzle-orm/pg-core";
+import * as databaseSchema from "../src/server/db/schema";
+import { GET as getHealth } from "../src/app/api/health+api";
+import { GET as getCapabilities } from "../src/app/api/capabilities+api";
+import { POST as registerDevice } from "../src/app/api/devices/register+api";
+import { GET as listCloudMemories } from "../src/app/api/memories+api";
+import { authenticateRequest } from "../src/server/auth/device-auth";
+import { createDevice, getDeviceByInstallationId, listMemories } from "../src/server/memories/repository";
+
 const mockDatabaseExecute = jest.fn();
+const currentSchemaColumns = Object.values(databaseSchema).filter(table => table instanceof PgTable).flatMap(table =>
+  Object.values(getTableColumns(table)).map(column => ({ table_name: getTableName(table), column_name: column.name })),
+);
 
 jest.mock("../src/server/db/client", () => ({
   getServerDatabase: jest.fn(() => ({ execute: mockDatabaseExecute })),
@@ -22,16 +35,10 @@ jest.mock("../src/server/memories/repository", () => ({
   deleteMemory: jest.fn(),
 }));
 
-import { GET as getHealth } from "../src/app/api/health+api";
-import { GET as getCapabilities } from "../src/app/api/capabilities+api";
-import { POST as registerDevice } from "../src/app/api/devices/register+api";
-import { GET as listCloudMemories } from "../src/app/api/memories+api";
-import { authenticateRequest } from "../src/server/auth/device-auth";
-import { createDevice, getDeviceByInstallationId, listMemories } from "../src/server/memories/repository";
-
 describe("backend API routes", () => {
   beforeEach(() => {
     mockDatabaseExecute.mockReset();
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: currentSchemaColumns });
     mockDatabaseExecute.mockResolvedValue({ rows: [{ version: 16 }] });
     delete process.env.API_WRITE_FREEZE;
   });
@@ -71,6 +78,8 @@ describe("backend API routes", () => {
   });
 
   it("rejects health when the database schema is version 15", async () => {
+    mockDatabaseExecute.mockReset();
+    mockDatabaseExecute.mockResolvedValueOnce({ rows: currentSchemaColumns });
     mockDatabaseExecute.mockResolvedValueOnce({ rows: [{ version: 15 }] });
 
     const response = await getHealth(new Request("http://localhost/api/health"));
@@ -82,6 +91,7 @@ describe("backend API routes", () => {
   });
 
   it("reports an outdated schema when the schema metadata table is missing", async () => {
+    mockDatabaseExecute.mockReset();
     mockDatabaseExecute.mockRejectedValueOnce(Object.assign(new Error("relation does not exist"), { code: "42P01" }));
 
     const response = await getHealth(new Request("http://localhost/api/health"));
@@ -93,6 +103,7 @@ describe("backend API routes", () => {
   });
 
   it("reports an unavailable PostgreSQL database", async () => {
+    mockDatabaseExecute.mockReset();
     mockDatabaseExecute.mockRejectedValueOnce(new Error("connection failed"));
 
     const response = await getHealth(new Request("http://localhost/api/health"));
@@ -113,6 +124,16 @@ describe("backend API routes", () => {
 
     expect(response.status).toBe(401);
     expect(listMemories).not.toHaveBeenCalled();
+  });
+
+  it.each(["42P01", "42703"])("classifies wrapped PostgreSQL schema error %s", async code => {
+    mockDatabaseExecute.mockReset();
+    mockDatabaseExecute.mockRejectedValueOnce(Object.assign(new Error("query failed"), {
+      cause: Object.assign(new Error("schema structure missing"), { code }),
+    }));
+    const response = await getHealth();
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: { code: "database_schema_outdated", message: "Database schema is not ready" } });
   });
 
   it("registers a new anonymous device without returning a database secret", async () => {
