@@ -4,6 +4,41 @@ import {
 } from "../src/features/gifts/shared-album-mapper";
 
 describe("shared album snapshot mapper", () => {
+  it("reserves publication photo and cover positions before taking legacy fallbacks", () => {
+    const pages = mapSharedAlbumToStoryPages({
+      role: "viewer", title: "Mixed publication", travelDate: null,
+      pages: [
+        { position: 0, page: { photoUri: "shared-position:2", coverImage: "shared-position:0", layout: { aspectRatio: 0.75, coverImage: "shared-position:1", elements: [] } } },
+        { position: 1, page: { photoUri: "shared-position:2" } },
+        { position: 2, page: { headline: "Legacy" } },
+      ],
+      media: [0, 1, 2, 3].map((position) => ({ id: `current-${position}`, position, contentType: "image/jpeg", byteSize: 1, readUrl: `https://read.test/${position}` })),
+      publishedAt: "2026-10-07T00:00:00Z", version: 2, cover: null,
+    });
+    expect(pages[0]).toEqual(expect.objectContaining({ photoUri: "https://read.test/2", coverImage: "https://read.test/0" }));
+    expect(pages[0].layout?.coverImage).toBe("https://read.test/1");
+    expect(pages[1].photoUri).toBe("https://read.test/2");
+    expect(pages[2].photoUri).toBe("https://read.test/3");
+  });
+
+  it("does not take unrelated media when explicit publication positions are missing", () => {
+    const pages = mapSharedAlbumToStoryPages({
+      role: "viewer", title: "Missing positions", travelDate: null,
+      pages: [
+        { position: 0, page: { photoUri: "shared-media:old-photo", photoMediaPosition: 7, coverImage: "shared-media:old-cover", coverMediaPosition: 8, layout: { aspectRatio: 0.75, coverImage: "shared-media:old-background", coverMediaPosition: 9, elements: [] } } },
+        { position: 1, page: { photoUri: "shared-media:old-photo", photoMediaPosition: 7 } },
+        { position: 2, page: {} },
+      ],
+      media: [{ id: "unrelated", position: 0, contentType: "image/jpeg", byteSize: 1, readUrl: "https://read.test/unrelated" }],
+      publishedAt: "2026-10-07T00:00:00Z", version: 2, cover: null,
+    });
+    expect(pages[0]).not.toHaveProperty("photoUri");
+    expect(pages[0]).not.toHaveProperty("coverImage");
+    expect(pages[0].layout).not.toHaveProperty("coverImage");
+    expect(pages[1]).not.toHaveProperty("photoUri");
+    expect(pages[2].photoUri).toBe("https://read.test/unrelated");
+  });
+
   it("prefers stable media references and preserves the complete canvas page", () => {
     const pages = mapSharedAlbumToStoryPages({
       role: "editor",

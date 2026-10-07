@@ -26,6 +26,11 @@ export class GiftPublicationUnavailableError extends Error {
   constructor() { super("This gift is no longer available for publishing"); }
 }
 
+export class GiftPublicationCleanupBusyError extends Error {
+  readonly code = "gift_publication_retryable";
+  constructor() { super("Gift publication finalization can be retried after media cleanup"); }
+}
+
 export class GiftRelationshipBlockedError extends Error {
   readonly code = "gift_relationship_blocked";
   constructor() { super("These accounts cannot share gifts"); }
@@ -402,7 +407,7 @@ export async function decideGiftManagementRequest(db: BackendDatabase, input: { 
       const media = await tx.select({ objectKey: sharedAlbumMedia.objectKey }).from(sharedAlbumMedia).where(eq(sharedAlbumMedia.sharedAlbumId, album.id));
       const keys = [...new Set([...media.map(row => row.objectKey), ...(album.coverObjectKey ? [album.coverObjectKey] : [])])];
       applyApprovedAction = async () => {
-        if (keys.length) await tx.insert(giftMediaCleanupJobs).values(keys.map(objectKey => ({ id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending", attempts: 0, nextAttemptAt: input.now, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now }))).onConflictDoNothing();
+        await queueGiftMediaCleanupJobs(tx, input.giftId, keys, input.now, input.now);
         await tx.delete(sharedAlbums).where(eq(sharedAlbums.id, album.id));
       };
     } else return { status: "invalid_target" as const };
@@ -619,18 +624,12 @@ export async function completeGiftPublishSession(
     })));
     const retainedKeys = new Set(payload.media.map(media => media.objectKey));
     const oldObjectKeys = [...oldMedia.map((media) => media.objectKey).filter(key => !retainedKeys.has(key)), ...(oldCoverKey && oldCoverKey !== payload.cover?.objectKey ? [oldCoverKey] : [])];
-    if (oldObjectKeys.length) await tx.insert(giftMediaCleanupJobs).values(oldObjectKeys.map((objectKey) => ({
-      id: crypto.randomUUID(), giftId: session.giftId, objectKey, state: "pending", attempts: 0,
-      nextAttemptAt: input.now, lastError: null, completedAt: null, createdAt: input.now,
-    }))).onConflictDoNothing();
+    await queueGiftMediaCleanupJobs(tx, session.giftId, oldObjectKeys, input.now, input.now);
     const tempObjectKeys = [
       ...sessionPayload.media.filter((media) => media.source !== "existing" && media.objectKey.includes("/temp/")).map((media) => media.objectKey),
       ...(sessionPayload.cover?.objectKey.includes("/temp/") ? [sessionPayload.cover.objectKey] : []),
     ];
-    if (tempObjectKeys.length) await tx.insert(giftMediaCleanupJobs).values(tempObjectKeys.map((objectKey) => ({
-      id: crypto.randomUUID(), giftId: session.giftId, objectKey, state: "pending", attempts: 0,
-      nextAttemptAt: input.now, lastError: null, completedAt: null, createdAt: input.now,
-    }))).onConflictDoNothing();
+    await queueGiftMediaCleanupJobs(tx, session.giftId, tempObjectKeys, input.now, input.now);
     await tx.update(giftPublishSessions).set({
       completedAt: input.now,
       completedAlbumId: albumId,
@@ -680,10 +679,7 @@ export async function disableGift(db: BackendDatabase, giftId: string, disabledA
       .where(eq(sharedAlbums.giftId, giftId));
     const [oldAlbum] = await tx.select({ coverObjectKey: sharedAlbums.coverObjectKey }).from(sharedAlbums).where(eq(sharedAlbums.giftId, giftId)).limit(1);
     const oldObjectKeys = [...oldMedia.map((media) => media.objectKey), ...(oldAlbum?.coverObjectKey ? [oldAlbum.coverObjectKey] : [])];
-    if (oldObjectKeys.length) await tx.insert(giftMediaCleanupJobs).values(oldObjectKeys.map((objectKey) => ({
-      id: crypto.randomUUID(), giftId, objectKey, state: "pending", attempts: 0,
-      nextAttemptAt: disabledAt, lastError: null, completedAt: null, createdAt: disabledAt,
-    }))).onConflictDoNothing();
+    await queueGiftMediaCleanupJobs(tx, giftId, oldObjectKeys, disabledAt, disabledAt);
     await tx.delete(giftMembers).where(eq(giftMembers.giftId, giftId));
     await tx.delete(sharedAlbums).where(eq(sharedAlbums.giftId, giftId));
     return true;
@@ -696,14 +692,32 @@ export async function listGiftMediaCleanupJobs(db: BackendDatabase, now: string)
     .where(and(eq(giftMediaCleanupJobs.state, "pending"), lte(giftMediaCleanupJobs.nextAttemptAt, now)));
 }
 
-export async function enqueueGiftMediaCleanupJobs(db: BackendDatabase, giftId: string, objectKeys: string[], now: string): Promise<void> {
+/** Revive later deletion work without taking over a worker's lease or pending retry backoff. */
+async function queueGiftMediaCleanupJobs(
+  db: Pick<BackendDatabase, "insert">,
+  giftId: string,
+  objectKeys: string[],
+  now: string,
+  nextAttemptAt: string,
+): Promise<void> {
   const uniqueKeys = [...new Set(objectKeys)];
   if (!uniqueKeys.length) return;
-  const nextAttemptAt = new Date(new Date(now).getTime() + 15 * 60_000).toISOString();
   await db.insert(giftMediaCleanupJobs).values(uniqueKeys.map((objectKey) => ({
     id: crypto.randomUUID(), giftId, objectKey, state: "pending" as const, attempts: 0,
     nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: now,
-  }))).onConflictDoNothing();
+  }))).onConflictDoUpdate({
+    target: giftMediaCleanupJobs.objectKey,
+    set: { state: "pending", attempts: 0, nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null },
+    setWhere: and(
+      eq(giftMediaCleanupJobs.giftId, giftId),
+      or(eq(giftMediaCleanupJobs.state, "completed"), eq(giftMediaCleanupJobs.state, "dead_letter")),
+    ),
+  });
+}
+
+export async function enqueueGiftMediaCleanupJobs(db: BackendDatabase, giftId: string, objectKeys: string[], now: string): Promise<void> {
+  const nextAttemptAt = new Date(new Date(now).getTime() + 15 * 60_000).toISOString();
+  await queueGiftMediaCleanupJobs(db, giftId, objectKeys, now, nextAttemptAt);
 }
 
 export async function reserveGiftPublicationPromotion(
@@ -717,7 +731,7 @@ export async function reserveGiftPublicationPromotion(
   },
 ): Promise<void> {
   const email = normalizeEmail(input.ownerEmail);
-  const uniqueKeys = [...new Set(input.objectKeys)];
+  const uniqueKeys = [...new Set(input.objectKeys)].sort();
   await db.transaction(async (tx) => {
     const [account] = await tx.select({ deletionState: users.deletionState }).from(users)
       .where(eq(users.email, email)).limit(1).for("update");
@@ -739,15 +753,24 @@ export async function reserveGiftPublicationPromotion(
     if (!gift) throw new GiftPublicationUnavailableError();
     if (uniqueKeys.length) {
       const nextAttemptAt = new Date(new Date(input.now).getTime() + 15 * 60_000).toISOString();
-      await tx.insert(giftMediaCleanupJobs).values(uniqueKeys.map((objectKey) => ({
-        id: crypto.randomUUID(), giftId: input.giftId, objectKey, state: "pending" as const, attempts: 0,
-        nextAttemptAt, leaseUntil: null, lastError: null, completedAt: null, createdAt: input.now,
-      }))).onConflictDoNothing();
+      const candidates = await tx.select({ state: giftMediaCleanupJobs.state }).from(giftMediaCleanupJobs)
+        .where(inArray(giftMediaCleanupJobs.objectKey, uniqueKeys))
+        .orderBy(giftMediaCleanupJobs.objectKey).for("update");
+      if (candidates.some(candidate => candidate.state === "processing")) throw new GiftPublicationCleanupBusyError();
+      await queueGiftMediaCleanupJobs(tx, input.giftId, uniqueKeys, input.now, nextAttemptAt);
+      const reserved = await tx.update(giftMediaCleanupJobs).set({
+        // Promotion delays pending cleanup without shortening its retry backoff.
+        nextAttemptAt: sql`case when ${giftMediaCleanupJobs.nextAttemptAt} > ${nextAttemptAt} then ${giftMediaCleanupJobs.nextAttemptAt} else ${nextAttemptAt} end`,
+      }).where(and(
+        eq(giftMediaCleanupJobs.giftId, input.giftId), inArray(giftMediaCleanupJobs.objectKey, uniqueKeys), eq(giftMediaCleanupJobs.state, "pending"),
+      )).returning({ objectKey: giftMediaCleanupJobs.objectKey });
+      // A missing candidate can be inserted and claimed after the initial row lock query.
+      if (reserved.length !== uniqueKeys.length) throw new GiftPublicationCleanupBusyError();
     }
   });
 }
 
-export async function isGiftMediaObjectReferenced(db: BackendDatabase, objectKey: string): Promise<boolean> {
+export async function isGiftMediaObjectReferenced(db: Pick<BackendDatabase, "select">, objectKey: string): Promise<boolean> {
   const [media, cover] = await Promise.all([
     db.select({ id: sharedAlbumMedia.id }).from(sharedAlbumMedia).where(eq(sharedAlbumMedia.objectKey, objectKey)).limit(1),
     db.select({ id: sharedAlbums.id }).from(sharedAlbums).where(eq(sharedAlbums.coverObjectKey, objectKey)).limit(1),
@@ -777,7 +800,13 @@ export async function claimGiftMediaCleanupJobs(
       state: "processing",
       leaseUntil,
       attempts: sql`${giftMediaCleanupJobs.attempts} + 1`,
-    }).where(inArray(giftMediaCleanupJobs.id, ids)).returning({
+    }).where(and(
+      inArray(giftMediaCleanupJobs.id, ids),
+      or(
+        and(eq(giftMediaCleanupJobs.state, "pending"), lte(giftMediaCleanupJobs.nextAttemptAt, now)),
+        and(eq(giftMediaCleanupJobs.state, "processing"), lte(giftMediaCleanupJobs.leaseUntil, now)),
+      ),
+    )).returning({
       id: giftMediaCleanupJobs.id,
       giftId: giftMediaCleanupJobs.giftId,
       objectKey: giftMediaCleanupJobs.objectKey,
@@ -791,6 +820,28 @@ export async function claimGiftMediaCleanupJobs(
 
 export async function completeGiftMediaCleanupJob(db: BackendDatabase, id: string, now: string) {
   await db.update(giftMediaCleanupJobs).set({ state: "completed", completedAt: now, leaseUntil: null, lastError: null }).where(and(eq(giftMediaCleanupJobs.id, id), eq(giftMediaCleanupJobs.state, "processing")));
+}
+
+/** Serialize reference completion with publish/disable/delete so a concurrent deletion request cannot be lost. */
+export async function settleReferencedGiftMediaCleanupJob(
+  db: BackendDatabase,
+  job: { id: string; giftId: string; objectKey: string },
+  now: string,
+  leaseUntil: string,
+) {
+  return db.transaction(async tx => {
+    await tx.execute(sql`select id from gifts where id = ${job.giftId} for update`);
+    const referenced = await isGiftMediaObjectReferenced(tx, job.objectKey);
+    const [result] = await tx.update(giftMediaCleanupJobs).set(referenced
+      ? { state: "completed", completedAt: now, leaseUntil: null, lastError: null }
+      : {
+        state: "pending", nextAttemptAt: now, completedAt: null, leaseUntil: null, lastError: null,
+        attempts: sql`case when ${giftMediaCleanupJobs.attempts} > 0 then ${giftMediaCleanupJobs.attempts} - 1 else 0 end`,
+      }).where(and(
+      eq(giftMediaCleanupJobs.id, job.id), eq(giftMediaCleanupJobs.state, "processing"), eq(giftMediaCleanupJobs.leaseUntil, leaseUntil),
+    )).returning({ state: giftMediaCleanupJobs.state });
+    return result?.state ?? null;
+  });
 }
 
 export async function failGiftMediaCleanupJob(db: BackendDatabase, id: string, errorCode: string, now: string, nextAttemptAt: string) {
@@ -823,7 +874,12 @@ export async function purgeGiftMaintenanceData(
     ? await db.delete(giftPublishSessions).where(inArray(giftPublishSessions.id, publishIds.map((row) => row.id))).returning({ id: giftPublishSessions.id })
     : [];
   const cleanupJobs = cleanupIds.length
-    ? await db.delete(giftMediaCleanupJobs).where(inArray(giftMediaCleanupJobs.id, cleanupIds.map((row) => row.id))).returning({ id: giftMediaCleanupJobs.id })
+    ? await db.delete(giftMediaCleanupJobs).where(and(
+      inArray(giftMediaCleanupJobs.id, cleanupIds.map((row) => row.id)),
+      or(eq(giftMediaCleanupJobs.state, "completed"), eq(giftMediaCleanupJobs.state, "dead_letter")),
+      isNotNull(giftMediaCleanupJobs.completedAt),
+      lte(giftMediaCleanupJobs.completedAt, input.jobCutoff),
+    )).returning({ id: giftMediaCleanupJobs.id })
     : [];
   return { publishSessions: publishSessions.length, cleanupJobs: cleanupJobs.length };
 }
@@ -849,10 +905,7 @@ export async function expireGiftPublishSessions(db: BackendDatabase, now: string
     for (const session of sessions) {
       const payload = session.payloadJson as GiftPublicationPayload;
       const objectKeys = [...payload.media.filter((media) => media.source !== "existing").map((media) => media.objectKey), ...(payload.cover?.objectKey ? [payload.cover.objectKey] : [])];
-      if (objectKeys.length) await tx.insert(giftMediaCleanupJobs).values(objectKeys.map((objectKey) => ({
-        id: crypto.randomUUID(), giftId: session.giftId, objectKey, state: "pending", attempts: 0,
-        nextAttemptAt: now, lastError: null, completedAt: null, createdAt: now,
-      }))).onConflictDoNothing();
+      await queueGiftMediaCleanupJobs(tx, session.giftId, objectKeys, now, now);
     }
     return sessions.length;
   });

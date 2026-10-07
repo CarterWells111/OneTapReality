@@ -17,6 +17,7 @@ jest.mock("../src/server/auth/repository", () => ({
   createOrGetUserByEmail: jest.fn(async () => ({ id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
   createAuthSession: jest.fn(async () => undefined),
   getAuthenticatedUserByTokenHash: jest.fn(async () => ({ id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
+  getAuthenticatedSessionByTokenHash: jest.fn(async () => ({ sessionId: "session-1", id: "user-1", email: "owner@example.com", createdAt: "2026-07-25T00:00:00.000Z", lastAuthenticatedAt: "2026-07-25T00:00:00.000Z" })),
   revokeAuthSessionByTokenHash: jest.fn(async () => true),
 }));
 jest.mock("../src/server/auth/device-auth", () => ({ createAccessToken: jest.fn(() => "account-token"), hashAccessToken: jest.fn(async (value: string) => `hash:${value}`), extractBearerToken: jest.fn(() => "account-token") }));

@@ -2,7 +2,7 @@ import { getAuthenticatedUserByTokenHash } from "../auth/repository";
 import { extractBearerToken, hashAccessToken } from "../auth/device-auth";
 import { getServerDatabase } from "../db/client";
 import { ApiError } from "../http/errors";
-import { requireGiftSharingEnabled } from "./alpha-safety";
+import { requireAlphaEmailAllowed, requireGiftSharingEnabled } from "./alpha-safety";
 import { getOwnedGiftById } from "./repository";
 
 type OwnedGiftOptions = {
@@ -22,6 +22,7 @@ export async function requireOwnedGift(request: Request, giftId: string, options
   const db = getServerDatabase();
   const user = await getAuthenticatedUserByTokenHash(db, await hashAccessToken(token, pepper), new Date().toISOString());
   if (!user) throw new ApiError(401, "unauthorized", "Your account session has expired");
+  requireAlphaEmailAllowed(user.email);
   const gift = await getOwnedGiftById(db, giftId, user.email);
   if (!gift || gift.status !== "bound") throw new ApiError(403, "gift_owner_required", "Only the gift owner can manage this gift");
   return { db, email: user.email, gift };
