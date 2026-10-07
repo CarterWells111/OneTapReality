@@ -35,10 +35,15 @@ describe("nested account route layouts", () => {
     expect(screen.getByTestId("nested-screen-[id]/edit")).toBeTruthy();
   });
 
-  it("registers recycle bin index inside its protected stack", () => {
+  // The recycle bin keeps the account gate but renders a Slot instead of its own
+  // stack, so its screen stays on the root stack and gets the same native back
+  // button as the other root screens. A nested stack would make it that stack's
+  // first screen, which has nothing to go back to.
+  it("protects the recycle bin without nesting it in its own stack", () => {
     const screen = render(<RecycleBinRoutesLayout />);
 
     expect(screen.getByTestId("account-route-gate")).toBeTruthy();
-    expect(screen.getByTestId("nested-screen-index").props.title).toBe("回收站");
+    expect(screen.getByTestId("slot")).toBeTruthy();
+    expect(screen.queryByTestId("nested-stack")).toBeNull();
   });
 });

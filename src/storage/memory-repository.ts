@@ -18,6 +18,33 @@ type StoryPageRow = Omit<StoryPage, "photoUri" | "layout"> & { photo_uri: string
 type ColumnRow = { name: string };
 type StoredMemoryOwnerRow = { id: string; ownerAccountKey: unknown };
 
+/** 草稿箱同时保留的草稿数量；超出的旧草稿移入回收站，不直接删除。 */
+export const draftBoxCapacity = 10;
+
+/** 回收站保留天数；超过这个窗口且未恢复的条目会被永久删除。 */
+export const recycleBinRetentionDays = 10;
+
+function retentionCutoff(now: string, retentionDays = recycleBinRetentionDays) {
+  return new Date(new Date(now).getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * 回收站条目剩余可恢复天数；没有记录丢弃时间时返回 null。
+ * 向上取整，使还能恢复的条目不会显示成 0 天。
+ */
+export function remainingRetentionDays(
+  discardedAt: string | null | undefined,
+  now: string,
+): number | null {
+  if (!discardedAt) return null;
+  const discarded = new Date(discardedAt).getTime();
+  const current = new Date(now).getTime();
+  if (Number.isNaN(discarded) || Number.isNaN(current)) return null;
+  const dayInMs = 24 * 60 * 60 * 1000;
+  const expiresAt = discarded + recycleBinRetentionDays * dayInMs;
+  return Math.max(0, Math.ceil((expiresAt - current) / dayInMs));
+}
+
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -79,6 +106,16 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   if (!columns.some((column) => column.name === "ownerAccountKey")) {
     await db.execAsync("ALTER TABLE memories ADD COLUMN ownerAccountKey TEXT");
   }
+  if (!columns.some((column) => column.name === "discardedAt")) {
+    await db.execAsync("ALTER TABLE memories ADD COLUMN discardedAt TEXT");
+  }
+  // Rows discarded by an earlier version carry no discard time. Start their
+  // retention window at this upgrade instead of their original discard date, so
+  // updating the app never destroys a recycle-bin entry on first launch.
+  await db.runAsync(
+    "UPDATE memories SET discardedAt = ? WHERE status = 'discarded' AND discardedAt IS NULL",
+    new Date().toISOString(),
+  );
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS memory_edit_drafts (
       memory_id TEXT NOT NULL,
@@ -209,21 +246,63 @@ export async function listMemories(db: SQLiteDatabase, accountKey: LocalLibraryO
 
 export async function listDrafts(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT 4",
+    `SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT ${draftBoxCapacity}`,
     accountKey,
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
 }
 
-/** Only new album drafts count towards the four-slot draft box. */
-export async function trimOldDrafts(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<string[]> {
+/**
+ * Only new album drafts count towards the draft box. Overflow moves into the
+ * recycle bin rather than being deleted, so the retention window is the only
+ * thing that can destroy a draft the person never discarded themselves.
+ */
+export async function trimOldDrafts(
+  db: SQLiteDatabase,
+  accountKey: LocalLibraryOwner,
+  discardedAt: string,
+): Promise<string[]> {
   const old = await db.getAllAsync<{ id: string }>(
-    "SELECT id FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT -1 OFFSET 4",
+    `SELECT id FROM memories WHERE status = 'draft' AND ownerAccountKey = ? ORDER BY updatedAt DESC, createdAt DESC, id DESC LIMIT -1 OFFSET ${draftBoxCapacity}`,
     accountKey,
   );
-  const removed: string[] = [];
+  const moved: string[] = [];
   for (const { id } of old) {
-    const result = await db.runAsync("DELETE FROM memories WHERE id = ? AND ownerAccountKey = ? AND status = 'draft'", id, accountKey);
+    const result = await db.runAsync(
+      "UPDATE memories SET status = 'discarded', updatedAt = ?, discardedAt = ? WHERE id = ? AND ownerAccountKey = ? AND status = 'draft'",
+      discardedAt,
+      discardedAt,
+      id,
+      accountKey,
+    );
+    if (result.changes > 0) moved.push(id);
+  }
+  return moved;
+}
+
+/**
+ * 回收站保留期清理：删除超过保留窗口且仍未恢复的条目。
+ * 删除语句重复选取条件，避免清理刚刚被恢复的记忆。
+ */
+export async function purgeExpiredDiscardedMemories(
+  db: SQLiteDatabase,
+  accountKey: LocalLibraryOwner,
+  now: string,
+): Promise<string[]> {
+  const cutoff = retentionCutoff(now);
+  const expired = await db.getAllAsync<{ id: string }>(
+    "SELECT id FROM memories WHERE status = 'discarded' AND ownerAccountKey = ? AND discardedAt IS NOT NULL AND discardedAt <= ?",
+    accountKey,
+    cutoff,
+  );
+  const removed: string[] = [];
+  for (const { id } of expired) {
+    const result = await db.runAsync(
+      "DELETE FROM memories WHERE id = ? AND ownerAccountKey = ? AND status = 'discarded' AND discardedAt IS NOT NULL AND discardedAt <= ?",
+      id,
+      accountKey,
+      cutoff,
+    );
     if (result.changes > 0) removed.push(id);
   }
   return removed;
@@ -257,14 +336,23 @@ export async function getDraft(
   return row ? hydrateMemory(db, row) : null;
 }
 
-/** 回收站：列出已丢弃的本机记忆，最近更新在前。 */
+/** 回收站：列出已丢弃的本机记忆，最近丢弃在前。 */
 export async function listDiscardedMemories(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<Memory[]> {
   const rows = await db.getAllAsync<MemoryRow>(
-    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt FROM memories WHERE status = ? AND ownerAccountKey = ? ORDER BY updatedAt DESC",
+    "SELECT id, title, city, travelDate, status, coverColor, coverImage, ownerAccountKey, createdAt, updatedAt, discardedAt FROM memories WHERE status = ? AND ownerAccountKey = ? ORDER BY discardedAt DESC, updatedAt DESC",
     "discarded",
     accountKey,
   );
   return Promise.all(rows.map((row) => hydrateMemory(db, row)));
+}
+
+/** 回收站条目数；只取计数，避免为了入口上的数字水合全部照片和页面。 */
+export async function countDiscardedMemories(db: SQLiteDatabase, accountKey: LocalLibraryOwner): Promise<number> {
+  const row = await db.getFirstAsync<{ total: number }>(
+    "SELECT COUNT(*) AS total FROM memories WHERE status = 'discarded' AND ownerAccountKey = ?",
+    accountKey,
+  );
+  return Number(row?.total ?? 0);
 }
 
 /** 回收站：把已丢弃的记忆恢复为已保存。 */
@@ -274,8 +362,10 @@ export async function restoreDiscardedMemory(
   updatedAt: string,
   accountKey: LocalLibraryOwner,
 ) {
+  // Clearing discardedAt both stops the retention clock and makes a concurrent
+  // purge a no-op, because the purge re-checks `discardedAt IS NOT NULL`.
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
+    "UPDATE memories SET status = ?, updatedAt = ?, discardedAt = NULL WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "saved",
     updatedAt,
     id,
@@ -358,8 +448,9 @@ export async function discardDraft(
   accountKey: LocalLibraryOwner,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
+    "UPDATE memories SET status = ?, updatedAt = ?, discardedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "discarded",
+    updatedAt,
     updatedAt,
     id,
     "draft",
@@ -476,8 +567,9 @@ export async function discardMemory(
   accountKey: LocalLibraryOwner,
 ) {
   await db.runAsync(
-    "UPDATE memories SET status = ?, updatedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
+    "UPDATE memories SET status = ?, updatedAt = ?, discardedAt = ? WHERE id = ? AND status = ? AND ownerAccountKey = ?",
     "discarded",
+    updatedAt,
     updatedAt,
     id,
     "saved",

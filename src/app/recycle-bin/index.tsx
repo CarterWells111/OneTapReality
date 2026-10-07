@@ -2,19 +2,23 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { colors, Section } from "../../components/ui";
+import { bodyFont, colors, Section, serifFont } from "../../components/ui";
 import { getCityContent } from "../../features/cities/city-content";
 import { useMemories } from "../../features/memories/memories-provider";
+import { recycleBinRetentionDays, remainingRetentionDays } from "../../storage/memory-repository";
 import type { Memory } from "../../types/memory";
 
 export default function RecycleBinScreen() {
   const { listDiscarded, restoreMemory, deleteMemory } = useMemories();
   const [discarded, setDiscarded] = useState<Memory[]>([]);
   const [isReady, setIsReady] = useState(false);
+  // Captured with the list so every row counts down from the same moment.
+  const [loadedAt, setLoadedAt] = useState(() => new Date().toISOString());
 
   const load = useCallback(async () => {
     const stored = await listDiscarded();
     setDiscarded(stored);
+    setLoadedAt(new Date().toISOString());
     setIsReady(true);
   }, [listDiscarded]);
 
@@ -52,7 +56,7 @@ export default function RecycleBinScreen() {
           回收站{isReady ? ` · ${discarded.length} 册` : ""}
         </Text>
         <Text selectable style={styles.subtitle}>
-          丢弃的旅行册会先留在这里，可以恢复，也可以彻底删除。
+          {`丢弃的旅行册和草稿会先留在这里。${recycleBinRetentionDays} 天内可以恢复，超过后自动永久删除。`}
         </Text>
       </View>
 
@@ -72,6 +76,15 @@ export default function RecycleBinScreen() {
                 <Text selectable style={styles.cardLine}>
                   {getCityContent(memory.city).name} · {memory.travelDate} · 照片 {memory.photoUris.length} 张
                 </Text>
+                {(() => {
+                  const daysLeft = remainingRetentionDays(memory.discardedAt, loadedAt);
+                  if (daysLeft === null) return null;
+                  return (
+                    <Text selectable style={styles.cardLine}>
+                      {daysLeft > 0 ? `还剩 ${daysLeft} 天可恢复` : "即将永久删除"}
+                    </Text>
+                  );
+                })()}
                 <View style={styles.cardActions}>
                   <Pressable
                     accessibilityRole="button"
@@ -100,8 +113,8 @@ export default function RecycleBinScreen() {
 const styles = StyleSheet.create({
   content: { gap: 20, padding: 20, paddingBottom: 40 },
   hero: { backgroundColor: colors.accentSoft, borderRadius: 20, gap: 8, padding: 18 },
-  title: { color: colors.ink, fontSize: 22, fontWeight: "800" },
-  subtitle: { color: colors.muted, fontSize: 14, lineHeight: 21 },
+  title: { color: colors.ink, fontFamily: serifFont, fontSize: 22, fontWeight: "800" },
+  subtitle: { color: colors.muted, fontFamily: bodyFont, fontSize: 14, lineHeight: 21 },
   emptyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -110,7 +123,7 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 18,
   },
-  emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: "800" },
+  emptyTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 17, fontWeight: "800" },
   list: { gap: 12 },
   card: {
     backgroundColor: colors.surface,
@@ -120,11 +133,11 @@ const styles = StyleSheet.create({
     gap: 6,
     padding: 14,
   },
-  cardTitle: { color: colors.ink, fontSize: 15.5, fontWeight: "800" },
-  cardLine: { color: colors.muted, fontSize: 13.5, lineHeight: 19 },
+  cardTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 15.5, fontWeight: "800" },
+  cardLine: { color: colors.muted, fontFamily: bodyFont, fontSize: 13.5, lineHeight: 19 },
   cardActions: { flexDirection: "row", gap: 12, marginTop: 4 },
   actionButton: { justifyContent: "center", minHeight: 40 },
-  actionText: { color: colors.accent, fontSize: 14.5, fontWeight: "800" },
-  actionDangerText: { color: colors.danger, fontSize: 14.5, fontWeight: "800" },
+  actionText: { color: colors.accent, fontFamily: bodyFont, fontSize: 14.5, fontWeight: "800" },
+  actionDangerText: { color: colors.danger, fontFamily: bodyFont, fontSize: 14.5, fontWeight: "800" },
   pressed: { opacity: 0.82 },
 });
