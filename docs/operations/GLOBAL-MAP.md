@@ -12,8 +12,8 @@
 
 旧地图由 `city-map.tsx`、`city-map-adapter.ts`、`china-map-data.ts`、`city-workspace.ts` 实现，使用中国投影与底图、36 城固定目录和 1–6 倍工作区缩放。地点选择、统计、路由依赖同一目录；旧版云端旅行册接口还只接受三个城市。无 GPS、在线 geocoding、瓦片 SDK 或现有 marker clustering。
 
-- `global-city-map.ios.tsx`：使用 react-native-maps 1.27.2 的系统默认 Apple MapKit 提供全球到街道底图，保持现有圆点颜色、44pt 目标、城市收藏与原十城打卡地图导航。不指定 Google provider，也不新增定位权限、API Key 或照片上传。
-- `global-city-map.tsx`：Web / 离线预览使用本地世界陆地矢量图，支持平移、捏合、双击、缩放按钮、日期变更线环绕。此底图只有海岸轮廓，不能代替 iPhone 的街道路网。
+- `global-city-map.ios.tsx`：默认使用与国内版风格一致的纸质旅行地图；提供“旅行地图 / 街道地图”切换，并保留当前浏览区域。`global-street-map.ios.tsx` 使用 react-native-maps 1.27.2 的系统默认 Apple MapKit 提供街道底图。不指定 Google provider，也不新增定位权限、API Key 或照片上传。
+- `global-paper-map.tsx`：iPhone 与 Web 共用本地全球旅行地图，保留暖纸色、陶土色轮廓、固定足迹圆点和标题字体，支持平移、捏合、双击、缩放按钮与日期变更线环绕。世界尺度优先呈现国家和已保存足迹，放大后逐级呈现候选城市。此底图提供国家轮廓，街道路网由 iPhone 街道模式提供。
 - `world-place-data.ts` / `world-land-data.ts`：由 Natural Earth v5.1.2 官方源生成。全球目录与原城市保留同一来源 ID；已有城市 ID、打卡插画和历史记录不变。数据生成发生在开发阶段，App 无运行时下载城市目录。
 - `global-map-domain.ts` / `global-map-places.ts`：WGS84 验证、最短经度弧取景、屏幕网格聚合、近重合地点选择。保存记录首次加载时自动取景；用户开始浏览后不因数据刷新跳回。
 - `types/city.ts`：自定义地点使用 `geo:1:<latitude>:<longitude>:<URI-encoded name>`，名称和精确坐标随现有 city TEXT 字段保存。解码检查范围、有限值、名称长度与规范编码。不会把未知字符串隐式当成合法地点。
@@ -39,6 +39,8 @@ npm run test:ci
 npm run build:server
 node scripts/run-expo-with-variant.cjs development-staging export --platform ios --output-dir .data/global-map/ios-export --max-workers 2
 ```
+
+国家轮廓与分级名称额外传入 `ne_110m_admin_0_countries.geojson` 作为第三个参数；同样来自 Natural Earth v5.1.2 的 `geojson/` 目录。地图名称按 ISO 地区代码在开发时用 CLDR 生成简短中文，不要求 iPhone 运行时提供 Intl.DisplayNames。国内风格总结见 [GLOBAL-MAP-STYLE.md](GLOBAL-MAP-STYLE.md)。
 
 锁文件由 npm 生成。除 react-native-maps 与其 @types/geojson 依赖外，已核对没有包版本升级。
 

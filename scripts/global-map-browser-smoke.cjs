@@ -86,6 +86,25 @@ async function main() {
     const screenshot = await client.send('Page.captureScreenshot', { format: 'png' });
     const file = path.resolve('.data/global-map/browser-preview.png');
     fs.writeFileSync(file, Buffer.from(screenshot.data, 'base64'));
+    if (process.argv.includes('--compare-style')) {
+      const evaluate = async expression => (await client.send('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+      const capture = async name => {
+        await new Promise(resolve => setTimeout(resolve, 650));
+        const rect = await evaluate('(() => {const r=document.querySelector("[data-testid=global-map-workspace],[data-testid=city-map-workspace]").getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:Math.min(r.height+16,844-r.y),scale:1};})()');
+        const shot = await client.send('Page.captureScreenshot', { format: 'png', clip: rect });
+        fs.writeFileSync(path.resolve(`.data/global-map/${name}.png`), Buffer.from(shot.data, 'base64'));
+      };
+      await evaluate('document.querySelector("[aria-label=国内地图参照]").click()');
+      await capture('domestic-map-reference');
+      await evaluate('document.querySelector("[aria-label=国际地图预览]").click()');
+      await capture('global-map-paper-world');
+      await evaluate('document.querySelector("input").focus()');
+      await client.send('Input.insertText', { text: 'London' });
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await evaluate('document.querySelector("[aria-label^=搜索跳转至]").click()');
+      await capture('global-map-paper-city');
+      console.log(JSON.stringify(await evaluate('({countryOutlines:document.querySelectorAll("[data-testid^=global-country-]").length,cityLabels:[...document.querySelectorAll("[data-testid^=global-map-label-]")].map(e=>e.innerText),fonts:[...document.fonts].map(f=>({family:f.family,status:f.status}))})')));
+    }
     console.log(JSON.stringify({ screenshot: file, errors: [...new Set(client.errors)].slice(0, 5), errorCount: client.errors.length }));
     if (client.errors.length) process.exitCode = 1;
   } finally { client.close(); }

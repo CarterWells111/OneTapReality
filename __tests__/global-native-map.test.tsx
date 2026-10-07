@@ -1,5 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { GlobalCityMap } from '../src/features/cities/global-city-map.ios';
+import { StreetCityMap } from '../src/features/cities/global-street-map.ios';
 import { createGeographicCity } from '../src/types/city';
 import { getCityStats } from '../src/features/cities/city-stats';
 
@@ -19,7 +19,7 @@ describe('iPhone global map adapter (MapKit mocked)', () => {
   const stats = getCityStats([{ city, status: 'saved' }]);
   it('waits for MapKit readiness and acknowledges search only after arriving', async () => {
     const reached = jest.fn();
-    const screen = await render(<GlobalCityMap stats={[]} variant="workspace" targetCity={city} onTargetReached={reached} />);
+    const screen = await render(<StreetCityMap stats={[]} variant="workspace" targetCity={city} onTargetReached={reached} />);
     expect(mockAnimate).not.toHaveBeenCalled();
     fireEvent(screen.getByTestId('global-native-map'), 'mapReady');
     expect(mockAnimate).toHaveBeenCalledWith(expect.objectContaining({ latitude: -33.8688, longitude: 151.2093 }), 500);
@@ -28,20 +28,20 @@ describe('iPhone global map adapter (MapKit mocked)', () => {
     expect(reached).toHaveBeenCalledTimes(1);
   });
   it('fits late-loading saved albums only once, while preserving user movement', async () => {
-    const screen = await render(<GlobalCityMap stats={[]} variant="workspace" />);
+    const screen = await render(<StreetCityMap stats={[]} variant="workspace" />);
     fireEvent(screen.getByTestId('global-native-map'), 'mapReady');
-    await screen.rerender(<GlobalCityMap stats={stats} variant="workspace" />);
+    await screen.rerender(<StreetCityMap stats={stats} variant="workspace" />);
     expect(mockAnimate).toHaveBeenCalledTimes(1);
-    await screen.rerender(<GlobalCityMap stats={[...stats]} variant="workspace" />);
+    await screen.rerender(<StreetCityMap stats={[...stats]} variant="workspace" />);
     expect(mockAnimate).toHaveBeenCalledTimes(1);
-    const moved = await render(<GlobalCityMap stats={[]} variant="workspace" />);
+    const moved = await render(<StreetCityMap stats={[]} variant="workspace" />);
     fireEvent(moved.getByTestId('global-native-map'), 'mapReady');
     fireEvent(moved.getByTestId('global-native-map'), 'touchStart');
-    await moved.rerender(<GlobalCityMap stats={stats} variant="workspace" />);
+    await moved.rerender(<StreetCityMap stats={stats} variant="workspace" />);
     expect(mockAnimate).toHaveBeenCalledTimes(1);
   });
   it('fits saved places, avoids controlled-camera snapback, and leaves location access disabled', async () => {
-    const screen = await render(<GlobalCityMap stats={stats} variant="workspace" />);
+    const screen = await render(<StreetCityMap stats={stats} variant="workspace" />);
     const map = screen.getByTestId('global-native-map');
     expect(map.props.initialRegion).toMatchObject({ latitude: -33.8688, longitude: expect.closeTo(151.2093, 4) });
     expect(map.props.region).toBeUndefined();
@@ -52,7 +52,7 @@ describe('iPhone global map adapter (MapKit mocked)', () => {
   });
   it('keeps custom markers clickable after camera moves in either hemisphere', async () => {
     const press = jest.fn();
-    const screen = await render(<GlobalCityMap stats={stats} variant="workspace" interactive onCityPress={press} />);
+    const screen = await render(<StreetCityMap stats={stats} variant="workspace" interactive onCityPress={press} />);
     fireEvent.press(screen.getByTestId(`global-marker-${city}`));
     expect(press).toHaveBeenCalledWith(city);
     await act(async () => fireEvent(screen.getByTestId('global-native-map'), 'regionChangeComplete', { latitude: 51, longitude: 0, latitudeDelta: 10, longitudeDelta: 10 }));
@@ -60,7 +60,7 @@ describe('iPhone global map adapter (MapKit mocked)', () => {
     expect(screen.getByLabelText('Sydney trip，已保存 1 册旅行记忆')).toBeTruthy();
   });
   it('starts at a world viewport with no saved locations', async () => {
-    const screen = await render(<GlobalCityMap stats={[]} variant="workspace" />);
+    const screen = await render(<StreetCityMap stats={[]} variant="workspace" />);
     expect(screen.getByTestId('global-native-map').props.initialRegion).toMatchObject({ longitudeDelta: 360, latitudeDelta: 180 });
   });
 });

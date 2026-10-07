@@ -46,6 +46,8 @@ import {
 
 type CityMapVariant = "overview" | "workspace";
 type CityMapProps = {
+  initialRegion?: import('./global-map-domain').GlobalRegion;
+  onViewportChange?: (region: import('./global-map-domain').GlobalRegion) => void;
   stats: readonly CityStats[];
   variant: CityMapVariant;
   initialCity?: City;

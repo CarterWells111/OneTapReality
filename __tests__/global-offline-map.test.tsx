@@ -108,6 +108,14 @@ const city = createGeographicCity({ name: 'Mountain trip', latitude: 10, longitu
 const stats = getCityStats([{ city, status: 'saved' }]);
 
 describe('Offline global map gestures and geometry', () => {
+ it('keeps an empty world map quiet, then reveals candidate cities when zoomed in', async () => {
+  const screen = await render(<GlobalCityMap stats={[]} variant="workspace" />);
+  fireEvent(screen.getByTestId('global-map-workspace'), 'layout', { nativeEvent: { layout: { width: 390, height: 844, x: 0, y: 0 } } });
+  expect(screen.queryAllByTestId(/^global-marker-/)).toHaveLength(0);
+  expect(screen.getByText('放大地图，探索下一座城市')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('放大全球地图'));
+  expect(screen.queryAllByTestId(/^global-marker-/).length).toBeGreaterThan(0);
+ });
  it('can zoom in from world view in a tall mobile viewport', async () => {
   const screen = await render(<GlobalCityMap stats={[]} variant="workspace" />);
   fireEvent(screen.getByTestId('global-map-workspace'), 'layout', { nativeEvent: { layout: { width: 390, height: 844, x: 0, y: 0 } } });
@@ -155,7 +163,7 @@ describe('Offline global map gestures and geometry', () => {
   expect(press).toHaveBeenCalledWith(city);
   fireEvent.press(screen.getByLabelText('查看全球'));
   expect(screen.getByTestId('global-map-content')).toBeTruthy();
-  expect(screen.getAllByLabelText(/个地点，点击放大/).length).toBeGreaterThan(1);
+  expect(screen.getByLabelText('Mountain trip，已保存 1 册旅行记忆')).toBeTruthy();
  });
  it('keeps gesture updates on the UI thread and resolves clustered markers after the gesture ends', async () => {
   const screen = await render(<GlobalCityMap stats={[]} variant="workspace" interactive />);
