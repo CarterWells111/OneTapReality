@@ -32,13 +32,31 @@ describe("home account entry", () => {
   it("opens an unfinished album from the local draft box", () => {
     mockUseAuth.mockReturnValue({ isAuthReady: true, user: null });
     mockUseMemories.mockReturnValue({
-      memories: [], isReady: true, discardMemory: jest.fn(),
-      drafts: [{ id: "draft-one", title: "西湖草稿", updatedAt: "2026-09-20T00:00:00Z" }],
+      memories: [], isReady: true, discardMemory: jest.fn(), discardDraft: jest.fn(), discardedCount: 0,
+      drafts: [{ id: "draft-one", title: "西湖草稿", createdAt: "2026-09-18T12:00:00Z", updatedAt: "2026-09-20T12:00:00Z" }],
     });
     const screen = render(<MemoriesHomeScreen />);
-    expect(screen.getByText("草稿箱 · 1/4")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("home-draft-draft-one"));
+
+    // The box is collapsed by default, so the home screen only carries its header.
+    expect(screen.getByText("草稿箱 · 1/10")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("展开草稿箱"));
+    fireEvent.press(screen.getByLabelText("继续编辑草稿 西湖草稿"));
+
     expect(mockPush).toHaveBeenCalledWith({ pathname: "/memory/review/[id]", params: { id: "draft-one" } });
+  });
+
+  it("reaches the recycle bin from the end of the expanded draft box", () => {
+    mockUseAuth.mockReturnValue({ isAuthReady: true, user: null });
+    mockUseMemories.mockReturnValue({
+      memories: [], isReady: true, discardMemory: jest.fn(), discardDraft: jest.fn(), discardedCount: 2,
+      drafts: [],
+    });
+    const screen = render(<MemoriesHomeScreen />);
+
+    fireEvent.press(screen.getByLabelText("展开草稿箱"));
+    fireEvent.press(screen.getByLabelText("打开回收站"));
+
+    expect(mockPush).toHaveBeenCalledWith("/recycle-bin");
   });
 
   it("shows login registration to a signed-out user and preserves the home return path", () => {

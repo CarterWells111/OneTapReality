@@ -9,12 +9,13 @@ import { useLocalLibrary } from "../../features/auth/local-library-provider";
 import { useMemories } from "../../features/memories/memories-provider";
 import { sampleMemory } from "../../features/memories/sample-memory";
 import { showShareActionSheet } from "../../features/export/share-action-sheet";
+import { DraftBox } from "../../features/memories/draft-box";
 import { GiftNfcScanner } from "../../features/gifts/gift-nfc-scanner";
 import { DevelopmentGiftLinkEntry } from "../../features/gifts/development-gift-link-entry";
 
 export default function MemoriesHomeScreen() {
   const router = useRouter();
-  const { memories, drafts, isReady, discardMemory } = useMemories();
+  const { memories, drafts, discardedCount, isReady, discardDraft, discardMemory } = useMemories();
   const { isAuthReady, user } = useAuth();
   const {
     continueWithGuest,
@@ -163,22 +164,14 @@ export default function MemoriesHomeScreen() {
         </PaperCard>
       ) : null}
 
-      {isReady && drafts?.length > 0 ? (
-        <Section title={`草稿箱 · ${drafts.length}/4`} caption="LOCAL DRAFTS">
-          <Text selectable style={styles.mutedText}>未正式保存的旅行册保留在此设备。新草稿进入时，最旧的一份会移出草稿箱。</Text>
-          {drafts.map((draft) => (
-            <Pressable
-              accessibilityRole="button"
-              key={draft.id}
-              onPress={() => router.push({ pathname: "/memory/review/[id]", params: { id: draft.id } })}
-              style={({ pressed }) => [styles.draftCard, pressed && styles.pressed]}
-              testID={`home-draft-${draft.id}`}
-            >
-              <Text selectable style={styles.draftTitle}>{draft.title}</Text>
-              <Text selectable style={styles.mutedText}>继续编辑 ›</Text>
-            </Pressable>
-          ))}
-        </Section>
+      {isReady ? (
+        <DraftBox
+          discardedCount={discardedCount ?? 0}
+          drafts={drafts ?? []}
+          onDiscardDraft={(id) => { void discardDraft(id); }}
+          onOpenDraft={(id) => router.push({ pathname: "/memory/review/[id]", params: { id } })}
+          onOpenRecycleBin={() => router.push("/recycle-bin")}
+        />
       ) : null}
 
       <Section
@@ -272,8 +265,6 @@ export default function MemoriesHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  draftCard: { backgroundColor: colors.paper, borderColor: colors.paperEdge, borderRadius: 14, borderWidth: 1, gap: 5, padding: 16 },
-  draftTitle: { color: colors.ink, fontFamily: serifFont, fontSize: 18, fontWeight: "700" },
   screen: { backgroundColor: colors.background },
   content: { gap: 22, padding: 20, paddingTop: 12, paddingBottom: 36 },
   hero: { gap: 10 },

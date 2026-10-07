@@ -114,6 +114,8 @@ export type CanvasLayout = {
 export type Memory = Omit<MemoryDraftInput, "pagePlans"> & {
   id: string;
   status?: MemoryStatus;
+  /** 进入回收站的时间；只有 status="discarded" 的记忆才有值，用于计算保留期。 */
+  discardedAt?: string | null;
   pages: StoryPage[];
   createdAt: string;
   updatedAt: string;
