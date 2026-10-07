@@ -269,7 +269,7 @@ export default function PrivacyScreen() {
           本地旅行册默认保存在此设备；旅行信息、所选照片引用和页面版式不会自动上传。
         </PrivacyCard>
         <PrivacyCard title="全球地图">
-          iPhone 地图使用系统 Apple Maps 加载地理底图；地点名称、经纬度和旅行册保存在本机，不会把照片或旅行册发送给地图服务。地图不读取设备当前位置，也不请求定位权限。
+          默认旅行地图使用本地底图；街道模式使用系统 Apple Maps 加载当前浏览区域的地理底图。地点名称、经纬度和旅行册保存在本机，不会把照片或旅行册发送给地图服务。地图不读取设备当前位置，也不请求定位权限。
         </PrivacyCard>
       </Section>
 
