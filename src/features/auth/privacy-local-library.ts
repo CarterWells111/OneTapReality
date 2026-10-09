@@ -17,6 +17,7 @@ export function usePrivacyLocalLibrary() {
     );
     try {
       await clearMemories(db, accountKey);
+      await db.runAsync("DELETE FROM city_spot_checkins WHERE ownerAccountKey = ?", accountKey);
       await db.runAsync(
         "DELETE FROM local_library_account_choices WHERE account_owner = ?",
         accountKey,

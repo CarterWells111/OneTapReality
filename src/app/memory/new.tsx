@@ -18,15 +18,9 @@ import {
   parseIsoTravelDate,
   toIsoTravelDate,
 } from "../../features/memories/travel-date";
-import { cityRegistry, type City, type CityKind } from "../../types/city";
+import { cityRegistry, type City } from "../../types/city";
+import { getCityPickerGroups } from "../../features/cities/city-picker-order";
 import { initialNewMemoryPhotos, newMemoryPhotosReducer } from "../../features/memories/new-memory-photos";
-
-const cityGroupLabels: Record<CityKind, string> = {
-  "autonomous-region-capital": "自治区首府",
-  "legacy-city": "既有城市",
-  municipality: "直辖市",
-  "province-capital": "省会",
-};
 
 /** 封面预设颜色（十六进制）。 */
 const COVER_COLORS = [
@@ -76,13 +70,7 @@ export default function NewMemoryScreen() {
     setCity(presetCity);
   }, [presetCity]);
 
-  const visibleCityGroups = React.useMemo(() => {
-    const normalizedQuery = cityQuery.trim().toLocaleLowerCase();
-    return (Object.keys(cityGroupLabels) as CityKind[]).map((kind) => ({
-      kind,
-      cities: cityRegistry.filter((entry) => entry.kind === kind && (!normalizedQuery || [entry.id, entry.name, entry.region].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)))),
-    })).filter((group) => group.cities.length > 0);
-  }, [cityQuery]);
+  const visibleCityGroups = React.useMemo(() => getCityPickerGroups(cityRegistry, cityQuery), [cityQuery]);
 
   const openDatePicker = () => setShowDatePicker(true);
 
@@ -402,8 +390,8 @@ export default function NewMemoryScreen() {
             />
             <ScrollView contentContainerStyle={styles.cityList}>
               {visibleCityGroups.map((group) => (
-                <View key={group.kind} style={styles.cityGroup}>
-                  <Text selectable style={styles.sheetGroupLabel}>{cityGroupLabels[group.kind]}</Text>
+                <View key={group.label} style={styles.cityGroup}>
+                  <Text selectable style={styles.sheetGroupLabel}>{group.label}</Text>
                   {group.cities.map((item) => (
                     <Pressable
                       accessibilityLabel={`${item.name} · ${item.region}`}

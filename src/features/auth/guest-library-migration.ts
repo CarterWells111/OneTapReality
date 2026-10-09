@@ -19,6 +19,7 @@ type GuestLibrarySnapshot = {
   pages: Record<string, unknown>[];
   drafts: Record<string, unknown>[];
   arrangements: Record<string, unknown>[];
+  checkins: Record<string, unknown>[];
 };
 
 export type PreparedGuestLibraryFiles = {
@@ -84,12 +85,19 @@ async function guestLibrarySnapshot(db: SQLiteDatabase): Promise<GuestLibrarySna
       ORDER BY arrangements.memory_id ASC`,
     GUEST_LIBRARY_OWNER,
   );
-  return { arrangements, drafts, memories, pages, photos };
+  const checkins = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT cityId, spotId, markedAt FROM city_spot_checkins
+      WHERE ownerAccountKey = ? ORDER BY cityId, spotId`,
+    GUEST_LIBRARY_OWNER,
+  );
+  return { arrangements, checkins, drafts, memories, pages, photos };
 }
 
 export async function hasGuestLibrary(db: SQLiteDatabase): Promise<boolean> {
   const row = await db.getFirstAsync<{ id: string }>(
-    "SELECT id FROM memories WHERE ownerAccountKey = ? LIMIT 1",
+    `SELECT id FROM memories WHERE ownerAccountKey = ?
+      UNION ALL SELECT spotId AS id FROM city_spot_checkins WHERE ownerAccountKey = ? LIMIT 1`,
+    GUEST_LIBRARY_OWNER,
     GUEST_LIBRARY_OWNER,
   );
   return Boolean(row);
@@ -317,6 +325,15 @@ export async function migrateGuestLibraryToAccount(
           owner,
           GUEST_LIBRARY_OWNER,
         );
+        await tx.runAsync(
+          `INSERT INTO city_spot_checkins (ownerAccountKey, cityId, spotId, markedAt)
+            SELECT ?, cityId, spotId, markedAt FROM city_spot_checkins WHERE ownerAccountKey = ?
+            ON CONFLICT(ownerAccountKey, cityId, spotId) DO UPDATE SET
+              markedAt = MIN(city_spot_checkins.markedAt, excluded.markedAt)`,
+          owner,
+          GUEST_LIBRARY_OWNER,
+        );
+        await tx.runAsync("DELETE FROM city_spot_checkins WHERE ownerAccountKey = ?", GUEST_LIBRARY_OWNER);
         await saveSelection(tx, owner, "account", updatedAt);
       });
     } catch (error) {

@@ -148,7 +148,7 @@ export default function MemoriesHomeScreen() {
         <PaperCard style={styles.accountCard}>
           <Text selectable style={styles.accountTitle}>选择本机旅行册</Text>
           <Text selectable style={styles.accountEmail}>
-            此设备上已有访客旅行册。你可以继续使用访客库，或将它完整迁移到 {user?.email}。我们不会自动移动任何内容。
+            此设备上已有访客旅行册或景点打卡。你可以继续使用访客库，或将旅行册与打卡记录完整迁移到 {user?.email}。我们不会自动移动任何内容。
           </Text>
           <AppButton
             disabled={isMigrating}

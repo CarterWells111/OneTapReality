@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import { citySpotCheckinSchema } from "./city-spot-checkin-repository";
 
 import { createLegacyLayout, normalizeLayout } from "../features/canvas/canvas-layout";
 import {
@@ -46,6 +47,7 @@ export function remainingRetentionDays(
 }
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
+  await db.execAsync(citySpotCheckinSchema);
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
