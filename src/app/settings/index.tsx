@@ -133,7 +133,7 @@ export default function SettingsScreen() {
             {localLibraryOwner === "guest" ? "本机访客旅行册" : "当前账户的本机旅行册"}
           </Text>
           <Text selectable style={styles.helper}>
-            昵称、旅行册与未发布照片保存在本机；只有你主动发布礼品时，所选内容才会上传给受邀成员。
+            昵称、旅行册、景点打卡与未发布照片保存在本机；只有你主动发布礼品时，所选旅行册内容才会上传给受邀成员。迁移访客库也会迁移打卡记录。
           </Text>
           {needsMigrationChoice ? (
             <Text selectable style={styles.helper}>请回到首页选择继续使用访客库或迁移到当前账户。</Text>

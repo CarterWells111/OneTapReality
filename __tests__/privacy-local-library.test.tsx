@@ -57,6 +57,10 @@ describe("usePrivacyLocalLibrary", () => {
     );
     expect(mockClearMemories).toHaveBeenCalledWith(mockDatabase, "account:owner@example.com");
     expect(mockDatabase.runAsync).toHaveBeenCalledWith(
+      "DELETE FROM city_spot_checkins WHERE ownerAccountKey = ?",
+      "account:owner@example.com",
+    );
+    expect(mockDatabase.runAsync).toHaveBeenCalledWith(
       "DELETE FROM local_library_account_choices WHERE account_owner = ?",
       "account:owner@example.com",
     );

@@ -135,7 +135,7 @@ export default function PrivacyScreen() {
 
   const confirmClear = () => {
     const libraryName = currentLibraryIsGuest ? "本机访客旅行册" : "当前账户的本机旅行册";
-    Alert.alert("删除本机旅行册？", `这会删除${libraryName}中的旅行册、照片引用和草稿，操作不可恢复；独立的其他本机库及已发布礼品不会因此删除。`, [
+    Alert.alert("删除本机旅行册？", `这会删除${libraryName}中的旅行册、照片引用和草稿，操作不可恢复；独立景点打卡、其他本机库及已发布礼品保留。`, [
       { text: "取消", style: "cancel" },
       {
         text: "删除",
@@ -318,7 +318,7 @@ export default function PrivacyScreen() {
         {session ? (
           <>
             <PrivacyCard title="账号与云端删除范围">
-              将永久停用你拥有的礼品，并删除共享快照、照片副本、邀请、成员关系及账号数据。所有会话会立即撤销，云端清理将在 24 小时内完成；独立的访客旅行册不会删除。
+              将永久停用你拥有的礼品，并删除共享快照、照片副本、邀请、成员关系及账号数据，同时清除该账号的本机旅行册与景点打卡。所有会话会立即撤销，云端清理将在 24 小时内完成；独立的访客旅行册与打卡不会删除。
             </PrivacyCard>
             {!challenge ? (
               <AppButton

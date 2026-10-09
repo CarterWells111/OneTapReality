@@ -98,6 +98,7 @@ describe("explicit guest library migration", () => {
       expect.stringMatching(/^query:/),
       expect.stringMatching(/^query:/),
       expect.stringMatching(/^query:/),
+      expect.stringMatching(/^query:SELECT cityId/),
       "transaction:commit",
       "files:source-cleaned",
     ]);

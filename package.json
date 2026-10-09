@@ -19,9 +19,9 @@
     }
   },
   "dependencies": {
-    "@expo/config-plugins": "~57.0.9",
     "@aws-sdk/client-s3": "^3.1127.0",
     "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@expo/config-plugins": "~57.0.9",
     "@react-native-community/datetimepicker": "9.1.0",
     "compression": "^1.8.1",
     "drizzle-orm": "^0.45.2",
@@ -78,6 +78,7 @@
     "drizzle-kit": "^0.31.10",
     "jest-expo": "~57.0.5",
     "pg-mem": "^3.0.14",
+    "pinyin-pro": "3.29.4",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
@@ -110,7 +111,9 @@
     "nfc:test:seed": "node scripts/nfc-staging-test.cjs seed",
     "nfc:test:inspect": "node scripts/nfc-staging-test.cjs inspect",
     "nfc:test:prepare-pr": "node scripts/nfc-staging-test.cjs prepare-pr",
-    "nfc:test:guard": "node scripts/nfc-staging-test.cjs guard"
+    "nfc:test:guard": "node scripts/nfc-staging-test.cjs guard",
+    "cities:generate": "node scripts/generate-city-pinyin.cjs",
+    "cities:check": "node scripts/generate-city-pinyin.cjs --check"
   },
   "jest": {
     "preset": "jest-expo",

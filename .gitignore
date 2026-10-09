@@ -59,3 +59,7 @@ example
 # generated local NFC staging lab (created and removed by npm scripts)
 /src/app/nfc-lab-local.tsx
 /.data/nfc-staging/active.json
+
+# Task-owned local illustrated-map preview and isolated browser profile
+/.tmp-mapdata/city-checkins-preview/
+/.tmp-mapdata/city-checkins-chrome-profile/
