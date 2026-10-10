@@ -34,7 +34,11 @@ describe("new memory city selector", () => {
 
     fireEvent.press(screen.getByLabelText("选择地点"));
     fireEvent.changeText(await screen.findByLabelText("搜索城市"), "杭州");
-    fireEvent.press(await screen.findByText("杭州 · 浙江省"));
+
+    const hangzhouOptions = await screen.findAllByText("杭州 · 浙江省");
+
+    expect(hangzhouOptions).toHaveLength(2);
+    fireEvent.press(hangzhouOptions[0]);
 
     await waitFor(() => expect(screen.getByLabelText("已选城市 杭州")).toBeTruthy());
   });
