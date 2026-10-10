@@ -15,9 +15,20 @@ export type CityRegistryEntry = {
   readonly name: string;
   readonly kind: CityKind;
   readonly region: string;
+  readonly pinyin: string;
   readonly coordinate: RelativeMapCoordinate;
   readonly focus: CityMapFocus;
 };
+
+/** id 沿用旧英文名或方言拼写、与中文名拼音不一致的城市；其余城市 id 即拼音。 */
+const cityPinyinOverrides: Readonly<Record<string, string>> = Object.freeze({
+  harbin: "haerbin",
+  hohhot: "huhehaote",
+  hongkong: "xianggang",
+  lhasa: "lasa",
+  taipei: "taibei",
+  urumqi: "wulumuqi",
+});
 
 type GeographicCoordinate = { readonly latitude: number; readonly longitude: number };
 
@@ -84,6 +95,7 @@ const location = (id: string, name: string, kind: CityKind, region: string, x: n
   name,
   kind,
   region,
+  pinyin: cityPinyinOverrides[id] ?? id,
   coordinate,
   focus: Object.freeze({ center: coordinate, zoom }),
 });
